@@ -2238,12 +2238,23 @@ const status = computed<ConversationStatus>(() => {
     matched?.model ||
     (rawModel.includes('/') ? rawModel.split('/').pop()! : rawModel);
 
+  const usage = activeSession?.usage;
+  let cacheHitRate: number | undefined;
+  if (usage) {
+    const totalInput = usage.inputTokens + usage.cacheReadTokens;
+    const cacheRead = usage.cacheReadTokens;
+    if (totalInput > 0 && cacheRead > 0) {
+      cacheHitRate = (cacheRead / totalInput) * 100;
+    }
+  }
+
   return {
     model: displayModel,
     // Raw id for exact comparison in pickers (display name diverges from id).
     modelId: matched?.id ?? rawModel,
-    ctxUsed: activeSession?.usage.contextTokens ?? 0,
-    ctxMax: activeSession?.usage.contextLimit ?? 0,
+    ctxUsed: usage?.contextTokens ?? 0,
+    ctxMax: usage?.contextLimit ?? 0,
+    cacheHitRate,
     permission: rawState.permission,
     branch,
     cwd: activeSession?.cwd ?? '',

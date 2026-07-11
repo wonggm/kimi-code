@@ -331,7 +331,14 @@ export class FooterComponent implements Component {
       state.contextTokens,
       state.maxContextTokens,
     );
-    const contextWidth = visibleWidth(contextText);
+    let cacheText = '';
+    if (state.cacheHitRate !== undefined) {
+      cacheText = ` · cache: ${state.cacheHitRate.toFixed(2)}%`;
+    } else {
+      cacheText = ` · cache: --`;
+    }
+    const fullContextText = contextText + chalk.hex(colors.textDim)(cacheText);
+    const contextWidth = visibleWidth(fullContextText);
     let line2: string;
     if (this.transientHint) {
       const maxHintWidth = Math.max(0, width - contextWidth - 1);
@@ -344,10 +351,10 @@ export class FooterComponent implements Component {
       line2 =
         chalk.hex(colors.warning).bold(shownHint) +
         ' '.repeat(pad) +
-        chalk.hex(colors.text)(contextText);
+        chalk.hex(colors.text)(fullContextText);
     } else {
       const leftPad = Math.max(0, width - contextWidth);
-      line2 = ' '.repeat(leftPad) + chalk.hex(colors.text)(contextText);
+      line2 = ' '.repeat(leftPad) + chalk.hex(colors.text)(fullContextText);
     }
 
     return [truncateToWidth(line1, width), truncateToWidth(line2, width)];
