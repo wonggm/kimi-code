@@ -63,6 +63,7 @@ export interface AppState {
   contextTokens: number;
   maxContextTokens: number;
   cumulativeTokens?: number;
+  cacheHitRate?: number;
   isCompacting: boolean;
   isReplaying: boolean;
   streamingPhase: 'idle' | 'waiting' | 'thinking' | 'composing' | 'shell';
