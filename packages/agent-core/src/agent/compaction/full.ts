@@ -105,6 +105,9 @@ export class FullCompaction {
         () => this.getEffectiveMaxContextTokens(),
         {
           ...DEFAULT_COMPACTION_CONFIG,
+          triggerRatio:
+            agent.kimiConfig?.loopControl?.compactionTriggerRatio ??
+            DEFAULT_COMPACTION_CONFIG.triggerRatio,
           reservedContextSize:
             agent.kimiConfig?.loopControl?.reservedContextSize ??
             DEFAULT_COMPACTION_CONFIG.reservedContextSize,

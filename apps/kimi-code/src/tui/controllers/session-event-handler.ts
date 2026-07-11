@@ -657,6 +657,19 @@ export class SessionEventHandler {
     if (event.contextUsage !== undefined) patch.contextUsage = event.contextUsage;
     if (event.contextTokens !== undefined) patch.contextTokens = event.contextTokens;
     if (event.maxContextTokens !== undefined) patch.maxContextTokens = event.maxContextTokens;
+    if (event.usage?.total) {
+      const { inputCacheRead, inputOther } = event.usage.total;
+      const total = inputCacheRead + inputOther;
+      if (total > 0) {
+        patch.cacheHitRate = (inputCacheRead / total) * 100;
+      }
+    } else if (event.usage?.currentTurn) {
+      const { inputCacheRead, inputOther } = event.usage.currentTurn;
+      const total = inputCacheRead + inputOther;
+      if (total > 0) {
+        patch.cacheHitRate = (inputCacheRead / total) * 100;
+      }
+    }
     if (event.planMode !== undefined) patch.planMode = event.planMode;
     if (event.swarmMode !== undefined) patch.swarmMode = event.swarmMode;
     if (event.permission !== undefined) {
