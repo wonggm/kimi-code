@@ -1100,7 +1100,9 @@ function selectModel(modelId: string): void {
               :aria-label="ctxTooltip"
             >
               <ContextRing :pct="pct" />
-              <span class="ctx-num">{{ kFmt(status.ctxUsed) }}/{{ kFmt(status.ctxMax) }}</span>
+              <span class="ctx-num">{{ kFmt(status.ctxUsed) }}</span>
+              <span class="ctx-sep">|</span>
+              <span v-if="status?.cacheHitRate" class="cache-badge" :title="`${status.cacheHitRate.toFixed(2)}% cache hit rate`">{{ status.cacheHitRate.toFixed(2) }}%</span>
             </span>
           </Tooltip>
 
@@ -1614,6 +1616,24 @@ function selectModel(modelId: string): void {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
   letter-spacing: 0;
+  line-height: 16px;
+}
+
+.cache-badge {
+  font-size: calc(var(--ui-font-size) - 1px);
+  color: var(--accent-primary);
+  opacity: 0.7;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: 0;
+  line-height: 16px;
+}
+
+.ctx-sep {
+  font-size: calc(var(--ui-font-size) - 1px);
+  color: var(--muted);
+  font-family: var(--font-mono);
   line-height: 16px;
 }
 

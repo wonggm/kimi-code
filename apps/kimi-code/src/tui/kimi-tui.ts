@@ -1522,7 +1522,7 @@ export class KimiTUI {
 
   async syncRuntimeState(session: Session = this.requireSession()): Promise<void> {
     const [status, goalResult] = await Promise.all([session.getStatus(), session.getGoal()]);
-    this.setAppState({
+    const patch: Partial<AppState> = {
       sessionId: session.id,
       model: status.model ?? '',
       thinkingEffort: status.thinkingEffort,
@@ -1534,7 +1534,19 @@ export class KimiTUI {
       contextUsage: status.contextUsage,
       sessionTitle: session.summary?.title ?? null,
       goal: goalResult.goal,
-    });
+    };
+    // Extract cache hit rate from any available usage source
+    const usage = status.usage;
+    if (usage?.total) {
+      const { inputCacheRead, inputOther } = usage.total;
+      const total = inputCacheRead + inputOther;
+      if (total > 0) patch.cacheHitRate = (inputCacheRead / total) * 100;
+    } else if (usage?.currentTurn) {
+      const { inputCacheRead, inputOther } = usage.currentTurn;
+      const total = inputCacheRead + inputOther;
+      if (total > 0) patch.cacheHitRate = (inputCacheRead / total) * 100;
+    }
+    this.setAppState(patch);
     this.syncAdditionalDirs(session);
   }
 

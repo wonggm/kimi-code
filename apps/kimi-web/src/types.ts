@@ -313,6 +313,7 @@ export interface ConversationStatus {
   modelId: string;
   ctxUsed: number;
   ctxMax: number;
+  cacheHitRate?: number;
   permission: 'manual' | 'auto' | 'yolo';
   branch: string;
   /** Working directory of the active session */
