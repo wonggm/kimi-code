@@ -365,7 +365,14 @@ export class FooterComponent implements Component {
       state.contextTokens,
       state.maxContextTokens,
     );
-    const contextWidth = visibleWidth(contextText);
+    let cacheText = '';
+    if (state.cacheHitRate !== undefined) {
+      cacheText = ` · cache: ${state.cacheHitRate.toFixed(2)}%`;
+    } else {
+      cacheText = ` · cache: --`;
+    }
+    const fullContextText = contextText + chalk.hex(colors.textDim)(cacheText);
+    const contextWidth = visibleWidth(fullContextText);
     let line2: string;
     const hint = this.transientHint ?? this.warningHint;
     if (hint) {
@@ -377,7 +384,7 @@ export class FooterComponent implements Component {
       line2 =
         chalk.hex(colors.warning).bold(shownHint) +
         ' '.repeat(pad) +
-        chalk.hex(colors.text)(contextText);
+        chalk.hex(colors.text)(fullContextText);
     } else {
       // A status_line.command owns line 1 outright, so the ctrl+o hint moves
       // down here; the transient and warning hints above take precedence.
@@ -387,7 +394,7 @@ export class FooterComponent implements Component {
           ? chalk.hex(colors.textDim)(shortcut)
           : '';
       const leftPad = Math.max(0, width - visibleWidth(left) - contextWidth);
-      line2 = left + ' '.repeat(leftPad) + chalk.hex(colors.text)(contextText);
+      line2 = left + ' '.repeat(leftPad) + chalk.hex(colors.text)(fullContextText);
     }
 
     return [truncateToWidth(line1, width), truncateToWidth(line2, width)];
