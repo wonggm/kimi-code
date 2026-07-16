@@ -158,4 +158,49 @@ describe('readClipboardMedia', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('falls back to PowerShell on WSL when the Linux clipboard image format is unsupported', async () => {
+    let psFallbackTmpFile = '';
+    const psPngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    const runCommand = vi.fn((command: string, args: string[]) => {
+      if (command === 'wl-paste' && args[0] === '--list-types') {
+        return { stdout: Buffer.from('image/bmp\n'), ok: true };
+      }
+      if (command === 'wl-paste' && args[0] === '--type') {
+        // Linux clipboard returns an image, but BMP is not a supported LLM format.
+        return { stdout: Buffer.from('BM'), ok: true };
+      }
+      if (command === 'wslpath') {
+        if (args[1] === undefined) return { stdout: Buffer.alloc(0), ok: false };
+        psFallbackTmpFile = args[1];
+        writeFileSync(psFallbackTmpFile, psPngBytes);
+        return { stdout: Buffer.from('C:\\tmp\\kimi-wsl-clip.png\n'), ok: true };
+      }
+      if (command === 'powershell.exe') {
+        return { stdout: Buffer.from('ok\n'), ok: true };
+      }
+      return { stdout: Buffer.alloc(0), ok: false };
+    });
+
+    try {
+      const media = await readClipboardMedia({
+        platform: 'linux',
+        env: { WSL_DISTRO_NAME: 'Ubuntu', WAYLAND_DISPLAY: 'wayland-0' },
+        clipboard: null,
+        runCommand,
+      });
+
+      expect(media).toEqual({
+        kind: 'image',
+        bytes: new Uint8Array(psPngBytes),
+        mimeType: 'image/png',
+      });
+      expect(runCommand).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.any(Object));
+    } finally {
+      if (psFallbackTmpFile.length > 0) {
+        rmSync(psFallbackTmpFile, { force: true });
+      }
+    }
+  });
 });
