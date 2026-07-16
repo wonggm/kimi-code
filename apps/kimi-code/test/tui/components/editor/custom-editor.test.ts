@@ -470,6 +470,10 @@ describe('CustomEditor paste marker expansion', () => {
   const PASTE_START = '\u001B[200~';
   const PASTE_END = '\u001B[201~';
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   function simulateLargePaste(editor: CustomEditor, content: string): void {
     editor.handleInput(`${PASTE_START}${content}${PASTE_END}`);
   }
@@ -526,6 +530,12 @@ describe('CustomEditor paste marker expansion', () => {
   });
 
   it('handles Ctrl+V expansion when cursor is on marker', () => {
+    // Clear Windows Terminal/WSL env vars so this test exercises the standard
+    // Linux/Unix paste keybinding regardless of the host it runs on.
+    vi.stubEnv('WT_SESSION', '');
+    vi.stubEnv('WSLENV', '');
+    vi.stubEnv('WSL_DISTRO_NAME', '');
+
     const editor = makeEditor();
     editor.onPasteImage = vi.fn(async () => false);
     const longText = 'line\n'.repeat(15).trimEnd();
@@ -637,6 +647,78 @@ describe('CustomEditor shortcut telemetry hooks', () => {
     editor.handleInput('\u0014');
 
     expect(onToggleTodoExpand).toHaveBeenCalledOnce();
+  });
+});
+
+describe('CustomEditor WSL/Windows Terminal paste keybinding', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('uses Alt+V for image paste when WT_SESSION is present', async () => {
+    vi.stubEnv('WT_SESSION', 'a-guid');
+
+    const editor = makeEditor();
+    const onPasteImage = vi.fn(async () => true);
+    editor.onPasteImage = onPasteImage;
+
+    editor.handleInput('\u001Bv'); // Alt+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
+
+    editor.handleInput('\u0016'); // Ctrl+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
+  });
+
+  it('uses Alt+V for image paste when WSLENV is present', async () => {
+    vi.stubEnv('WSLENV', 'WT_SESSION:WT_PROFILE_ID:');
+
+    const editor = makeEditor();
+    const onPasteImage = vi.fn(async () => true);
+    editor.onPasteImage = onPasteImage;
+
+    editor.handleInput('\u001Bv'); // Alt+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
+
+    editor.handleInput('\u0016'); // Ctrl+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
+  });
+
+  it('uses Alt+V for image paste when WSL_DISTRO_NAME is present', async () => {
+    vi.stubEnv('WSL_DISTRO_NAME', 'Ubuntu-22.04');
+
+    const editor = makeEditor();
+    const onPasteImage = vi.fn(async () => true);
+    editor.onPasteImage = onPasteImage;
+
+    editor.handleInput('\u001Bv'); // Alt+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
+
+    editor.handleInput('\u0016'); // Ctrl+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
+  });
+
+  it('keeps Ctrl+V for image paste when no Windows Terminal/WSL env vars are present', async () => {
+    vi.stubEnv('WT_SESSION', '');
+    vi.stubEnv('WSLENV', '');
+    vi.stubEnv('WSL_DISTRO_NAME', '');
+
+    const editor = makeEditor();
+    const onPasteImage = vi.fn(async () => true);
+    editor.onPasteImage = onPasteImage;
+
+    editor.handleInput('\u0016'); // Ctrl+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
+
+    editor.handleInput('\u001Bv'); // Alt+V
+    await Promise.resolve();
+    expect(onPasteImage).toHaveBeenCalledOnce();
   });
 });
 

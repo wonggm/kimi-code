@@ -16,6 +16,7 @@ import {
 import { currentTheme } from '#/tui/theme';
 import { createEditorTheme } from '#/tui/theme/pi-tui-theme';
 import { printableChar } from '#/tui/utils/printable-key';
+import { isWindowsTerminalHost } from '#/tui/utils/terminal-notification';
 
 import { extractAtPrefix } from './file-mention-provider';
 import { WrappingSelectList } from './wrapping-select-list';
@@ -357,7 +358,8 @@ export class CustomEditor extends Editor {
     //   Alt-V there. Everywhere else Ctrl-V pastes. When the host
     //   reports no image available, we fall through to pi-tui's
     //   normal paste path so text from the clipboard still works.
-    const pasteKey = process.platform === 'win32' ? 'alt+v' : Key.ctrl('v');
+    const pasteKey =
+      process.platform === 'win32' || isWindowsTerminalHost() ? 'alt+v' : Key.ctrl('v');
     if (matchesKey(normalized, pasteKey)) {
       if (this.expandPasteMarkerAtCursor()) {
         return;
