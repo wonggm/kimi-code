@@ -1098,7 +1098,7 @@ function selectModel(modelId: string): void {
               :aria-label="ctxTooltip"
             >
               <ContextRing :pct="pct" />
-              <span class="ctx-num">{{ kFmt(status.ctxUsed) }}</span>
+              <span class="ctx-num">{{ formatTokens(status.ctxUsed) }}</span>
               <span class="ctx-sep">|</span>
               <span v-if="status?.cacheHitRate" class="cache-badge" :title="`${status.cacheHitRate.toFixed(2)}% cache hit rate`">{{ status.cacheHitRate.toFixed(2) }}%</span>
             </span>
