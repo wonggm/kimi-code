@@ -85,7 +85,7 @@ export class RuntimeCompactionStrategy implements CompactionStrategy {
 
   private config(model: ProfileModelContext = this.context()): CompactionConfig {
     const triggerRatio = model.compactionTriggerRatio ?? DEFAULT_COMPACTION_CONFIG.triggerRatio;
-    const blockRatio = Math.max(triggerRatio, DEFAULT_COMPACTION_CONFIG.blockRatio);
+    const blockRatio = triggerRatio;
     return {
       ...DEFAULT_COMPACTION_CONFIG,
       triggerRatio,
