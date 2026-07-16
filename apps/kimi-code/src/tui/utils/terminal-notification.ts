@@ -134,6 +134,18 @@ export function isInsideTmux(env: NodeJS.ProcessEnv = process.env): boolean {
   return tmux.length > 0;
 }
 
+/**
+ * Best-effort detection of Windows Terminal or WSL. These environments
+ * reserve Ctrl+V for their own paste handling, so callers should fall back
+ * to Alt+V for in-app paste keybindings.
+ */
+export function isWindowsTerminalHost(env: NodeJS.ProcessEnv = process.env): boolean {
+  if ((env['WT_SESSION'] ?? '').length > 0) return true;
+  if ((env['WSLENV'] ?? '').length > 0) return true;
+  if ((env['WSL_DISTRO_NAME'] ?? '').length > 0) return true;
+  return false;
+}
+
 function sanitizeNotificationText(value: string): string {
   return Array.from(value)
     .map((ch) => (isControlCharacter(ch) ? ' ' : ch))
