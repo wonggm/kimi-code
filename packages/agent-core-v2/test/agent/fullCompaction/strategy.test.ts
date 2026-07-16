@@ -2,7 +2,11 @@ import { type Message } from '#/llm-adapter/contract/message';
 import { describe, expect, it } from 'vitest';
 
 import { estimateTokensForMessages } from '#/llm-adapter/contract/tokens';
-import { DefaultCompactionStrategy } from '#/agent/fullCompaction/strategy';
+import {
+  DefaultCompactionStrategy,
+  RuntimeCompactionStrategy,
+} from '#/agent/fullCompaction/strategy';
+import type { ProfileModelContext } from '#/agent/profile/profile';
 
 describe('DefaultCompactionStrategy', () => {
   it('keeps an oversized trailing user message as recent', () => {
@@ -213,3 +217,53 @@ function textMessage(role: 'user' | 'assistant', text: string): Message {
     toolCalls: [],
   };
 }
+
+describe('RuntimeCompactionStrategy', () => {
+  it('uses the configured trigger ratio as the block ratio', () => {
+    const maxSize = 1000;
+    const strategy = new RuntimeCompactionStrategy(() =>
+      ({
+        modelAlias: 'test',
+        modelCapabilities: {
+          image_in: false,
+          video_in: false,
+          audio_in: false,
+          thinking: false,
+          tool_use: false,
+          max_context_tokens: maxSize,
+        },
+        maxOutputSize: undefined,
+        alwaysThinking: undefined,
+        thinkingLevel: 'off',
+        reservedContextSize: undefined,
+        compactionTriggerRatio: 0.6,
+      }) as ProfileModelContext,
+    );
+
+    expect(strategy.shouldCompact(0.6 * maxSize)).toBe(true);
+    expect(strategy.shouldBlock(0.6 * maxSize)).toBe(true);
+  });
+
+  it('does not check after step when trigger and block ratios are equal', () => {
+    const strategy = new RuntimeCompactionStrategy(() =>
+      ({
+        modelAlias: 'test',
+        modelCapabilities: {
+          image_in: false,
+          video_in: false,
+          audio_in: false,
+          thinking: false,
+          tool_use: false,
+          max_context_tokens: 1000,
+        },
+        maxOutputSize: undefined,
+        alwaysThinking: undefined,
+        thinkingLevel: 'off',
+        reservedContextSize: undefined,
+        compactionTriggerRatio: 0.6,
+      }) as ProfileModelContext,
+    );
+
+    expect(strategy.checkAfterStep).toBe(false);
+  });
+});
