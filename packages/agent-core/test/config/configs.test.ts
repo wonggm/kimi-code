@@ -245,6 +245,29 @@ read_byte_budget = 524288
     expect(roundTripped.image).toEqual({ maxEdgePx: 2500, readByteBudget: 524288 });
   });
 
+  it('round-trips the [subagent_models] section with profile-name keys verbatim', async () => {
+    const dir = makeTempDir();
+    const configPath = join(dir, 'subagent-models-round-trip.toml');
+    const toml = `
+[subagent_models]
+explore = "deepseek/deepseek-v4-flash"
+plan = "deepseek/deepseek-v4-pro"
+`;
+    const config = parseConfigString(toml, configPath);
+    expect(config.subagentModels).toEqual({
+      explore: 'deepseek/deepseek-v4-flash',
+      plan: 'deepseek/deepseek-v4-pro',
+    });
+
+    await writeConfigFile(configPath, config);
+    const text = await readFile(configPath, 'utf-8');
+    const roundTripped = parseConfigString(text, configPath);
+    expect(roundTripped.subagentModels).toEqual({
+      explore: 'deepseek/deepseek-v4-flash',
+      plan: 'deepseek/deepseek-v4-pro',
+    });
+  });
+
   it('round-trips a custom registry source field on a provider', async () => {
     const dir = makeTempDir();
     const configPath = join(dir, 'round-trip.toml');

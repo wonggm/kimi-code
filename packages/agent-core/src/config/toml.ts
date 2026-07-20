@@ -24,6 +24,7 @@ import {
   type SecondaryModelConfig,
   type ServicesConfig,
   type SubagentConfig,
+  type SubagentModelsConfig,
   type ThinkingConfig,
   validateConfig,
 } from '#/config/schema';
@@ -329,6 +330,9 @@ export function transformTomlData(data: Record<string, unknown>): Record<string,
       result[targetKey] = transformPlainObject(value);
     } else if (targetKey === 'mcp' && isPlainObject(value)) {
       result[targetKey] = transformPlainObject(value);
+    } else if (targetKey === 'subagentModels' && isPlainObject(value)) {
+      // Keys are subagent profile names, not config fields — keep them verbatim.
+      result[targetKey] = cloneRecord(value);
     } else if (!isPlainObject(value)) {
       result[targetKey] = value;
     }
@@ -509,6 +513,7 @@ export function configToTomlData(config: KimiConfig): Record<string, unknown> {
   setSection(out, 'subagent', config.subagent, subagentToToml);
   setSection(out, 'secondary_model', config.secondaryModel, secondaryModelToToml);
   setSection(out, 'mcp', config.mcp, mcpToToml);
+  setSection(out, 'subagent_models', config.subagentModels, subagentModelsToToml);
   setSection(out, 'image', config.image, imageToToml);
   setSection(out, 'experimental', config.experimental, experimentalToToml);
   setSection(out, 'permission', config.permission, permissionToToml);
@@ -718,6 +723,18 @@ function mcpToToml(mcp: McpConfig, rawMcp: unknown): Record<string, unknown> {
   const out = cloneRecord(rawMcp);
   for (const [key, value] of Object.entries(mcp)) {
     setDefined(out, camelToSnake(key), value);
+  }
+  return out;
+}
+
+function subagentModelsToToml(
+  subagentModels: SubagentModelsConfig,
+  rawSubagentModels: unknown,
+): Record<string, unknown> {
+  // Keys are subagent profile names — copy verbatim rather than case-mapping.
+  const out = cloneRecord(rawSubagentModels);
+  for (const [key, value] of Object.entries(subagentModels)) {
+    setDefined(out, key, value);
   }
   return out;
 }

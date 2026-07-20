@@ -24,6 +24,11 @@ import type { AgentModelPreference } from '../profile';
  * (global thinking config → the bound model's default effort) rather than
  * inheriting the caller's level. When unset, spawning behavior is unchanged:
  * subagents inherit the caller's model and effort.
+ *
+ * A `[subagent_models]` entry keyed by the spawned profile name takes
+ * absolute precedence over all of the above (fork feature): listed profiles
+ * bind their configured alias no matter the tool choice, secondary model, or
+ * caller model.
  */
 
 export type SubagentModelChoice = AgentModelPreference;
@@ -44,14 +49,25 @@ export function resolveSecondaryModel(
 /**
  * Resolve which model a newly spawned subagent binds to. `requested` is the
  * explicit per-spawn choice (tool argument or profile preference); `own` is
- * the caller's current model state, used when inheriting.
+ * the caller's current model state, used when inheriting. When `profileName`
+ * is listed in `[subagent_models]`, its configured alias wins absolutely
+ * (over `requested`, the secondary model, and the caller's model) and the
+ * child inherits the caller's thinking effort; unlisted profiles follow the
+ * secondary-model logic below.
  */
 export function resolveSubagentBinding(
   config: KimiConfig | undefined,
   flags: ExperimentalFlagResolver,
   own: { readonly modelAlias: string | undefined; readonly thinkingEffort: string },
   requested?: SubagentModelChoice,
+  profileName?: string,
 ): SubagentModelBinding {
+  if (profileName !== undefined) {
+    const pinned = config?.subagentModels?.[profileName];
+    if (pinned !== undefined) {
+      return { modelAlias: pinned, thinkingEffort: own.thinkingEffort };
+    }
+  }
   const secondary = resolveSecondaryModel(config, flags);
   if (requested !== 'primary' && secondary?.model !== undefined) {
     return {

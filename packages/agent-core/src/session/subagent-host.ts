@@ -6,6 +6,7 @@ import {
 
 import type { Agent } from '../agent';
 import type { PromptOrigin } from '../agent/context';
+import type { KimiConfig } from '#/config';
 import { ErrorCodes } from '../errors';
 import { DenyAllPermissionPolicy } from '../agent/permission/policies/deny-all';
 import { InMemoryAgentRecordPersistence } from '../agent/records';
@@ -57,6 +58,19 @@ export function resolveSubagentTimeoutMs(configMs?: number): number {
     return configMs;
   }
   return DEFAULT_SUBAGENT_TIMEOUT_MS;
+}
+
+/**
+ * Resolve the model alias a subagent should be bound to: the
+ * `[subagent_models]` config entry for the profile, falling back to
+ * inheriting the (parent) caller's model.
+ */
+export function resolveSubagentModelAlias(
+  kimiConfig: KimiConfig | undefined,
+  profileName: string,
+  callerModelAlias: string | undefined,
+): string | undefined {
+  return kimiConfig?.subagentModels?.[profileName] ?? callerModelAlias;
 }
 
 /** Human-readable duration for the subagent timeout message. */
@@ -196,7 +210,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       this.emitSubagentSpawned(parent, agentId, profileName, runOptions);
       try {
-        this.reInheritParentModel(parent, child);
+        this.reInheritParentModel(parent, child, profileName);
         return await this.runPromptTurn(parent, agentId, child, profileName, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, agentId, runOptions, error);
@@ -212,7 +226,7 @@ export class SessionSubagentHost {
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       try {
         runOptions.signal.throwIfAborted();
-        this.reInheritParentModel(parent, child);
+        this.reInheritParentModel(parent, child, profileName);
         this.emitSubagentStarted(parent, agentId);
         const turnId = child.turn.retry('agent-host');
         if (turnId === null) {
@@ -462,11 +476,14 @@ export class SessionSubagentHost {
   }
 
   /**
-   * The model a newly spawned subagent binds to: the configured secondary
-   * model by default (when the experiment is on), otherwise the parent's
-   * model and effort, inherited as before. The bound alias is validated up
-   * front so a dangling `[secondary_model]` pointer fails the spawn with a
-   * wrapped, actionable error instead of a mid-turn provider failure.
+   * The model a newly spawned subagent binds to: the `[subagent_models]`
+   * alias for the profile when listed (absolute — it wins over the tool's
+   * model choice, the secondary model, and the caller's model), otherwise
+   * the configured secondary model by default (when the experiment is on),
+   * otherwise the parent's model and effort, inherited as before. The bound
+   * alias is validated up front so a dangling `[secondary_model]` pointer
+   * fails the spawn with a wrapped, actionable error instead of a mid-turn
+   * provider failure.
    */
   private resolveSpawnBinding(
     parent: Agent,
@@ -478,6 +495,7 @@ export class SessionSubagentHost {
       this.session.experimentalFlags,
       { modelAlias: parent.config.modelAlias, thinkingEffort: parent.config.thinkingEffort },
       modelChoice ?? profile.modelPreference,
+      profile.name,
     );
     if (binding.modelAlias !== undefined) {
       const providerManager = this.session.options.providerManager;
@@ -491,13 +509,22 @@ export class SessionSubagentHost {
   }
 
   /**
+   * The model a resumed/retried subagent runs on. A profile listed in
+   * `[subagent_models]` keeps its configured alias absolutely; unlisted
+   * profiles follow the upstream behavior below.
+   *
    * Resume/retry historically re-synced the child to the parent's current
    * model so subagents follow mid-session `/model` switches. With the
    * `secondary-model` experiment on, a resumed subagent instead keeps the
    * model it was bound to at spawn (v2 semantics: no child-follows-parent
    * invariant).
    */
-  private reInheritParentModel(parent: Agent, child: Agent): void {
+  private reInheritParentModel(parent: Agent, child: Agent, profileName: string): void {
+    const pinned = this.session.kimiConfig?.subagentModels?.[profileName];
+    if (pinned !== undefined) {
+      child.config.update({ modelAlias: pinned });
+      return;
+    }
     if (this.session.experimentalFlags.enabled('secondary-model')) return;
     child.config.update({ modelAlias: parent.config.modelAlias });
   }
