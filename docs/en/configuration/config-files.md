@@ -413,6 +413,18 @@ The identity is resolved once at startup and holds for the life of the process: 
 
 This section is read by the `agent-core-v2` engine, which powers every Kimi Code surface.
 
+## `subagent_models`
+
+`subagent_models` pins a model alias per subagent type, so e.g. read-only exploration can run on a cheaper model while the main session uses a different one. Keys are subagent profile names (`coder`, `explore`, `plan`); values are model aliases as defined in `[models."<alias>"]`.
+
+```toml
+[subagent_models]
+explore = "deepseek/deepseek-v4-flash"
+plan = "deepseek/deepseek-v4-pro"
+```
+
+A subagent type not listed here inherits the model of the agent that spawned it (the previous behavior for all subagents). Applies to both `Agent` and `AgentSwarm` spawns, and to resumed subagents.
+
 ## `tools`
 
 `tools` is the global tool switch: it applies to every agent in all sessions and intersects with each agent's own `tools` / `disallowedTools` policy.

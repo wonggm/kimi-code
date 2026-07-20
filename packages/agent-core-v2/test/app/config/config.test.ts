@@ -85,6 +85,7 @@ import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   resolveSubagentBinding,
   resolveSubagentModelPool,
+  resolveSubagentModelAlias,
   resolveSubagentTimeoutMs,
   SECONDARY_MODEL_SECTION,
   SUBAGENT_SECTION,
@@ -2530,6 +2531,25 @@ describe('nested env bindings', () => {
       inner: { value: 'file' },
     });
 
+  it('falls back to the caller model when [subagent_models] is absent', async () => {
+    const { config, disposables } = await createConfig({});
+    expect(resolveSubagentModelAlias(config, 'explore', 'caller/model')).toBe('caller/model');
+    disposables.dispose();
+  });
+
+  it('resolves per-profile models from [subagent_models] with caller fallback', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\nplan = "deepseek/deepseek-v4-pro"\n',
+    );
+    expect(resolveSubagentModelAlias(config, 'explore', 'caller/model')).toBe(
+      'deepseek/deepseek-v4-flash',
+    );
+    expect(resolveSubagentModelAlias(config, 'plan', 'caller/model')).toBe(
+      'deepseek/deepseek-v4-pro',
+    );
+    // Unlisted profile inherits the caller's model.
+    expect(resolveSubagentModelAlias(config, 'coder', 'caller/model')).toBe('caller/model');
     disposables.dispose();
   });
 });

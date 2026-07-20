@@ -173,6 +173,15 @@ export const McpConfigSchema = z.object({
 
 export type McpConfig = z.infer<typeof McpConfigSchema>;
 
+/**
+ * `[subagent_models]` on disk: subagent profile name → model alias, e.g.
+ * `explore = "deepseek/deepseek-v4-flash"`. Profiles not listed inherit the
+ * spawning agent's model.
+ */
+export const SubagentModelsConfigSchema = z.record(z.string(), z.string());
+
+export type SubagentModelsConfig = z.infer<typeof SubagentModelsConfigSchema>;
+
 export const ImageConfigSchema = z.object({
   maxEdgePx: z.number().int().min(1).optional(),
   readByteBudget: z.number().int().min(1).optional(),
@@ -300,6 +309,7 @@ export const KimiConfigSchema = z.object({
   subagent: SubagentConfigSchema.optional(),
   secondaryModel: SecondaryModelConfigSchema.optional(),
   mcp: McpConfigSchema.optional(),
+  subagentModels: SubagentModelsConfigSchema.optional(),
   image: ImageConfigSchema.optional(),
   modelCatalog: ModelCatalogConfigSchema.optional(),
   experimental: ExperimentalConfigSchema.optional(),
@@ -349,6 +359,7 @@ export const KimiConfigPatchSchema = z
     subagent: SubagentConfigPatchSchema.optional(),
     secondaryModel: SecondaryModelConfigPatchSchema.optional(),
     mcp: McpConfigPatchSchema.optional(),
+    subagentModels: SubagentModelsConfigSchema.optional(),
     image: ImageConfigPatchSchema.optional(),
     modelCatalog: ModelCatalogConfigPatchSchema.optional(),
     experimental: ExperimentalConfigPatchSchema.optional(),
