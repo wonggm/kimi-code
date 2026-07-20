@@ -83,6 +83,7 @@ import {
   buildSubagentModelDescriptions,
   formatSubagentTimeoutDescription,
   resolveSubagentBinding,
+  resolveSubagentModelAlias,
   resolveSubagentTimeoutMs,
   wrapSubagentModelError,
 } from '#/session/subagent/configSection';

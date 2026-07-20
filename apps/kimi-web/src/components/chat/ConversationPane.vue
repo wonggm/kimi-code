@@ -1385,7 +1385,6 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :starred-ids="starredIds"
               :skills="skills"
               :starting="starting"
-              hide-context
               @submit="handleComposerSubmit"
               @steer="emit('steer', $event)"
               @command="emit('command', $event)"

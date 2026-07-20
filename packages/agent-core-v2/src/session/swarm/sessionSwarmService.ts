@@ -31,6 +31,8 @@ import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService } from '#/agent/userTool/userTool';
 import { IEventBus } from '#/app/event/eventBus';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
+import { IConfigService } from '#/app/config/config';
+import { IAgentProfileCatalogService } from '#/app/agentProfileCatalog/agentProfileCatalog';
 import { applyProfilePromptPrefix } from '#/app/agentProfileCatalog/promptPrefix';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import {
@@ -40,6 +42,7 @@ import {
   subagentSwarmItem,
 } from '#/session/agentLifecycle/subagentMetadata';
 import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
+import { resolveSubagentModelAlias } from '#/session/subagent/configSection';
 import { ISessionSubagentService } from '#/session/subagent/subagent';
 import { wrapSubagentModelError } from '#/session/subagent/configSection';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
@@ -90,6 +93,7 @@ export class SessionSwarmService implements ISessionSwarmService {
     @ISessionProcessRunner private readonly processRunner: ISessionProcessRunner,
     @ILogService private readonly log: ILogService,
     @IModelCatalog private readonly modelCatalog: IModelCatalog,
+    @IConfigService private readonly config: IConfigService,
   ) {}
 
   async getSwarmItem(args: {
