@@ -20,6 +20,7 @@ import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
   SessionSubagentHost,
   formatSubagentTimeoutDescription,
+  resolveSubagentModelAlias,
   resolveSubagentTimeoutMs,
   type QueuedSubagentTask,
 } from '../../src/session/subagent-host';
@@ -93,6 +94,38 @@ describe('formatSubagentTimeoutDescription', () => {
     expect(formatSubagentTimeoutDescription(2 * 60 * 60 * 1000)).toBe('2 hours');
     expect(formatSubagentTimeoutDescription(45 * 1000)).toBe('45 seconds');
     expect(formatSubagentTimeoutDescription(1500)).toBe('1500 ms');
+  });
+});
+
+describe('resolveSubagentModelAlias', () => {
+  it('returns the caller model when config or profile entry is absent', () => {
+    expect(resolveSubagentModelAlias(undefined, 'explore', 'caller/model')).toBe('caller/model');
+    expect(resolveSubagentModelAlias({ providers: {} }, 'explore', 'caller/model')).toBe(
+      'caller/model',
+    );
+    expect(
+      resolveSubagentModelAlias(
+        { providers: {}, subagentModels: { plan: 'deepseek/deepseek-v4-pro' } },
+        'explore',
+        'caller/model',
+      ),
+    ).toBe('caller/model');
+  });
+
+  it('resolves the per-profile model from [subagent_models]', () => {
+    const kimiConfig = {
+      providers: {},
+      subagentModels: {
+        explore: 'deepseek/deepseek-v4-flash',
+        plan: 'deepseek/deepseek-v4-pro',
+      },
+    };
+    expect(resolveSubagentModelAlias(kimiConfig, 'explore', 'caller/model')).toBe(
+      'deepseek/deepseek-v4-flash',
+    );
+    expect(resolveSubagentModelAlias(kimiConfig, 'plan', 'caller/model')).toBe(
+      'deepseek/deepseek-v4-pro',
+    );
   });
 });
 

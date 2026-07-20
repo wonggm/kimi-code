@@ -19,6 +19,8 @@ import { SECONDARY_MODEL_SECTION } from '#/app/kosongConfig/configSection';
 import { SECONDARY_MODEL_FLAG_ID } from '#/session/subagent/flag';
 import { normalizeAgentProfile } from '#/app/agentProfileCatalog/agentProfileCatalog';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
+import { IConfigService } from '#/app/config/config';
+import { IAgentProfileCatalogService } from '#/app/agentProfileCatalog/agentProfileCatalog';
 import { APIProviderRateLimitError } from '#/kosong/contract/errors';
 import { IModelCatalog, type Model } from '#/kosong/model/catalog';
 import { ITelemetryService, noopTelemetryService } from '#/app/telemetry/telemetry';
@@ -957,6 +959,11 @@ describe('SessionSwarmService metadata compatibility', () => {
         return { id: alias } as Model;
       },
     } as IModelCatalog);
+    ix.stub(IConfigService, {
+      ready: Promise.resolve(),
+      get: (() => undefined) as IConfigService['get'],
+      onDidSectionChange: (() => ({ dispose: () => {} })) as IConfigService['onDidSectionChange'],
+    } as unknown as IConfigService);
     ix.set(ISessionSwarmService, new SyncDescriptor(SessionSwarmService));
   });
 

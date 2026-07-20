@@ -89,6 +89,7 @@ import {
   buildSubagentModelDescriptions,
   formatSubagentTimeoutDescription,
   resolveSubagentBinding,
+  resolveSubagentModelAlias,
   resolveSubagentTimeoutMs,
   stripSubagentModelParameter,
   subagentDisplayModel,

@@ -96,6 +96,41 @@ registerConfigSection(SUBAGENT_SECTION, SubagentConfigSchema, {
   stripEnv: stripSubagentEnv,
 });
 
+export const SUBAGENT_MODELS_SECTION = 'subagentModels';
+
+/**
+ * `[subagent_models]` on disk: profile name → model alias, e.g.
+ * `explore = "deepseek/deepseek-v4-flash"`. Keys are matched against agent
+ * profile names verbatim; note the default TOML transform camelCases
+ * single-level keys, so profile names containing `_x` sequences would not
+ * round-trip (all builtin profile names are single lowercase words).
+ */
+export const SubagentModelsConfigSchema = z.record(z.string(), z.string());
+
+export type SubagentModelsConfig = z.infer<typeof SubagentModelsConfigSchema>;
+
+registerConfigSection(SUBAGENT_MODELS_SECTION, SubagentModelsConfigSchema);
+
+/**
+ * Resolve the model alias a subagent should be bound to: the
+ * `[subagent_models]` entry for the profile, falling back to inheriting the
+ * caller's model. Model selection is deliberately not exposed as an Agent
+ * tool parameter (upstream keeps that schema surface free of `model`).
+ */
+export function resolveSubagentModelAlias(
+  config: IConfigService,
+  profileName: string,
+  callerModelAlias: string,
+): string {
+  const models = config.get<SubagentModelsConfig | undefined>(SUBAGENT_MODELS_SECTION);
+  return models?.[profileName] ?? callerModelAlias;
+}
+
+/**
+ * Resolve the effective per-run subagent timeout. Governs foreground and
+ * background subagents (and AgentSwarm) through the task manager's per-task
+ * timeout.
+ */
 export function resolveSubagentTimeoutMs(config: IConfigService): number {
   return (
     config.get<SubagentConfig | undefined>(SUBAGENT_SECTION)?.timeoutMs ??

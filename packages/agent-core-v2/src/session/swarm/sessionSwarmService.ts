@@ -32,6 +32,8 @@ import { IAgentUserToolService } from '#/agent/userTool/userTool';
 import { IEventBus } from '#/app/event/eventBus';
 import { IConfigService } from '#/app/config/config';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
+import { IConfigService } from '#/app/config/config';
+import { IAgentProfileCatalogService } from '#/app/agentProfileCatalog/agentProfileCatalog';
 import { applyProfilePromptPrefix } from '#/app/agentProfileCatalog/promptPrefix';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import {
@@ -41,6 +43,7 @@ import {
   subagentSwarmItem,
 } from '#/session/agentLifecycle/subagentMetadata';
 import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
+import { resolveSubagentModelAlias } from '#/session/subagent/configSection';
 import { ISessionSubagentService } from '#/session/subagent/subagent';
 import {
   subagentDisplayModel,
