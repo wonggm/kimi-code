@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CustomEditor } from '#/tui/components/editor/custom-editor';
 import { FileMentionProvider } from '#/tui/components/editor/file-mention-provider';
+import { isWindowsTerminalHost } from '#/tui/utils/terminal-notification';
 
 function makeEditor(): CustomEditor {
   const tui = {
@@ -614,7 +615,9 @@ describe('CustomEditor paste marker expansion', () => {
     };
     process.on('unhandledRejection', onRejection);
     try {
-      editor.handleInput(process.platform === 'win32' ? '\u001Bv' : '\u0016');
+      editor.handleInput(
+        process.platform === 'win32' || isWindowsTerminalHost() ? '\u001Bv' : '\u0016',
+      );
       await new Promise((resolve) => {
         setImmediate(resolve);
       });
