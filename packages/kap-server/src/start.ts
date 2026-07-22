@@ -19,6 +19,7 @@ import {
   ISessionIndexMirror,
   IWorkspaceService,
   logSeed,
+  preloadAgentProfiles,
   resolveConfigPath,
   resolveKimiHome,
   resolveLoggingConfig,
@@ -243,6 +244,8 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
   // route that creates a session (e.g. POST /sessions) would otherwise fail to
   // instantiate the Session scope. Resolve it from env + homeDir like the CLI.
   const logging = resolveLoggingConfig({ homeDir, env: process.env });
+  // Load user-defined agent profiles before bootstrap snapshots the catalog
+  preloadAgentProfiles(configPath);
   // `bootstrap()` seeds `IFileSystemStorageService` with a `FileStorageService`
   // rooted at `homeDir`, so the Store facades above it (append-log, atomic
   // document, blob) — and in turn session metadata, wire records, blobs, and
