@@ -43,9 +43,12 @@ import {
   ensureMainAgent,
   hostRequestHeadersSeed,
   logSeed,
+<<<<<<< HEAD
   parseAgentFileText,
+  preloadAgentProfiles,
   resolveAgentPath,
   resolveAgentTaskConfig,
+  resolveConfigPath,
   resolveKimiHome,
   resolveLoggingConfig,
   resolvePrintBackgroundMode,
@@ -127,6 +130,10 @@ export async function runV2Print(
   const logging = resolveLoggingConfig({ homeDir, env: process.env });
   const identity = createKimiCodeHostIdentity(version);
   const hostHeaders = createKimiDefaultHeaders({ homeDir, ...identity });
+
+  // Load user-defined agent profiles before bootstrap snapshots the catalog
+  const v2ConfigPath = resolveConfigPath({ homeDir });
+  preloadAgentProfiles(v2ConfigPath);
 
   const { app } = bootstrap({ homeDir, clientVersion: version }, [
     ...logSeed(logging),

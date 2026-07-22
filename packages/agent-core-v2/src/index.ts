@@ -159,6 +159,7 @@ export * from '#/app/agentProfileCatalog/agentProfileCatalog';
 export * from '#/app/agentProfileCatalog/agentProfileCatalogService';
 export * from '#/app/agentProfileCatalog/profile-shared';
 export * from '#/app/agentProfileCatalog/promptPrefix';
+export * from '#/app/agentProfileCatalog/userProfileLoader';
 export {
   registerAgentProfile,
   getAgentProfileContributions,
