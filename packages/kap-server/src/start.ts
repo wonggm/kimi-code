@@ -19,6 +19,7 @@ import {
   IWorkspaceService,
   PluginChanged,
   logSeed,
+  preloadAgentProfiles,
   resolveConfigPath,
   resolveKimiHome,
   resolveLoggingConfig,
@@ -194,6 +195,7 @@ export async function startServer(opts: ServerStartOptions): Promise<RunningServ
   }
   const validateCredential = createCredentialValidator(authTokenService, opts.rpcToken);
   const logging = resolveLoggingConfig({ homeDir, env: process.env });
+  preloadAgentProfiles(configPath);
   const { app: core } = bootstrap(
     {
       homeDir,
