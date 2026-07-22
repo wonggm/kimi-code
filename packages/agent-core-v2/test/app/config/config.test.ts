@@ -1735,6 +1735,25 @@ describe('mcp config section', () => {
       startupTimeoutMs: 5000,
     });
 
+  it('falls back to the caller model when [subagent_models] is absent', async () => {
+    const { config, disposables } = await createConfig({});
+    expect(resolveSubagentModelAlias(config, 'explore', 'caller/model')).toBe('caller/model');
+    disposables.dispose();
+  });
+
+  it('resolves per-profile models from [subagent_models] with caller fallback', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\nplan = "deepseek/deepseek-v4-pro"\n',
+    );
+    expect(resolveSubagentModelAlias(config, 'explore', 'caller/model')).toBe(
+      'deepseek/deepseek-v4-flash',
+    );
+    expect(resolveSubagentModelAlias(config, 'plan', 'caller/model')).toBe(
+      'deepseek/deepseek-v4-pro',
+    );
+    // Unlisted profile inherits the caller's model.
+    expect(resolveSubagentModelAlias(config, 'coder', 'caller/model')).toBe('caller/model');
     disposables.dispose();
   });
 });
@@ -1805,27 +1824,6 @@ describe('nested env bindings', () => {
     expect(config.get<{ inner?: { value?: string } }>('nestedDemo')).toEqual({
       inner: { value: 'file' },
     });
-
-  it('falls back to the caller model when [subagent_models] is absent', async () => {
-    const { config, disposables } = await createConfig({});
-    expect(resolveSubagentModelAlias(config, 'explore', 'caller/model')).toBe('caller/model');
-    disposables.dispose();
-  });
-
-  it('resolves per-profile models from [subagent_models] with caller fallback', async () => {
-    const { config, disposables } = await createConfig(
-      {},
-      '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\nplan = "deepseek/deepseek-v4-pro"\n',
-    );
-    expect(resolveSubagentModelAlias(config, 'explore', 'caller/model')).toBe(
-      'deepseek/deepseek-v4-flash',
-    );
-    expect(resolveSubagentModelAlias(config, 'plan', 'caller/model')).toBe(
-      'deepseek/deepseek-v4-pro',
-    );
-    // Unlisted profile inherits the caller's model.
-    expect(resolveSubagentModelAlias(config, 'coder', 'caller/model')).toBe('caller/model');
-    disposables.dispose();
   });
 });
 

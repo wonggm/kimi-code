@@ -149,6 +149,7 @@
     "coverage/",
     "node_modules/",
     "apps/*/scripts/",
+    "apps/kimi-desktop/",
     "docs/smoke-archive/",
     "packages/pi-tui/",
     "*.generated.ts"

@@ -113,14 +113,6 @@ function parseMarkdownProfile(
   return { ...fm, systemPromptTemplate: body };
 }
 
-interface RawProfileData {
-  name: string;
-  description?: string;
-  whenToUse?: string;
-  tools?: string[];
-  systemPromptTemplate?: string;
-}
-
 function makeAgentProfile(raw: Record<string, unknown>): AgentProfile {
   const name = raw['name'] as string;
   const description = typeof raw['description'] === 'string' ? raw['description'] as string : undefined;

@@ -43,7 +43,6 @@ import {
   ensureMainAgent,
   hostRequestHeadersSeed,
   logSeed,
-<<<<<<< HEAD
   parseAgentFileText,
   preloadAgentProfiles,
   resolveAgentPath,
