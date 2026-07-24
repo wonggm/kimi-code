@@ -320,17 +320,20 @@ function readClipboardImageViaPowerShell(run: RunCommand = runCommand): Clipboar
     const winPath = winPathResult.stdout.toString('utf-8').trim();
     if (winPath.length === 0) return null;
 
+    // Embed the path directly in the script. WSL2 interop only forwards
+    // env vars listed in WSLENV to Windows executables, so passing the
+    // path via an env var would silently arrive as $null in PowerShell.
+    const escapedPath = winPath.replace(/'/g, "''");
     const psScript = [
       'Add-Type -AssemblyName System.Windows.Forms',
       'Add-Type -AssemblyName System.Drawing',
-      '$path = $env:KIMI_WSL_CLIPBOARD_IMAGE_PATH',
+      `$path = '${escapedPath}'`,
       '$img = [System.Windows.Forms.Clipboard]::GetImage()',
       "if ($img) { $img.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); Write-Output 'ok' } else { Write-Output 'empty' }",
     ].join('; ');
 
     const result = run('powershell.exe', ['-NoProfile', '-Command', psScript], {
       timeoutMs: DEFAULT_POWERSHELL_TIMEOUT_MS,
-      env: { ...process.env, KIMI_WSL_CLIPBOARD_IMAGE_PATH: winPath },
     });
     if (!result.ok) return null;
     if (result.stdout.toString('utf-8').trim() !== 'ok') return null;
