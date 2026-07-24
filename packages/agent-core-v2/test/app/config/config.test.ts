@@ -2061,6 +2061,29 @@ describe('mcp config section', () => {
       startupTimeoutMs: 5000,
     });
 
+    disposables.dispose();
+  });
+});
+
+describe('subagent_models config section', () => {
+  async function createConfig(env: Record<string, string>, toml?: string) {
+    const disposables = new DisposableStore();
+    const ix = disposables.add(new TestInstantiationService());
+    const storage = new InMemoryStorageService();
+    if (toml !== undefined) {
+      await storage.write('', 'config.toml', new TextEncoder().encode(toml));
+    }
+    ix.stub(ILogService, stubLog());
+    ix.stub(IBootstrapService, stubBootstrap('/tmp/kimi-cfg', env));
+    ix.stub(IFileSystemStorageService, storage);
+    ix.set(IAtomicTomlDocumentStore, new SyncDescriptor(TomlAtomicDocumentStore));
+    ix.set(IConfigRegistry, new SyncDescriptor(ConfigRegistry));
+    ix.set(IConfigService, new SyncDescriptor(ConfigService));
+    const config = ix.get(IConfigService);
+    await config.ready;
+    return { config, disposables };
+  }
+
   it('falls back to the caller model when [subagent_models] is absent', async () => {
     const { config, disposables } = await createConfig({});
     expect(resolveSubagentModelAlias(config, 'explore', 'caller/model')).toBe('caller/model');

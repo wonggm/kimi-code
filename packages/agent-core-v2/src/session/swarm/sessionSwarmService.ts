@@ -42,7 +42,6 @@ import {
   subagentSwarmItem,
 } from '#/session/agentLifecycle/subagentMetadata';
 import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
-import { resolveSubagentModelAlias } from '#/session/subagent/configSection';
 import { ISessionSubagentService } from '#/session/subagent/subagent';
 import {
   subagentDisplayModel,
