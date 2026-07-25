@@ -87,6 +87,7 @@ import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAg
 import { ISessionSubagentService } from '#/session/subagent/subagent';
 import {
   buildSubagentModelDescriptions,
+  detectSubagentModelTableMismatch,
   formatSubagentTimeoutDescription,
   resolveSubagentBinding,
   resolveSubagentTimeoutMs,
@@ -318,7 +319,18 @@ export class SubagentTool implements ISubagentTool {
         this.flags,
         { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
         args.model ?? profile.modelPreference,
+        profile.name,
       );
+      const tableMismatch = detectSubagentModelTableMismatch(
+        this.config,
+        profile.name,
+        binding.model,
+      );
+      if (tableMismatch !== undefined) {
+        throw new Error(
+          `[subagent_models] pin ignored: profile "${tableMismatch.profileName}" is configured to run on "${tableMismatch.configured}" but the spawn binding resolved "${tableMismatch.bound}". The spawn binding likely lost the [subagent_models] wiring (e.g. after an upstream rebase).`,
+        );
+      }
       let created: IAgentScopeHandle;
       try {
         this.modelCatalog.get(binding.model);

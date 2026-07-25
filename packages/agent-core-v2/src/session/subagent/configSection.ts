@@ -10,8 +10,11 @@
  * timeouts resolve through `resolveSubagentTimeoutMs`, and the timeout
  * message renders with `formatSubagentTimeoutDescription`.
  *
- * The model half of the spawn binding is the secondary model (the
- * `[secondary_model]` section on disk): when its
+ * The model half of the spawn binding resolves in precedence order: first a
+ * `[subagent_models]` per-profile pin (absolute when the profile is listed —
+ * it wins over the `model` parameter, the secondary model, and the caller
+ * model), then the secondary model (the section and type in `app/kosongConfig`
+ * — `[secondary_model]` on disk): when its
  * experiment is enabled and the model is set, newly spawned subagents bind to
  * it by default instead of inheriting the caller's model, and the
  * `Agent`/`AgentSwarm` tools let the parent model pick per spawn via their
@@ -126,6 +129,34 @@ export function resolveSubagentModelAlias(
   return models?.[profileName] ?? callerModelAlias;
 }
 
+export interface SubagentModelTableMismatch {
+  readonly profileName: string;
+  readonly configured: string;
+  readonly bound: string;
+}
+
+/**
+ * Regression tripwire for `[subagent_models]`. Independently re-reads the
+ * table and compares it against the model a subagent will actually launch on.
+ * Returns a mismatch descriptor when a listed profile would launch on a
+ * different model — which should be impossible while `resolveSubagentBinding`
+ * honors the table. A non-undefined result means the spawn binding lost the
+ * `[subagent_models]` wiring (e.g. an upstream rebase displaced it with the
+ * secondary-model path); callers must surface it loudly rather than let the
+ * subagent silently inherit the caller model.
+ */
+export function detectSubagentModelTableMismatch(
+  config: IConfigService,
+  profileName: string,
+  boundModel: string,
+): SubagentModelTableMismatch | undefined {
+  const configured = config.get<SubagentModelsConfig | undefined>(SUBAGENT_MODELS_SECTION)?.[
+    profileName
+  ];
+  if (configured === undefined || configured === boundModel) return undefined;
+  return { profileName, configured, bound: boundModel };
+}
+
 /**
  * Resolve the effective per-run subagent timeout. Governs foreground and
  * background subagents (and AgentSwarm) through the task manager's per-task
@@ -153,7 +184,24 @@ export function resolveSubagentBinding(
   flags: IFlagService,
   own: { modelAlias: string; thinkingLevel: string },
   requested?: SubagentModelChoice,
+  profileName?: string,
 ): { model: string; thinking?: string; displayModel: string } {
+  // `[subagent_models]` is absolute for listed profiles: a configured
+  // per-profile pin wins over the explicit `model` choice, the secondary
+  // model, and the caller model. Unlisted profiles fall through to the
+  // upstream secondary-model / caller inheritance below.
+  if (profileName !== undefined) {
+    const pinned = config.get<SubagentModelsConfig | undefined>(SUBAGENT_MODELS_SECTION)?.[
+      profileName
+    ];
+    if (pinned !== undefined) {
+      return {
+        model: pinned,
+        thinking: own.thinkingLevel,
+        displayModel: subagentDisplayModel(config, pinned),
+      };
+    }
+  }
   const secondary = resolveSecondaryModel(config, flags);
   if (requested !== 'primary' && secondary?.model !== undefined) {
     const model =

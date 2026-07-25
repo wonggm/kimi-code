@@ -90,6 +90,7 @@ import { applyPrintModeConfigDefaults } from '#/agent/task/printDefaults';
 import '#/session/subagent/configSection';
 import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
+  detectSubagentModelTableMismatch,
   resolveSecondaryModel,
   resolveSubagentBinding,
   resolveSubagentModelAlias,
@@ -2103,6 +2104,64 @@ describe('subagent_models config section', () => {
     );
     // Unlisted profile inherits the caller's model.
     expect(resolveSubagentModelAlias(config, 'coder', 'caller/model')).toBe('caller/model');
+    disposables.dispose();
+  });
+
+  it('resolveSubagentBinding honors [subagent_models] absolutely for listed profiles', async () => {
+    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n',
+    );
+
+    // A listed profile binds to its pinned model...
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, 'explore'),
+    ).toEqual({ model: 'deepseek/deepseek-v4-flash', thinking: 'medium' });
+    // ...absolutely: even an explicit 'primary' does not override the table.
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), own, 'primary', 'explore'),
+    ).toEqual({ model: 'deepseek/deepseek-v4-flash', thinking: 'medium' });
+    // An unlisted profile inherits the caller model.
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, 'coder'),
+    ).toEqual({ model: 'provider/main', thinking: 'medium' });
+    disposables.dispose();
+
+    // The table also wins over a configured secondary model for listed profiles,
+    // while unlisted profiles still fall through to the secondary model.
+    const withSecondary = await createConfig(
+      {},
+      '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n\n[secondary_model]\nmodel = "provider/secondary"\n',
+    );
+    expect(
+      resolveSubagentBinding(withSecondary.config, secondaryModelFlags(), own, undefined, 'explore'),
+    ).toEqual({ model: 'deepseek/deepseek-v4-flash', thinking: 'medium' });
+    expect(
+      resolveSubagentBinding(withSecondary.config, secondaryModelFlags(), own, undefined, 'coder'),
+    ).toEqual({ model: 'provider/secondary', thinking: undefined });
+    withSecondary.disposables.dispose();
+  });
+
+  it('detectSubagentModelTableMismatch flags a bound model that diverges from the table', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n',
+    );
+
+    // Bound model matches the table → no mismatch.
+    expect(
+      detectSubagentModelTableMismatch(config, 'explore', 'deepseek/deepseek-v4-flash'),
+    ).toBeUndefined();
+    // Bound model diverges from the table → mismatch descriptor.
+    expect(detectSubagentModelTableMismatch(config, 'explore', 'provider/main')).toEqual({
+      profileName: 'explore',
+      configured: 'deepseek/deepseek-v4-flash',
+      bound: 'provider/main',
+    });
+    // Unlisted profile → no mismatch.
+    expect(detectSubagentModelTableMismatch(config, 'coder', 'provider/main')).toBeUndefined();
+
     disposables.dispose();
   });
 });
