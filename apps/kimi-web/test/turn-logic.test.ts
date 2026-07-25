@@ -48,6 +48,90 @@ describe('messagesToTurns', () => {
     ]);
   });
 
+  it('coalesces many tiny text deltas into continuous prose (Qwen regression)', () => {
+    // Qwen3.8 Max Preview emits 1-3 tokens per content.part event.
+    // After reload each delta is a separate text part in the message.
+    // The turn text must be continuous prose with no spurious newlines.
+    const tinyParts = [
+      'Let', ' me', ' check', ' the', ' config', ' to', ' see',
+      ' if', ' there', "'s", ' a', ' thinking', ' effort',
+      ' setting', '.\n\n', 'From', ' your', ' config', '.',
+    ];
+    const turns = messagesToTurns(
+      [message('a1', 'assistant', tinyParts.map((t) => ({ type: 'text' as const, text: t })))],
+      [],
+      undefined,
+      false,
+    );
+    expect(turns).toHaveLength(1);
+    // No spurious newlines between fragments; the real \n\n paragraph break survives.
+    expect(turns[0]?.text).toBe(
+      "Let me check the config to see if there's a thinking effort setting.\n\nFrom your config.",
+    );
+    // Block text must also be coalesced.
+    const textBlocks = (turns[0]?.blocks ?? []).filter((b) => b.kind === 'text');
+    expect(textBlocks).toHaveLength(1);
+    expect(textBlocks[0]).toMatchObject({ kind: 'text', text: turns[0]?.text });
+  });
+
+  it('coalesces interleaved thinking/text deltas into one block each (Qwen live regression)', () => {
+    // Qwen3.8 Max Preview alternates thinking.delta and assistant.delta
+    // at the token level during live streaming.  The projector pushes a
+    // new content part on every type switch, producing interleaved
+    // [{thinking},{text},{thinking},{text},…].  After reload or live
+    // render, absorbContent must merge these into one thinking block
+    // and one text block, not N tiny blocks.
+    const interleaved = [
+      { type: 'thinking' as const, thinking: 'let' },
+      { type: 'text' as const, text: 'The' },
+      { type: 'thinking' as const, thinking: ' me' },
+      { type: 'text' as const, text: ' answer' },
+      { type: 'thinking' as const, thinking: ' check' },
+      { type: 'text' as const, text: ' is' },
+      { type: 'text' as const, text: ' 42' },
+      { type: 'text' as const, text: '.\n\n' },
+      { type: 'text' as const, text: 'Followed' },
+      { type: 'text' as const, text: ' global rules :)' },
+    ];
+    const turns = messagesToTurns(
+      [message('a1', 'assistant', interleaved)],
+      [],
+      undefined,
+      false,
+    );
+    expect(turns).toHaveLength(1);
+    // All text fragments merged into continuous prose.
+    expect(turns[0]?.text).toBe('The answer is 42.\n\nFollowed global rules :)');
+    // All thinking fragments merged.
+    expect(turns[0]?.thinking).toBe('let me check');
+    // Exactly one text block and one thinking block (not N tiny ones).
+    const textBlocks = (turns[0]?.blocks ?? []).filter((b) => b.kind === 'text');
+    const thinkingBlocks = (turns[0]?.blocks ?? []).filter((b) => b.kind === 'thinking');
+    expect(textBlocks).toHaveLength(1);
+    expect(thinkingBlocks).toHaveLength(1);
+    expect(textBlocks[0]).toMatchObject({ kind: 'text', text: 'The answer is 42.\n\nFollowed global rules :)' });
+    expect(thinkingBlocks[0]).toMatchObject({ kind: 'thinking', thinking: 'let me check' });
+  });
+
+  it('does not merge text across tool-call boundaries', () => {
+    const parts = [
+      { type: 'text' as const, text: 'before' },
+      { type: 'toolUse' as const, toolCallId: 't1', toolName: 'bash', input: { command: 'ls' } },
+      { type: 'text' as const, text: 'after' },
+    ];
+    const turns = messagesToTurns(
+      [message('a1', 'assistant', parts)],
+      [],
+      undefined,
+      false,
+    );
+    expect(turns).toHaveLength(1);
+    // Two separate text blocks (tool call is a real boundary).
+    const textBlocks = (turns[0]?.blocks ?? []).filter((b) => b.kind === 'text');
+    expect(textBlocks).toHaveLength(2);
+    expect(turns[0]?.text).toBe('before\nafter');
+  });
+
   it('surfaces a ReadMediaFile snapshot result as media', () => {
     // After a reload the daemon snapshot delivers a ReadMediaFile result as
     // raw content parts (the same shape the live tool.result stream carries),
@@ -590,7 +674,7 @@ describe('messagesToTurns resync dedup', () => {
 
     expect(turns).toHaveLength(1);
     expect(turns[0]?.thinking).toBe('let me check');
-    expect(turns[0]?.text).toBe('I will \nrun ls');
+    expect(turns[0]?.text).toBe('I will run ls');
     expect(turns[0]?.tools).toHaveLength(1);
     // The seed's live progress survives the dedup — the persisted card had none.
     expect(turns[0]?.tools?.[0]?.output).toEqual(['total 8']);

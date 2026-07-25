@@ -9,7 +9,7 @@
 // TOOL-role messages fold their toolResult content into the preceding assistant
 // group rather than becoming separate turns.
 
-import type { AppMessage, AppApprovalRequest, AppTask, CompactionMarkerMetadata } from '../api/types';
+import type { AppMessage, AppMessageContent, AppApprovalRequest, AppTask, CompactionMarkerMetadata } from '../api/types';
 import { COMPACTION_MARKER_METADATA_KEY } from '../api/types';
 import type { AgentMember, ApprovalBlock, ChatTurn, CronTurnData, DiffLine, ToolCall, ToolMedia, TurnAttachment, TurnBlock } from '../types';
 
@@ -635,7 +635,49 @@ export function messagesToTurns(
   }
 
   function absorbContent(g: Group, content: AppMessage['content']): void {
+    // Coalesce streaming deltas from the same message.  Some models
+    // (e.g. Qwen3.8 Max Preview) emit 1-3 tokens per content.part and
+    // interleave thinking/text at the token level, producing
+    // [{thinking:'a'},{text:'H'},{thinking:'b'},{text:'e'},…].
+    // Without cross-type scan-back, flushGroup's join('\n') and the
+    // block builder each insert spurious newlines between every delta.
+    // Tool-use / tool-result parts are real semantic boundaries — stop
+    // the scan there so text separated by tool calls stays separate.
+    const coalesced: AppMessageContent[] = [];
     for (const c of content) {
+      const prev = coalesced.at(-1);
+      if (c.type === 'text' && prev?.type === 'text') {
+        prev.text += c.text;
+      } else if (c.type === 'thinking' && prev?.type === 'thinking') {
+        prev.thinking += c.thinking;
+      } else if (c.type === 'text' || c.type === 'thinking') {
+        // Type switched text↔thinking — scan back past the other type
+        // to find the most recent part of the same kind and merge into
+        // it.  This collapses token-level interleaving into one text
+        // block and one thinking block per "run".
+        let merged = false;
+        for (let i = coalesced.length - 1; i >= 0; i--) {
+          const p = coalesced[i]!;
+          if (c.type === 'text' && p.type === 'text') {
+            p.text += c.text;
+            merged = true;
+            break;
+          }
+          if (c.type === 'thinking' && p.type === 'thinking') {
+            p.thinking += c.thinking;
+            merged = true;
+            break;
+          }
+          // A tool boundary stops the scan — text before and after a
+          // tool call must remain separate blocks.
+          if (p.type === 'toolUse' || p.type === 'toolResult') break;
+        }
+        if (!merged) coalesced.push({ ...c });
+      } else {
+        coalesced.push({ ...c });
+      }
+    }
+    for (const c of coalesced) {
       if (c.type === 'text') {
         if (c.text) {
           g.textParts.push(c.text);
