@@ -11,7 +11,6 @@ import {
   setMermaidWorker,
   clearMermaidWorker,
 } from 'markstream-vue';
-import type { MarkdownIt } from 'markstream-vue';
 import { useIsDark } from '../../composables/useIsDark';
 import type { FilePreviewRequest } from '../../types';
 import { collectFilePathAliases, findFilePathLinks } from '../../lib/filePathLinks';
@@ -63,15 +62,6 @@ clearMermaidWorker();
 
 setKaTeXWorker(new katexWorkerModule.default());
 setMermaidWorker(new mermaidWorkerModule.default());
-
-// Only `$$…$$` display math is rendered; single `$` inline math is disabled so
-// prices, env vars, and shell paths (`$5`, `$PATH`, `$HOME/bin`) stay literal
-// without any escaping or code-detection gymnastics. `math_block` (the $$ rule)
-// is left enabled.
-function disableInlineMath(md: MarkdownIt): MarkdownIt {
-  md.inline.ruler.disable('math');
-  return md;
-}
 
 const { t } = useI18n();
 
@@ -425,7 +415,6 @@ function copyDiff(code: string, idx: number) {
       <MarkdownRender
         v-if="seg.kind === 'md'"
         :content="seg.text"
-        :custom-markdown-it="disableInlineMath"
         mode="chat"
         :code-renderer="renderPlan.codeRenderer"
         :is-dark="isDark"
