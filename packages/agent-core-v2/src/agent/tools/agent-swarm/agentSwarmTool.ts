@@ -43,6 +43,7 @@ import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentSwarmService } from '#/agent/swarm/swarm';
 import {
   buildSubagentModelDescriptions,
+  detectSubagentModelTableMismatch,
   resolveSubagentBinding,
   resolveSubagentTimeoutMs,
 } from '#/session/subagent/configSection';
@@ -170,7 +171,18 @@ export class AgentSwarmTool implements IAgentSwarmTool {
           this.flags,
           { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
           args.model ?? targetProfile.modelPreference,
+          profileName,
         );
+        const tableMismatch = detectSubagentModelTableMismatch(
+          this.config,
+          profileName,
+          binding.model,
+        );
+        if (tableMismatch !== undefined) {
+          throw new Error(
+            `[subagent_models] pin ignored: profile "${tableMismatch.profileName}" is configured to run on "${tableMismatch.configured}" but the spawn binding resolved "${tableMismatch.bound}". The spawn binding likely lost the [subagent_models] wiring (e.g. after an upstream rebase).`,
+          );
+        }
       }
     }
     const timeoutMs = resolveSubagentTimeoutMs(this.config);
