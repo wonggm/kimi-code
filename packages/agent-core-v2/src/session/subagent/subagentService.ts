@@ -42,6 +42,7 @@ import {
 } from './subagent';
 import { runAgentTurn } from './runAgentTurn';
 import {
+  detectSubagentModelTableMismatch,
   resolveSubagentBinding,
   resolveSubagentThinking,
   wrapSubagentModelError,
@@ -136,8 +137,21 @@ export class SessionSubagentService extends Service implements ISessionSubagentS
           this.flags,
           { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
           input.model,
+          profile?.name,
         );
     let model: Model;
+    if (!fork && profile !== undefined) {
+      const tableMismatch = detectSubagentModelTableMismatch(
+        this.configService,
+        profile.name,
+        binding.model,
+      );
+      if (tableMismatch !== undefined) {
+        throw new Error(
+          `[subagent_models] pin ignored: profile "${tableMismatch.profileName}" is configured to run on "${tableMismatch.configured}" but the spawn binding resolved "${tableMismatch.bound}". The spawn binding likely lost the [subagent_models] wiring (e.g. after an upstream rebase).`,
+        );
+      }
+    }
     try {
       model = this.modelCatalog.get(binding.model);
     } catch (error) {
