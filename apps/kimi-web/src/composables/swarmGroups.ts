@@ -4,6 +4,10 @@ export interface SwarmMember {
   id: string;
   name: string;
   subagentType?: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
+   *  for rows from the snapshot roster. */
+  model?: string;
   phase: AppSubagentPhase;
   summary?: string;
   outputLines?: string[];
@@ -53,6 +57,7 @@ export function buildSwarmGroups(tasks: AppTask[]): SwarmGroup[] {
       id: task.id,
       name: task.description,
       subagentType: task.subagentType,
+      model: task.model,
       phase: phaseForTask(task),
       summary: task.outputPreview,
       outputLines: task.outputLines,
@@ -108,6 +113,7 @@ export function swarmMembersByToolCall(tasks: AppTask[]): Map<string, SwarmMembe
       id: task.id,
       name: task.description,
       subagentType: task.subagentType,
+      model: task.model,
       phase: phaseForTask(task),
       summary: task.outputPreview,
       outputLines: task.outputLines,

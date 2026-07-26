@@ -68,6 +68,7 @@ export class SubagentRosterTracker {
           status: 'running',
           subagent_phase: 'queued',
           subagent_type: event.subagentName,
+          model: event.model,
           parent_tool_call_id: event.parentToolCallId === '' ? undefined : event.parentToolCallId,
           swarm_index: event.swarmIndex,
           run_in_background: event.runInBackground,

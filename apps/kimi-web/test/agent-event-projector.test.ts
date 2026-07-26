@@ -438,6 +438,44 @@ describe('turn.step.retrying bubble reuse', () => {
   });
 });
 
+describe('subagent.spawned model threading', () => {
+  it('copies the bound model alias from the spawned event onto the projected task', () => {
+    const projector = createAgentProjector();
+    const events = projector.project(
+      'subagent.spawned',
+      {
+        subagentId: 'agent-1',
+        subagentName: 'explore',
+        model: 'opencode-go/deepseek-v4-flash',
+        parentToolCallId: 'call-1',
+        runInBackground: false,
+      },
+      's1',
+    );
+    expect(events).toContainEqual({
+      type: 'taskCreated',
+      sessionId: 's1',
+      task: expect.objectContaining({
+        id: 'agent-1',
+        subagentType: 'explore',
+        model: 'opencode-go/deepseek-v4-flash',
+      }),
+    });
+  });
+
+  it('leaves the projected model undefined when the event omits it (older servers)', () => {
+    const projector = createAgentProjector();
+    const events = projector.project(
+      'subagent.spawned',
+      { subagentId: 'agent-1', subagentName: 'explore', runInBackground: false },
+      's1',
+    );
+    const created = events.find((e) => e.type === 'taskCreated');
+    expect(created).toBeDefined();
+    expect((created as { task: { model?: string } }).task.model).toBeUndefined();
+  });
+});
+
 describe('background subagent task registration', () => {
   it('folds task.started (kind agent) into the spawned row instead of adding a second row', () => {
     const projector = createAgentProjector();

@@ -38,6 +38,10 @@ export interface SubagentSpawnedEvent {
   readonly type: 'subagent.spawned';
   readonly subagentId: string;
   readonly subagentName: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional for cross-version
+   *  tolerance — older servers do not emit it. */
+  readonly model?: string;
   readonly parentToolCallId: string;
   readonly parentToolCallUuid?: string;
   readonly parentAgentId?: string;
@@ -77,6 +81,10 @@ declare module '#/app/event/eventBus' {
 
 export interface AgentRunSpawnedMeta {
   readonly profileName: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional — only known for
+   *  fresh spawns; resumed subagents keep their recorded model on the wire. */
+  readonly model?: string;
   readonly parentToolCallId?: string;
   readonly parentToolCallUuid?: string;
   readonly description?: string;
@@ -101,6 +109,7 @@ export function emitAgentRunSpawned(
     type: 'subagent.spawned',
     subagentId: targetAgentId,
     subagentName: meta.profileName,
+    model: meta.model,
     parentToolCallId: meta.parentToolCallId ?? '',
     parentToolCallUuid: meta.parentToolCallUuid,
     parentAgentId: requester.id,

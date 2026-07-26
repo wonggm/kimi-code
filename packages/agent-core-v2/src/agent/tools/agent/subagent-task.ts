@@ -15,6 +15,10 @@ type SubagentCompletion = {
 export type SubagentHandle = {
   readonly agentId: string;
   readonly profileName: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional — only known for
+   *  fresh spawns; resumed subagents keep their recorded model on the wire. */
+  readonly boundModel?: string;
   readonly completion: Promise<SubagentCompletion>;
 };
 
@@ -22,6 +26,10 @@ export interface SubagentTaskInfo extends AgentTaskInfoBase {
   readonly kind: 'agent';
   readonly agentId?: string;
   readonly subagentType?: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional for cross-version
+   *  tolerance — older servers do not emit it. */
+  readonly model?: string;
 }
 
 declare module '#/agent/task/types' {
@@ -68,6 +76,7 @@ export class SubagentTask implements AgentTask {
   readonly idPrefix: string = 'agent';
   readonly agentId: string;
   readonly subagentType: string;
+  readonly model: string | undefined;
 
   constructor(
     private readonly handle: SubagentHandle,
@@ -76,6 +85,7 @@ export class SubagentTask implements AgentTask {
   ) {
     this.agentId = handle.agentId;
     this.subagentType = handle.profileName;
+    this.model = handle.boundModel;
   }
 
   async start(sink: AgentTaskSink): Promise<void> {
@@ -109,6 +119,7 @@ export class SubagentTask implements AgentTask {
       kind: 'agent',
       agentId: this.agentId,
       subagentType: this.subagentType,
+      model: this.model,
     };
   }
 }

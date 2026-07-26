@@ -88,6 +88,16 @@ function phaseLabel(phase: AgentMember['phase']): string {
   }
 }
 
+// Trim a `provider/alias` model alias down to its short name for display
+// (e.g. `opencode-go/deepseek-v4-flash` → `deepseek-v4-flash`). Shows the whole
+// alias when no provider prefix is present.
+const displayModel = computed(() => {
+  const model = props.member.model;
+  if (typeof model !== 'string' || model.length === 0) return undefined;
+  const lastSlash = model.lastIndexOf('/');
+  return lastSlash >= 0 && lastSlash < model.length - 1 ? model.slice(lastSlash + 1) : model;
+});
+
 const bodyEl = ref<HTMLElement | null>(null);
 watch(
   // Follow the bottom as either the tool progress or the live text grows, as
@@ -117,7 +127,7 @@ watch(
       <Badge variant="neutral" size="sm" class="ap-phase">{{ phaseLabel(member.phase) }}</Badge>
     </PanelHeader>
     <div ref="bodyEl" class="ap-body">
-      <div v-if="member.subagentType" class="ap-type">{{ member.subagentType }}</div>
+      <div v-if="member.subagentType" class="ap-type">{{ member.subagentType }}<span v-if="displayModel"> ({{ displayModel }})</span></div>
       <div v-if="member.suspendedReason" class="ap-reason">{{ member.suspendedReason }}</div>
       <div v-if="member.prompt" class="ap-field">
         <span class="ap-field-label">Task</span>

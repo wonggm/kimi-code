@@ -15,6 +15,7 @@ function subagentTask(
     subagentPhase?: AppTask['subagentPhase'];
     text?: string;
     outputLines?: string[];
+    model?: string;
   } = {},
 ): AppTask {
   return {
@@ -29,6 +30,7 @@ function subagentTask(
     text: opts.text,
     outputLines: opts.outputLines,
     subagentPhase: opts.subagentPhase ?? 'working',
+    model: opts.model,
   };
 }
 
@@ -123,5 +125,23 @@ describe('buildSwarmGroups preserves streamed text', () => {
       subagentTask('b', 'swarm-1', { swarmIndex: 2, text: 'second line' }),
     ]);
     expect(groups[0]?.members.map((m) => m.text)).toEqual(['first line', 'second line']);
+  });
+});
+
+describe('swarm members carry the bound model', () => {
+  it('buildSwarmGroups copies task.model onto each member', () => {
+    const groups = buildSwarmGroups([
+      subagentTask('a', 'swarm-1', { swarmIndex: 1, model: 'opencode-go/deepseek-v4-flash' }),
+      subagentTask('b', 'swarm-1', { swarmIndex: 2 }),
+    ]);
+    expect(groups[0]?.members[0]).toMatchObject({ model: 'opencode-go/deepseek-v4-flash' });
+    expect(groups[0]?.members[1]).toMatchObject({ model: undefined });
+  });
+
+  it('swarmMembersByToolCall copies task.model onto each member', () => {
+    const map = swarmMembersByToolCall([
+      subagentTask('a', 'swarm-1', { swarmIndex: 1, model: 'opencode-go/deepseek-v4-flash' }),
+    ]);
+    expect(map.get('swarm-1')?.[0]).toMatchObject({ model: 'opencode-go/deepseek-v4-flash' });
   });
 });

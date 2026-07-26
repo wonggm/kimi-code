@@ -181,6 +181,7 @@ export class SessionSwarmService implements ISessionSwarmService {
       .inheritUserTools(caller.accessor.get(IAgentUserToolService));
     emitAgentRunSpawned(caller, child.id, {
       profileName: options.profileName,
+      model: binding.model,
       parentToolCallId: options.parentToolCallId,
       parentToolCallUuid: options.parentToolCallUuid,
       description: options.description,
@@ -214,6 +215,7 @@ export class SessionSwarmService implements ISessionSwarmService {
     if (!retryTurn) {
       emitAgentRunSpawned(caller, agentId, {
         profileName,
+        model: child.accessor.get(IAgentProfileService).data().modelAlias,
         parentToolCallId: options.parentToolCallId,
         parentToolCallUuid: options.parentToolCallUuid,
         description: options.description,

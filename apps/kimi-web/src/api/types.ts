@@ -325,6 +325,11 @@ export interface AppTask {
   text?: string;
   subagentPhase?: AppSubagentPhase;
   subagentType?: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
+   *  for subagent rows from the snapshot roster; REST `/tasks` does not
+   *  carry it. */
+  model?: string;
   parentToolCallId?: string;
   suspendedReason?: string;
   swarmIndex?: number;

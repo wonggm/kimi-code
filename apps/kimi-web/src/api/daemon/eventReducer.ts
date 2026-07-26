@@ -659,6 +659,7 @@ export function reduceAppEvent(
           swarmIndex: event.task.swarmIndex ?? previous.swarmIndex,
           parentToolCallId: event.task.parentToolCallId ?? previous.parentToolCallId,
           subagentType: event.task.subagentType ?? previous.subagentType,
+          model: event.task.model ?? previous.model,
           runInBackground: event.task.runInBackground ?? previous.runInBackground,
           backgroundTaskId: event.task.backgroundTaskId ?? previous.backgroundTaskId,
         };

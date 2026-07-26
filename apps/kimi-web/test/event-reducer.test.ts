@@ -452,6 +452,7 @@ describe('reduceAppEvent taskProgress', () => {
             parentToolCallId: 'call-1',
             swarmIndex: 2,
             subagentType: 'explore',
+            model: 'opencode-go/deepseek-v4-flash',
             runInBackground: true,
             outputLines: ['old line'],
             text: 'partial',
@@ -468,10 +469,32 @@ describe('reduceAppEvent taskProgress', () => {
       parentToolCallId: 'call-1',
       swarmIndex: 2,
       subagentType: 'explore',
+      model: 'opencode-go/deepseek-v4-flash',
       runInBackground: true,
       outputLines: ['old line'],
       text: 'partial',
     });
+  });
+
+  it('takes the incoming model when a taskCreated carries one', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        's1': [
+          { ...makeSubagentTask('t1', 's1'), model: 'old-alias' },
+        ],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskCreated',
+        sessionId: 's1',
+        task: { ...makeSubagentTask('t1', 's1'), model: 'opencode-go/deepseek-v4-flash' },
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.tasksBySession['s1']?.[0]?.model).toBe('opencode-go/deepseek-v4-flash');
   });
 
   it('keeps the roster-seeded description when a re-projected task carries the placeholder', () => {

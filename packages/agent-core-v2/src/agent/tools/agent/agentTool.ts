@@ -237,6 +237,7 @@ export class SubagentTool implements ISubagentTool {
     let agentId: string;
     let profileName: string;
     let promptText = args.prompt;
+    let boundModel: string | undefined;
     if (isResume) {
       const target = this.lifecycle.get(resumeAgentId);
       if (target === undefined) {
@@ -301,6 +302,7 @@ export class SubagentTool implements ISubagentTool {
         .inheritUserTools(requester.accessor.get(IAgentUserToolService));
       agentId = created.id;
       profileName = profile.name;
+      boundModel = binding.model;
       promptText = await applyProfilePromptPrefix(profile, args.prompt, {
         cwd: this.workspace.workDir,
         runner: this.processRunner,
@@ -311,6 +313,7 @@ export class SubagentTool implements ISubagentTool {
     const runInBackground = args.run_in_background === true;
     emitAgentRunSpawned(requester, agentId, {
       profileName,
+      model: boundModel,
       parentToolCallId: toolCallId,
       description: args.description,
       runInBackground,
@@ -332,6 +335,7 @@ export class SubagentTool implements ISubagentTool {
     return {
       agentId,
       profileName,
+      boundModel,
       completion: mirrored.then((r) => ({ result: r.summary, usage: r.usage })),
     };
   }

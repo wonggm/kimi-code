@@ -764,6 +764,10 @@ export interface SubagentSpawnedEvent {
   readonly type: 'subagent.spawned';
   readonly subagentId: string;
   readonly subagentName: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional for cross-version
+   *  tolerance — older servers do not emit it. */
+  readonly model?: string;
   readonly parentToolCallId: string;
   readonly parentToolCallUuid?: string;
   readonly parentAgentId?: string;
@@ -1625,6 +1629,7 @@ export const subagentSpawnedEventSchema = z.object({
   type: z.literal('subagent.spawned'),
   subagentId: z.string(),
   subagentName: z.string(),
+  model: z.string().optional(),
   parentToolCallId: z.string(),
   parentToolCallUuid: z.string().optional(),
   parentAgentId: z.string().optional(),

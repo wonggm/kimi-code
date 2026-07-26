@@ -243,6 +243,7 @@ interface LegacyPersistedTask {
   readonly timeout_ms?: number;
   readonly agent_id?: string;
   readonly subagent_type?: string;
+  readonly model?: string;
 }
 
 function legacyPersistedTaskToInfo(task: LegacyPersistedTask): PersistedTask {
@@ -266,6 +267,7 @@ function legacyPersistedTaskToInfo(task: LegacyPersistedTask): PersistedTask {
       kind: 'agent',
       agentId: optionalNonEmptyString(task.agent_id),
       subagentType: optionalNonEmptyString(task.subagent_type),
+      model: optionalNonEmptyString(task.model),
     };
   }
 

@@ -330,6 +330,11 @@ export interface WireTask {
   output_bytes?: number;
   subagent_phase?: 'queued' | 'working' | 'suspended' | 'completed' | 'failed';
   subagent_type?: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
+   *  for subagent rows from the snapshot roster; REST `/tasks` does not
+   *  carry it. */
+  model?: string;
   parent_tool_call_id?: string;
   suspended_reason?: string;
   swarm_index?: number;
