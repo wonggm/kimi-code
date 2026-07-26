@@ -157,6 +157,7 @@ export class SessionSwarmService implements ISessionSwarmService {
       const resumedModel = child.accessor.get(IAgentProfileService).data().modelAlias;
       emitAgentRunSpawned(caller, agentId, {
         profileName,
+        model: child.accessor.get(IAgentProfileService).data().modelAlias,
         parentToolCallId: options.parentToolCallId,
         parentToolCallUuid: options.parentToolCallUuid,
         description: options.description,

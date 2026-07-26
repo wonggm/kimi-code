@@ -229,6 +229,7 @@ export function toAgentMember(task: AppTask): AgentMember {
     toolCallId: task.parentToolCallId,
     name: task.description,
     subagentType: task.subagentType,
+    model: task.model,
     phase:
       task.subagentPhase ??
       (task.status === 'completed' ? 'completed' : task.status === 'failed' ? 'failed' : 'working'),
