@@ -68,6 +68,10 @@ export type InFlightTurn = z.infer<typeof inFlightTurnSchema>;
 export const snapshotSubagentSchema = taskSchema.extend({
   subagent_phase: z.enum(['queued', 'working', 'suspended', 'completed', 'failed']).optional(),
   subagent_type: z.string().optional(),
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional for cross-version
+   *  tolerance — older servers do not emit it. */
+  model: z.string().optional(),
   parent_tool_call_id: z.string().optional(),
   suspended_reason: z.string().optional(),
   swarm_index: z.number().int().nonnegative().optional(),

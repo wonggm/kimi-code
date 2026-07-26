@@ -119,6 +119,11 @@ export interface AgentMember {
   toolCallId?: string;
   name: string;
   subagentType?: string;
+  /** Bound model alias the subagent is actually running on (resolved at
+   *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
+   *  for rows from the snapshot roster; older servers / REST `/tasks` do
+   *  not carry it. */
+  model?: string;
   phase: AgentPhase;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
   /** The prompt/task the subagent was given (from the Agent tool input). */

@@ -187,7 +187,7 @@ export class SessionSubagentHost {
       { parentAgentId: this.ownerAgentId, swarmItem: options.swarmItem },
     );
     const completion = this.runWithActiveChild(id, options, async (runOptions) => {
-      this.emitSubagentSpawned(parent, id, profile.name, runOptions);
+      this.emitSubagentSpawned(parent, id, profile.name, runOptions, resolveSubagentModelAlias(parent.kimiConfig, profile.name, parent.config.modelAlias));
       try {
         await this.configureChild(parent, agent, profile, options.modelChoice);
         return await this.runPromptTurn(parent, id, agent, profile.name, runOptions);
@@ -208,7 +208,7 @@ export class SessionSubagentHost {
     options.signal.throwIfAborted();
     const { parent, child, profileName } = await this.ensureIdleSubagent(agentId);
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
-      this.emitSubagentSpawned(parent, agentId, profileName, runOptions);
+      this.emitSubagentSpawned(parent, agentId, profileName, runOptions, resolveSubagentModelAlias(parent.kimiConfig, profileName, parent.config.modelAlias));
       try {
         this.reInheritParentModel(parent, child, profileName);
         return await this.runPromptTurn(parent, agentId, child, profileName, runOptions);
@@ -616,11 +616,13 @@ export class SessionSubagentHost {
     childId: string,
     profileName: string,
     options: RunSubagentOptions,
+    model?: string,
   ): void {
     parent.emitEvent({
       type: 'subagent.spawned',
       subagentId: childId,
       subagentName: profileName,
+      model,
       parentToolCallId: options.parentToolCallId,
       parentToolCallUuid: options.parentToolCallUuid,
       parentAgentId: this.ownerAgentId,
