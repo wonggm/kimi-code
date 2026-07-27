@@ -196,6 +196,13 @@ interface LegacyPersistedTask {
   readonly timeout_ms?: number;
   readonly agent_id?: string;
   readonly subagent_type?: string;
+  /**
+   * Snake_case shape for the `model` field some legacy record writers used
+   * alongside the camelCase fields above. Kept as a sibling rather than
+   * aliased so a future serializer that wants to round-trip the legacy
+   * field name does not have to look it up by exact string.
+   */
+  readonly model?: string;
 }
 
 function legacyPersistedTaskToInfo(task: LegacyPersistedTask): PersistedTask {
@@ -219,6 +226,7 @@ function legacyPersistedTaskToInfo(task: LegacyPersistedTask): PersistedTask {
       kind: 'agent',
       agentId: optionalNonEmptyString(task.agent_id),
       subagentType: optionalNonEmptyString(task.subagent_type),
+      model: optionalNonEmptyString(task.model),
     };
   }
 
