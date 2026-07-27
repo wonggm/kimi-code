@@ -176,6 +176,50 @@ describe('TasksBrowserApp — full-screen rendering', () => {
     expect(out).toContain('call_question');
   });
 
+  it('shows the Model line in the Detail pane for agent tasks with a pinned model', () => {
+    const out = strip(
+      makeApp({
+        tasks: [
+          task({
+            taskId: 'agent-model-aa',
+            kind: 'agent',
+            description: 'analyse results',
+            agentId: 'agent-1',
+            subagentType: 'muedm-expert',
+            model: 'opencode-go/gpt-5-codex',
+            status: 'running',
+          } as unknown as BackgroundTaskInfo),
+        ],
+        selectedTaskId: 'agent-model-aa',
+      })
+        .render(120)
+        .join('\n'),
+    );
+    expect(out).toContain('Model:');
+    expect(out).toContain('opencode-go/gpt-5-codex');
+  });
+
+  it('omits the Model line in the Detail pane for agent tasks without a pinned model', () => {
+    const out = strip(
+      makeApp({
+        tasks: [
+          task({
+            taskId: 'agent-no-model',
+            kind: 'agent',
+            description: 'no model here',
+            agentId: 'agent-2',
+            subagentType: 'coder',
+            status: 'running',
+          } as unknown as BackgroundTaskInfo),
+        ],
+        selectedTaskId: 'agent-no-model',
+      })
+        .render(120)
+        .join('\n'),
+    );
+    expect(out).not.toContain('Model:');
+  });
+
   it('renders tail output in the Preview Output pane', () => {
     const out = strip(
       makeApp({

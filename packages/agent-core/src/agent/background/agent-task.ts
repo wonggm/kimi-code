@@ -12,6 +12,12 @@ export interface AgentBackgroundTaskInfo extends BackgroundTaskInfoBase {
   readonly agentId?: string;
   /** Subagent profile name. */
   readonly subagentType?: string;
+  /**
+   * Model alias the subagent was pinned to at spawn / resume / retry time.
+   * Optional on the persisted shape: legacy snake_case records and any task
+   * started before model plumbing existed will not carry one.
+   */
+  readonly model?: string;
 }
 
 export class AgentBackgroundTask implements BackgroundTask {
@@ -28,6 +34,11 @@ export class AgentBackgroundTask implements BackgroundTask {
   ) {
     this.agentId = handle.agentId;
     this.subagentType = handle.profileName;
+  }
+
+  /** Subagent model alias resolved once when the handle was produced. */
+  get model(): string | undefined {
+    return this.handle.model;
   }
 
   async start(sink: BackgroundTaskSink): Promise<void> {
@@ -65,6 +76,7 @@ export class AgentBackgroundTask implements BackgroundTask {
       kind: 'agent',
       agentId: this.agentId,
       subagentType: this.subagentType,
+      model: this.handle.model,
     };
   }
 }

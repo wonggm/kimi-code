@@ -862,6 +862,7 @@ describe('AgentTool', () => {
         Promise.resolve({
           agentId: 'agent-child',
           profileName: 'coder',
+          model: 'mock-model',
           resumed: false,
           completion: new Promise<{ result: string }>((_resolve, reject) => {
             const signal =
@@ -912,6 +913,7 @@ describe('AgentTool', () => {
           Promise.resolve({
             agentId: 'agent-child',
             profileName: 'coder',
+            model: 'mock-model',
             resumed: false,
             completion: new Promise<{ result: string }>((_resolve, reject) => {
               const signal =

@@ -553,6 +553,9 @@ export class TasksBrowserApp extends Container implements Focusable {
     if (task.kind === 'agent' && task.subagentType !== undefined) {
       lines.push(`${label('Agent type:')}${value(task.subagentType)}`);
     }
+    if (task.kind === 'agent' && task.model !== undefined) {
+      lines.push(`${label('Model:')}${value(task.model)}`);
+    }
     if (task.kind === 'question') {
       lines.push(`${label('Questions:')}${currentTheme.fg('textMuted', String(task.questionCount))}`);
       if (task.toolCallId !== undefined) {
