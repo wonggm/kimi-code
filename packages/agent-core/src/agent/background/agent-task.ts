@@ -34,6 +34,11 @@ export class AgentBackgroundTask implements BackgroundTask {
     this.subagentType = handle.profileName;
   }
 
+  /** Subagent model alias resolved once when the handle was produced. */
+  get model(): string | undefined {
+    return this.handle.model;
+  }
+
   async start(sink: BackgroundTaskSink): Promise<void> {
     const requestAbort = (): void => {
       this.abortController.abort(sink.signal.reason);
@@ -69,6 +74,7 @@ export class AgentBackgroundTask implements BackgroundTask {
       kind: 'agent',
       agentId: this.agentId,
       subagentType: this.subagentType,
+      model: this.handle.model,
     };
   }
 }

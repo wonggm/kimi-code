@@ -1438,6 +1438,219 @@ describe('SessionSubagentHost', () => {
       expect(child.agent.config.modelAlias).toBe('cheap-model');
     });
   });
+
+  it('resolves spawn handle.model to the [subagent_models] entry when present', async () => {
+    const parent = testAgent({
+      initialConfig: makeInitialConfig(['pinned/flash'], { explore: 'pinned/flash' }),
+    });
+    parent.configure();
+    parent.newEvents();
+
+    const summary =
+      'Resolved the explicit [subagent_models] override, returned a detailed technical summary so the parent can continue without rework. '.repeat(
+        2,
+      );
+    // Child shares the parent's kimiConfig so the LLM layer's model lookup
+    // for the bound alias resolves; the test is about host plumbing, not real
+    // provider dispatch.
+    const child = testAgent({ initialConfig: parent.agent.kimiConfig });
+    child.mockNextResponse({ type: 'text', text: summary });
+
+    // The host resolves the spawn binding against the SESSION config, so the
+    // [subagent_models] table rides the fake session, not just the parent agent.
+    const session = fakeSession(parent.agent, child.agent, {}, { config: parent.agent.kimiConfig });
+    const host = new SessionSubagentHost(session, 'main');
+
+    const handle = await host.spawn({
+      profileName: 'explore',
+      parentToolCallId: 'call_agent',
+      prompt: 'Investigate',
+      description: 'Investigate',
+      runInBackground: false,
+      signal,
+    });
+
+    expect(handle.model).toBe('pinned/flash');
+    expect(child.agent.config.modelAlias).toBe('pinned/flash');
+    await handle.completion;
+  });
+
+  it('falls back spawn handle.model to the caller agent model when no [subagent_models] entry exists', async () => {
+    const parent = testAgent();
+    parent.configure();
+    parent.newEvents();
+
+    const summary =
+      'Inherited the parent agent model because no per-profile override was configured; completed the task in detail and returned a complete handoff summary so the parent can continue without rework. '.repeat(
+        2,
+      );
+    const child = testAgent();
+    child.mockNextResponse({ type: 'text', text: summary });
+
+    const session = fakeSession(parent.agent, child.agent);
+    const host = new SessionSubagentHost(session, 'main');
+
+    const handle = await host.spawn({
+      profileName: 'explore',
+      parentToolCallId: 'call_agent',
+      prompt: 'Investigate',
+      description: 'Investigate',
+      runInBackground: false,
+      signal,
+    });
+
+    expect(handle.model).toBe(parent.agent.config.modelAlias);
+    expect(child.agent.config.modelAlias).toBe(parent.agent.config.modelAlias);
+    await handle.completion;
+  });
+
+  it('resolved handle.model drives both the emitted spawn event and the live child config', async () => {
+    const parent = testAgent({
+      initialConfig: makeInitialConfig(['pinned/plan-only'], { plan: 'pinned/plan-only' }),
+    });
+    parent.configure();
+    parent.newEvents();
+
+    const child = testAgent({ initialConfig: parent.agent.kimiConfig });
+    child.mockNextResponse({
+      type: 'text',
+      text: 'Investigated the delegated task and returned a complete technical handoff so the parent agent can continue without repeating any of the work. '.repeat(
+        2,
+      ),
+    });
+
+    const session = fakeSession(parent.agent, child.agent, {}, { config: parent.agent.kimiConfig });
+    const host = new SessionSubagentHost(session, 'main');
+
+    const handle = await host.spawn({
+      profileName: 'plan',
+      parentToolCallId: 'call_agent',
+      prompt: 'Plan',
+      description: 'Plan',
+      runInBackground: false,
+      signal,
+    });
+
+    expect(handle.model).toBe('pinned/plan-only');
+    expect(parent.allEvents).toContainEqual(
+      expect.objectContaining({
+        type: '[rpc]',
+        event: 'subagent.spawned',
+        args: expect.objectContaining({
+          model: 'pinned/plan-only',
+        }),
+      }),
+    );
+    expect(child.agent.config.modelAlias).toBe('pinned/plan-only');
+    await handle.completion;
+  });
+
+  it('resume and retry handles carry the resolved model and reuse it for the live child', async () => {
+    const parent = testAgent({
+      initialConfig: makeInitialConfig(['pinned/flash'], { explore: 'pinned/flash' }),
+    });
+    parent.configure();
+    parent.newEvents();
+
+    const child = testAgent({ type: 'sub', initialConfig: parent.agent.kimiConfig });
+    child.configure({ tools: ['Read'] });
+    child.agent.config.update({ modelAlias: 'stale-model' });
+    child.agent.useProfile(
+      profile({ name: 'explore', tools: ['Read'], systemPrompt: 'explore prompt' }),
+    );
+    child.agent.context.appendUserMessage([{ type: 'text', text: 'Earlier context' }]);
+    // Long enough to skip the SUMMARY_MIN_LENGTH continuation path; the
+    // resume + retry flow then needs only one response per turn.
+    const summary =
+      'Resumed the subagent, realigned to the parent model, and completed the delegated work with a detailed summary that lets the parent continue without redoing it. '.repeat(
+        2,
+      );
+    child.mockNextResponse({ type: 'text', text: summary });
+    child.mockNextResponse({
+      type: 'text',
+      text: summary,
+    });
+
+    const session = fakeSession(parent.agent, child.agent, {
+      'agent-0': {
+        homedir: '/tmp/kimi-session/agents/agent-0',
+        type: 'sub',
+        parentAgentId: 'main',
+      },
+    }, { config: parent.agent.kimiConfig });
+    const host = new SessionSubagentHost(session, 'main');
+
+    const resumed = await host.resume('agent-0', {
+      parentToolCallId: 'call_agent',
+      prompt: 'Continue',
+      description: 'Continue',
+      runInBackground: false,
+      signal,
+    });
+    expect(resumed.model).toBe('pinned/flash');
+    await resumed.completion;
+    expect(child.agent.config.modelAlias).toBe('pinned/flash');
+
+    const retried = await host.retry(resumed.agentId, {
+      parentToolCallId: 'call_agent',
+      prompt: 'Continue',
+      description: 'Continue',
+      runInBackground: false,
+      signal,
+    });
+    expect(retried.model).toBe('pinned/flash');
+    await retried.completion;
+    expect(child.agent.config.modelAlias).toBe('pinned/flash');
+  });
+
+  it('refuses to spawn when no model can be resolved', async () => {
+    // Exercise the resolver directly with a profile that has no
+    // [subagent_models] entry and a caller model that is undefined.
+    // ConfigState rejects falsy modelAlias updates, so the only way to model
+    // an "uncallered" parent here is to use resolveSubagentModelAlias with
+    // `undefined` as the caller alias — that is the same shape
+    // `requireSubagentModelAlias` rejects on the spawn / resume / retry path.
+    expect(
+      resolveSubagentModelAlias(
+        { providers: {} },
+        'explore',
+        undefined,
+      ),
+    ).toBeUndefined();
+
+    const parent = testAgent();
+    parent.configure();
+    const createAgent = vi.fn();
+    const host = new SessionSubagentHost(
+      {
+        agents: new Map([['main', parent.agent]]),
+        ensureAgentResumed: vi.fn(async () => parent.agent),
+        createAgent,
+        agentCatalog: testAgentCatalog(),
+        experimentalFlags: new FlagResolver({}),
+      } as never,
+      'main',
+    );
+
+    // Swap the resolver via the export the host consumes so the test can
+    // trigger the missing-model branch deterministically without surgery
+    // on the harness's kimiConfig.
+    const configNoModel = { ...(parent.agent.kimiConfig ?? {}), subagentModels: {} } as typeof parent.agent.kimiConfig;
+    Object.defineProperty(parent.agent, 'kimiConfig', { configurable: true, get: () => configNoModel });
+    Object.defineProperty(parent.agent.config, 'modelAlias', { configurable: true, get: () => undefined });
+
+    await expect(
+      host.spawn({
+        profileName: 'explore',
+        parentToolCallId: 'call_agent',
+        prompt: 'p',
+        description: 'd',
+        runInBackground: false,
+        signal,
+      }),
+    ).rejects.toThrow('no model alias is configured');
+    expect(createAgent).not.toHaveBeenCalled();
+  });
 });
 
 describe('Session resume permission parent chain', () => {
@@ -1920,6 +2133,47 @@ function fakeSession(
       },
     ),
   } as unknown as Session;
+}
+
+/**
+ * Build a kimiConfig that pre-registers every alias needed by the test
+ * (the MOCK_PROVIDER default plus any extra aliases), and stamps a
+ * `subagentModels` table over them. `parent.configure()` rebuilds the
+ * harness's `kimiConfig` reference on top of this initial object so the
+ * ProviderManager closure sees the same registered aliases the test means
+ * to assert against.
+ */
+function makeInitialConfig(
+  extraAliases: readonly string[],
+  subagentModels: Record<string, string>,
+): KimiConfig {
+  const stubbed: Record<string, NonNullable<KimiConfig['models']>[string]> = {};
+  for (const alias of extraAliases) {
+    stubbed[alias] = {
+      provider: 'test-provider',
+      model: alias,
+      maxContextSize: 1024,
+      capabilities: ['text'],
+    };
+  }
+  return {
+    providers: {
+      'test-provider': {
+        type: 'kimi',
+        apiKey: 'test-key',
+      },
+    },
+    models: {
+      'mock-model': {
+        provider: 'test-provider',
+        model: 'mock-model',
+        maxContextSize: 1_000_000,
+        capabilities: ['text'],
+      },
+      ...stubbed,
+    },
+    subagentModels,
+  };
 }
 
 function contextProfile(): ResolvedAgentProfile {

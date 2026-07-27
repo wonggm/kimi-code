@@ -73,6 +73,7 @@ export function agentTask(
   options: {
     readonly agentId?: string;
     readonly subagentType?: string;
+    readonly model?: string;
     readonly subagentHost?: Pick<SessionSubagentHost, 'markActiveChildDetached'>;
     readonly abortController?: AbortController;
   } = {},
@@ -80,6 +81,7 @@ export function agentTask(
   const handle: SubagentHandle = {
     agentId: options.agentId ?? 'agent-child',
     profileName: options.subagentType ?? 'coder',
+    model: options.model ?? 'mock-model',
     resumed: false,
     completion,
   };

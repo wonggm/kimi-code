@@ -158,6 +158,15 @@ type OwnerAgentResolver = () => Agent;
 export type SubagentHandle = {
   readonly agentId: string;
   readonly profileName: string;
+  /**
+   * Model alias the subagent is bound to for the lifetime of this handle.
+   * Resolved once when the handle is produced: spawn resolves the full spawn
+   * binding (`[subagent_models]` pin → secondary model → caller model);
+   * resume / retry read the re-inherited alias back from the child config.
+   * A handle always carries a non-empty alias — a spawn with neither a pin,
+   * a secondary model, nor a caller model throws instead of yielding one.
+   */
+  readonly model: string;
   readonly resumed: boolean;
   readonly completion: Promise<SubagentCompletion>;
 };
@@ -182,14 +191,16 @@ export class SessionSubagentHost {
 
     const parent = await this.session.ensureAgentResumed(this.ownerAgentId);
     const profile = this.resolveProfile(parent, options.profileName);
+    const binding = this.resolveSpawnBinding(parent, profile, options.modelChoice);
+    const model = requireSubagentModelAlias(binding.modelAlias, profile.name);
     const { id, agent } = await this.session.createAgent(
       { type: 'sub', generate: parent.rawGenerate },
       { parentAgentId: this.ownerAgentId, swarmItem: options.swarmItem },
     );
     const completion = this.runWithActiveChild(id, options, async (runOptions) => {
-      this.emitSubagentSpawned(parent, id, profile.name, runOptions, resolveSubagentModelAlias(parent.kimiConfig, profile.name, parent.config.modelAlias));
+      this.emitSubagentSpawned(parent, id, profile.name, runOptions, model);
       try {
-        await this.configureChild(parent, agent, profile, options.modelChoice);
+        await this.configureChild(parent, agent, profile, binding);
         return await this.runPromptTurn(parent, id, agent, profile.name, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, id, runOptions, error);
@@ -199,6 +210,7 @@ export class SessionSubagentHost {
     return {
       agentId: id,
       profileName: profile.name,
+      model,
       resumed: false,
       completion,
     };
@@ -207,26 +219,28 @@ export class SessionSubagentHost {
   async resume(agentId: string, options: RunSubagentOptions): Promise<SubagentHandle> {
     options.signal.throwIfAborted();
     const { parent, child, profileName } = await this.ensureIdleSubagent(agentId);
+    this.reInheritParentModel(parent, child, profileName);
+    const model = requireSubagentModelAlias(child.config.modelAlias, profileName);
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
-      this.emitSubagentSpawned(parent, agentId, profileName, runOptions, resolveSubagentModelAlias(parent.kimiConfig, profileName, parent.config.modelAlias));
+      this.emitSubagentSpawned(parent, agentId, profileName, runOptions, model);
       try {
-        this.reInheritParentModel(parent, child, profileName);
         return await this.runPromptTurn(parent, agentId, child, profileName, runOptions);
       } catch (error) {
         this.emitSubagentFailed(parent, agentId, runOptions, error);
         throw error;
       }
     });
-    return { agentId, profileName, resumed: true, completion };
+    return { agentId, profileName, model, resumed: true, completion };
   }
 
   async retry(agentId: string, options: RunSubagentOptions): Promise<SubagentHandle> {
     options.signal.throwIfAborted();
     const { parent, child, profileName } = await this.ensureIdleSubagent(agentId);
+    this.reInheritParentModel(parent, child, profileName);
+    const model = requireSubagentModelAlias(child.config.modelAlias, profileName);
     const completion = this.runWithActiveChild(agentId, options, async (runOptions) => {
       try {
         runOptions.signal.throwIfAborted();
-        this.reInheritParentModel(parent, child, profileName);
         this.emitSubagentStarted(parent, agentId);
         const turnId = child.turn.retry('agent-host');
         if (turnId === null) {
@@ -239,7 +253,7 @@ export class SessionSubagentHost {
         throw error;
       }
     });
-    return { agentId, profileName, resumed: true, completion };
+    return { agentId, profileName, model, resumed: true, completion };
   }
 
   private async ensureIdleSubagent(
@@ -454,9 +468,10 @@ export class SessionSubagentHost {
     parent: Agent,
     child: Agent,
     profile: ResolvedAgentProfile,
-    modelChoice?: SubagentModelChoice,
+    binding: SubagentModelBinding,
   ): Promise<void> {
-    const binding = this.resolveSpawnBinding(parent, profile, modelChoice);
+    // The spawn binding is resolved up front by the caller (resolveSpawnBinding)
+    // so the returned handle and the live child share one source of truth.
     child.config.update({
       cwd: parent.config.cwd,
       modelAlias: binding.modelAlias,
@@ -713,4 +728,27 @@ function shouldSuppressQueuedAttemptFailureEvent(
   if (options.suppressRateLimitFailureEvent !== true) return false;
   if (isProviderRateLimitError(error)) return true;
   return isAbortError(error) || options.signal.aborted;
+}
+
+/**
+ * Coerce an optional model alias into the non-empty string the rest of the
+ * subagent host assumes on every handle. A resolver that returns `undefined`
+ * means the profile has neither a `[subagent_models]` entry nor a caller
+ * model to fall back to — the parent agent itself must have a model alias
+ * for the subagent to start, so throwing here is the same outcome the
+ * underlying SDK config layer would surface anyway, just earlier and with
+ * a profile-specific message.
+ */
+function requireSubagentModelAlias(
+  model: string | undefined,
+  profileName: string,
+): string {
+  if (model === undefined || model.trim().length === 0) {
+    throw new Error(
+      `Cannot start subagent "${profileName}": no model alias is configured for it ` +
+        'and the parent agent has no model to inherit. Set `model_name` on the parent ' +
+        'agent or add an entry under `[subagent_models]` in kimi config.',
+    );
+  }
+  return model;
 }
