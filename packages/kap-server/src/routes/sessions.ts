@@ -7,6 +7,8 @@ import {
   IAgentLifecycleService,
   IAgentLoopService,
   IAuthSummaryService,
+  IConfigService,
+  IPluginService,
   ISessionActivityView,
   ISessionBtwService,
   ISessionContext,
@@ -20,6 +22,7 @@ import {
   ISessionManager,
   IWorkspaceService,
   getLiveSessionById,
+  closeSessionById,
   programForSession,
   resumeSessionById,
   setSessionArchived,
@@ -844,7 +847,15 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
   );
 }
 
-type SessionAction = 'fork' | 'compact' | 'undo' | 'abort' | 'btw' | 'restore' | 'archive';
+type SessionAction =
+  | 'fork'
+  | 'compact'
+  | 'undo'
+  | 'abort'
+  | 'btw'
+  | 'restore'
+  | 'archive'
+  | 'reload';
 
 interface SessionActionExtra {
   readonly core: Scope;
@@ -865,6 +876,7 @@ const sessionActions: ActionTable<SessionAction, SessionActionExtra> = {
   btw: { handle: btwSessionAction },
   restore: { handle: restoreSessionAction },
   archive: { handle: archiveSessionAction },
+  reload: { handle: reloadSessionAction },
 };
 
 async function forkSessionAction(
@@ -980,6 +992,29 @@ async function archiveSessionAction(ctx: SessionActionCtx): Promise<void> {
   await setSessionArchived(core.accessor, id, true);
   requestLog(req)?.info({ session_id: id, action: 'archive' }, 'session action completed');
   reply.send(okEnvelope({ archived: true }, req.id));
+}
+
+async function reloadSessionAction(ctx: SessionActionCtx): Promise<void> {
+  const { core, req, reply, id } = ctx;
+  if (resolveSessionFacts(core, id).busy) {
+    reply.send(
+      errEnvelope(
+        ErrorCode.SESSION_BUSY,
+        `session ${id} cannot be reloaded while a turn is running`,
+        req.id,
+      ),
+    );
+    return;
+  }
+  await core.accessor.get(IConfigService).reload();
+  await core.accessor.get(IPluginService).reloadPlugins();
+  await closeSessionById(core.accessor, id);
+  const handle = await resumeSessionById(core.accessor, id);
+  if (handle === undefined) {
+    throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${id} does not exist`);
+  }
+  requestLog(req)?.info({ session_id: id, action: 'reload' }, 'session action completed');
+  reply.send(okEnvelope({}, req.id));
 }
 
 export interface SessionWireFields {
