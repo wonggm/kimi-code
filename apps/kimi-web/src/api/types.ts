@@ -729,6 +729,9 @@ export interface KimiWebApi {
   abortSession(sessionId: string): Promise<{ aborted: boolean }>;
   compactSession(sessionId: string, instruction?: string): Promise<void>;
   undoSession(sessionId: string, count?: number): Promise<void>;
+  /** Reload the session: server re-reads config.toml, rescans plugins, and
+   *  close+resumes the session. Returns when the server has rebound. */
+  reloadSession(sessionId: string): Promise<void>;
   forkSession(sessionId: string, input?: { title?: string }): Promise<AppSession>;
   /** Create a child session under a parent — POST /sessions/{id}/children. */
   createChildSession(sessionId: string, input?: { title?: string }): Promise<AppSession>;

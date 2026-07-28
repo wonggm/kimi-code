@@ -2927,6 +2927,7 @@ export function useKimiWebClient() {
     compact: workspaceState.compact,
     forkSession: workspaceState.forkSession,
     undo: workspaceState.undo,
+    reload: workspaceState.reload,
 
     // New Phase 4 actions
     unqueue: workspaceState.unqueue,
