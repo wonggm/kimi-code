@@ -9,7 +9,8 @@
  *   GET    /sessions/{session_id}/profile
  *   POST   /sessions/{session_id}/profile      update title / metadata / agent_config
  *   POST   /sessions/{tail}                    action: fork / compact / undo /
- *                                              abort / btw / archive / restore
+ *                                              abort / btw / archive / restore /
+ *                                              reload
  *   GET    /sessions/{session_id}/children     list child sessions
  *   POST   /sessions/{session_id}/children     create child session (fork+tag)
  *   GET    /sessions/{session_id}/status       best-effort
@@ -81,6 +82,8 @@ import {
   IAgentFullCompactionService,
   IAgentRPCService,
   IAuthSummaryService,
+  IConfigService,
+  IPluginService,
   ISessionActivityView,
   ISessionBtwService,
   ISessionContext,
@@ -635,7 +638,7 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
         const { tail } = req.params;
         const parsed = parseActionSuffix({
           tail,
-          allowedActions: ['fork', 'compact', 'undo', 'abort', 'btw', 'archive', 'restore'] as const,
+          allowedActions: ['fork', 'compact', 'undo', 'abort', 'btw', 'archive', 'restore', 'reload'] as const,
           resourceLabel: 'session',
         });
         if (parsed.kind !== 'action') {
@@ -759,6 +762,46 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           );
           requestLog(req)?.info({ session_id: parsed.id, action: 'restore' }, 'session action completed');
           reply.send(okEnvelope(session, req.id));
+          return;
+        }
+
+        if (parsed.action === 'reload') {
+          // Existence check via the persisted index — a cold session is not
+          // live but still has an index entry; `resume` would wake it just to
+          // do the check, which is wasteful and would also let a busy cold
+          // session appear idle after the wake.
+          if ((await core.accessor.get(ISessionIndex).get(parsed.id)) === undefined) {
+            throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${parsed.id} does not exist`);
+          }
+          // Busy guard — a live handle with an active turn (or background
+          // work) must NOT be torn down: tool state, MCP servers, and the
+          // loop's in-flight requests would all be lost. Mirrors v1's
+          // `reloadSession` precheck (`active?.hasActiveTurn`).
+          if (resolveSessionFacts(core, parsed.id).busy) {
+            reply.send(
+              errEnvelope(
+                ErrorCode.SESSION_BUSY,
+                `session ${parsed.id} cannot be reloaded while a turn is running`,
+                req.id,
+              ),
+            );
+            return;
+          }
+          // Reload config.toml + rescan plugins BEFORE the close so the
+          // rebind on resume picks up the new bindings; mirrors v1's
+          // `reloadProviderManager → clearRuntimeCache → reloadPlugins` order.
+          await core.accessor.get(IConfigService).reload();
+          await core.accessor.get(IPluginService).reloadPlugins();
+          // Close-if-live then always resume. `close` is a no-op when there
+          // is no live handle (cold session path), and `resume` re-creates
+          // the scope (fresh MCP servers, fresh agent bindings).
+          const lifecycle = core.accessor.get(ISessionLifecycleService);
+          if (lifecycle.get(parsed.id) !== undefined) {
+            await lifecycle.close(parsed.id);
+          }
+          await lifecycle.resume(parsed.id);
+          requestLog(req)?.info({ session_id: parsed.id, action: 'reload' }, 'session action completed');
+          reply.send(okEnvelope({}, req.id));
           return;
         }
 

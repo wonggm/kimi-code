@@ -17,4 +17,5 @@ export default {
   },
   status: { desc: '查看会话状态' },
   undo: { desc: '撤销上一条消息' },
+  reload: { desc: '重新加载配置和插件，并重启当前会话' },
 };

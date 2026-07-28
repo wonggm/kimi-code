@@ -59,6 +59,12 @@ describe('useSlashMenu — update', () => {
     expect(slash.items.value.map((i) => i.name)).toContain('/compact');
   });
 
+  it('offers the /reload command for a reload prefix', () => {
+    const { slash } = setup('/rel');
+    slash.update();
+    expect(slash.items.value.map((i) => i.name)).toContain('/reload');
+  });
+
   it('offers the session export command for an export prefix', () => {
     const { slash } = setup('/exp');
     slash.update();

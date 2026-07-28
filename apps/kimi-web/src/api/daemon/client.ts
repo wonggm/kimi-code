@@ -700,6 +700,13 @@ export class DaemonKimiWebApi implements KimiWebApi {
     );
   }
 
+  // POST /sessions/{id}:reload — re-read config.toml, rescan plugins, and
+  // close+resume the session. Returns {}; callers resync the snapshot because
+  // the session's MCP servers and agent bindings were disposed and rebound.
+  async reloadSession(sessionId: string): Promise<void> {
+    await this.http.post(`/sessions/${encodeURIComponent(sessionId)}:reload`, {});
+  }
+
   // POST /sessions/{id}:fork — fork the session into a new child session.
   async forkSession(sessionId: string, input?: { title?: string }): Promise<AppSession> {
     const body: Record<string, unknown> = {};

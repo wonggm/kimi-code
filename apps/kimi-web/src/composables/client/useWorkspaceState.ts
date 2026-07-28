@@ -2567,6 +2567,24 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   }
 
   /**
+   * Reload the active session (daemon :reload): the server re-reads
+   * config.toml, rescans plugins, and close+resumes the session — the
+   * session's MCP servers and agent bindings are disposed and rebound. We
+   * re-sync the snapshot afterwards so the local transcript reflects the new
+   * agent state.
+   */
+  async function reload(): Promise<void> {
+    const sid = rawState.activeSessionId;
+    if (!sid) return;
+    try {
+      await getKimiWebApi().reloadSession(sid);
+      await syncSessionFromSnapshot(sid);
+    } catch (err) {
+      pushOperationFailure('reload', err, { sessionId: sid });
+    }
+  }
+
+  /**
    * Remove a queued message for the active session by index.
    * Defensive: no-op if index out of range or no active session.
    */
@@ -2818,6 +2836,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     compact,
     forkSession,
     undo,
+    reload,
     listDir,
     readFileContent,
     getFileDownloadUrl,

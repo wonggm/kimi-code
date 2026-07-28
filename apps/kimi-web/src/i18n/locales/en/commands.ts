@@ -17,4 +17,5 @@ export default {
   },
   status: { desc: 'View session status' },
   undo: { desc: 'Undo the last message' },
+  reload: { desc: 'Reload config and plugins; restart the session' },
 } as const;

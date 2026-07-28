@@ -553,6 +553,9 @@ function handleCommand(cmd: string): void {
     case '/undo':
       void client.undo();
       break;
+    case '/reload':
+      void client.reload();
+      break;
     case '/plan':
       client.togglePlanMode();
       break;
