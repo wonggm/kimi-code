@@ -164,6 +164,22 @@ export type CompactSessionRequest = z.infer<typeof compactSessionRequestSchema>;
 export const compactSessionResponseSchema = z.object({});
 export type CompactSessionResponse = z.infer<typeof compactSessionResponseSchema>;
 
+export const addDirSessionRequestSchema = z.preprocess(
+  (value) => value === undefined ? {} : value,
+  z.object({
+    path: z.string().min(1),
+    persist: z.boolean().optional(),
+  }),
+);
+export type AddDirSessionRequest = z.infer<typeof addDirSessionRequestSchema>;
+
+export const addDirSessionResponseSchema = z.object({
+  additionalDirs: z.array(z.string()),
+  persisted: z.boolean(),
+  configPath: z.string(),
+});
+export type AddDirSessionResponse = z.infer<typeof addDirSessionResponseSchema>;
+
 export const undoSessionRequestSchema = z.preprocess(
   (value) => value === undefined ? {} : value,
   z.object({
