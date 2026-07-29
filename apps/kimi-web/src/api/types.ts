@@ -732,6 +732,9 @@ export interface KimiWebApi {
   /** Reload the session: server re-reads config.toml, rescans plugins, and
    *  close+resumes the session. Returns when the server has rebound. */
   reloadSession(sessionId: string): Promise<void>;
+  /** Add an additional workspace directory to the session (session-only;
+   *  not persisted to project-local config). */
+  addSessionDir(sessionId: string, path: string): Promise<{ additionalDirs: string[]; persisted: boolean; configPath: string }>;
   forkSession(sessionId: string, input?: { title?: string }): Promise<AppSession>;
   /** Create a child session under a parent — POST /sessions/{id}/children. */
   createChildSession(sessionId: string, input?: { title?: string }): Promise<AppSession>;

@@ -35,6 +35,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/compact',    desc: 'commands.compact.desc', acceptsInput: true },
   { name: '/undo',       desc: 'commands.undo.desc' },
   { name: '/reload',     desc: 'commands.reload.desc' },
+  { name: '/add-dir',    desc: 'commands.addDir.desc', acceptsInput: true },
   { name: '/fork',       desc: 'commands.fork.desc' },
   { name: '/export',     desc: 'commands.export.desc' },
   { name: '/status',     desc: 'commands.status.desc' },
