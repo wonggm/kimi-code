@@ -16,9 +16,12 @@ import {
   ISessionMetadata,
   ISessionLegacyService,
   ISessionTitleService,
+  ISessionSecondaryModelWarningService,
+  ISessionWorkspaceCommandService,
   IEventService,
   SessionCreated,
   IWorkspaceAliases,
+  IWorkspaceDirs,
   ISessionManager,
   IWorkspaceService,
   getLiveSessionById,
@@ -39,6 +42,8 @@ import { ErrorCode } from '../protocol/error-codes';
 import { pageResponseSchema } from '../protocol/pagination';
 import { toProtocolMessage } from '../services/messages/messageProjection';
 import {
+  addDirSessionRequestSchema,
+  addDirSessionResponseSchema,
   archiveSessionResponseSchema,
   compactSessionRequestSchema,
   compactSessionResponseSchema,
@@ -165,6 +170,8 @@ const sessionActionRequestSchema = z.preprocess(
     instruction: z.string().optional(),
     count: z.number().int().positive().optional(),
     page_size: z.number().int().min(1).max(100).optional(),
+    path: z.string().min(1).optional(),
+    persist: z.boolean().optional(),
   }),
 );
 
@@ -610,6 +617,7 @@ export function registerSessionsRoutes(
           sessionAbortResponseSchema,
           startBtwSessionResponseSchema,
           archiveSessionResponseSchema,
+          addDirSessionResponseSchema,
           deleteSessionResponseSchema,
         ]),
       },
@@ -868,7 +876,8 @@ type SessionAction =
   | 'restore'
   | 'archive'
   | 'delete'
-  | 'reload';
+  | 'reload'
+  | 'add-dir';
 
 interface SessionActionExtra {
   readonly core: Scope;
@@ -891,6 +900,10 @@ const sessionActions: ActionTable<SessionAction, SessionActionExtra> = {
   archive: { handle: archiveSessionAction },
   delete: { handle: deleteSessionAction },
   reload: { handle: reloadSessionAction },
+  'add-dir': {
+    body: addDirSessionRequestSchema,
+    handle: addDirSessionAction,
+  },
 };
 
 async function forkSessionAction(
@@ -1034,6 +1047,38 @@ async function reloadSessionAction(ctx: SessionActionCtx): Promise<void> {
   }
   requestLog(req)?.info({ session_id: id, action: 'reload' }, 'session action completed');
   reply.send(okEnvelope({}, req.id));
+}
+
+async function addDirSessionAction(
+  ctx: SessionActionCtx<z.infer<typeof addDirSessionRequestSchema>>,
+): Promise<void> {
+  const { core, req, reply, id, body } = ctx;
+  if (resolveSessionFacts(core, id).busy) {
+    reply.send(
+      errEnvelope(
+        ErrorCode.SESSION_BUSY,
+        `session ${id} cannot add a directory while a turn is running`,
+        req.id,
+      ),
+    );
+    return;
+  }
+  const program = await programForSession(core.accessor, id);
+  if (program === undefined) {
+    throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${id} does not exist`);
+  }
+  const result = await program.dirs.addDir({ path: body.path, persist: body.persist ?? false });
+  requestLog(req)?.info({ session_id: id, action: 'add-dir' }, 'session action completed');
+  reply.send(
+    okEnvelope(
+      {
+        additionalDirs: [...result.additionalDirs],
+        persisted: result.persisted,
+        configPath: result.configPath,
+      },
+      req.id,
+    ),
+  );
 }
 
 export interface SessionWireFields {
@@ -1237,6 +1282,9 @@ function sendMappedError(
         return;
       case 'request.invalid':
       case 'validation.failed':
+      case ErrorCodes.CONFIG_INVALID:
+        reply.send(errEnvelope(ErrorCode.VALIDATION_FAILED, err.message, requestId, err.stack));
+        return;
       case ErrorCodes.CONFIG_INVALID:
         reply.send(errEnvelope(ErrorCode.VALIDATION_FAILED, err.message, requestId, err.stack));
         return;

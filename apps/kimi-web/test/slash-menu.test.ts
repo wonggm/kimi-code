@@ -65,6 +65,19 @@ describe('useSlashMenu — update', () => {
     expect(slash.items.value.map((i) => i.name)).toContain('/reload');
   });
 
+  it('offers the /add-dir command for an add-dir prefix', () => {
+    const { slash } = setup('/add-d');
+    slash.update();
+    expect(slash.items.value.map((i) => i.name)).toContain('/add-dir');
+  });
+
+  it('/add-dir accepts input so the user can type the path', () => {
+    const { slash } = setup('/add-d');
+    slash.update();
+    const item = slash.items.value.find((i) => i.name === '/add-dir');
+    expect(item?.acceptsInput).toBe(true);
+  });
+
   it('offers the session export command for an export prefix', () => {
     const { slash } = setup('/exp');
     slash.update();

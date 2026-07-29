@@ -707,6 +707,17 @@ export class DaemonKimiWebApi implements KimiWebApi {
     await this.http.post(`/sessions/${encodeURIComponent(sessionId)}:reload`, {});
   }
 
+  // POST /sessions/{id}:add-dir — add an additional workspace directory
+  // (session-only). The v2 service resolves relative paths against the
+  // session cwd and injects a local-command-stdout confirmation into the
+  // transcript; callers resync the snapshot to surface it.
+  async addSessionDir(sessionId: string, path: string): Promise<{ additionalDirs: string[]; persisted: boolean; configPath: string }> {
+    return this.http.post(
+      `/sessions/${encodeURIComponent(sessionId)}:add-dir`,
+      { path, persist: false },
+    );
+  }
+
   // POST /sessions/{id}:fork — fork the session into a new child session.
   async forkSession(sessionId: string, input?: { title?: string }): Promise<AppSession> {
     const body: Record<string, unknown> = {};
