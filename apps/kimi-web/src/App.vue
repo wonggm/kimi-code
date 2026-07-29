@@ -537,6 +537,13 @@ function handleCommand(cmd: string): void {
     }
     return;
   }
+  // `/add-dir <path>` adds an additional workspace directory for this session
+  // only (TUI parity, minus the persist chooser).
+  if (cmd === '/add-dir' || cmd.startsWith('/add-dir ')) {
+    const arg = cmd.slice('/add-dir'.length).trim();
+    if (arg) void client.addDir(arg);
+    return;
+  }
   switch (cmd) {
     // `/new` and `/clear` are aliases: both open the onboarding composer. The
     // session is only created when the user sends the first message.
