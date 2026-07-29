@@ -2585,6 +2585,23 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   }
 
   /**
+   * Add an additional workspace directory to the active session (daemon
+   * :add-dir, session-only). The v2 service injects a local-command-stdout
+   * confirmation into the main agent's context; resyncing the snapshot
+   * pulls it into the transcript, same as the TUI.
+   */
+  async function addDir(path: string): Promise<void> {
+    const sid = rawState.activeSessionId;
+    if (!sid) return;
+    try {
+      await getKimiWebApi().addSessionDir(sid, path);
+      await syncSessionFromSnapshot(sid);
+    } catch (err) {
+      pushOperationFailure('add-dir', err, { sessionId: sid });
+    }
+  }
+
+  /**
    * Remove a queued message for the active session by index.
    * Defensive: no-op if index out of range or no active session.
    */
@@ -2837,6 +2854,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     forkSession,
     undo,
     reload,
+    addDir,
     listDir,
     readFileContent,
     getFileDownloadUrl,

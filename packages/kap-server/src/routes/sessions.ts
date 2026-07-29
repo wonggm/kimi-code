@@ -92,6 +92,7 @@ import {
   ISessionMetadata,
   ISessionLegacyService,
   ISessionSecondaryModelWarningService,
+  ISessionWorkspaceCommandService,
   IEventService,
   IWorkspaceAliases,
   IWorkspaceService,
@@ -105,6 +106,8 @@ import {
 import { ErrorCode } from '../protocol/error-codes';
 import { pageResponseSchema } from '../protocol/pagination';
 import {
+  addDirSessionRequestSchema,
+  addDirSessionResponseSchema,
   archiveSessionResponseSchema,
   compactSessionRequestSchema,
   compactSessionResponseSchema,
@@ -245,6 +248,8 @@ const sessionActionRequestSchema = z.preprocess(
     instruction: z.string().optional(),
     count: z.number().int().positive().optional(),
     page_size: z.number().int().min(1).max(100).optional(),
+    path: z.string().min(1).optional(),
+    persist: z.boolean().optional(),
   }),
 );
 
@@ -620,6 +625,7 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           sessionAbortResponseSchema,
           startBtwSessionResponseSchema,
           archiveSessionResponseSchema,
+          addDirSessionResponseSchema,
         ]),
       },
       errors: {
@@ -638,7 +644,7 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
         const { tail } = req.params;
         const parsed = parseActionSuffix({
           tail,
-          allowedActions: ['fork', 'compact', 'undo', 'abort', 'btw', 'archive', 'restore', 'reload'] as const,
+          allowedActions: ['fork', 'compact', 'undo', 'abort', 'btw', 'archive', 'restore', 'reload', 'add-dir'] as const,
           resourceLabel: 'session',
         });
         if (parsed.kind !== 'action') {
@@ -798,6 +804,48 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           }
           requestLog(req)?.info({ session_id: parsed.id, action: 'reload' }, 'session action completed');
           reply.send(okEnvelope({}, req.id));
+          return;
+        }
+
+        if (parsed.action === 'add-dir') {
+          const body = addDirSessionRequestSchema.parse(req.body);
+          // Busy guard — TUI marks /add-dir `idle-only`; mutating workspace
+          // state mid-turn would race the agent's view of the world.
+          if (resolveSessionFacts(core, parsed.id).busy) {
+            reply.send(
+              errEnvelope(
+                ErrorCode.SESSION_BUSY,
+                `session ${parsed.id} cannot add a directory while a turn is running`,
+                req.id,
+              ),
+            );
+            return;
+          }
+          // `resume` (not `get`) so a freshly-opened cold session still works —
+          // ISessionWorkspaceCommandService is session-scoped and needs a live
+          // handle (same pattern as `btw`). The resume return is the existence
+          // check: undefined means the session is unknown or unmaterializable.
+          const session = await core.accessor.get(ISessionLifecycleService).resume(parsed.id);
+          if (session === undefined) {
+            throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${parsed.id} does not exist`);
+          }
+          // Relative paths + `~` are resolved by the v2 service against the
+          // session's workDir; a missing/non-directory path throws
+          // `config.invalid`, mapped to VALIDATION_FAILED in sendMappedError.
+          const result = await session.accessor
+            .get(ISessionWorkspaceCommandService)
+            .addAdditionalDir({ path: body.path, persist: body.persist ?? false });
+          requestLog(req)?.info({ session_id: parsed.id, action: 'add-dir' }, 'session action completed');
+          reply.send(
+            okEnvelope(
+              {
+                additionalDirs: [...result.additionalDirs],
+                persisted: result.persisted,
+                configPath: result.configPath,
+              },
+              req.id,
+            ),
+          );
           return;
         }
 
@@ -1297,6 +1345,9 @@ function sendMappedError(
         return;
       case 'request.invalid':
       case 'validation.failed':
+        reply.send(errEnvelope(ErrorCode.VALIDATION_FAILED, err.message, requestId, err.stack));
+        return;
+      case ErrorCodes.CONFIG_INVALID:
         reply.send(errEnvelope(ErrorCode.VALIDATION_FAILED, err.message, requestId, err.stack));
         return;
     }

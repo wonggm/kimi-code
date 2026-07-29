@@ -18,4 +18,5 @@ export default {
   status: { desc: 'View session status' },
   undo: { desc: 'Undo the last message' },
   reload: { desc: 'Reload config and plugins; restart the session' },
+  addDir: { desc: 'Add a workspace directory for this session' },
 } as const;
