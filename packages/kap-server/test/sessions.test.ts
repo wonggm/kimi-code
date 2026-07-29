@@ -715,7 +715,10 @@ describe('server-v2 /api/v1/sessions', () => {
     expect(lifecycle.get(id)).toBeDefined();
   });
 
-  it('returns 40401 when reloading a missing session', async () => {
+  it('returns 40401 when reload\'s resume() cannot materialize the session', async () => {
+    // The route has no index pre-check; the 40401 comes from `resume()`
+    // returning undefined (doResume → index.get miss), the same guard
+    // btw/restore/archive use.
     const { body } = await postJson<null>('/api/v1/sessions/sess_missing:reload');
     expect(body.code).toBe(40401);
   });

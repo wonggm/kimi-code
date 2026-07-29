@@ -766,13 +766,6 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
         }
 
         if (parsed.action === 'reload') {
-          // Existence check via the persisted index — a cold session is not
-          // live but still has an index entry; `resume` would wake it just to
-          // do the check, which is wasteful and would also let a busy cold
-          // session appear idle after the wake.
-          if ((await core.accessor.get(ISessionIndex).get(parsed.id)) === undefined) {
-            throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${parsed.id} does not exist`);
-          }
           // Busy guard — a live handle with an active turn (or background
           // work) must NOT be torn down: tool state, MCP servers, and the
           // loop's in-flight requests would all be lost. Mirrors v1's
@@ -799,7 +792,10 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           if (lifecycle.get(parsed.id) !== undefined) {
             await lifecycle.close(parsed.id);
           }
-          await lifecycle.resume(parsed.id);
+          const handle = await lifecycle.resume(parsed.id);
+          if (handle === undefined) {
+            throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${parsed.id} does not exist`);
+          }
           requestLog(req)?.info({ session_id: parsed.id, action: 'reload' }, 'session action completed');
           reply.send(okEnvelope({}, req.id));
           return;
