@@ -2854,6 +2854,10 @@ export function useKimiWebClient() {
     // Liquid glass effects
     liquidGlass: appearance.liquidGlass,
     setLiquidGlass: appearance.setLiquidGlass,
+
+    // Wide screen mode
+    wideMode: appearance.wideMode,
+    setWideMode: appearance.setWideMode,
     notifyOnComplete: notification.notifyOnComplete,
     notifyOnQuestion: notification.notifyOnQuestion,
     notifyOnApproval: notification.notifyOnApproval,

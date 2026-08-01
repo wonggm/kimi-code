@@ -164,7 +164,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       <div
         ref="workPanelRef"
         v-if="dockPanel"
-        class="dock-work-panel"
+        class="dock-work-panel lg-glass"
         @click.stop
       >
         <div class="dock-work-head">
@@ -216,6 +216,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
     <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">
       <Pill
         v-if="bashTasks.length > 0"
+        class="lg-glass"
         :active="dockPanel === 'bash'"
         :aria-pressed="dockPanel === 'bash'"
         @click="emit('toggle-dock-panel', 'bash')"
@@ -226,6 +227,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       </Pill>
       <Pill
         v-if="subagentTasks.length > 0"
+        class="lg-glass"
         :active="dockPanel === 'subagent'"
         :aria-pressed="dockPanel === 'subagent'"
         @click="emit('toggle-dock-panel', 'subagent')"
@@ -236,6 +238,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       </Pill>
       <Pill
         v-if="(todos?.length ?? 0) > 0"
+        class="lg-glass"
         :active="dockPanel === 'todos'"
         :aria-pressed="dockPanel === 'todos'"
         @click="emit('toggle-dock-panel', 'todos')"

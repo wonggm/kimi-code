@@ -1,6 +1,6 @@
 <!-- apps/kimi-web/src/components/chat/ConversationToc.vue -->
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ChatTurn } from '../../types';
 
@@ -29,79 +29,26 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-// Width the rail needs beside the reading column once its labels are fully
-// revealed on hover/focus: 3px bar + 10px gap + 220px label, plus a small
-// buffer so the text never kisses the container edge. Kept in sync with the
-// `.toc-bar` / `.toc-label` rules below.
-const EXPANDED_WIDTH = 240;
-
-const navRef = ref<HTMLElement | null>(null);
-// Whether the rail, once expanded, fits within the room to the right of the
-// reading column. When it would overflow, we hide the outline entirely rather
-// than showing a panel that gets clipped by the container edge.
-const fits = ref(true);
-
-let observer: ResizeObserver | null = null;
-
-function measure(): void {
-  const nav = navRef.value;
-  const parent = nav?.offsetParent as HTMLElement | null;
-  if (!nav || !parent) return;
-  const navLeft = nav.getBoundingClientRect().left;
-  const parentRight = parent.getBoundingClientRect().right;
-  fits.value = parentRight - navLeft >= EXPANDED_WIDTH;
-}
-
 // The outline is only useful once there is something to navigate, and it never
-// shows on mobile or while the session is still loading. `fits` is kept out of
-// this computed so the nav stays mounted (and measurable) even when hidden;
-// clipping is applied via the `toc-clipped` class instead.
+// shows on mobile or while the session is still loading.
 const visible = computed(
   () => !props.mobile && !props.sessionLoading && props.items.length > 1,
 );
-
-// The nav is rendered only while `visible` (v-if), so a mount while navRef is
-// still null (during sessionLoading, on mobile, or before a second user turn)
-// would skip the ResizeObserver setup and leave `fits` at its default `true`.
-// Re-initialize whenever the nav is actually rendered so `fits` is measured
-// against the real layout instead.
-watch(
-  visible,
-  (isVisible) => {
-    observer?.disconnect();
-    observer = null;
-    if (!isVisible) return;
-    void nextTick(() => {
-      const nav = navRef.value;
-      const parent = nav?.offsetParent as HTMLElement | null;
-      if (!nav || !parent) return;
-      if (typeof ResizeObserver !== 'undefined') {
-        observer = new ResizeObserver(measure);
-        observer.observe(parent);
-      }
-      measure();
-    });
-  },
-  { immediate: true },
-);
-
-onBeforeUnmount(() => {
-  observer?.disconnect();
-  observer = null;
-});
 </script>
 
 <template>
   <!-- Conversation outline: a vertical list of short bars (one per user query),
-       vertically centered beside the chat. Hovering the list enlarges the bars
-       and reveals each query's title to the right, making rows easy to click. -->
+       anchored to the right edge of the reading column. Hovering expands the
+       labels LEFTWARD over the conversation as a floating panel (glass material
+       when liquid glass is on, solid raised surface otherwise — same look as
+       the dropdown menus), so the rail never needs empty room beside the
+       column and is never hidden just because the pane is narrow. -->
   <nav
     v-if="visible"
-    ref="navRef"
     class="conversation-toc"
-    :class="{ 'toc-clipped': !fits || occluded }"
+    :class="{ 'toc-clipped': occluded }"
     :aria-label="t('conversation.toc')"
-    :aria-hidden="fits && !occluded ? undefined : true"
+    :aria-hidden="occluded || undefined"
   >
     <div class="toc-scroll">
       <button
@@ -125,15 +72,20 @@ onBeforeUnmount(() => {
   z-index: var(--z-sticky);
   top: 50%;
   transform: translateY(-50%);
-  /* Anchor to the reading-column edge, the rail's original position. Tables
-     that grow past it (up to --p-table-max) temporarily hide the rail via the
-     occlusion hit-test in ConversationPane, so proximity is safe again.
-     The cqi cap keeps the rail inside narrow containers. */
+  /* Anchor the rail's RIGHT edge beside the reading column's right edge
+     (14px gap + 3px bar), so the collapsed bar sits at a fixed x and hover
+     expansion grows the panel leftward over the conversation. The previous
+     left-anchored rail needed ~240px of free room to the column's right and
+     hid itself (toc-clipped) whenever the pane was narrower — hiding the
+     sidebar was the only way to get it back. Track --read-max (1100px in
+     wide-screen mode) so the rail hugs the widened column; the cqi cap keeps
+     it inside narrow containers. Tables that reach the bar still hide the
+     rail via the occlusion hit-test in ConversationPane. */
   --toc-content-max: min(
-    var(--p-content-max),
+    var(--read-max, var(--p-content-max)),
     calc(100cqi - var(--space-5) - var(--space-5))
   );
-  left: calc(50% + (var(--toc-content-max) / 2) + 14px);
+  right: calc(50% - (var(--toc-content-max) / 2) - 17px);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -142,12 +94,9 @@ onBeforeUnmount(() => {
 }
 /* Invisible hover bridge: the collapsed rail is only a few px wide, so this
    extends the hover target on both sides to make the outline easy to open and
-   forgiving to stay within. The left side covers only the 14px gap to the
-   content edge — a table wide enough to reach past the gap also covers the
-   bar, which hides the rail (pointer-events: none) before the bridge can
-   steal its events. Kept at z-index 0 so it sits behind the rows (which are
-   raised to z-index 1) — otherwise the bridge, as a positioned pseudo-element,
-   paints above the in-flow rows and swallows their clicks. */
+   forgiving to stay within. Kept at z-index 0 so it sits behind the rows
+   (which are raised to z-index 1) — otherwise the bridge, as a positioned
+   pseudo-element, paints above the in-flow rows and swallows their clicks. */
 .conversation-toc::before {
   content: "";
   position: absolute;
@@ -157,8 +106,76 @@ onBeforeUnmount(() => {
   right: -48px;
   z-index: 0;
 }
+/* Expanded panel: painted by a ::after behind the rows so the collapsed rail
+   carries no padding/border (the bar's x never shifts, and the collapsed nav
+   intercepts no clicks over the messages). Fades in on hover/focus.
+   Borderless: no outline, radius or rim — the tint and the backdrop blur
+   feather out at every edge via a two-axis mask, the same trick the top
+   bar's blur band uses for its bottom fade. */
+.conversation-toc::after {
+  content: "";
+  position: absolute;
+  inset: -8px -12px;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-out);
+  -webkit-mask-image:
+    linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%),
+    linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%),
+    linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
+  mask-composite: intersect;
+}
 .conversation-toc:hover,
 .conversation-toc:focus-within { opacity: 1; }
+/* Solid fallback surface (liquid glass off) — the dropdowns' raised-surface
+   tint, edge-feathered by the mask. */
+.conversation-toc:hover::after,
+.conversation-toc:focus-within::after {
+  opacity: 1;
+  background: var(--color-surface-raised);
+}
+/* Liquid glass on: same material as the .lg-glass dropdowns — translucent
+   surface tint (50% dark / 45% light) over an 8px (dark) / 20px (light)
+   backdrop blur and a specular top-right bloom. No border/rim: the mask
+   feather is the edge. */
+html[data-liquid-glass="on"] .conversation-toc:hover::after,
+html[data-liquid-glass="on"] .conversation-toc:focus-within::after {
+  background:
+    radial-gradient(
+      140% 90% at 88% -20%,
+      color-mix(in srgb, #fff 10%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, color-mix(in srgb, var(--color-surface-raised) 95%, white) 50%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-raised) 50%, transparent) 30%
+    ),
+    color-mix(in srgb, var(--color-surface-raised) 50%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
+  backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
+}
+html:not([data-color-scheme="dark"])[data-liquid-glass="on"] .conversation-toc:hover::after,
+html:not([data-color-scheme="dark"])[data-liquid-glass="on"] .conversation-toc:focus-within::after {
+  background:
+    radial-gradient(
+      140% 90% at 88% -20%,
+      color-mix(in srgb, #fff 10%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, color-mix(in srgb, var(--color-surface-raised) 95%, white) 45%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-raised) 45%, transparent) 30%
+    ),
+    color-mix(in srgb, var(--color-surface-raised) 45%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(170%) brightness(1.04);
+  backdrop-filter: blur(20px) saturate(170%) brightness(1.04);
+}
 
 .toc-scroll {
   position: relative;
@@ -175,6 +192,10 @@ onBeforeUnmount(() => {
 
 .toc-row {
   display: flex;
+  /* Label left of the bar, so hover expansion grows leftward over the
+     conversation while the bar (the rail the occlusion hit-test measures)
+     stays at a fixed x. */
+  flex-direction: row-reverse;
   align-items: center;
   gap: 10px;
   height: 18px;
@@ -213,7 +234,7 @@ onBeforeUnmount(() => {
     color var(--duration-fast) var(--ease-out);
 }
 
-/* Hover / focus: enlarge bars and reveal labels to the right. */
+/* Hover / focus: enlarge bars and reveal labels to the left. */
 .conversation-toc:hover .toc-bar,
 .conversation-toc:focus-within .toc-bar { height: 18px; opacity: 0.5; }
 .conversation-toc:hover .toc-label,
@@ -224,9 +245,9 @@ onBeforeUnmount(() => {
 .toc-row:hover .toc-bar { opacity: 1; }
 .toc-row:hover .toc-label { color: var(--color-text); }
 
-/* When there is not enough room to the right of the reading column to reveal
-   the labels, the rail is kept mounted (so its position can keep being
-   measured) but hidden from view and from pointer/screen-reader interaction. */
+/* Only the table-occlusion case hides the rail now: kept mounted (so its
+   position can keep being measured) but hidden from view and from
+   pointer/screen-reader interaction. */
 .conversation-toc.toc-clipped {
   visibility: hidden;
   pointer-events: none;
