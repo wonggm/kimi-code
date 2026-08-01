@@ -384,6 +384,20 @@ merge_all_available_skills = true
 timeout_ms = 7200000
 
 # ##########################################################################
+# subagentModels (config.toml: subagent_models)
+#   owner: src/session/subagent/configSection.ts
+#   scope: core
+# ##########################################################################
+
+[subagent_models]
+
+# free-form record: agent profile name -> model alias, e.g.
+# explore = "deepseek/deepseek-v4-flash"
+# A listed profile pins the model for its next subagent spawn (absolute —
+# wins over the tool's model parameter and the secondary model); unlisted
+# profiles inherit the session model.
+
+# ##########################################################################
 # task
 #   owner: src/agent/task/configSection.ts
 #   scope: core
