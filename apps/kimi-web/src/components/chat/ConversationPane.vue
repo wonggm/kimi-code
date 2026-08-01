@@ -1547,6 +1547,21 @@ defineExpose({ loadComposerForEdit, focusComposer });
   overflow-anchor: auto;
   scrollbar-gutter: stable;
 }
+/* Edge vignette — fade the transcript to invisible at the top and bottom so
+   messages "scroll under" the floating top bar and composer instead of being
+   hard-clipped. Pure compositing (mask is paint-only, no layout or input
+   impact, no backdrop-filter). Gated behind the liquid-glass toggle. */
+html[data-liquid-glass="on"] .panes {
+  --con-pane-vignette: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 28px,
+    black calc(100% - 28px),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--con-pane-vignette);
+  mask-image: var(--con-pane-vignette);
+}
 
 .panes.is-following,
 .panes.history-prepending {

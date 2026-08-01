@@ -884,7 +884,7 @@ function selectModel(modelId: string): void {
     </div>
 
     <!-- Main composer card -->
-    <div class="composer-card">
+    <div class="composer-card lg-frost">
       <!-- Input row with popup menus -->
       <div class="cin-wrap">
         <!-- Slash menu (above textarea) -->
@@ -952,6 +952,7 @@ function selectModel(modelId: string): void {
         <div class="toolbar-left">
           <IconButton
             v-if="hasUpload"
+            class="attach-btn lg-glass"
             size="md"
             :label="t('composer.attachFile')"
             @click="openFilePicker"
@@ -962,7 +963,7 @@ function selectModel(modelId: string): void {
           <!-- Permission pill — click to open dropdown -->
           <span
             v-if="status"
-            class="perm-pill"
+            class="perm-pill lg-glass"
             :class="['perm-' + status.permission, { open: permDropdownOpen }]"
             role="button"
             tabindex="0"
@@ -999,7 +1000,7 @@ function selectModel(modelId: string): void {
           <div v-if="status" ref="modesRef" class="modes">
             <button
               type="button"
-              class="mode-pill"
+              class="mode-pill lg-glass"
               :class="{ on: anyModeActive, open: modesOpen }"
               @click.stop="toggleModes"
             >
@@ -1009,73 +1010,78 @@ function selectModel(modelId: string): void {
               <span v-if="goalArmed" class="mode-tag">{{ t('status.goalLabel') }}</span>
             </button>
 
-            <div v-if="modesOpen" ref="modesMenuRef" class="modes-menu" :style="modesMenuInlineStyle" role="menu">
-              <!-- Plan — functional client toggle -->
-              <button type="button" class="mode-row" :class="{ on: planOn }" role="menuitem" @click="emit('togglePlan')">
-                <span class="mode-row-icon"><Icon name="file-edit" size="sm" /></span>
-                <span class="mode-row-info">
-                  <span class="mode-row-name">{{ t('status.planLabel') }}</span>
-                  <span class="mode-row-desc">{{ t('status.planDesc') }}</span>
-                </span>
-                <span class="mode-switch" :class="{ on: planOn }"><span class="mode-knob" /></span>
-              </button>
-              <!-- Swarm — functional client toggle -->
-              <button type="button" class="mode-row" :class="{ on: swarmOn }" role="menuitem" @click="emit('toggleSwarm')">
-                <span class="mode-row-icon"><Icon name="sparkles" size="sm" /></span>
-                <span class="mode-row-info">
-                  <span class="mode-row-name">{{ t('status.swarmLabel') }}</span>
-                  <span class="mode-row-desc">{{ t('status.swarmDesc') }}</span>
-                </span>
-                <span class="mode-switch" :class="{ on: swarmOn }"><span class="mode-knob" /></span>
-              </button>
-              <!-- Goal — lifecycle controls when active; switch is on when active or armed. -->
-              <div class="mode-row mode-row-goal" :class="{ on: goalActive || props.goalMode }">
-                <button
-                  type="button"
-                  class="mode-row-main"
-                  role="menuitem"
-                  @click="goalActive ? emit('focusGoal') : emit('toggleGoal')"
-                >
-                  <span class="mode-row-icon"><Icon name="target" size="sm" /></span>
+            <!-- Teleported to body: position:fixed coords are viewport-based, and
+                 the card's backdrop-filter would otherwise become the containing
+                 block, throwing the menu off to the wrong position. -->
+            <Teleport to="body">
+              <div v-if="modesOpen" ref="modesMenuRef" class="modes-menu lg-glass" :style="modesMenuInlineStyle" role="menu">
+                <!-- Plan — functional client toggle -->
+                <button type="button" class="mode-row" :class="{ on: planOn }" role="menuitem" @click="emit('togglePlan')">
+                  <span class="mode-row-icon"><Icon name="file-edit" size="sm" /></span>
                   <span class="mode-row-info">
-                    <span class="mode-row-name">{{ t('status.goalLabel') }}</span>
-                    <span class="mode-row-desc">{{ t('status.goalDesc') }}</span>
+                    <span class="mode-row-name">{{ t('status.planLabel') }}</span>
+                    <span class="mode-row-desc">{{ t('status.planDesc') }}</span>
                   </span>
-                  <span v-if="!goalActive" class="mode-switch" :class="{ on: props.goalMode }"><span class="mode-knob" /></span>
+                  <span class="mode-switch" :class="{ on: planOn }"><span class="mode-knob" /></span>
                 </button>
-                <div v-if="goalActive" class="mode-row-actions">
-                  <Button
-                    v-if="goalCanPause"
-                    size="sm"
-                    variant="secondary"
-                    class="mode-row-action"
-                    @click="emit('controlGoal', 'pause')"
+                <!-- Swarm — functional client toggle -->
+                <button type="button" class="mode-row" :class="{ on: swarmOn }" role="menuitem" @click="emit('toggleSwarm')">
+                  <span class="mode-row-icon"><Icon name="sparkles" size="sm" /></span>
+                  <span class="mode-row-info">
+                    <span class="mode-row-name">{{ t('status.swarmLabel') }}</span>
+                    <span class="mode-row-desc">{{ t('status.swarmDesc') }}</span>
+                  </span>
+                  <span class="mode-switch" :class="{ on: swarmOn }"><span class="mode-knob" /></span>
+                </button>
+                <!-- Goal — lifecycle controls when active; switch is on when active or armed. -->
+                <div class="mode-row mode-row-goal" :class="{ on: goalActive || props.goalMode }">
+                  <button
+                    type="button"
+                    class="mode-row-main"
+                    role="menuitem"
+                    @click="goalActive ? emit('focusGoal') : emit('toggleGoal')"
                   >
-                    <Icon name="pause" size="sm" />
-                    <span>{{ t('status.goalPause') }}</span>
-                  </Button>
-                  <Button
-                    v-if="goalCanResume"
-                    size="sm"
-                    variant="primary"
-                    class="mode-row-action"
-                    @click="emit('controlGoal', 'resume')"
-                  >
-                    <Icon name="play" size="sm" />
-                    <span>{{ t('status.goalResume') }}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger-soft"
-                    class="mode-row-action"
-                    @click="emit('controlGoal', 'cancel')"
-                  >
-                    <Icon name="close" size="sm" />
-                    <span>{{ t('status.goalCancel') }}</span>
-                  </Button>
+                    <span class="mode-row-icon"><Icon name="target" size="sm" /></span>
+                    <span class="mode-row-info">
+                      <span class="mode-row-name">{{ t('status.goalLabel') }}</span>
+                      <span class="mode-row-desc">{{ t('status.goalDesc') }}</span>
+                    </span>
+                    <span v-if="!goalActive" class="mode-switch" :class="{ on: props.goalMode }"><span class="mode-knob" /></span>
+                  </button>
+                  <div v-if="goalActive" class="mode-row-actions">
+                    <Button
+                      v-if="goalCanPause"
+                      size="sm"
+                      variant="secondary"
+                      class="mode-row-action"
+                      @click="emit('controlGoal', 'pause')"
+                    >
+                      <Icon name="pause" size="sm" />
+                      <span>{{ t('status.goalPause') }}</span>
+                    </Button>
+                    <Button
+                      v-if="goalCanResume"
+                      size="sm"
+                      variant="primary"
+                      class="mode-row-action"
+                      @click="emit('controlGoal', 'resume')"
+                    >
+                      <Icon name="play" size="sm" />
+                      <span>{{ t('status.goalResume') }}</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger-soft"
+                      class="mode-row-action"
+                      @click="emit('controlGoal', 'cancel')"
+                    >
+                      <Icon name="close" size="sm" />
+                      <span>{{ t('status.goalCancel') }}</span>
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
+            </Teleport>
           </div>
 
         </div>
@@ -1107,7 +1113,7 @@ function selectModel(modelId: string): void {
           <!-- Model pill — click to open quick-switch dropdown -->
           <span
             v-if="status"
-            class="model-pill"
+            class="model-pill lg-glass"
             :class="{ open: dropdownOpen }"
             role="button"
             tabindex="0"
@@ -1141,7 +1147,7 @@ function selectModel(modelId: string): void {
         </div>
 
         <!-- Model dropdown — current provider models + controls + more -->
-        <div v-if="dropdownOpen && status" class="model-dropdown" role="menu" @click.stop>
+        <div v-if="dropdownOpen && status" class="model-dropdown lg-glass" role="menu" @click.stop>
           <!-- Starred models from other providers -->
           <div v-if="starredOtherModels.length > 0" class="md-section">{{ t('status.starredModels') }}</div>
           <button
@@ -1310,6 +1316,8 @@ function selectModel(modelId: string): void {
   justify-content: center;
   padding: 24px;
   background: rgba(20, 23, 28, 0.62);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
 }
 .att-lightbox-card {
   position: relative;
@@ -1569,7 +1577,10 @@ function selectModel(modelId: string): void {
   align-items: center;
   gap: 4px;
   padding: 2px 7px;
-  border-radius: 6px;
+  /* Transparent hairline reserves the 1px slot for the liquid-glass rim without
+     adding a visible border when the feature is off. */
+  border: 1px solid transparent;
+  border-radius: 999px;
   font-size: var(--ui-font-size);
   color: var(--color-text);
   cursor: pointer;
@@ -1578,9 +1589,11 @@ function selectModel(modelId: string): void {
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
 }
-.perm-pill:hover {
-  background: var(--color-surface-sunken);
-}
+/* Hover background is now handled by the global `.lg-glass.lg-glass:is(button,
+   [role="button"], a):hover` rule in style.css (higher specificity) — the
+   glass overlay recomputes its tint vars on hover, so no per-component
+   override is needed. The "open" state still wants the accent wash so the
+   active dropdown is unmistakable. */
 .perm-pill.open {
   background: var(--color-accent-soft);
 }
@@ -1592,6 +1605,12 @@ function selectModel(modelId: string): void {
 }
 .perm-pill.perm-auto {
   color: var(--color-danger);
+}
+
+/* Round the paperclip into a capsule to match the pills — the IconButton
+   default is a rounded square. */
+.attach-btn {
+  border-radius: 999px;
 }
 
 /* Context group — circular ring. Focusable for keyboard / switch access to its
@@ -1643,7 +1662,10 @@ function selectModel(modelId: string): void {
   align-items: center;
   gap: 3px;
   padding: 2px 7px;
-  border-radius: 6px;
+  /* Transparent hairline reserves the 1px slot for the liquid-glass rim without
+     adding a visible border when the feature is off. */
+  border: 1px solid transparent;
+  border-radius: 999px;
   font-size: var(--ui-font-size);
   line-height: var(--leading-normal);
   color: var(--dim);
@@ -1656,7 +1678,11 @@ function selectModel(modelId: string): void {
   overflow: hidden;
 }
 .model-pill:hover {
-  background: var(--color-surface-sunken);
+  /* Hover background now lifted to the global `.lg-glass.lg-glass:is(button,
+     [role="button"], a):hover` rule in style.css — its (0,4,1) specificity
+     wins over this (0,2,0) one, so any tint-var change here would be
+     masked. Keep the color shift only, so the label still reads as
+     "engaged" even if the user has the liquid-glass toggle OFF. */
   color: var(--color-text);
 }
 .model-pill.open {
@@ -1939,9 +1965,11 @@ function selectModel(modelId: string): void {
   align-items: center;
   gap: 6px;
   padding: 2px 9px;
-  border: none;
+  /* Transparent hairline reserves the 1px slot for the liquid-glass rim without
+     adding a visible border when the feature is off. */
+  border: 1px solid transparent;
   background: none;
-  border-radius: 6px;
+  border-radius: 999px;
   font-size: var(--ui-font-size);
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
@@ -1950,7 +1978,6 @@ function selectModel(modelId: string): void {
   user-select: none;
   transition: background 0.1s, color 0.15s;
 }
-.mode-pill:hover { background: var(--color-surface-sunken); }
 .mode-pill.on { background: var(--color-accent-soft); color: var(--color-accent-hover); }
 .mode-pill.open { background: var(--color-accent-soft); }
 .mode-label { flex: none; }
