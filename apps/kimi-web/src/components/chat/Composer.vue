@@ -975,7 +975,7 @@ function selectModel(modelId: string): void {
           <!-- Permission dropdown — anchored to the toolbar left side -->
           <div
             v-if="permDropdownOpen && status"
-            class="perm-dropdown"
+            class="perm-dropdown lg-glass"
             :style="permissionMenuStyle"
             role="menu"
             @click.stop
@@ -1566,7 +1566,7 @@ function selectModel(modelId: string): void {
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-2);
   min-width: 0;
   overflow: hidden;
 }

@@ -18,7 +18,7 @@ import Dialog from '../ui/Dialog.vue';
 import Switch from '../ui/Switch.vue';
 import Button from '../ui/Button.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
-import Select from '../ui/Select.vue';
+import MenuSelect from '../ui/MenuSelect.vue';
 import Tooltip from '../ui/Tooltip.vue';
 
 const { t } = useI18n();
@@ -43,6 +43,8 @@ const props = defineProps<{
   conversationToc?: boolean;
   /** Liquid glass refraction and frosted-blur effects on floating panels. */
   liquidGlass?: boolean;
+  /** Widen the conversation column on large screens. */
+  wideMode?: boolean;
   /** Global daemon config from GET /api/v1/config. Secrets are redacted server-side. */
   config?: AppConfig | null;
   /** Models from the daemon catalog, used to label default-model choices. */
@@ -65,6 +67,7 @@ const emit = defineEmits<{
   setSound: [on: boolean];
   setConversationToc: [on: boolean];
   setLiquidGlass: [on: boolean];
+  setWideMode: [on: boolean];
   login: [];
   logout: [];
   openOnboarding: [];
@@ -150,6 +153,27 @@ const modelGroups = computed<Array<{ provider: string; options: ModelOption[] }>
     .toSorted(([a], [b]) => a.localeCompare(b))
     .map(([provider, options]) => ({ provider, options }));
 });
+
+// MenuSelect shape — [{ label?, options: [{ value, label }] }]. modelGroups is
+// already provider-grouped; just project the fields. Used by both the default-
+// model picker and the per-profile subagent picker.
+function toMenuGroups(
+  groups: Array<{ provider: string; options: ModelOption[] }>,
+): { label: string; options: { value: string; label: string }[] }[] {
+  return groups.map((g) => ({
+    label: g.provider,
+    options: g.options.map((m) => ({ value: m.id, label: m.label })),
+  }));
+}
+
+const defaultModelGroups = computed(() => toMenuGroups(modelGroups.value));
+
+// Subagent pins get an unlabeled leading "Inherit (session model)" row whose
+// value is '' (setSubagentModel treats '' the same as null: delete the key).
+const subagentModelGroups = computed(() => [
+  { options: [{ value: '', label: t('settings.inheritSessionModel') }] },
+  ...toMenuGroups(modelGroups.value),
+]);
 
 const defaultPermissionMode = computed(() => {
   const mode = props.config?.defaultPermissionMode;
@@ -307,6 +331,16 @@ const archiveWorkspaces = computed<string[]>(() => {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 });
 
+// Archive workspace filter — flat list (no group labels), small trigger.
+const archiveWsFilterGroups = computed(() => [
+  {
+    options: [
+      { value: 'all', label: t('settings.archivedAllWorkspaces') },
+      ...archiveWorkspaces.value.map((ws) => ({ value: ws, label: ws })),
+    ],
+  },
+]);
+
 const filteredArchived = computed<AppSession[]>(() => {
   const q = archiveQuery.value.trim().toLowerCase();
   // Defensive invariant: this panel must only ever render archived sessions,
@@ -441,6 +475,17 @@ function archiveTime(iso: string): string {
                 @update:model-value="emit('setLiquidGlass', $event)"
               />
             </div>
+            <div class="row">
+              <span class="rlabel">
+                {{ t('settings.wideMode') }}
+                <span class="hint">{{ t('settings.wideModeHint') }}</span>
+              </span>
+              <Switch
+                :model-value="wideMode ?? false"
+                :label="t('settings.wideMode')"
+                @update:model-value="emit('setWideMode', $event)"
+              />
+            </div>
           </section>
 
           <section class="sec">
@@ -525,19 +570,14 @@ function archiveTime(iso: string): string {
                   <span class="hint">{{ t('settings.defaultModelHint') }}</span>
                 </span>
                 <div v-if="modelGroups.length > 0" class="select-wrap">
-                  <Select
+                  <MenuSelect
                     :model-value="config.defaultModel ?? ''"
+                    :groups="defaultModelGroups"
+                    :placeholder="t('settings.noDefaultModel')"
                     :disabled="configSaving"
                     :aria-label="t('settings.defaultModel')"
                     @update:model-value="setDefaultModel"
-                  >
-                    <option v-if="!config.defaultModel" value="" disabled>{{ t('settings.noDefaultModel') }}</option>
-                    <optgroup v-for="group in modelGroups" :key="group.provider" :label="group.provider">
-                      <option v-for="model in group.options" :key="model.id" :value="model.id">
-                        {{ model.label }}
-                      </option>
-                    </optgroup>
-                  </Select>
+                  />
                 </div>
                 <span v-else class="rvalue mono">{{ config.defaultModel ?? t('settings.noDefaultModel') }}</span>
               </div>
@@ -551,19 +591,13 @@ function archiveTime(iso: string): string {
                     <span v-if="profile.whenToUse" class="hint">{{ profile.whenToUse }}</span>
                   </span>
                   <div class="select-wrap">
-                    <Select
+                    <MenuSelect
                       :model-value="config.subagentModels?.[profile.name] ?? ''"
+                      :groups="subagentModelGroups"
                       :disabled="configSaving"
                       :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
                       @update:model-value="setSubagentModel(profile.name, $event)"
-                    >
-                      <option value="">{{ t('settings.inheritSessionModel') }}</option>
-                      <optgroup v-for="group in modelGroups" :key="group.provider" :label="group.provider">
-                        <option v-for="model in group.options" :key="model.id" :value="model.id">
-                          {{ model.label }}
-                        </option>
-                      </optgroup>
-                    </Select>
+                    />
                   </div>
                 </div>
               </template>
@@ -678,15 +712,13 @@ function archiveTime(iso: string): string {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
               <input v-model="archiveQuery" :placeholder="t('settings.archivedSearch')" />
             </label>
-            <Select
+            <MenuSelect
               :model-value="archiveWsFilter"
+              :groups="archiveWsFilterGroups"
               size="sm"
               :aria-label="t('settings.archivedAllWorkspaces')"
-              @update:model-value="archiveWsFilter = $event as string"
-            >
-              <option value="all">{{ t('settings.archivedAllWorkspaces') }}</option>
-              <option v-for="ws in archiveWorkspaces" :key="ws" :value="ws">{{ ws }}</option>
-            </Select>
+              @update:model-value="archiveWsFilter = $event"
+            />
             <SegmentedControl
               size="sm"
               :model-value="archiveSort"

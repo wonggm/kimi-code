@@ -59,6 +59,8 @@ export default {
   conversationTocHint: 'Show a clickable outline in the right margin to jump between messages',
   liquidGlass: 'Liquid glass effects',
   liquidGlassHint: 'Frosted glass effect on floating panels and menus; turn off for maximum performance',
+  wideMode: 'Wide screen mode',
+  wideModeHint: 'Widen the conversation column on large screens',
   archivedTitle: 'Archived sessions',
   archivedDesc: 'Browse archived sessions, see their workspace path, name, and archive time, and restore them to the session list.',
   archivedSearch: 'Search archived sessions',
