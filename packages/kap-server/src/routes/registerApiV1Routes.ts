@@ -11,6 +11,7 @@ import { type IConnectionRegistry } from '../transport/ws/connectionRegistry';
 import { type SessionEventBroadcaster } from '../transport/ws/v1/sessionEventBroadcaster';
 import type { ProjectionService } from '../services/projection';
 import type { TranscriptService } from '../services/transcript/transcriptService';
+import { registerAgentProfilesRoutes } from './agentProfiles';
 import { registerApprovalsRoutes } from './approvals';
 import { registerAuthRoute } from './auth';
 import { registerCapabilitiesRoutes } from './capabilities';
@@ -142,6 +143,10 @@ export async function registerApiV1Routes(
         marketplaceUrl: opts.pluginMarketplaceUrl,
         marketplaceIsDefault: opts.pluginMarketplaceIsDefault,
       });
+      registerAgentProfilesRoutes(
+        apiV1 as unknown as Parameters<typeof registerAgentProfilesRoutes>[0],
+        core,
+      );
       registerMessagesRoutes(
         apiV1 as unknown as Parameters<typeof registerMessagesRoutes>[0],
         core,
