@@ -18,6 +18,7 @@ import { okEnvelope } from '../envelope';
 import { type IConnectionRegistry } from '../transport/ws/connectionRegistry';
 import { type SessionEventBroadcaster } from '../transport/ws/v1/sessionEventBroadcaster';
 import type { TranscriptService } from '../services/transcript/transcriptService';
+import { registerAgentProfilesRoutes } from './agentProfiles';
 import { registerApprovalsRoutes } from './approvals';
 import { registerAuthRoute } from './auth';
 import { registerConfigRoutes } from './config';
@@ -132,6 +133,10 @@ export async function registerApiV1Routes(
         { hostIdentity: opts.hostIdentity },
       );
       registerSkillsRoutes(apiV1 as unknown as Parameters<typeof registerSkillsRoutes>[0], core);
+      registerAgentProfilesRoutes(
+        apiV1 as unknown as Parameters<typeof registerAgentProfilesRoutes>[0],
+        core,
+      );
       registerMessagesRoutes(
         apiV1 as unknown as Parameters<typeof registerMessagesRoutes>[0],
         core,
