@@ -76,15 +76,27 @@ function applyLiquidGlass(on: boolean): void {
   document.documentElement.dataset.liquidGlass = on ? 'on' : 'off';
 }
 
+function loadWideMode(): boolean {
+  const v = safeGetString(STORAGE_KEYS.wideMode);
+  return v === 'true';
+}
+
+function applyWideMode(on: boolean): void {
+  if (typeof document === 'undefined' || !document.documentElement) return;
+  document.documentElement.dataset.wideMode = on ? 'on' : 'off';
+}
+
 const colorScheme = ref<ColorScheme>(loadColorScheme());
 const accent = ref<Accent>(loadAccent());
 const uiFontSize = ref<number>(loadUiFontSize());
 const liquidGlass = ref<boolean>(loadLiquidGlass());
+const wideMode = ref<boolean>(loadWideMode());
 
 watch(colorScheme, applyColorScheme, { immediate: true });
 watch(accent, applyAccent, { immediate: true });
 watch(uiFontSize, applyUiFontSize, { immediate: true });
 watch(liquidGlass, applyLiquidGlass, { immediate: true });
+watch(wideMode, applyWideMode, { immediate: true });
 
 function setColorScheme(c: ColorScheme): void {
   if (!COLOR_SCHEME_VALUES.includes(c)) return;
@@ -107,6 +119,11 @@ function setUiFontSize(value: number): void {
 function setLiquidGlass(on: boolean): void {
   liquidGlass.value = on;
   safeSetString(STORAGE_KEYS.liquidGlass, on ? 'true' : 'false');
+}
+
+function setWideMode(on: boolean): void {
+  wideMode.value = on;
+  safeSetString(STORAGE_KEYS.wideMode, on ? 'true' : 'false');
 }
 
 // CSS handles the moon frames; this only flips the spinner between normal and
@@ -168,11 +185,13 @@ export function useAppearance() {
     accent,
     uiFontSize,
     liquidGlass,
+    wideMode,
     fastMoon,
     setColorScheme,
     setAccent,
     setUiFontSize,
     setLiquidGlass,
+    setWideMode,
     resetFastMoon,
     recordMoonDelta,
   };

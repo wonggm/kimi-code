@@ -59,6 +59,8 @@ export default {
   conversationTocHint: '在右侧显示可点击跳转的对话目录',
   liquidGlass: '液态玻璃效果',
   liquidGlassHint: '在浮动面板与菜单上启用磨砂玻璃效果；关闭可获得最佳性能',
+  wideMode: '宽屏模式',
+  wideModeHint: '在大屏幕上加宽对话栏',
   archivedTitle: '已归档会话',
   archivedDesc: '查看已归档会话，确认其所属工作区路径、会话名称和归档时间，并可恢复到会话列表。',
   archivedSearch: '搜索已归档会话',

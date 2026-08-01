@@ -1297,6 +1297,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :class="{
           'is-following': following,
           'history-prepending': historyLoadInProgress,
+          'has-header': !mobile && !(turns.length === 0 && !sessionLoading),
         }"
         @scroll.passive="onPanesScroll"
         @wheel.passive="onPanesWheel"
@@ -1561,6 +1562,38 @@ html[data-liquid-glass="on"] .panes {
   );
   -webkit-mask-image: var(--con-pane-vignette);
   mask-image: var(--con-pane-vignette);
+}
+
+/* Top blur band — the top bar is a transparent overlay (style.css) and the
+   scroller extends beneath it, so message text physically passes under the
+   bar. This band blurs that underlaying text: full strength across the
+   48px header zone, then fading out over the next 48px so it blends into
+   the vignette instead of ending in a hard edge. An overlay on .chat-layout
+   (not a .panes pseudo, which would scroll with the content); the header
+   itself stays filter-free so it never captures fixed-position menus.
+   Blur runs a step stronger than the .lg-glass dropdowns (14px vs 8px) —
+   the band is the one place the user asked to read as clearly blurred. */
+html[data-liquid-glass="on"] .chat-layout::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 96px;
+  pointer-events: none;
+  z-index: 2;
+  -webkit-backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
+  backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
+  -webkit-mask-image: linear-gradient(to bottom, black 0, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0, transparent 100%);
+}
+
+/* With the header overlaid, clear its height at rest so the first message
+   and the load-older sentinel are not parked behind the bar; content still
+   scrolls under it. Only when the header actually renders (never on mobile
+   or the empty session, where the extra height would add a stray scrollbar). */
+html[data-liquid-glass="on"] .panes.has-header {
+  padding-top: var(--panel-head-h, 48px);
 }
 
 .panes.is-following,
