@@ -20,6 +20,7 @@ export const STORAGE_KEYS = {
   accent: 'kimi-web.accent',
   colorScheme: 'kimi-web.color-scheme',
   liquidGlass: 'kimi-web.liquid-glass',
+  wideMode: 'kimi-web.wide-mode',
   hiddenWorkspaces: 'kimi-web.hidden-workspaces',
   collapsedWorkspaces: 'kimi-web.collapsed-workspaces',
   workspaceOrder: 'kimi-web.workspace-order',
