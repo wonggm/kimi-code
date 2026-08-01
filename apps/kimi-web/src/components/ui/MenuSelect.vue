@@ -222,6 +222,11 @@ onBeforeUnmount(() => {
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   color: var(--color-text);
+  /* Capsule like the composer/dock glass pills (Select.vue's own
+     --radius-md doesn't reach this component — scoped). The deeper side
+     padding keeps the label and chevron clear of the curved ends. */
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-4);
 }
 .ms-trigger--md { height: 38px; }
 .ms-trigger--sm { height: 32px; font-size: var(--text-sm); }
@@ -241,7 +246,7 @@ onBeforeUnmount(() => {
 .ms-trigger {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right var(--space-3) center;
+  background-position: right var(--space-4) center;
   background-size: 16px 16px;
 }
 .ms-trigger--open { border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
