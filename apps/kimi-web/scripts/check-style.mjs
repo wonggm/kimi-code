@@ -121,8 +121,8 @@ function checkFile(abs) {
         add('no-gradient-text', file, line, trimmed.slice(0, 80));
       }
 
-      // no-glassmorphism (TopBar frost variant exempt)
-      if (/backdrop-filter\s*:/i.test(raw) && !/\bfrost\b/.test(text)) {
+      // no-glassmorphism (TopBar frost variant + liquid-glass tiers exempt)
+      if (/backdrop-filter\s*:/i.test(raw) && !/\bfrost\b|lg-glass|lg-frost|liquidGlass/.test(text)) {
         add('no-glassmorphism', file, line, trimmed.slice(0, 80));
       }
 

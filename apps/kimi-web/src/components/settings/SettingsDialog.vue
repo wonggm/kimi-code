@@ -12,7 +12,8 @@ import LanguageSwitcher from './LanguageSwitcher.vue';
 import { serverEndpointLabel } from '../../api/config';
 import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
 import type { Accent, ColorScheme } from '../../composables/useKimiWebClient';
-import type { AppConfig, AppModel } from '../../api/types';
+import type { AgentProfileInfo, AppConfig, AppModel } from '../../api/types';
+import { getKimiWebApi } from '../../api';
 import Dialog from '../ui/Dialog.vue';
 import Switch from '../ui/Switch.vue';
 import Button from '../ui/Button.vue';
@@ -40,6 +41,8 @@ const props = defineProps<{
   sound: boolean;
   /** Conversation outline (proportional bubbles, viewport indicator, hover tooltip). */
   conversationToc?: boolean;
+  /** Liquid glass refraction and frosted-blur effects on floating panels. */
+  liquidGlass?: boolean;
   /** Global daemon config from GET /api/v1/config. Secrets are redacted server-side. */
   config?: AppConfig | null;
   /** Models from the daemon catalog, used to label default-model choices. */
@@ -61,6 +64,7 @@ const emit = defineEmits<{
   setNotifyApproval: [on: boolean];
   setSound: [on: boolean];
   setConversationToc: [on: boolean];
+  setLiquidGlass: [on: boolean];
   login: [];
   logout: [];
   openOnboarding: [];
@@ -178,6 +182,16 @@ function setDefaultModel(value: string): void {
   emit('updateConfig', { defaultModel: value });
 }
 
+// Per-profile subagent model pin. Copies the current table and sets or deletes
+// the key — the backend Zod schema rejects null values, so an unpinned profile
+// is an absent key, and the full updated table (possibly {}) is sent.
+function setSubagentModel(profileName: string, alias: string | null): void {
+  const table = { ...(props.config?.subagentModels ?? {}) };
+  if (alias === null || alias === '') delete table[profileName];
+  else table[profileName] = alias;
+  emit('updateConfig', { subagentModels: table });
+}
+
 function setDefaultPermissionMode(mode: 'manual' | 'auto' | 'yolo'): void {
   if (mode === defaultPermissionMode.value) return;
   emit('updateConfig', { defaultPermissionMode: mode });
@@ -262,9 +276,28 @@ async function loadAllArchived(): Promise<void> {
   }
 }
 
+// Subagent-model pins (v2 backend only) — the profile catalog comes from
+// GET /agent_profiles, fetched once when the Agent tab first shows. On error
+// (or a v1 backend, which lacks the route) the section stays hidden.
+const agentProfiles = ref<AgentProfileInfo[] | null>(null);
+let agentProfilesLoaded = false;
+
+async function loadAgentProfiles(): Promise<void> {
+  if (agentProfilesLoaded || props.backend !== 'v2') return;
+  agentProfilesLoaded = true;
+  try {
+    agentProfiles.value = await getKimiWebApi().listAgentProfiles();
+  } catch (err) {
+    console.warn('loadAgentProfiles failed', err);
+  }
+}
+
 watch(activeTab, (tab) => {
   if (tab === 'archived' && !archivedLoaded.value) {
     void loadAllArchived();
+  }
+  if (tab === 'agent') {
+    void loadAgentProfiles();
   }
 });
 
@@ -397,6 +430,17 @@ function archiveTime(iso: string): string {
                 @update:model-value="emit('setConversationToc', $event)"
               />
             </div>
+            <div class="row">
+              <span class="rlabel">
+                {{ t('settings.liquidGlass') }}
+                <span class="hint">{{ t('settings.liquidGlassHint') }}</span>
+              </span>
+              <Switch
+                :model-value="liquidGlass ?? true"
+                :label="t('settings.liquidGlass')"
+                @update:model-value="emit('setLiquidGlass', $event)"
+              />
+            </div>
           </section>
 
           <section class="sec">
@@ -497,6 +541,32 @@ function archiveTime(iso: string): string {
                 </div>
                 <span v-else class="rvalue mono">{{ config.defaultModel ?? t('settings.noDefaultModel') }}</span>
               </div>
+
+              <template v-if="backend === 'v2' && agentProfiles && agentProfiles.length > 0">
+                <h4 class="sec-title subagent-title">{{ t('settings.subagentModels') }}</h4>
+                <p class="hint subagent-hint">{{ t('settings.subagentModelsHint') }}</p>
+                <div v-for="profile in agentProfiles" :key="profile.name" class="row">
+                  <span class="rlabel">
+                    {{ profile.name }}
+                    <span v-if="profile.whenToUse" class="hint">{{ profile.whenToUse }}</span>
+                  </span>
+                  <div class="select-wrap">
+                    <Select
+                      :model-value="config.subagentModels?.[profile.name] ?? ''"
+                      :disabled="configSaving"
+                      :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
+                      @update:model-value="setSubagentModel(profile.name, $event)"
+                    >
+                      <option value="">{{ t('settings.inheritSessionModel') }}</option>
+                      <optgroup v-for="group in modelGroups" :key="group.provider" :label="group.provider">
+                        <option v-for="model in group.options" :key="model.id" :value="model.id">
+                          {{ model.label }}
+                        </option>
+                      </optgroup>
+                    </Select>
+                  </div>
+                </div>
+              </template>
 
               <div class="row">
                 <span class="rlabel">
@@ -777,6 +847,9 @@ function archiveTime(iso: string): string {
 }
 
 .select-wrap { min-width: 220px; max-width: min(320px, 50vw); flex: none; }
+
+.subagent-title { margin: var(--space-3) 0 var(--space-1); }
+.subagent-hint { margin: 0 0 var(--space-2); }
 
 .empty-config {
   font-family: var(--font-ui);

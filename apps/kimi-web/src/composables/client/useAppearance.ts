@@ -66,13 +66,25 @@ function applyUiFontSize(value: number): void {
   document.documentElement.style.setProperty('--base-ui-font-size', `${clampUiFontSize(value)}px`);
 }
 
+function loadLiquidGlass(): boolean {
+  const v = safeGetString(STORAGE_KEYS.liquidGlass);
+  return v !== 'false';
+}
+
+function applyLiquidGlass(on: boolean): void {
+  if (typeof document === 'undefined' || !document.documentElement) return;
+  document.documentElement.dataset.liquidGlass = on ? 'on' : 'off';
+}
+
 const colorScheme = ref<ColorScheme>(loadColorScheme());
 const accent = ref<Accent>(loadAccent());
 const uiFontSize = ref<number>(loadUiFontSize());
+const liquidGlass = ref<boolean>(loadLiquidGlass());
 
 watch(colorScheme, applyColorScheme, { immediate: true });
 watch(accent, applyAccent, { immediate: true });
 watch(uiFontSize, applyUiFontSize, { immediate: true });
+watch(liquidGlass, applyLiquidGlass, { immediate: true });
 
 function setColorScheme(c: ColorScheme): void {
   if (!COLOR_SCHEME_VALUES.includes(c)) return;
@@ -90,6 +102,11 @@ function setUiFontSize(value: number): void {
   const next = clampUiFontSize(value);
   uiFontSize.value = next;
   safeSetString(STORAGE_KEYS.uiFontSize, String(next));
+}
+
+function setLiquidGlass(on: boolean): void {
+  liquidGlass.value = on;
+  safeSetString(STORAGE_KEYS.liquidGlass, on ? 'true' : 'false');
 }
 
 // CSS handles the moon frames; this only flips the spinner between normal and
@@ -150,10 +167,12 @@ export function useAppearance() {
     colorScheme,
     accent,
     uiFontSize,
+    liquidGlass,
     fastMoon,
     setColorScheme,
     setAccent,
     setUiFontSize,
+    setLiquidGlass,
     resetFastMoon,
     recordMoonDelta,
   };

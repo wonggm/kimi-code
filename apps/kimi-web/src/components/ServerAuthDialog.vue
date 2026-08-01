@@ -37,7 +37,7 @@ function onKeydown(e: KeyboardEvent): void {
 
 <template>
   <div class="server-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="server-auth-title">
-    <div class="server-auth-card">
+    <div class="server-auth-card lg-frost">
       <div class="server-auth-head">
         <h1 id="server-auth-title" class="server-auth-title">Server token required</h1>
         <p class="server-auth-hint">
@@ -81,6 +81,8 @@ function onKeydown(e: KeyboardEvent): void {
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
 }
 
 .server-auth-card {

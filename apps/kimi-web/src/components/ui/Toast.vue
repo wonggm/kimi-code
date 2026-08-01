@@ -20,7 +20,7 @@ defineEmits<{ dismiss: [] }>();
 </script>
 
 <template>
-  <div class="ui-toast" :class="`ui-toast--${variant}`">
+  <div class="ui-toast lg-glass" :class="`ui-toast--${variant}`">
     <span class="ui-toast__icon" aria-hidden="true">
       <slot name="icon">
         <Icon v-if="variant === 'success'" name="check" />

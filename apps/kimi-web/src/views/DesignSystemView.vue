@@ -982,7 +982,7 @@ onUnmounted(() => {
 
             <!-- ===== TopBar ===== -->
             <h3 class="sub">TopBar</h3>
-            <p>The application top bar. Solid by default; the <code>.frost</code> variant is translucent + background blur, used <b>only for sticky navigation bars</b>, and is the sole exception to the <code>no-glassmorphism</code> rule (see §06).</p>
+            <p>The application top bar. Solid by default; the <code>.frost</code> variant is translucent + background blur, used <b>only for sticky navigation bars</b>, and sits in Tier 2 of the glassmorphism tier system alongside dialog/sheet panels and always-on overlay scrims (see §06).</p>
             <div class="stage-wrap">
               <div class="stage-bar"><span class="st">TopBar · solid / frosted glass</span></div>
               <div class="stage p col" style="gap:14px;background:radial-gradient(circle at 18% 30%,rgba(23,131,255,.16),transparent 42%),radial-gradient(circle at 82% 75%,rgba(20,23,28,.10),transparent 46%),var(--p-surface-sunken)">
@@ -1301,7 +1301,7 @@ onUnmounted(() => {
               <thead><tr><th>Rule ID</th><th>What it detects</th><th>Action</th></tr></thead>
               <tbody>
                 <tr><td class="tk">no-gradient-text</td><td>gradient text / gradient background</td><td><span class="pill red">Forbidden</span></td></tr>
-                <tr><td class="tk">no-glassmorphism</td><td><code>backdrop-filter: blur</code> (<b>TopBar sticky nav bar</b> is the sole exception)</td><td><span class="pill amber">TopBar exempt</span></td></tr>
+                <tr><td class="tk">no-glassmorphism</td><td><code>backdrop-filter: blur</code> (three-tier system — Tier 1 <code>.lg-glass</code> dark frost on small floating elements, Tier 2 <code>.lg-frost</code> frost on dialog/sheet panels + composer + TopBar + always-on overlay scrims, Tier 3 banned on streaming surfaces; all gated behind the Liquid glass toggle)</td><td><span class="pill amber">3-tier system</span></td></tr>
                 <tr><td class="tk">no-color-glow</td><td>colored / large-radius box-shadow glow</td><td><span class="pill red">Forbidden</span></td></tr>
                 <tr><td class="tk">no-emoji-icon</td><td>using emoji as a functional icon (<b>the moon phases 🌑…🌘 are the sole exception</b>, and only in the "waiting for the Agent to respond" chat state; all other loading states use the plain Spinner)</td><td><span class="pill amber">Moon phase exempt</span></td></tr>
                 <tr><td class="tk">no-hardcoded-hex</td><td>unregistered hex color inside a component <code>&lt;style&gt;</code></td><td><span class="pill amber">Warning</span></td></tr>
@@ -1335,9 +1335,9 @@ onUnmounted(() => {
               It is the sole exception to the <code>no-emoji-icon</code> rule; all other loading states use the plain <code>Spinner</code>.
             </div></div>
 
-            <h3 class="sub">Glassmorphism exemption</h3>
+            <h3 class="sub">Glassmorphism tier system</h3>
             <div class="callout good"><span class="ico">✓</span><div>
-              <code>backdrop-filter: blur</code> is banned site-wide, with the <b>sole exception of the <code>.frost</code> variant of <code>TopBar</code></b> — and only in the one place of the "sticky navigation bar", used to stay readable over scrolling content. No other component (card, dialog, Toast, panel) may use glassmorphism; violations are flagged under <code>no-glassmorphism</code>.
+              <code>backdrop-filter: blur</code> is governed by a <b>three-tier system</b>, all gated behind the "Liquid glass effects" settings toggle (<code>html[data-liquid-glass]</code>). <b>Tier 1</b> — <code>.lg-glass</code> dark frost on small floating elements (menus, dropdowns, tooltips, toasts). <b>Tier 2</b> — <code>.lg-frost</code> frost on dialog/sheet panels (<code>.ui-dialog</code>, <code>.ui-sheet</code>, <code>.sheet-panel</code>, <code>.server-auth-card</code>) and the composer card, plus the existing <code>TopBar</code> <code>.frost</code> sticky nav bar and <b>always-on modal / sheet overlay scrims</b> (<code>.ui-dialog__overlay</code>, <code>.ui-sheet__scrim</code>, <code>.sheet-scrim</code>, <code>.server-auth-overlay</code>, <code>.att-lightbox</code>), which keep their shared <code>blur(10px) saturate(140%)</code> to defocus the app behind floating windows. <b>Tier 3</b> — glass is banned on streaming surfaces (chat scroll, xterm). With the toggle off there is no glassmorphism anywhere except the always-on overlay scrims. No other component may add <code>backdrop-filter</code>; violations are flagged under <code>no-glassmorphism</code>.
             </div></div>
 
             <div class="footer">

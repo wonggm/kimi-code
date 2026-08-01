@@ -53,7 +53,7 @@ onUnmounted(() => {
   <Transition name="sheet">
     <div v-if="modelValue" class="sheet-root">
       <div class="sheet-scrim" @click="close" />
-      <div class="sheet-panel" role="dialog" :aria-label="title || t('mobile.sheetLabel')">
+      <div class="sheet-panel lg-frost" role="dialog" :aria-label="title || t('mobile.sheetLabel')">
         <button
           type="button"
           class="sheet-grab"
@@ -84,7 +84,9 @@ onUnmounted(() => {
 .sheet-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(13, 17, 23, 0.45);
+  background: rgba(13, 17, 23, 0.32);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
 }
 
 .sheet-panel {

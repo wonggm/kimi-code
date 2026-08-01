@@ -11,7 +11,7 @@ defineExpose({ el });
 </script>
 
 <template>
-  <div ref="el" class="ui-menu" role="menu">
+  <div ref="el" class="ui-menu lg-glass" role="menu">
     <slot />
   </div>
 </template>

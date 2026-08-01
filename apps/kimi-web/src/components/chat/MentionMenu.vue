@@ -59,7 +59,7 @@ function fileIcon(item: FileItem): string {
 </script>
 
 <template>
-  <div class="mention-menu" role="listbox">
+  <div class="mention-menu lg-glass" role="listbox">
     <!-- Loading state -->
     <div v-if="props.loading" class="mention-state dim">{{ t('mention.searching') }}</div>
 

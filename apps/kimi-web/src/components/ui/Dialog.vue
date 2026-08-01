@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
     <div v-if="open" class="ui-dialog__overlay" @mousedown="onOverlayClick">
       <div
         ref="panel"
-        class="ui-dialog"
+        class="ui-dialog lg-frost"
         :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed' }]"
         role="dialog"
         aria-modal="true"
@@ -169,7 +169,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: var(--space-6);
-  background: rgba(13, 17, 23, 0.45);
+  background: rgba(13, 17, 23, 0.32);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
   animation: kimi-dialog-overlay-in var(--duration-base) var(--ease-out);
 }
 @keyframes kimi-dialog-overlay-in {

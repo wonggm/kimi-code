@@ -28,7 +28,7 @@ watch(
 </script>
 
 <template>
-  <div v-if="items.length > 0" class="slash-menu" role="listbox">
+  <div v-if="items.length > 0" class="slash-menu lg-glass" role="listbox">
     <div
       v-for="(item, i) in items"
       :ref="(el) => { if (el) itemRefs[i] = el as HTMLElement }"

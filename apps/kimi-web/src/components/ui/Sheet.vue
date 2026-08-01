@@ -18,7 +18,7 @@ function close() {
 <template>
   <Teleport to="body">
     <div v-if="open" class="ui-sheet__scrim" @mousedown.self="close">
-      <div class="ui-sheet" role="dialog" aria-modal="true">
+      <div class="ui-sheet lg-frost" role="dialog" aria-modal="true">
         <div class="ui-sheet__handle" aria-hidden="true" />
         <div v-if="title" class="ui-sheet__head">
           <span class="ui-sheet__title">{{ title }}</span>
@@ -40,7 +40,9 @@ function close() {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(13, 17, 23, 0.45);
+  background: rgba(13, 17, 23, 0.32);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
 }
 .ui-sheet {
   width: 100%;

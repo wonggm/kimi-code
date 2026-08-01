@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
     <div
       ref="bubble"
       v-show="open"
-      class="ui-tip__bubble"
+      class="ui-tip__bubble lg-glass"
       :class="{ positioned }"
       :style="[bubbleStyle, { '--tip-lines': maxLines }]"
       role="tooltip"
@@ -193,4 +193,14 @@ onBeforeUnmount(() => {
   transition: opacity var(--duration-fast) var(--ease-out);
 }
 .ui-tip__bubble.positioned { opacity: 1; }
+/* Glass fallback background is light/translucent — restore dark-on-light text
+   in dark theme (frost bg + light text reads correctly). In light theme the
+   bubble stays on the original inverted dark fill + light text; the dark-frost
+   bg scoped to dark theme only preserves that look without a per-theme rewrite
+   of the base rule. */
+html[data-liquid-glass="on"] .ui-tip__bubble.lg-glass { color: var(--color-text); }
+html:not([data-color-scheme="dark"])[data-liquid-glass="on"] .ui-tip__bubble.lg-glass {
+  background: var(--color-text);
+  color: var(--color-bg);
+}
 </style>

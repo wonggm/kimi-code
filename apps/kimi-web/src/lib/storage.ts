@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
   onboarded: 'kimi-web.onboarded',
   accent: 'kimi-web.accent',
   colorScheme: 'kimi-web.color-scheme',
+  liquidGlass: 'kimi-web.liquid-glass',
   hiddenWorkspaces: 'kimi-web.hidden-workspaces',
   collapsedWorkspaces: 'kimi-web.collapsed-workspaces',
   workspaceOrder: 'kimi-web.workspace-order',
