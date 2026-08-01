@@ -3,7 +3,7 @@
  *
  *   GET  /agent_profiles    data: { profiles: AgentProfileDescriptor[] }
  *
- * Exposes the App-scoped `IAgentProfileCatalogService` catalog so clients can
+ * Exposes the App-scoped `IBuiltinAgentProfileLoader` catalog so clients can
  * populate the per-agent-profile subagent-model picker. Each profile is
  * projected to its wire descriptor (`name` / `description` / `whenToUse` /
  * `modelPreference`); the prompt-rendering surface (`systemPrompt`, tool
@@ -15,7 +15,7 @@
  */
 
 import {
-  IAgentProfileCatalogService,
+  IBuiltinAgentProfileLoader,
   type AgentProfile,
   type Scope,
 } from '@moonshot-ai/agent-core-v2';
@@ -49,7 +49,7 @@ export function registerAgentProfilesRoutes(app: AgentProfilesRouteHost, core: S
       operationId: 'listAgentProfiles',
     },
     async (req, reply) => {
-      const catalog = core.accessor.get(IAgentProfileCatalogService);
+      const catalog = core.accessor.get(IBuiltinAgentProfileLoader);
       const profiles = catalog.list().map(toProtocolAgentProfile);
       reply.send(okEnvelope({ profiles }, req.id));
     },

@@ -10,7 +10,7 @@
  *   POST   /sessions/{session_id}/profile      update title / metadata / agent_config
  *   POST   /sessions/{tail}                    action: fork / compact / undo /
  *                                              abort / btw / archive / restore /
- *                                              reload
+ *                                              reload / add-dir
  *   GET    /sessions/{session_id}/children     list child sessions
  *   POST   /sessions/{session_id}/children     create child session (fork+tag)
  *   GET    /sessions/{session_id}/status       best-effort
@@ -93,12 +93,13 @@ import {
   ISessionMetadata,
   ISessionLegacyService,
   ISessionSecondaryModelWarningService,
-  ISessionWorkspaceCommandService,
+  IWorkspaceDirs,
   IEventService,
   IWorkspaceAliases,
   ISessionLifecycleService,
   IWorkspaceLifecycleService,
   IWorkspaceService,
+  closeSessionById,
   getLiveSessionById,
   handlerForSession,
   resumeSessionById,
@@ -845,14 +846,14 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
           // `reloadProviderManager → clearRuntimeCache → reloadPlugins` order.
           await core.accessor.get(IConfigService).reload();
           await core.accessor.get(IPluginService).reloadPlugins();
-          // Close-if-live then always resume. `close` is a no-op when there
-          // is no live handle (cold session path), and `resume` re-creates
-          // the scope (fresh MCP servers, fresh agent bindings).
-          const lifecycle = core.accessor.get(ISessionLifecycleService);
-          if (lifecycle.get(parsed.id) !== undefined) {
-            await lifecycle.close(parsed.id);
-          }
-          const handle = await lifecycle.resume(parsed.id);
+          // Close-if-live then always resume. `closeSessionById` is a no-op
+          // when there is no live handle (cold session path), and
+          // `resumeSessionById` re-creates the scope (fresh MCP servers,
+          // fresh agent bindings). No `ISessionIndex.get()` pre-check: the
+          // resume return is the existence signal (matches btw/restore/
+          // archive in this file).
+          await closeSessionById(core.accessor, parsed.id);
+          const handle = await resumeSessionById(core.accessor, parsed.id);
           if (handle === undefined) {
             throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${parsed.id} does not exist`);
           }
@@ -876,19 +877,21 @@ export function registerSessionsRoutes(app: SessionRouteHost, core: Scope): void
             return;
           }
           // `resume` (not `get`) so a freshly-opened cold session still works —
-          // ISessionWorkspaceCommandService is session-scoped and needs a live
-          // handle (same pattern as `btw`). The resume return is the existence
-          // check: undefined means the session is unknown or unmaterializable.
-          const session = await core.accessor.get(ISessionLifecycleService).resume(parsed.id);
+          // the Workspace-scoped `IWorkspaceDirs` service is visible from the
+          // resumed Session handle, matching the SDK's `addAdditionalDir`
+          // wiring. The resume return is the existence check: undefined means
+          // the session is unknown or its workspace is gone.
+          const session = await resumeSessionById(core.accessor, parsed.id);
           if (session === undefined) {
             throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${parsed.id} does not exist`);
           }
-          // Relative paths + `~` are resolved by the v2 service against the
-          // session's workDir; a missing/non-directory path throws
-          // `config.invalid`, mapped to VALIDATION_FAILED in sendMappedError.
+          // Relative paths + `~` are resolved by `IWorkspaceDirs.addDir`
+          // against the workspace's project root; a missing/non-directory
+          // path throws `config.invalid`, mapped to VALIDATION_FAILED in
+          // `sendMappedError`.
           const result = await session.accessor
-            .get(ISessionWorkspaceCommandService)
-            .addAdditionalDir({ path: body.path, persist: body.persist ?? false });
+            .get(IWorkspaceDirs)
+            .addDir({ path: body.path, persist: body.persist ?? false });
           requestLog(req)?.info({ session_id: parsed.id, action: 'add-dir' }, 'session action completed');
           reply.send(
             okEnvelope(

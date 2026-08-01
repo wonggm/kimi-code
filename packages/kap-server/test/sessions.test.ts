@@ -661,16 +661,16 @@ describe('server-v2 /api/v1/sessions', () => {
     const cwd = home as string;
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
     const id = created.body.data.id;
-    const lifecycle = (server as RunningServer).core.accessor.get(ISessionLifecycleService);
+    const accessor = (server as RunningServer).core.accessor;
     // Created sessions have a live handle — confirm the pre-reload baseline.
-    expect(lifecycle.get(id)).toBeDefined();
+    expect(getLiveSessionById(accessor, id)).toBeDefined();
 
     const reloaded = await postJson<Record<string, never>>(`/api/v1/sessions/${id}:reload`);
     expect(reloaded.body.code).toBe(0);
     expect(reloaded.body.data).toEqual({});
     // After reload the session still has a live handle (re-resumed by the route)
     // and the index still projects it.
-    expect(lifecycle.get(id)).toBeDefined();
+    expect(getLiveSessionById(accessor, id)).toBeDefined();
     const got = await getJson<SessionWire>(`/api/v1/sessions/${id}`);
     expect(got.body.code).toBe(0);
     expect(got.body.data.id).toBe(id);
@@ -689,7 +689,7 @@ describe('server-v2 /api/v1/sessions', () => {
     ].join('\n'), 'utf-8');
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
     const id = created.body.data.id;
-    const lifecycle = (server as RunningServer).core.accessor.get(ISessionLifecycleService);
+    const accessor = (server as RunningServer).core.accessor;
 
     // Enqueue a turn — busy state comes from the session's main agent having
     // a queued / running turn, which is the same condition the route guards on.
@@ -708,25 +708,25 @@ describe('server-v2 /api/v1/sessions', () => {
       return;
     }
     expect(reloaded.body.msg).toMatch(/cannot be reloaded while a turn is running/i);
-    expect(lifecycle.get(id)).toBeDefined();
+    expect(getLiveSessionById(accessor, id)).toBeDefined();
   });
 
   it('reloads a stopped (cold) session back to live', async () => {
     const cwd = home as string;
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
     const id = created.body.data.id;
-    const lifecycle = (server as RunningServer).core.accessor.get(ISessionLifecycleService);
+    const accessor = (server as RunningServer).core.accessor;
     // Cold the session (persisted-only) — the close path the reload guard
-    // branches on: `lifecycle.get` is undefined, so reload skips close and
-    // goes straight to resume.
-    await lifecycle.close(id);
-    expect(lifecycle.get(id)).toBeUndefined();
+    // branches on: `getLiveSessionById` is undefined, so reload skips close
+    // and goes straight to resume.
+    await closeSessionById(accessor, id);
+    expect(getLiveSessionById(accessor, id)).toBeUndefined();
 
     const reloaded = await postJson<Record<string, never>>(`/api/v1/sessions/${id}:reload`);
     expect(reloaded.body.code).toBe(0);
     expect(reloaded.body.data).toEqual({});
     // Cold → live: the route re-resumed the session.
-    expect(lifecycle.get(id)).toBeDefined();
+    expect(getLiveSessionById(accessor, id)).toBeDefined();
   });
 
   it('returns 40401 when reload\'s resume() cannot materialize the session', async () => {

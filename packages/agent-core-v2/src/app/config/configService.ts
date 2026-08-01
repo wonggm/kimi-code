@@ -478,6 +478,11 @@ export class ConfigService extends Disposable implements IConfigService {
       } else {
         this.raw[domain] = this.registry.validate(domain, stripped);
       }
+      // Whole-section replace: drop the snake-case TOML base so `persist`
+      // does not merge the new value into keys the caller intended to
+      // remove (e.g. `[subagent_models]` removing a profile means the
+      // profile is un-pinned, not merged-into).
+      delete this.rawSnake[camelToSnake(domain)];
       await this.persist(domain);
       this.rebuildEffective('set', [domain]);
     });
