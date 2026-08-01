@@ -5,6 +5,7 @@ import type { KimiApiConfig } from '../config';
 import { buildRestUrl, buildWsUrl } from '../config';
 import { traceKeyEvent } from '../../debug/trace';
 import type {
+  AgentProfileInfo,
   AppConfig,
   AppGoal,
   AppMessage,
@@ -1268,6 +1269,15 @@ export class DaemonKimiWebApi implements KimiWebApi {
   }
 
   // -------------------------------------------------------------------------
+  // Agent profiles — REAL endpoint (v2 backend only)
+  // -------------------------------------------------------------------------
+
+  async listAgentProfiles(): Promise<AgentProfileInfo[]> {
+    const data = await this.http.get<{ profiles: AgentProfileInfo[] }>('/agent_profiles');
+    return data.profiles;
+  }
+
+  // -------------------------------------------------------------------------
   // Config — REAL endpoints
   // -------------------------------------------------------------------------
 
@@ -1283,6 +1293,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
       defaultProvider: 'default_provider',
       defaultModel: 'default_model',
       models: 'models',
+      subagentModels: 'subagent_models',
       thinking: 'thinking',
       planMode: 'plan_mode',
       yolo: 'yolo',

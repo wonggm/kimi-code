@@ -2850,6 +2850,10 @@ export function useKimiWebClient() {
 
     accent: appearance.accent,
     setAccent: appearance.setAccent,
+
+    // Liquid glass effects
+    liquidGlass: appearance.liquidGlass,
+    setLiquidGlass: appearance.setLiquidGlass,
     notifyOnComplete: notification.notifyOnComplete,
     notifyOnQuestion: notification.notifyOnQuestion,
     notifyOnApproval: notification.notifyOnApproval,
