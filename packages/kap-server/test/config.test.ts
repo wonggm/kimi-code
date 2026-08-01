@@ -142,6 +142,39 @@ describe('server-v2 /api/v1/config', () => {
     ).not.toContain('provider/fastModel');
   });
 
+  it('POST subagent_models persists [subagent_models] and echoes it on GET', async () => {
+    await boot();
+    const cfg = await patchConfig({ subagent_models: { explore: 'example/example-model' } });
+    expect(cfg.subagent_models).toEqual({ explore: 'example/example-model' });
+    const after = await getConfig();
+    expect(after.subagent_models).toEqual({ explore: 'example/example-model' });
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).toContain('[subagent_models]');
+    expect(toml).toContain('explore = "example/example-model"');
+  });
+
+  it('POST subagent_models with a key removed un-pins that profile (replace semantics)', async () => {
+    await boot();
+    await patchConfig({ subagent_models: { explore: 'example/example-model', coder: 'example/other-model' } });
+    const after = await patchConfig({ subagent_models: { explore: 'example/example-model' } });
+    expect(after.subagent_models).toEqual({ explore: 'example/example-model' });
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).toContain('explore = "example/example-model"');
+    expect(toml).not.toContain('coder = "example/other-model"');
+  });
+
+  it('GET hides the synthesized __secondary__ derived entry from models', async () => {
+    await boot('[models.k2-test]\nprovider = "example"\nmodel = "example-model"\n');
+    const cfg = await patchConfig({ secondary_model: { model: 'k2-test', default_effort: 'high' } });
+    const models = cfg.models as Record<string, unknown>;
+    expect(models['k2-test']).toBeDefined();
+    expect(models['__secondary__']).toBeUndefined();
+    const after = await getConfig();
+    const afterModels = after.models as Record<string, unknown>;
+    expect(afterModels['k2-test']).toBeDefined();
+    expect(afterModels['__secondary__']).toBeUndefined();
+  });
+
   it('POST { providers } converts fields of a provider id colliding with a map-valued key', async () => {
     await boot();
     await patchConfig({
