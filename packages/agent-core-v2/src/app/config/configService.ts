@@ -455,6 +455,7 @@ export class ConfigService extends Disposable implements IConfigService {
         } else {
           stagedRaw[domain] = this.registry.validate(domain, stripped);
         }
+        delete stagedRawSnake[camelToSnake(domain)];
       });
       this.rebuildEffective('set', [domain]);
     });
