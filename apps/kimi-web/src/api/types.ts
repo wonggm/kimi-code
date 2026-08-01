@@ -667,6 +667,7 @@ export interface AppConfig {
   defaultProvider?: string;
   defaultModel?: string;
   models?: Record<string, unknown>;
+  subagentModels?: Record<string, string>;
   thinking?: { enabled?: boolean; effort?: string };
   planMode?: boolean;
   yolo?: boolean;
@@ -682,6 +683,14 @@ export interface AppConfig {
   experimental?: Record<string, boolean>;
   telemetry?: boolean;
   raw?: Record<string, unknown>;
+}
+
+/** An agent profile descriptor from GET /agent_profiles (v2 backend). */
+export interface AgentProfileInfo {
+  name: string;
+  description?: string;
+  whenToUse?: string;
+  modelPreference?: string;
 }
 
 /** A session-scoped skill the user can invoke from the slash menu. */
@@ -786,6 +795,9 @@ export interface KimiWebApi {
   refreshProvider(id: string): Promise<ProviderRefreshResult>;
   refreshAllProviders(): Promise<ProviderRefreshResult>;
   refreshOAuthProviderModels(): Promise<ProviderRefreshResult>;
+
+  // Agent profiles — REAL endpoint (v2 backend only)
+  listAgentProfiles(): Promise<AgentProfileInfo[]>;
 
   // File upload / download
   uploadFile(input: { file: Blob; name?: string }): Promise<{ id: string; name: string; mediaType: string; size: number }>;
