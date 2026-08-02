@@ -1,6 +1,7 @@
 // apps/kimi-web/src/api/daemon/wire.ts
-// Daemon wire DTOs — ALL fields stay snake_case as they appear on the wire.
-// No camelCase conversions here; that is mappers.ts's job.
+// Daemon wire DTOs — top-level fields stay snake_case as they appear on the wire.
+// Generic config projection can preserve nested camelCase fields; mappers.ts
+// handles that compatibility at the boundary.
 
 // ---------------------------------------------------------------------------
 // Envelope & Page
@@ -405,12 +406,24 @@ export interface WireConfigProvider {
   has_api_key: boolean;
 }
 
+export interface WireSecondaryModel {
+  model?: string;
+  default_effort?: string;
+  support_efforts?: string[];
+  capabilities?: string[];
+  // kap-server's generic config projection preserves nested camelCase keys.
+  defaultEffort?: string;
+  supportEfforts?: string[];
+}
+
 export interface WireConfig {
   providers: Record<string, WireConfigProvider>;
   default_provider?: string;
   default_model?: string;
   models?: Record<string, unknown>;
+  secondary_model?: WireSecondaryModel;
   subagent_models?: Record<string, string>;
+  subagent_efforts?: Record<string, string>;
   thinking?: unknown;
   plan_mode?: boolean;
   yolo?: boolean;
