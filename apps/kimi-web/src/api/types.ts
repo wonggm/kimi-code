@@ -662,12 +662,21 @@ export interface AppConfigProvider {
   hasApiKey: boolean;
 }
 
+export interface AppSecondaryModel {
+  model?: string;
+  defaultEffort?: string;
+  supportEfforts?: readonly string[];
+  capabilities?: string[];
+}
+
 export interface AppConfig {
   providers: Record<string, AppConfigProvider>;
   defaultProvider?: string;
   defaultModel?: string;
   models?: Record<string, unknown>;
+  secondaryModel?: AppSecondaryModel;
   subagentModels?: Record<string, string>;
+  subagentEfforts?: Record<string, string>;
   thinking?: { enabled?: boolean; effort?: string };
   planMode?: boolean;
   yolo?: boolean;
