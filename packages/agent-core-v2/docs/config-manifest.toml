@@ -30,6 +30,8 @@
 #   secondaryModel           src/app/kosongConfig/configSection.ts
 #   services                 src/app/auth/configSection.ts
 #   subagent                 src/session/subagent/configSection.ts
+#   subagentEfforts          src/session/subagent/configSection.ts
+#   subagentModels           src/session/subagent/configSection.ts
 #   task                     src/agent/task/configSection.ts
 #   thinking                 src/app/kosongConfig/configSection.ts
 #   tokenCounting            src/agent/tokenCounting/configSection.ts
@@ -384,18 +386,22 @@ merge_all_available_skills = true
 timeout_ms = 7200000
 
 # ##########################################################################
+# subagentEfforts (config.toml: subagent_efforts)
+#   owner: src/session/subagent/configSection.ts
+#   scope: core
+# ##########################################################################
+
+[subagent_efforts]
+# <name>: string
+
+# ##########################################################################
 # subagentModels (config.toml: subagent_models)
 #   owner: src/session/subagent/configSection.ts
 #   scope: core
 # ##########################################################################
 
 [subagent_models]
-
-# free-form record: agent profile name -> model alias, e.g.
-# explore = "deepseek/deepseek-v4-flash"
-# A listed profile pins the model for its next subagent spawn (absolute —
-# wins over the tool's model parameter and the secondary model); unlisted
-# profiles inherit the session model.
+# <name>: string
 
 # ##########################################################################
 # task

@@ -2143,6 +2143,23 @@ describe('subagent_models config section', () => {
     withSecondary.disposables.dispose();
   });
 
+  it('applies a profile effort after selecting its model and falls back otherwise', async () => {
+    const own = { modelAlias: 'provider/main', thinkingLevel: 'medium' };
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent_models]\nexplore = "provider/pinned"\n\n[subagent_efforts]\nexplore = "high"\n\n[secondary_model]\nmodel = "provider/secondary"\ndefault_effort = "low"\n',
+    );
+
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, 'explore'),
+    ).toEqual({ model: 'provider/pinned', thinking: 'high' });
+    expect(
+      resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, 'coder'),
+    ).toEqual({ model: SECONDARY_DERIVED_MODEL_ID, thinking: 'low' });
+
+    disposables.dispose();
+  });
+
   it('detectSubagentModelTableMismatch flags a bound model that diverges from the table', async () => {
     const { config, disposables } = await createConfig(
       {},

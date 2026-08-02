@@ -14,11 +14,19 @@ import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
 import type { Accent, ColorScheme } from '../../composables/useKimiWebClient';
 import type { AgentProfileInfo, AppConfig, AppModel } from '../../api/types';
 import { getKimiWebApi } from '../../api';
+import {
+  effortLabel,
+  modelThinkingInfoFromConfig,
+  representativeModelForSubagent,
+  subagentEffortOptions,
+  type ModelThinkingInfo,
+} from '../../lib/modelThinking';
 import Dialog from '../ui/Dialog.vue';
 import Switch from '../ui/Switch.vue';
 import Button from '../ui/Button.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import MenuSelect from '../ui/MenuSelect.vue';
+import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import Tooltip from '../ui/Tooltip.vue';
 
 const { t } = useI18n();
@@ -175,6 +183,52 @@ const subagentModelGroups = computed(() => [
   ...toMenuGroups(modelGroups.value),
 ]);
 
+function modelThinkingInfoForAlias(alias: string | undefined): ModelThinkingInfo | undefined {
+  if (alias === undefined) return undefined;
+  const catalogModel = (props.models ?? []).find((model) => model.id === alias);
+  if (catalogModel !== undefined) return catalogModel;
+  return modelThinkingInfoFromConfig(props.config?.models?.[alias]);
+}
+
+function representativeModelFor(profile: AgentProfileInfo): ModelThinkingInfo | undefined {
+  const config = props.config;
+  const secondary = config?.secondaryModel;
+  return representativeModelForSubagent(
+    profile.modelPreference,
+    config?.subagentModels?.[profile.name],
+    modelThinkingInfoForAlias(config?.defaultModel),
+    modelThinkingInfoForAlias(secondary?.model) ?? secondary,
+    (alias) => modelThinkingInfoForAlias(alias),
+  );
+}
+
+function subagentEffortGroups(
+  profile: AgentProfileInfo,
+  modelAlias = props.config?.subagentModels?.[profile.name] ?? '',
+): { options: { value: string; label: string }[] }[] {
+  const storedEffort = props.config?.subagentEfforts?.[profile.name];
+  const representative = modelAlias === ''
+    ? representativeModelFor(profile)
+    : modelThinkingInfoForAlias(modelAlias);
+  return [
+    {
+      options: [
+        { value: '', label: t('settings.inheritSubagentEffort') },
+        ...subagentEffortOptions(representative, storedEffort).map((effort) => ({
+          value: effort,
+          label: effort === storedEffort && !representative?.supportEfforts?.includes(effort)
+            ? `${effortLabel(effort)} (${t('settings.unsupportedEffort')})`
+            : effortLabel(effort),
+        })),
+      ],
+    },
+  ];
+}
+
+function effortGroupsForProfile(profile: AgentProfileInfo, modelAlias: string): { options: { value: string; label: string }[] }[] {
+  return subagentEffortGroups(profile, modelAlias);
+}
+
 const defaultPermissionMode = computed(() => {
   const mode = props.config?.defaultPermissionMode;
   return mode === 'auto' || mode === 'yolo' || mode === 'manual' ? mode : 'manual';
@@ -214,6 +268,13 @@ function setSubagentModel(profileName: string, alias: string | null): void {
   if (alias === null || alias === '') delete table[profileName];
   else table[profileName] = alias;
   emit('updateConfig', { subagentModels: table });
+}
+
+function setSubagentEffort(profileName: string, effort: string | null): void {
+  const table = { ...(props.config?.subagentEfforts ?? {}) };
+  if (effort === null || effort === '') delete table[profileName];
+  else table[profileName] = effort;
+  emit('updateConfig', { subagentEfforts: table });
 }
 
 function setDefaultPermissionMode(mode: 'manual' | 'auto' | 'yolo'): void {
@@ -590,14 +651,19 @@ function archiveTime(iso: string): string {
                     {{ profile.name }}
                     <span v-if="profile.whenToUse" class="hint">{{ profile.whenToUse }}</span>
                   </span>
-                  <div class="select-wrap">
-                    <MenuSelect
-                      :model-value="config.subagentModels?.[profile.name] ?? ''"
-                      :groups="subagentModelGroups"
-                      :disabled="configSaving"
-                      :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
-                      @update:model-value="setSubagentModel(profile.name, $event)"
-                    />
+                  <div class="profile-selects">
+                    <div class="select-wrap">
+                      <ModelEffortSelect
+                        :model-value="config.subagentModels?.[profile.name] ?? ''"
+                        :effort-value="config.subagentEfforts?.[profile.name] ?? ''"
+                        :groups="subagentModelGroups"
+                        :effort-groups="(modelAlias) => effortGroupsForProfile(profile, modelAlias)"
+                        :disabled="configSaving"
+                        :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
+                        @update:model-value="setSubagentModel(profile.name, $event)"
+                        @update:effort-value="setSubagentEffort(profile.name, $event)"
+                      />
+                    </div>
                   </div>
                 </div>
               </template>
@@ -879,6 +945,7 @@ function archiveTime(iso: string): string {
 }
 
 .select-wrap { min-width: 220px; max-width: min(320px, 50vw); flex: none; }
+.profile-selects { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 
 .subagent-title { margin: var(--space-3) 0 var(--space-1); }
 .subagent-hint { margin: 0 0 var(--space-2); }
@@ -904,6 +971,11 @@ function archiveTime(iso: string): string {
   .tab { white-space: nowrap; flex: none; }
   .row {
     align-items: flex-start;
+    flex-direction: column;
+  }
+  .profile-selects {
+    width: 100%;
+    align-items: stretch;
     flex-direction: column;
   }
   .select-wrap {

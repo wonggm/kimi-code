@@ -114,6 +114,17 @@ export type SubagentModelsConfig = z.infer<typeof SubagentModelsConfigSchema>;
 
 registerConfigSection(SUBAGENT_MODELS_SECTION, SubagentModelsConfigSchema);
 
+export const SUBAGENT_EFFORTS_SECTION = 'subagentEfforts';
+
+/**
+ * `[subagent_efforts]` on disk: profile name → explicit thinking effort.
+ */
+export const SubagentEffortsConfigSchema = z.record(z.string(), z.string());
+
+export type SubagentEffortsConfig = z.infer<typeof SubagentEffortsConfigSchema>;
+
+registerConfigSection(SUBAGENT_EFFORTS_SECTION, SubagentEffortsConfigSchema);
+
 /**
  * Resolve the model alias a subagent should be bound to: the
  * `[subagent_models]` entry for the profile, falling back to inheriting the
@@ -190,32 +201,34 @@ export function resolveSubagentBinding(
   // per-profile pin wins over the explicit `model` choice, the secondary
   // model, and the caller model. Unlisted profiles fall through to the
   // upstream secondary-model / caller inheritance below.
-  if (profileName !== undefined) {
-    const pinned = config.get<SubagentModelsConfig | undefined>(SUBAGENT_MODELS_SECTION)?.[
-      profileName
-    ];
-    if (pinned !== undefined) {
-      return {
-        model: pinned,
-        thinking: own.thinkingLevel,
-        displayModel: subagentDisplayModel(config, pinned),
-      };
-    }
-  }
+  const pinned =
+    profileName === undefined
+      ? undefined
+      : config.get<SubagentModelsConfig | undefined>(SUBAGENT_MODELS_SECTION)?.[profileName];
   const secondary = resolveSecondaryModel(config, flags);
-  if (requested !== 'primary' && secondary?.model !== undefined) {
-    const model =
+  let model: string;
+  let thinking: string | undefined;
+  if (pinned !== undefined) {
+    model = pinned;
+    thinking = own.thinkingLevel;
+  } else if (requested !== 'primary' && secondary?.model !== undefined) {
+    model =
       secondaryModelPatch(secondary) === undefined ? secondary.model : SECONDARY_DERIVED_MODEL_ID;
-    return {
-      model,
-      thinking: secondary.defaultEffort,
-      displayModel: subagentDisplayModel(config, model),
-    };
+    thinking = secondary.defaultEffort;
+  } else {
+    model = own.modelAlias;
+    thinking = own.thinkingLevel;
   }
+  // `[subagent_efforts]` overrides the thinking effort per profile, on top of
+  // whatever the model binding resolved above.
+  const effort =
+    profileName === undefined
+      ? undefined
+      : config.get<SubagentEffortsConfig | undefined>(SUBAGENT_EFFORTS_SECTION)?.[profileName];
   return {
-    model: own.modelAlias,
-    thinking: own.thinkingLevel,
-    displayModel: subagentDisplayModel(config, own.modelAlias),
+    model,
+    thinking: effort ?? thinking,
+    displayModel: subagentDisplayModel(config, model),
   };
 }
 

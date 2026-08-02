@@ -766,7 +766,16 @@ export function toAppConfig(wire: WireConfig): AppConfig {
     defaultProvider: wire.default_provider,
     defaultModel: wire.default_model,
     models: wire.models,
+    secondaryModel: wire.secondary_model
+      ? {
+          model: wire.secondary_model.model,
+          defaultEffort: wire.secondary_model.defaultEffort ?? wire.secondary_model.default_effort,
+          supportEfforts: wire.secondary_model.supportEfforts ?? wire.secondary_model.support_efforts,
+          capabilities: wire.secondary_model.capabilities,
+        }
+      : undefined,
     subagentModels: wire.subagent_models,
+    subagentEfforts: wire.subagent_efforts,
     thinking: wire.thinking as { enabled?: boolean; effort?: string } | undefined,
     planMode: wire.plan_mode,
     yolo: wire.yolo,

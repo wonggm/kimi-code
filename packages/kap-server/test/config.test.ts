@@ -146,6 +146,37 @@ describe('server-v2 /api/v1/config', () => {
     expect(toml).not.toContain('coder = "example/other-model"');
   });
 
+  it('POST subagent_efforts replaces the full profile table', async () => {
+    await boot();
+    await patchConfig({
+      subagent_efforts: { explore: 'high', coder: 'low' },
+    });
+
+    const after = await patchConfig({
+      subagent_efforts: { explore: 'medium' },
+    });
+    expect(after.subagent_efforts).toEqual({ explore: 'medium' });
+
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).toContain('[subagent_efforts]');
+    expect(toml).toContain('explore = "medium"');
+    expect(toml).not.toContain('coder = "low"');
+  });
+
+  it('POST subagent_efforts with an empty table clears all profile assignments', async () => {
+    await boot();
+    await patchConfig({
+      subagent_efforts: { explore: 'high' },
+    });
+
+    const after = await patchConfig({ subagent_efforts: {} });
+    expect(after.subagent_efforts).toEqual({});
+
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).not.toContain('[subagent_efforts]');
+    expect(toml).not.toContain('explore = "high"');
+  });
+
   it('GET hides the synthesized __secondary__ derived entry from models', async () => {
     await boot('[models.k2-test]\nprovider = "example"\nmodel = "example-model"\n');
     // `default_effort` is a patch field, so the overlay synthesizes the
