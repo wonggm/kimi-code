@@ -36,6 +36,7 @@ This is a TypeScript monorepo built for agent-assisted development. Keep the roo
 - **Node.js**: `>=24.15.0` (from the root `package.json` `engines`; `.nvmrc` is `24.15.0`, used by nvm / fnm / mise to pick the minimum recommended version).
 - **pnpm**: `10.33.0` (from the root `package.json` `packageManager`).
 - `pnpm install` will fail when the Node version is not satisfied, because `.npmrc` sets `engine-strict=true`.
+- **Built-in model catalog**: from-source builds do not embed the model catalog snapshot by default, so `/provider → Add New Platform` fails with `Failed to fetch catalog` whenever `models.dev` is unreachable; release builds embed it via `KIMI_CODE_BUILT_IN_CATALOG_FILE`. See `apps/kimi-code/AGENTS.md` (§ Built-in Model Catalog) for the build recipe and the unreachable-`models.dev` workaround.
 
 ## Monorepo Workspace Maintenance
 
