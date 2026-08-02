@@ -69,3 +69,20 @@ The theme apply/switch mechanics live in the `write-tui` skill. The following ru
 - Optional object properties do not need to additionally allow `undefined` in the type.
 - Internal methods with only a single parameter should not be turned into options objects just for stylistic uniformity.
 - Except for a package's own `index.ts`, other `index.ts` files should prefer `export * from './module'`.
+
+## Built-in Model Catalog
+
+`/provider → [ Add New Platform ]` fetches the model catalog from `https://models.dev/api.json` (`DEFAULT_CATALOG_URL` in `packages/node-sdk/src/catalog.ts`). On a network error it falls back to a built-in snapshot via `fetchCatalogOrBuiltIn` (`src/utils/catalog-fetch.ts`); if no snapshot is embedded, the original network error is rethrown as `Failed to fetch catalog: fetch failed`.
+
+- The snapshot is injected at build time and is never committed. `tsdown.config.ts` defines `__KIMI_CODE_BUILT_IN_CATALOG__` from `builtInCatalogDefine()` (`scripts/built-in-catalog.mjs`), which reads the file named by the `KIMI_CODE_BUILT_IN_CATALOG_FILE` env var and JSON-stringifies it; when the env var is unset it substitutes `undefined`.
+- The snapshot JSON is produced by `scripts/update-catalog.mjs` (fetches `models.dev/api.json`, prunes unneeded fields, writes `dist/built-in-catalog.json`; also exposed as `pnpm catalog:update`). `dist/` is gitignored, so the generated snapshot stays out of the tree.
+- **From-source gotcha:** a plain `pnpm build` / `pnpm exec tsdown` does NOT set `KIMI_CODE_BUILT_IN_CATALOG_FILE`, so a locally built `dist/main.mjs` carries no snapshot. On a network where `models.dev` is unreachable, `/provider → Add New Platform` then fails with the hard error above instead of falling back. Release CI sets the env var (`.github/workflows/release.yml`), which is why published binaries fall back gracefully.
+- **Embedding the snapshot in a local build:** generate (or otherwise obtain) the catalog JSON, then build with the env var set:
+  ```bash
+  pnpm --filter @moonshot-ai/kimi-code catalog:update   # needs models.dev reachable; writes apps/kimi-code/dist/built-in-catalog.json
+  KIMI_CODE_BUILT_IN_CATALOG_FILE=apps/kimi-code/dist/built-in-catalog.json \
+    pnpm --filter @moonshot-ai/kimi-code build
+  ```
+  To regenerate only `dist/main.mjs`, run `KIMI_CODE_BUILT_IN_CATALOG_FILE=<absolute-path> pnpm exec tsdown` from `apps/kimi-code`.
+- **When `models.dev` is unreachable** (e.g. DNS-filtered networks): take the snapshot from a published `@moonshot-ai/kimi-code` npm tarball instead. Its `dist/main.mjs` embeds the snapshot as the largest (>1 MB) double-quoted string literal; `JSON.parse` that literal once to recover the catalog JSON text, write it to a file, and point `KIMI_CODE_BUILT_IN_CATALOG_FILE` at it. Prefer a published version matching the local `package.json` version so the pruned schema lines up.
+- **Verify** the snapshot landed: the rebuilt `dist/main.mjs` contains a string literal >1 MB that parses (two `JSON.parse`s — the literal is a JSON-encoded string holding the catalog JSON) to an object keyed by provider id.
