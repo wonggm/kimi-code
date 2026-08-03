@@ -9,6 +9,10 @@
 - Scrolling issue: jump scrolling when "working" and when idle, sometimes scrolling jumps abruptly to the very top when "working".
 - AskTool: text typed in "Others" removed when switching session.
 - Subagent models: UI to change them, in settings maybe? and a "Save" button (or something named more nicely) that does '/reload'
+- when using '@' to point to file, add so that it works for all paths, eg: '/path/to/here', '~/tilda/means/from/home/path'. current behaviour might be that, '@' works only for cwd and added dir to the workspace via '/add-dir'
+### Frontend
+- hidden scrollbar by default, only shown when scrolling and hovered-over. 
+- hidden TOC, show only when hovered over 
 
 ## Agent core/harness
 - session '/tree' like Pi. 
