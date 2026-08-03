@@ -1,0 +1,50 @@
+{
+  "generatedAt": "2026-08-02T21:05:55.380Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 1
+  },
+  "scenarios": {
+    "streaming-replay": {
+      "mean": 17.06,
+      "p50": 16.7,
+      "p95": 16.8,
+      "p99": 16.8,
+      "droppedPct": 0.41,
+      "longtaskCount": 2,
+      "longtaskMs": 605,
+      "frames": 1973
+    },
+    "scroll-long": {
+      "mean": 22.49,
+      "p50": 16.7,
+      "p95": 33.44,
+      "p99": 66.7,
+      "droppedPct": 9.93,
+      "longtaskCount": 11,
+      "longtaskMs": 4176,
+      "frames": 1138
+    },
+    "dialog-storm": {
+      "mean": 43.03,
+      "p50": 16.7,
+      "p95": 133.3,
+      "p99": 137.38,
+      "droppedPct": 33.33,
+      "longtaskCount": 3,
+      "longtaskMs": 716,
+      "frames": 177
+    },
+    "dock-toc": {
+      "mean": 22.8,
+      "p50": 16.7,
+      "p95": 49.9,
+      "p99": 50,
+      "droppedPct": 16.01,
+      "longtaskCount": 3,
+      "longtaskMs": 692,
+      "frames": 356
+    }
+  }
+}
