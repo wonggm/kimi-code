@@ -1306,3 +1306,51 @@ body {
     font-size: max(16px, var(--ui-font-size-xl));
   }
 }
+
+/* ---- perf: WS-1A ---- */
+/* Long-transcript scroll jank (scroll-long). Assistant rows and compaction
+   dividers skip rendering while fully off-screen: layout/paint of a 500-turn
+   document collapses to the visible slice, so async KaTeX/shiki commits to
+   off-screen turns no longer trigger document-wide layout, and scroll frames
+   stop paying for content nobody sees. Rows re-activate as they approach the
+   viewport; the `auto` keyword remembers each row's last rendered height so
+   re-skipping after a pass keeps the scrollbar geometry stable.
+   contain-intrinsic-size values are pre-render estimates only — first paint
+   of a visible row uses its real size.
+   User bubbles (.u-bub) are deliberately NOT covered: the bubble sits in the
+   top blur-band zone, and containment there interacted with the band's
+   per-frame backdrop-filter during streaming (measured: streaming-replay p95
+   16.8 → 33.3 ms with bubbles contained; clean once exempted). Bubbles are
+   cheap to render anyway — the heavy rows are the assistant ones. */
+.a-msg.turn-anchor {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 700px 160px;
+}
+.compact-divider.turn-anchor {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 700px 21px;
+}
+/* The actively streaming assistant row grows on every delta while auto-follow
+   re-scrolls the pane; keep it out of content-visibility — it is on screen
+   by definition, so nothing is saved by skipping its render. ChatPane sets
+   the class on the turn whose id matches streamingTurnId. */
+.turn-anchor.is-streaming {
+  content-visibility: visible;
+}
+
+
+/* ---- perf: WS-1B ---- */
+/* Dialog / bottom-sheet open jank (dialog-storm). The frosted panels carry
+   `.lg-frost` (blur 34px); rasterizing the panel frost in the mount frame
+   stacks it on top of the scrim's full-viewport blur. Dialog and BottomSheet
+   stagger the two rasters instead — scrim filter on frame 2 (`step-1`),
+   panel frost on frame 3 (`step-2`). Their entrance animations start at
+   opacity 0, so both steps land while the overlay is still nearly invisible:
+   identical settled pixels, identical animation, no single frame pays the
+   full blur cost. Doubled classes outrank the frozen `.lg-frost.lg-frost`
+   base rule ((0,3,1)). */
+html[data-liquid-glass="on"] .ui-dialog.ui-dialog:not(.step-2),
+html[data-liquid-glass="on"] .sheet-root:not(.step-2) .sheet-panel.sheet-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

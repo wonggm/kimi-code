@@ -4,10 +4,20 @@
 <!-- the scrim or the grab handle closes it. Restyled to the unified v2 dialog -->
 <!-- look (tokened scrim, surface-raised panel, UI font). -->
 <script setup lang="ts">
-import { onUnmounted, watch } from 'vue';
+import { onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
+
+// Backdrop-filter warm-up: the scrim (blur 10px, full viewport) and the
+// frosted panel (blur 34px) are two large blur rasters; stagger them — scrim
+// on frame 2, panel on frame 3 — so no single frame pays both. The enter
+// transition starts at opacity 0, so both steps land while the sheet is still
+// nearly invisible (identical settled pixels, same animation). `step-1`
+// gates the scrim filter here; `step-2` gates the panel's `.lg-frost` filter
+// via the WS-1B override in style.css.
+const settleStep = ref(0);
+let settleRaf = 0;
 
 const props = withDefaults(
   defineProps<{
@@ -44,14 +54,37 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => props.modelValue,
+  (open) => {
+    // On close, keep the filters as they are: the leave transition fades the
+    // frosted sheet out, so dropping the blur mid-fade would be visible.
+    if (!open || typeof window === 'undefined') return;
+    cancelAnimationFrame(settleRaf);
+    settleStep.value = 0;
+    settleRaf = requestAnimationFrame(() => {
+      settleStep.value = 1;
+      settleRaf = requestAnimationFrame(() => {
+        settleStep.value = 2;
+      });
+    });
+  },
+  { immediate: true },
+);
+
 onUnmounted(() => {
+  cancelAnimationFrame(settleRaf);
   if (typeof document !== 'undefined') document.removeEventListener('keydown', onKeydown);
 });
 </script>
 
 <template>
   <Transition name="sheet">
-    <div v-if="modelValue" class="sheet-root">
+    <div
+      v-if="modelValue"
+      class="sheet-root"
+      :class="{ 'step-1': settleStep >= 1, 'step-2': settleStep >= 2 }"
+    >
       <div class="sheet-scrim" @click="close" />
       <div class="sheet-panel lg-frost" role="dialog" :aria-label="title || t('mobile.sheetLabel')">
         <button
@@ -87,6 +120,12 @@ onUnmounted(() => {
   background: rgba(13, 17, 23, 0.32);
   -webkit-backdrop-filter: blur(10px) saturate(140%);
   backdrop-filter: blur(10px) saturate(140%);
+}
+/* Backdrop-filter warm-up (see `settleStep`): the scrim blur lands on
+   frame 2 of the enter transition, the panel's frost on frame 3. */
+.sheet-root:not(.step-1) .sheet-scrim {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .sheet-panel {
