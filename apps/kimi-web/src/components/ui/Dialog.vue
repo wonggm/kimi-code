@@ -8,6 +8,17 @@ import { openDialogCount } from '../../composables/dialogStack';
 import IconButton from './IconButton.vue';
 import Icon from './Icon.vue';
 
+// Backdrop-filter warm-up: the overlay scrim (blur 10px, full viewport) and
+// the frosted panel (blur 34px) are two large blur rasters. Rasterizing both
+// in the mount frame stacks them into one long frame, so stagger them instead
+// — scrim filter on frame 2, panel filter on frame 3. The entrance fade
+// starts at opacity 0, so both steps land while the overlay is still nearly
+// invisible: identical settled pixels, identical animation, no single frame
+// pays the full blur cost. `step-1` gates the scrim filter here; `step-2`
+// gates the panel's `.lg-frost` filter via the WS-1B override in style.css.
+const settleStep = ref(0);
+let settleRaf = 0;
+
 const props = withDefaults(defineProps<{
   open: boolean;
   title?: string;
@@ -120,10 +131,29 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => props.open,
+  (isOpen) => {
+    if (typeof window === 'undefined') return;
+    cancelAnimationFrame(settleRaf);
+    settleStep.value = 0;
+    if (isOpen) {
+      settleRaf = requestAnimationFrame(() => {
+        settleStep.value = 1;
+        settleRaf = requestAnimationFrame(() => {
+          settleStep.value = 2;
+        });
+      });
+    }
+  },
+  { immediate: true },
+);
+
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', onKeydown);
 }
 onBeforeUnmount(() => {
+  cancelAnimationFrame(settleRaf);
   if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown);
   // Release this dialog's slot if it unmounts while still open (e.g. the
   // parent v-if's it away before `open` flips to false).
@@ -133,11 +163,16 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="ui-dialog__overlay" @mousedown="onOverlayClick">
+    <div
+      v-if="open"
+      class="ui-dialog__overlay"
+      :class="{ 'step-1': settleStep >= 1, 'step-2': settleStep >= 2 }"
+      @mousedown="onOverlayClick"
+    >
       <div
         ref="panel"
         class="ui-dialog lg-frost"
-        :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed' }]"
+        :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed' }, { 'step-2': settleStep >= 2 }]"
         role="dialog"
         aria-modal="true"
         tabindex="-1"
@@ -177,6 +212,12 @@ onBeforeUnmount(() => {
 @keyframes kimi-dialog-overlay-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+/* Backdrop-filter warm-up (see `settleStep` in the script): the scrim blur
+   lands on frame 2 of the entrance fade, the panel's frost on frame 3. */
+.ui-dialog__overlay:not(.step-1) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .ui-dialog {
   max-height: calc(100vh - var(--space-8) * 2);
