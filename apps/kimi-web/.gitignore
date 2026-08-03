@@ -1,0 +1,7 @@
+# Bench harness outputs (apps/kimi-web/bench/).
+# Per-scenario metric dumps and fresh pixel captures are regenerable by
+# `pnpm bench` / `pnpm bench:capture`; the Phase-0 gate keeps the combined
+# baseline metrics and the reference pixel set under version control.
+bench/results/*.json
+!bench/results/baseline.json
+bench/pixel/current/

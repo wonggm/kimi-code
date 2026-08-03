@@ -120,6 +120,12 @@ const visible = computed(
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--duration-base) var(--ease-out);
+  /* Perf: pre-promote the panel so hover only animates opacity on the
+     compositor. Without this, every hover-in paid a layer creation + first
+     backdrop-blur raster spike and every hover-out a teardown, and the fade
+     re-rasterized the blur+mask each frame. The layer is empty (no
+     background/filter) while collapsed, so the promotion costs nothing. */
+  will-change: opacity;
   -webkit-mask-image:
     linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%),
     linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 14px), transparent 100%);
