@@ -27,6 +27,13 @@ The four contribution seams (token → fold): config sections — `ConfigSection
 - `cascadeEngine.ts` — one engine per scope container with tree-wide orchestration (L2): `provide` / `unprovide` / `update` run as transactions (contagion set from the persistent dependency graph — instance edges may point child → parent across scopes → abort hook → global reverse-topo teardown → apply → waiting-area recheck to a fixpoint → history ring). Units are five-state (`Pending / Activating / Active / Unloading / Failed`): construction failure is sticky `Failed` (no auto-retry; `update()` reloads; resolving a Failed unit rethrows its error); units with unsatisfiable declared dependencies park in the waiting area and auto-activate when the deps arrive, across scopes. An `ondemand` unit counts as available — consumers pull it transitively at materialization.
 - Static and dynamic share one provide path: scope creation (`createScopedChildHandle` / `Scope.createApp` / `Scope.createChild`) submits the kind's whole `registerScopedService` batch as ONE cascade transaction via `provideAll` — every token registers before the activation wave, so registration order never matters (untracked transitive `createInstance` resolutions succeed inside the batch); a seed occupying a token overrides the static registration. `activateScopeServices` is gone — eager activation failure is a sticky `Failed` unit, not a scope-creation error.
 
+## Workspace domain notes
+
+- MCP persistence — the `[mcp]` config section plus OAuth credentials — lives in `app/mcpConfig` (the same wrapper shape as `kosongConfig` over kosong). `workspaceMcp` is pure connection orchestration over the scope-agnostic `mcpCore` layer; the effective server set is owned by `workspaceMcpConfig` (mcp.json files + plugin contributions, fs-watch refreshed).
+- `workspaceDirs` (the additional-directory set) is backed by `.kimi-code/local.toml`.
+- `workspaceToolPolicy` is the os-level tool veto.
+- Workspace trust flips through kap-server's `GET|POST /workspaces/{id}/trust` and `POST /workspaces/{id}/untrust` routes.
+
 ## Examples
 
 > The runnable examples have moved to the standalone `kimi-code-mini-bench` package at `../kimi-code-mini-bench`. They are wired to `agent-core-v2` through a pnpm `link:` dependency and run as a separate Vitest project.
