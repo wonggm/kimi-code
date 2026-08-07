@@ -6,7 +6,12 @@ import type { IAgentScopeHandle } from '#/_base/di/scope';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { Event2 } from '#/app/event/event2';
+<<<<<<< HEAD
 import { agentContextOf } from '#/agent/scopeContext/scopeContext';
+=======
+import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
+import { applyProfilePromptPrefix } from '#/app/agentProfileCatalog/promptPrefix';
+>>>>>>> a40548177 (fix(build): keep the in-tree kimi-web pipeline on the 0.34.0 base)
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import {
   isSubagentMeta,
@@ -157,7 +162,6 @@ export class SessionSwarmService implements ISessionSwarmService {
       const resumedModel = child.accessor.get(IAgentProfileService).data().modelAlias;
       emitAgentRunSpawned(caller, agentId, {
         profileName,
-        model: child.accessor.get(IAgentProfileService).data().modelAlias,
         parentToolCallId: options.parentToolCallId,
         parentToolCallUuid: options.parentToolCallUuid,
         description: options.description,
