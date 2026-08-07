@@ -45,6 +45,8 @@ export default {
   defaultPlanModeHint: 'Whether new sessions start in plan mode',
   mergeSkills: 'Merge all available skills',
   mergeSkillsHint: 'Show project, plugin, and user skills together',
+  compactionThreshold: 'Compaction threshold',
+  compactionThresholdHint: 'Compact history when context use exceeds this share of the context window',
   telemetry: 'Improve product with usage data',
   telemetryHint: 'When on, we collect anonymous interaction data (such as clicks, interruptions, and feature usage) to improve the product experience. You can turn it off at any time.',
   telemetryRestartHint: 'Takes effect after restarting the service.',

@@ -323,6 +323,14 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
 .chat-dock.align-left { margin-left: 0; margin-right: auto; }
 .chat-dock.align-mobile { max-width: none; }
 
+/* Liquid glass: drop the opaque background so the frost layer behind the
+   dock (ConversationPane's .chat-layout::after) shows through and the chips
+   and composer read as embedded in one glass slab. Cards in the dock
+   (question / approval / todo panel) carry their own backgrounds. */
+html[data-liquid-glass="on"] .chat-dock.chat-dock {
+  background: transparent;
+}
+
 .dock-work-panel {
   position: absolute;
   left: 16px;
