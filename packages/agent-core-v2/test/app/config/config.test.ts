@@ -2117,15 +2117,23 @@ describe('subagent_models config section', () => {
     // A listed profile binds to its pinned model...
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, 'explore'),
-    ).toEqual({ model: 'deepseek/deepseek-v4-flash', thinking: 'medium' });
+    ).toEqual({
+      model: 'deepseek/deepseek-v4-flash',
+      thinking: 'medium',
+      displayModel: 'deepseek/deepseek-v4-flash',
+    });
     // ...absolutely: even an explicit 'primary' does not override the table.
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(false), own, 'primary', 'explore'),
-    ).toEqual({ model: 'deepseek/deepseek-v4-flash', thinking: 'medium' });
+    ).toEqual({
+      model: 'deepseek/deepseek-v4-flash',
+      thinking: 'medium',
+      displayModel: 'deepseek/deepseek-v4-flash',
+    });
     // An unlisted profile inherits the caller model.
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, 'coder'),
-    ).toEqual({ model: 'provider/main', thinking: 'medium' });
+    ).toEqual({ model: 'provider/main', thinking: 'medium', displayModel: 'provider/main' });
     disposables.dispose();
 
     // The table also wins over a configured secondary model for listed profiles,
@@ -2136,10 +2144,18 @@ describe('subagent_models config section', () => {
     );
     expect(
       resolveSubagentBinding(withSecondary.config, secondaryModelFlags(), own, undefined, 'explore'),
-    ).toEqual({ model: 'deepseek/deepseek-v4-flash', thinking: 'medium' });
+    ).toEqual({
+      model: 'deepseek/deepseek-v4-flash',
+      thinking: 'medium',
+      displayModel: 'deepseek/deepseek-v4-flash',
+    });
     expect(
       resolveSubagentBinding(withSecondary.config, secondaryModelFlags(), own, undefined, 'coder'),
-    ).toEqual({ model: 'provider/secondary', thinking: undefined });
+    ).toEqual({
+      model: 'provider/secondary',
+      thinking: undefined,
+      displayModel: 'provider/secondary',
+    });
     withSecondary.disposables.dispose();
   });
 
@@ -2152,10 +2168,14 @@ describe('subagent_models config section', () => {
 
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, 'explore'),
-    ).toEqual({ model: 'provider/pinned', thinking: 'high' });
+    ).toEqual({ model: 'provider/pinned', thinking: 'high', displayModel: 'provider/pinned' });
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(), own, undefined, 'coder'),
-    ).toEqual({ model: SECONDARY_DERIVED_MODEL_ID, thinking: 'low' });
+    ).toEqual({
+      model: SECONDARY_DERIVED_MODEL_ID,
+      thinking: 'low',
+      displayModel: 'provider/secondary',
+    });
 
     disposables.dispose();
   });

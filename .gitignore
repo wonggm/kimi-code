@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-single/
+dist-web/
 dist-native/
 .tmp-api-extractor/
 .contract-types-tmp/

@@ -32,7 +32,6 @@ import { IAgentUserToolService } from '#/agent/userTool/userTool';
 import { IEventBus } from '#/app/event/eventBus';
 import { IConfigService } from '#/app/config/config';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
-import { IConfigService } from '#/app/config/config';
 import { applyProfilePromptPrefix } from '#/app/agentProfileCatalog/promptPrefix';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import {
@@ -188,7 +187,6 @@ export class SessionSwarmService implements ISessionSwarmService {
       .inheritUserTools(caller.accessor.get(IAgentUserToolService));
     emitAgentRunSpawned(caller, child.id, {
       profileName: options.profileName,
-      model: binding.model,
       parentToolCallId: options.parentToolCallId,
       parentToolCallUuid: options.parentToolCallUuid,
       description: options.description,
@@ -224,7 +222,6 @@ export class SessionSwarmService implements ISessionSwarmService {
       const resumedModel = child.accessor.get(IAgentProfileService).data().modelAlias;
       emitAgentRunSpawned(caller, agentId, {
         profileName,
-        model: child.accessor.get(IAgentProfileService).data().modelAlias,
         parentToolCallId: options.parentToolCallId,
         parentToolCallUuid: options.parentToolCallUuid,
         description: options.description,
