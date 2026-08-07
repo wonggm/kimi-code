@@ -12,15 +12,8 @@ import LanguageSwitcher from './LanguageSwitcher.vue';
 import { serverEndpointLabel } from '../../api/config';
 import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
 import type { Accent, ColorScheme } from '../../composables/useKimiWebClient';
-import type { AgentProfileInfo, AppConfig, AppModel } from '../../api/types';
-import { getKimiWebApi } from '../../api';
-import {
-  effortLabel,
-  modelThinkingInfoFromConfig,
-  representativeModelForSubagent,
-  subagentEffortOptions,
-  type ModelThinkingInfo,
-} from '../../lib/modelThinking';
+import type { AppConfig, AppModel } from '../../api/types';
+import { PERMISSION_MODES, useAgentDefaults } from '../../composables/useAgentDefaults';
 import Dialog from '../ui/Dialog.vue';
 import Switch from '../ui/Switch.vue';
 import Button from '../ui/Button.vue';
@@ -100,14 +93,35 @@ const daemonEndpoint = serverEndpointLabel();
 const backendLabel = computed(() =>
   props.backend === 'v2' ? 'v2 (kap-server)' : 'v1 (server)',
 );
-const permissionModes = ['manual', 'yolo', 'auto'] as const;
-// Reuse the Composer's permission labels (status.permission*) so the
-// default-permission names stay in sync with the toolbar.
-const permissionLabelKey: Record<(typeof permissionModes)[number], string> = {
-  manual: 'status.permissionManual',
-  auto: 'status.permissionAuto',
-  yolo: 'status.permissionYolo',
-};
+const permissionModes = PERMISSION_MODES;
+// All "Agent defaults" tab logic (default model, subagent pins, permission,
+// thinking, plan mode, merge-skills, compaction threshold) is shared with the
+// mobile settings sheet via this composable; patches go out as updateConfig.
+const {
+  modelGroups,
+  defaultModelGroups,
+  subagentModelGroups,
+  effortGroupsForProfile,
+  defaultPermissionMode,
+  permissionLabelKey,
+  configBool,
+  setDefaultModel,
+  setSubagentModel,
+  setSubagentEffort,
+  setDefaultPermissionMode,
+  toggleConfigBoolean,
+  compactionThresholdPercent,
+  setCompactionThreshold,
+  thinkingEnabled,
+  toggleDefaultThinking,
+  agentProfiles,
+  loadAgentProfiles,
+} = useAgentDefaults({
+  config: () => props.config,
+  models: () => props.models,
+  backend: () => props.backend,
+  updateConfig: (patch) => emit('updateConfig', patch),
+});
 
 // Modal focus: move focus into the dialog on open, restore it to the opener on
 // close (Escape-to-close is handled below).
@@ -122,205 +136,6 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
 
 function exportLog(): void {
   downloadTraceLog();
-}
-
-type ModelOption = { id: string; label: string; provider: string };
-
-const modelOptions = computed<ModelOption[]>(() => {
-  const byId = new Map<string, ModelOption>();
-  for (const model of props.models ?? []) {
-    byId.set(model.id, {
-      id: model.id,
-      label: model.displayName ?? model.model ?? model.id,
-      provider: model.provider,
-    });
-  }
-  for (const [id, raw] of Object.entries(props.config?.models ?? {})) {
-    if (byId.has(id)) continue;
-    const provider = extractConfigModelProvider(raw);
-    byId.set(id, {
-      id,
-      label: formatConfigModelLabel(id, raw, provider),
-      provider: provider ?? id,
-    });
-  }
-  return Array.from(byId.values());
-});
-
-const modelGroups = computed<Array<{ provider: string; options: ModelOption[] }>>(() => {
-  const map = new Map<string, ModelOption[]>();
-  for (const option of modelOptions.value) {
-    const list = map.get(option.provider) ?? [];
-    list.push(option);
-    map.set(option.provider, list);
-  }
-  for (const list of map.values()) {
-    list.sort((a, b) => a.label.localeCompare(b.label));
-  }
-  return Array.from(map.entries())
-    .toSorted(([a], [b]) => a.localeCompare(b))
-    .map(([provider, options]) => ({ provider, options }));
-});
-
-// MenuSelect shape — [{ label?, options: [{ value, label }] }]. modelGroups is
-// already provider-grouped; just project the fields. Used by both the default-
-// model picker and the per-profile subagent picker.
-function toMenuGroups(
-  groups: Array<{ provider: string; options: ModelOption[] }>,
-): { label: string; options: { value: string; label: string }[] }[] {
-  return groups.map((g) => ({
-    label: g.provider,
-    options: g.options.map((m) => ({ value: m.id, label: m.label })),
-  }));
-}
-
-const defaultModelGroups = computed(() => toMenuGroups(modelGroups.value));
-
-// Subagent pins get an unlabeled leading "Inherit (session model)" row whose
-// value is '' (setSubagentModel treats '' the same as null: delete the key).
-const subagentModelGroups = computed(() => [
-  { options: [{ value: '', label: t('settings.inheritSessionModel') }] },
-  ...toMenuGroups(modelGroups.value),
-]);
-
-function modelThinkingInfoForAlias(alias: string | undefined): ModelThinkingInfo | undefined {
-  if (alias === undefined) return undefined;
-  const catalogModel = (props.models ?? []).find((model) => model.id === alias);
-  if (catalogModel !== undefined) return catalogModel;
-  return modelThinkingInfoFromConfig(props.config?.models?.[alias]);
-}
-
-function representativeModelFor(profile: AgentProfileInfo): ModelThinkingInfo | undefined {
-  const config = props.config;
-  const secondary = config?.secondaryModel;
-  return representativeModelForSubagent(
-    profile.modelPreference,
-    config?.subagentModels?.[profile.name],
-    modelThinkingInfoForAlias(config?.defaultModel),
-    modelThinkingInfoForAlias(secondary?.model) ?? secondary,
-    (alias) => modelThinkingInfoForAlias(alias),
-  );
-}
-
-function subagentEffortGroups(
-  profile: AgentProfileInfo,
-  modelAlias = props.config?.subagentModels?.[profile.name] ?? '',
-): { options: { value: string; label: string }[] }[] {
-  const storedEffort = props.config?.subagentEfforts?.[profile.name];
-  const representative = modelAlias === ''
-    ? representativeModelFor(profile)
-    : modelThinkingInfoForAlias(modelAlias);
-  return [
-    {
-      options: [
-        { value: '', label: t('settings.inheritSubagentEffort') },
-        ...subagentEffortOptions(representative, storedEffort).map((effort) => ({
-          value: effort,
-          label: effort === storedEffort && !representative?.supportEfforts?.includes(effort)
-            ? `${effortLabel(effort)} (${t('settings.unsupportedEffort')})`
-            : effortLabel(effort),
-        })),
-      ],
-    },
-  ];
-}
-
-function effortGroupsForProfile(profile: AgentProfileInfo, modelAlias: string): { options: { value: string; label: string }[] }[] {
-  return subagentEffortGroups(profile, modelAlias);
-}
-
-const defaultPermissionMode = computed(() => {
-  const mode = props.config?.defaultPermissionMode;
-  return mode === 'auto' || mode === 'yolo' || mode === 'manual' ? mode : 'manual';
-});
-
-function extractConfigModelProvider(raw: unknown): string | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
-  const source = raw as Record<string, unknown>;
-  const provider = typeof source['provider'] === 'string' ? source['provider'] : undefined;
-  return provider;
-}
-
-function formatConfigModelLabel(id: string, raw: unknown, provider?: string): string {
-  if (!raw || typeof raw !== 'object') return id;
-  const source = raw as Record<string, unknown>;
-  const model = typeof source['model'] === 'string' ? source['model'] : undefined;
-  const resolvedProvider = provider ?? extractConfigModelProvider(raw);
-  if (model && resolvedProvider) return `${id} (${resolvedProvider}/${model})`;
-  if (model) return `${id} (${model})`;
-  return id;
-}
-
-function configBool(value: boolean | undefined): boolean {
-  return value === true;
-}
-
-function setDefaultModel(value: string): void {
-  if (!value || value === props.config?.defaultModel) return;
-  emit('updateConfig', { defaultModel: value });
-}
-
-// Per-profile subagent model pin. Copies the current table and sets or deletes
-// the key — the backend Zod schema rejects null values, so an unpinned profile
-// is an absent key, and the full updated table (possibly {}) is sent.
-function setSubagentModel(profileName: string, alias: string | null): void {
-  const table = { ...(props.config?.subagentModels ?? {}) };
-  if (alias === null || alias === '') delete table[profileName];
-  else table[profileName] = alias;
-  emit('updateConfig', { subagentModels: table });
-}
-
-function setSubagentEffort(profileName: string, effort: string | null): void {
-  const table = { ...(props.config?.subagentEfforts ?? {}) };
-  if (effort === null || effort === '') delete table[profileName];
-  else table[profileName] = effort;
-  emit('updateConfig', { subagentEfforts: table });
-}
-
-function setDefaultPermissionMode(mode: 'manual' | 'auto' | 'yolo'): void {
-  if (mode === defaultPermissionMode.value) return;
-  emit('updateConfig', { defaultPermissionMode: mode });
-}
-
-function toggleConfigBoolean(key: 'defaultPlanMode' | 'mergeAllAvailableSkills'): void {
-  const current = props.config?.[key];
-  emit('updateConfig', { [key]: !configBool(current) } as Partial<AppConfig>);
-}
-
-// Context compaction triggers at `compactionTriggerRatio` of the model's
-// context window (engine default 0.85, schema range 0.5–0.99). The dialog
-// shows it as a whole percentage and commits on `change` (blur/Enter) so
-// intermediate keystrokes never hit POST /config.
-const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.85;
-
-const compactionThresholdPercent = computed(() =>
-  Math.round((props.config?.loopControl?.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO) * 100),
-);
-
-function setCompactionThreshold(raw: string): void {
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return;
-  const clamped = Math.min(99, Math.max(50, Math.round(parsed)));
-  if (clamped === compactionThresholdPercent.value) return;
-  emit('updateConfig', { loopControl: { compactionTriggerRatio: clamped / 100 } });
-}
-
-// "Default thinking" lives at config.thinking.enabled on the daemon — the legacy
-// top-level defaultThinking field was removed. Read/write it there so the toggle
-// actually persists (the old field was silently stripped by the server).
-//
-// Mirror the core resolver: thinking is on unless explicitly disabled
-// (enabled === false). An absent thinking section — or one with an effort but no
-// enabled field — falls through to the model/default effort (on for
-// thinking-capable models), so the toggle reflects that as on.
-function thinkingEnabled(): boolean {
-  const thinking = props.config?.thinking;
-  if (!thinking || typeof thinking !== 'object') return true;
-  return (thinking as { enabled?: boolean }).enabled !== false;
-}
-
-function toggleDefaultThinking(): void {
-  emit('updateConfig', { thinking: { enabled: !thinkingEnabled() } } as Partial<AppConfig>);
 }
 
 // Telemetry is opt-out: undefined and `true` both mean enabled, only explicit
@@ -376,22 +191,6 @@ async function loadAllArchived(): Promise<void> {
     console.warn('loadAllArchived failed', err);
   } finally {
     archivedLoading.value = false;
-  }
-}
-
-// Subagent-model pins (v2 backend only) — the profile catalog comes from
-// GET /agent_profiles, fetched once when the Agent tab first shows. On error
-// (or a v1 backend, which lacks the route) the section stays hidden.
-const agentProfiles = ref<AgentProfileInfo[] | null>(null);
-let agentProfilesLoaded = false;
-
-async function loadAgentProfiles(): Promise<void> {
-  if (agentProfilesLoaded || props.backend !== 'v2') return;
-  agentProfilesLoaded = true;
-  try {
-    agentProfiles.value = await getKimiWebApi().listAgentProfiles();
-  } catch (err) {
-    console.warn('loadAgentProfiles failed', err);
   }
 }
 

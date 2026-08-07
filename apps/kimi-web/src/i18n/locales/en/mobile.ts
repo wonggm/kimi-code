@@ -18,5 +18,6 @@ export default {
   swarmModeSub: 'Swarm mode',
   archivedSessions: 'Archived sessions',
   archivedSessionsSub: 'Browse and restore archived sessions',
+  agentDefaultsSub: 'Default model, subagents, permission, thinking',
   archivedBack: 'Back',
 } as const;
