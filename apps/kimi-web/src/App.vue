@@ -1125,6 +1125,9 @@ function openPr(url: string): void {
       :auth-ready="client.authReady.value"
       :conversation-toc="client.conversationToc.value"
       :server-version="client.serverVersion.value"
+      :config="client.config.value"
+      :config-saving="configSaving"
+      :backend="client.backend.value"
       @pick-model="openModelPicker()"
       @set-thinking="client.setThinking($event)"
       @toggle-plan="client.togglePlanMode()"
@@ -1133,6 +1136,7 @@ function openPr(url: string): void {
       @set-color-scheme="client.setColorScheme($event)"
       @set-ui-font-size="client.setUiFontSize($event)"
       @set-conversation-toc="client.setConversationToc($event)"
+      @update-config="handleUpdateConfig($event)"
       @login="() => { showMobileSettings = false; openLogin(); }"
       @logout="client.logout"
     />

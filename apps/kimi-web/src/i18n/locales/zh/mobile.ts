@@ -18,5 +18,6 @@ export default {
   swarmModeSub: 'Swarm 模式',
   archivedSessions: '已归档会话',
   archivedSessionsSub: '查看并恢复已归档会话',
+  agentDefaultsSub: '默认模型、子代理、权限与思考设置',
   archivedBack: '返回',
 } as const;
