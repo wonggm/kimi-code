@@ -669,6 +669,15 @@ export interface AppSecondaryModel {
   capabilities?: string[];
 }
 
+/** The `[loop_control]` config section (kap-server preserves nested camelCase keys). */
+export interface AppLoopControl {
+  maxStepsPerTurn?: number;
+  maxRetriesPerStep?: number;
+  maxRalphIterations?: number;
+  reservedContextSize?: number;
+  compactionTriggerRatio?: number;
+}
+
 export interface AppConfig {
   providers: Record<string, AppConfigProvider>;
   defaultProvider?: string;
@@ -687,7 +696,7 @@ export interface AppConfig {
   services?: unknown;
   mergeAllAvailableSkills?: boolean;
   extraSkillDirs?: string[];
-  loopControl?: unknown;
+  loopControl?: AppLoopControl;
   background?: unknown;
   experimental?: Record<string, boolean>;
   telemetry?: boolean;
