@@ -17,7 +17,7 @@ import { load as loadYaml } from 'js-yaml';
 import { renderPrompt } from '#/_base/utils/render-prompt';
 
 import { registerAgentProfile } from './contribution';
-import type { AgentProfile, AgentProfileContext } from './agentProfileCatalog';
+import type { AgentProfileInput, AgentProfileContext } from './agentProfileCatalog';
 
 const PROFILE_EXTENSIONS = new Set(['.yaml', '.yml', '.md']);
 
@@ -83,7 +83,7 @@ function enumerateProfileFiles(root: string): string[] {
     });
 }
 
-function loadProfileFile(filePath: string): AgentProfile | undefined {
+function loadProfileFile(filePath: string): AgentProfileInput | undefined {
   const content = readFileSync(filePath, 'utf-8');
   const ext = extname(filePath).toLowerCase();
   const raw = ext === '.md'
@@ -113,7 +113,7 @@ function parseMarkdownProfile(
   return { ...fm, systemPromptTemplate: body };
 }
 
-function makeAgentProfile(raw: Record<string, unknown>): AgentProfile {
+function makeAgentProfile(raw: Record<string, unknown>): AgentProfileInput {
   const name = raw['name'] as string;
   const description = typeof raw['description'] === 'string' ? raw['description'] as string : undefined;
   const whenToUse = typeof raw['whenToUse'] === 'string' ? raw['whenToUse'] as string : undefined;
