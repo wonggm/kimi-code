@@ -4,14 +4,18 @@
 <!-- (inline cycle picker), plan mode (toggle), permission (cycle), and a -->
 <!-- read-only context-usage meter — plus the desktop settings-popover prefs -->
 <!-- (theme / color scheme / language) and the sign-in/out entry, which previously -->
-<!-- had no mobile counterpart. -->
+<!-- had no mobile counterpart. Two sub-view navigate deeper: archived sessions -->
+<!-- (restore) and Agent defaults (the desktop Settings "Agent" tab: default -->
+<!-- model, subagent model/effort pins, default permission / thinking / plan -->
+<!-- mode, merge-skills, compaction threshold — shared via useAgentDefaults). -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ConversationStatus, PermissionMode } from '../../types';
-import type { AppModel, AppSession, ThinkingLevel } from '../../api/types';
+import type { AppConfig, AppModel, AppSession, ThinkingLevel } from '../../api/types';
 import type { ColorScheme } from '../../composables/useKimiWebClient';
 import { useKimiWebClient } from '../../composables/useKimiWebClient';
+import { PERMISSION_MODES, useAgentDefaults } from '../../composables/useAgentDefaults';
 import {
   commitLevel,
   effectiveThinkingLevel,
@@ -24,6 +28,8 @@ import LanguageSwitcher from '../settings/LanguageSwitcher.vue';
 import { formatTokens } from '../../lib/formatTokens';
 import Button from '../ui/Button.vue';
 import Input from '../ui/Input.vue';
+import MenuSelect from '../ui/MenuSelect.vue';
+import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 
 const { t } = useI18n();
@@ -43,6 +49,12 @@ const props = withDefaults(
     serverVersion?: string;
     /** Available models — used to derive the current model's thinking segments. */
     models?: AppModel[];
+    /** Global daemon config from GET /api/v1/config — backs the Agent sub-view. */
+    config?: AppConfig | null;
+    /** True while POST /api/v1/config is saving. */
+    configSaving?: boolean;
+    /** Backend engine generation ('v2' enables the subagent-model pins). */
+    backend?: 'v1' | 'v2';
   }>(),
   {
     colorScheme: 'system',
@@ -50,6 +62,8 @@ const props = withDefaults(
     authReady: false,
     serverVersion: '',
     models: () => [],
+    config: null,
+    configSaving: false,
   },
 );
 
@@ -63,6 +77,7 @@ const emit = defineEmits<{
   setColorScheme: [colorScheme: ColorScheme];
   setUiFontSize: [size: number];
   setConversationToc: [on: boolean];
+  updateConfig: [patch: Partial<AppConfig>];
   login: [];
   logout: [];
 }>();
@@ -153,7 +168,7 @@ function onLogout(): void {
 // search + sort run client-side over the full set.
 // ---------------------------------------------------------------------------
 const client = useKimiWebClient();
-type SheetView = 'main' | 'archived';
+type SheetView = 'main' | 'archived' | 'agent';
 const view = ref<SheetView>('main');
 
 const archivedItems = ref<AppSession[]>([]);
@@ -233,6 +248,44 @@ watch(
     if (!open) view.value = 'main';
   },
 );
+
+// ---------------------------------------------------------------------------
+// Agent-defaults sub-view — mirrors the desktop Settings "Agent" tab, sharing
+// all of its logic through useAgentDefaults. Agent profiles (the subagent
+// model/effort pins) load once when the sub-view opens, v2 backend only.
+// ---------------------------------------------------------------------------
+const {
+  modelGroups,
+  defaultModelGroups,
+  subagentModelGroups,
+  effortGroupsForProfile,
+  defaultPermissionMode,
+  permissionLabelKey,
+  configBool,
+  setDefaultModel,
+  setSubagentModel,
+  setSubagentEffort,
+  setDefaultPermissionMode,
+  toggleConfigBoolean,
+  compactionThresholdPercent,
+  setCompactionThreshold,
+  thinkingEnabled,
+  toggleDefaultThinking,
+  agentProfiles,
+  loadAgentProfiles,
+} = useAgentDefaults({
+  config: () => props.config,
+  models: () => props.models,
+  backend: () => props.backend,
+  updateConfig: (patch) => emit('updateConfig', patch),
+});
+
+const agentPermModes = PERMISSION_MODES;
+
+function openAgent(): void {
+  view.value = 'agent';
+  void loadAgentProfiles();
+}
 </script>
 
 <template>
@@ -320,6 +373,15 @@ watch(
 
     <div class="group-title">{{ t('mobile.groupApp') }}</div>
 
+    <!-- Agent defaults → opens the agent sub-view (desktop Settings "Agent" tab) -->
+    <button type="button" class="srow" @click="openAgent">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('settings.agentDefaults') }}</span>
+        <span class="srow-sub">{{ t('mobile.agentDefaultsSub') }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
     <!-- Archived sessions → opens the archived restore sub-view -->
     <button type="button" class="srow" @click="openArchived">
       <span class="srow-main">
@@ -400,7 +462,127 @@ watch(
     </div>
     </template>
 
-    <template v-else>
+    <template v-else-if="view === 'agent'">
+      <!-- Agent defaults sub-view (desktop Settings "Agent" tab) -->
+      <div class="arch-subhead">
+        <button type="button" class="arch-back" @click="backToMain">
+          <span class="chev back">‹</span> {{ t('mobile.archivedBack') }}
+        </button>
+        <span v-if="configSaving" class="arch-count">{{ t('settings.saving') }}</span>
+      </div>
+
+      <template v-if="config">
+        <!-- Default model -->
+        <div class="srow pref agent">
+          <span class="srow-main">
+            <span class="srow-label">{{ t('settings.defaultModel') }}</span>
+            <span class="srow-sub">{{ t('settings.defaultModelHint') }}</span>
+          </span>
+          <MenuSelect
+            v-if="modelGroups.length > 0"
+            class="agent-select"
+            :model-value="config.defaultModel ?? ''"
+            :groups="defaultModelGroups"
+            :placeholder="t('settings.noDefaultModel')"
+            :disabled="configSaving"
+            :aria-label="t('settings.defaultModel')"
+            @update:model-value="setDefaultModel"
+          />
+          <span v-else class="srow-val dim">{{ config.defaultModel ?? t('settings.noDefaultModel') }}</span>
+        </div>
+
+        <!-- Subagent model/effort pins (v2 backend only) -->
+        <template v-if="backend === 'v2' && agentProfiles && agentProfiles.length > 0">
+          <div class="group-title">{{ t('settings.subagentModels') }}</div>
+          <div class="cache-note">{{ t('settings.subagentModelsHint') }}</div>
+          <div v-for="profile in agentProfiles" :key="profile.name" class="srow pref agent">
+            <span class="srow-main">
+              <span class="srow-label">{{ profile.name }}</span>
+              <span v-if="profile.whenToUse" class="srow-sub">{{ profile.whenToUse }}</span>
+            </span>
+            <ModelEffortSelect
+              class="agent-select"
+              :model-value="config.subagentModels?.[profile.name] ?? ''"
+              :effort-value="config.subagentEfforts?.[profile.name] ?? ''"
+              :groups="subagentModelGroups"
+              :effort-groups="(modelAlias) => effortGroupsForProfile(profile, modelAlias)"
+              :disabled="configSaving"
+              :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
+              @update:model-value="setSubagentModel(profile.name, $event)"
+              @update:effort-value="setSubagentEffort(profile.name, $event)"
+            />
+          </div>
+        </template>
+
+        <!-- Default permission -->
+        <div class="srow pref agent">
+          <span class="srow-main">
+            <span class="srow-label">{{ t('settings.defaultPermission') }}</span>
+            <span class="srow-sub">{{ t('settings.defaultPermissionHint') }}</span>
+          </span>
+          <SegmentedControl
+            :model-value="defaultPermissionMode"
+            :options="agentPermModes.map((m) => ({ value: m, label: t(permissionLabelKey[m]) }))"
+            @update:model-value="setDefaultPermissionMode($event as 'manual' | 'auto' | 'yolo')"
+          />
+        </div>
+
+        <!-- Thinking by default -->
+        <button type="button" class="srow" :disabled="configSaving" @click="toggleDefaultThinking()">
+          <span class="srow-main">
+            <span class="srow-label">{{ t('settings.defaultThinking') }}</span>
+            <span class="srow-sub">{{ t('settings.defaultThinkingHint') }}</span>
+          </span>
+          <span class="toggle" :class="{ on: thinkingEnabled() }" role="switch" :aria-checked="thinkingEnabled()" />
+        </button>
+
+        <!-- Plan mode by default -->
+        <button type="button" class="srow" :disabled="configSaving" @click="toggleConfigBoolean('defaultPlanMode')">
+          <span class="srow-main">
+            <span class="srow-label">{{ t('settings.defaultPlanMode') }}</span>
+            <span class="srow-sub">{{ t('settings.defaultPlanModeHint') }}</span>
+          </span>
+          <span class="toggle" :class="{ on: configBool(config.defaultPlanMode) }" role="switch" :aria-checked="configBool(config.defaultPlanMode)" />
+        </button>
+
+        <!-- Merge all available skills -->
+        <button type="button" class="srow" :disabled="configSaving" @click="toggleConfigBoolean('mergeAllAvailableSkills')">
+          <span class="srow-main">
+            <span class="srow-label">{{ t('settings.mergeSkills') }}</span>
+            <span class="srow-sub">{{ t('settings.mergeSkillsHint') }}</span>
+          </span>
+          <span class="toggle" :class="{ on: configBool(config.mergeAllAvailableSkills) }" role="switch" :aria-checked="configBool(config.mergeAllAvailableSkills)" />
+        </button>
+
+        <!-- Compaction threshold -->
+        <div class="srow pref agent">
+          <span class="srow-main">
+            <span class="srow-label">{{ t('settings.compactionThreshold') }}</span>
+            <span class="srow-sub">{{ t('settings.compactionThresholdHint') }}</span>
+          </span>
+          <label class="num-field">
+            <input
+              class="num-input"
+              type="number"
+              min="50"
+              max="99"
+              step="1"
+              :value="compactionThresholdPercent"
+              :disabled="configSaving"
+              :aria-label="t('settings.compactionThreshold')"
+              @change="setCompactionThreshold(($event.target as HTMLInputElement).value)"
+            />
+            <span class="num-unit">%</span>
+          </label>
+        </div>
+      </template>
+
+      <div v-else class="arch-empty">
+        {{ t('settings.configUnavailable') }}
+      </div>
+    </template>
+
+    <template v-else-if="view === 'archived'">
       <!-- Archived sessions sub-view -->
       <div class="arch-subhead">
         <button type="button" class="arch-back" @click="backToMain">
@@ -549,6 +731,13 @@ watch(
 
 /* App preference rows: segmented theme/color-scheme toggles + language switcher. */
 .srow.pref { cursor: default; }
+
+/* Agent-defaults rows: the control always wraps to a full-width line below the
+   label (selects and the permission segmented control need the room). */
+.srow.agent { flex-wrap: wrap; }
+.srow.agent .srow-main { flex: 1 0 100%; }
+.agent-select { width: 100%; }
+.srow:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .num-field {
   display: inline-flex;
