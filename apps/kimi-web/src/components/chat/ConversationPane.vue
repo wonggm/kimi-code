@@ -1290,7 +1290,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
       @select="scrollToTurn"
     />
 
-    <div class="chat-layout">
+    <div class="chat-layout" :style="{ '--dock-height': `${dockHeight}px` }">
       <div
         :ref="bindChatPane"
         class="panes chat-scroll"
@@ -1551,13 +1551,18 @@ defineExpose({ loadComposerForEdit, focusComposer });
 /* Edge vignette — fade the transcript to invisible at the top and bottom so
    messages "scroll under" the floating top bar and composer instead of being
    hard-clipped. Pure compositing (mask is paint-only, no layout or input
-   impact, no backdrop-filter). Gated behind the liquid-glass toggle. */
+   impact, no backdrop-filter). Gated behind the liquid-glass toggle.
+   The bottom fade is short on purpose: the frost layer below
+   (.chat-layout::after) makes text illegible before the mask makes it
+   invisible, so a long eased tail here would only re-introduce the grey
+   ghost-text look the frost replaced. */
 html[data-liquid-glass="on"] .panes {
   --con-pane-vignette: linear-gradient(
     to bottom,
     transparent 0,
     black 28px,
     black calc(100% - 28px),
+    rgb(0 0 0 / 45%) calc(100% - 14px),
     transparent 100%
   );
   -webkit-mask-image: var(--con-pane-vignette);
@@ -1586,6 +1591,48 @@ html[data-liquid-glass="on"] .chat-layout::before {
   backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
   -webkit-mask-image: linear-gradient(to bottom, black 0, transparent 100%);
   mask-image: linear-gradient(to bottom, black 0, transparent 100%);
+}
+
+/* Bottom frost layer — one continuous glass slab that the dock sits inside
+   of, instead of a discrete blur strip parked above it. Spans from the very
+   bottom of the layout up to 72px into the transcript: blur strength ramps
+   0 → full over that top strip (eased pixel stops, so the ramp thickness is
+   independent of dock height), then holds at full strength behind the dock,
+   where the chips and composer read as embedded in the frost. Anchored via
+   --dock-height (set inline from the measured dockHeight ref). Paints above
+   the transcript (z-index 2) and below the dock (.chat-dock is z-sticky);
+   the dock opts into transparency in liquid-glass mode so the frost shows
+   through. Perf: the dock region blurs only the static page background (the
+   transcript never extends under the dock — sibling layout), so the
+   per-frame raster cost of the backdrop-filter stays confined to the top
+   72px strip — the same cost class as the top band (style.css perf: WS-1A).
+   Same placement rule as the top band: on .chat-layout, never on .panes
+   (a .panes pseudo would scroll with the content). */
+html[data-liquid-glass="on"] .chat-layout::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--dock-height, 0px) + 72px);
+  pointer-events: none;
+  z-index: 2;
+  -webkit-backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
+  backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    rgb(0 0 0 / 20%) 20px,
+    rgb(0 0 0 / 55%) 44px,
+    black 72px
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    rgb(0 0 0 / 20%) 20px,
+    rgb(0 0 0 / 55%) 44px,
+    black 72px
+  );
 }
 
 /* With the header overlaid, clear its height at rest so the first message
@@ -1859,11 +1906,24 @@ html[data-liquid-glass="on"] .panes.has-header {
   font-size: var(--ui-font-size-sm);
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  /* Positioned after the message flow, so base z-index is enough to float above
-     content while staying below composer dropdowns. */
-  z-index: var(--z-base);
+  /* Positioned after the message flow, so it floats above content and above
+     the top/bottom blur bands (z-index 2) while staying below composer
+     dropdowns. */
+  z-index: 3;
 }
 .newmsg-pill:hover { background: var(--panel2); }
+/* Liquid glass: the pill floats over the bottom vignette/blur zone, so give
+   it the same frost as the dock chips instead of letting faded text read
+   through a flat wash. Sibling of the bands (not nested), so the extra
+   backdrop-filter is safe in Firefox. */
+html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill {
+  background: color-mix(in srgb, var(--panel) 68%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
+  backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
+}
+html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill:hover {
+  background: color-mix(in srgb, var(--panel2) 78%, transparent);
+}
 .pill-chevron {
   width: 12px;
   height: 12px;

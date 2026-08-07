@@ -287,6 +287,24 @@ function toggleConfigBoolean(key: 'defaultPlanMode' | 'mergeAllAvailableSkills')
   emit('updateConfig', { [key]: !configBool(current) } as Partial<AppConfig>);
 }
 
+// Context compaction triggers at `compactionTriggerRatio` of the model's
+// context window (engine default 0.85, schema range 0.5–0.99). The dialog
+// shows it as a whole percentage and commits on `change` (blur/Enter) so
+// intermediate keystrokes never hit POST /config.
+const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.85;
+
+const compactionThresholdPercent = computed(() =>
+  Math.round((props.config?.loopControl?.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO) * 100),
+);
+
+function setCompactionThreshold(raw: string): void {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return;
+  const clamped = Math.min(99, Math.max(50, Math.round(parsed)));
+  if (clamped === compactionThresholdPercent.value) return;
+  emit('updateConfig', { loopControl: { compactionTriggerRatio: clamped / 100 } });
+}
+
 // "Default thinking" lives at config.thinking.enabled on the daemon — the legacy
 // top-level defaultThinking field was removed. Read/write it there so the toggle
 // actually persists (the old field was silently stripped by the server).
@@ -717,6 +735,27 @@ function archiveTime(iso: string): string {
                   :label="t('settings.mergeSkills')"
                   @update:model-value="toggleConfigBoolean('mergeAllAvailableSkills')"
                 />
+              </div>
+
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.compactionThreshold') }}
+                  <span class="hint">{{ t('settings.compactionThresholdHint') }}</span>
+                </span>
+                <label class="num-field">
+                  <input
+                    class="num-input"
+                    type="number"
+                    min="50"
+                    max="99"
+                    step="1"
+                    :value="compactionThresholdPercent"
+                    :disabled="configSaving"
+                    :aria-label="t('settings.compactionThreshold')"
+                    @change="setCompactionThreshold(($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="num-unit">%</span>
+                </label>
               </div>
             </template>
 
