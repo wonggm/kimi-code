@@ -13,6 +13,7 @@ import type {
   AppProvider,
   AppSession,
   AppSkill,
+  AppSkillAttachment,
   OAuthLoginStartResult,
   ThinkingLevel,
 } from '../../api/types';
@@ -25,7 +26,7 @@ import {
 } from '../../lib/modelThinking';
 import { beginLocalTurn, settleLocalTurn } from './useWorkspaceState';
 import type { ActivityState } from '../../types';
-import type { ExtendedState } from '../useKimiWebClient';
+import type { ExtendedState, PromptAttachment } from '../useKimiWebClient';
 
 const STARRED_MODELS_STORAGE_KEY = STORAGE_KEYS.starredModels;
 
@@ -406,10 +407,33 @@ export function useModelProviderState(
    * `sessionId` overrides the active session — used when activating right after
    * creating a session, so a concurrent session switch can't redirect the
    * activation to the wrong session. No session at all is a no-op.
+   *
+   * `attachments` carries the composer's uploaded files into the skill turn's
+   * user message (same part shapes as the normal prompt path) — without this a
+   * skill sent together with attachments silently dropped them.
    */
-  async function activateSkill(skillName: string, args?: string, sessionId?: string): Promise<void> {
+  async function activateSkill(
+    skillName: string,
+    args?: string,
+    sessionId?: string,
+    attachments?: PromptAttachment[],
+  ): Promise<void> {
     const sid = sessionId ?? rawState.activeSessionId;
     if (!sid) return;
+    // Same PromptAttachment → content-part mapping as submitPromptInternal.
+    const attachmentParts: AppSkillAttachment[] = [];
+    for (const att of attachments ?? []) {
+      if (att.kind === 'video') attachmentParts.push({ type: 'video', source: { kind: 'file', fileId: att.fileId } });
+      else if (att.kind === 'file') {
+        attachmentParts.push({
+          type: 'file',
+          fileId: att.fileId,
+          name: att.name ?? '',
+          mediaType: att.mediaType || 'application/octet-stream',
+          size: att.size ?? 0,
+        });
+      } else attachmentParts.push({ type: 'image', source: { kind: 'file', fileId: att.fileId } });
+    }
     const guarded = activity.value === 'idle' && !rawState.inFlightBySession[sid];
     const tempId = `msg_skill_opt_${Date.now().toString(36)}`;
 
@@ -422,7 +446,7 @@ export function useModelProviderState(
         id: tempId,
         sessionId: sid,
         role: 'user',
-        content: [{ type: 'text', text: `/${skillName}${args ? ` ${args}` : ''}` }],
+        content: [{ type: 'text', text: `/${skillName}${args ? ` ${args}` : ''}` }, ...attachmentParts],
         createdAt: new Date().toISOString(),
         metadata: {
           'kimiWeb.optimisticUserMessage': true,
@@ -438,8 +462,8 @@ export function useModelProviderState(
     }
 
     try {
-      // Skill activation carries only name/args — the daemon runs the turn at
-      // the SESSION PROFILE effort. Persist the level resolved for this
+      // Skill activation carries no prompt-time controls — the daemon runs the
+      // turn at the SESSION PROFILE effort. Persist the level resolved for this
       // session's own model first (awaited, mirroring the new-session skill
       // path), so a profile that predates the per-model restore can't run the
       // skill at a stale effort while the UI shows the restored level. When
@@ -455,7 +479,12 @@ export function useModelProviderState(
         sid,
       );
       if (!persisted) throw PROFILE_PERSIST_FAILED;
-      await getKimiWebApi().activateSkill(sid, skillName, args);
+      // Without attachments keep the plain call shape (nothing extra on the wire).
+      if (attachmentParts.length > 0) {
+        await getKimiWebApi().activateSkill(sid, skillName, args, attachmentParts);
+      } else {
+        await getKimiWebApi().activateSkill(sid, skillName, args);
+      }
     } catch (err) {
       if (guarded) {
         rawState.inFlightBySession = { ...rawState.inFlightBySession, [sid]: false };
