@@ -16,6 +16,7 @@ import type { AppConfig, AppModel, AppSession, ThinkingLevel } from '../../api/t
 import type { ColorScheme } from '../../composables/useKimiWebClient';
 import { useKimiWebClient } from '../../composables/useKimiWebClient';
 import { PERMISSION_MODES, useAgentDefaults } from '../../composables/useAgentDefaults';
+import { useCustomProviders } from '../../composables/useCustomProviders';
 import {
   commitLevel,
   effectiveThinkingLevel,
@@ -173,7 +174,7 @@ function onLogout(): void {
 // search + sort run client-side over the full set.
 // ---------------------------------------------------------------------------
 const client = useKimiWebClient();
-type SheetView = 'main' | 'archived' | 'agent';
+type SheetView = 'main' | 'archived' | 'agent' | 'providers';
 const view = ref<SheetView>('main');
 
 const archivedItems = ref<AppSession[]>([]);
@@ -286,10 +287,19 @@ const {
 });
 
 const agentPermModes = PERMISSION_MODES;
+const customProviders = useCustomProviders({
+  config: () => props.config,
+  updateConfig: (patch) => emit('updateConfig', patch),
+});
 
 function openAgent(): void {
   view.value = 'agent';
   void loadAgentProfiles();
+}
+
+function openProviders(): void {
+  view.value = 'providers';
+  customProviders.cancel();
 }
 </script>
 
@@ -383,6 +393,14 @@ function openAgent(): void {
       <span class="srow-main">
         <span class="srow-label">{{ t('settings.agentDefaults') }}</span>
         <span class="srow-sub">{{ t('mobile.agentDefaultsSub') }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <button type="button" class="srow" @click="openProviders">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('settings.customProviders') }}</span>
+        <span class="srow-sub">{{ t('settings.customProvidersHint') }}</span>
       </span>
       <span class="chev">›</span>
     </button>
@@ -592,6 +610,31 @@ function openAgent(): void {
       <div v-else class="arch-empty">
         {{ t('settings.configUnavailable') }}
       </div>
+    </template>
+
+    <template v-else-if="view === 'providers'">
+      <div class="arch-subhead">
+        <button type="button" class="arch-back" @click="backToMain"><span class="chev back">‹</span> {{ t('mobile.archivedBack') }}</button>
+        <Button variant="primary" size="sm" :disabled="configSaving" @click="customProviders.openAdd">{{ t('settings.customProviderAdd') }}</Button>
+      </div>
+      <div v-if="!config" class="arch-empty">{{ t('settings.configUnavailable') }}</div>
+      <div v-else-if="customProviders.providers.length === 0 && !customProviders.adding" class="arch-empty">{{ t('settings.customProvidersEmpty') }}</div>
+      <template v-else>
+        <div v-for="[id, provider] in customProviders.providers" :key="id" class="arch-row">
+          <div class="arch-meta"><div class="arch-name">{{ id }}</div><div class="arch-time">{{ provider.type }} · {{ provider.baseUrl || t('settings.customProviderNoUrl') }} · {{ provider.hasApiKey ? t('settings.customProviderKeySet') : t('settings.customProviderKeyMissing') }}</div></div>
+          <Button variant="secondary" size="sm" :disabled="configSaving" @click="customProviders.openEdit(id, provider)">{{ t('settings.customProviderEdit') }}</Button>
+          <Button variant="danger-soft" size="sm" :disabled="configSaving" @click="customProviders.remove(id)">{{ t('settings.customProviderRemove') }}</Button>
+        </div>
+      </template>
+      <form v-if="customProviders.editingId !== null || customProviders.adding" class="provider-form mobile-provider-form" @submit.prevent="customProviders.save">
+        <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" :disabled="customProviders.editingId !== null || configSaving" /></label>
+        <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" /></label>
+        <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" /></label>
+        <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" :placeholder="customProviders.editingId !== null ? '••••••••' : ''" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
+        <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" /></label>
+        <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
+        <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
+      </form>
     </template>
 
     <template v-else-if="view === 'archived'">
@@ -905,4 +948,10 @@ function openAgent(): void {
   font-size: var(--text-sm);
   color: var(--color-text-faint);
 }
+.provider-form { display: flex; flex-direction: column; gap: var(--space-3); margin: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
+.provider-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--color-text-muted); }
+.provider-field input { height: 36px; padding: 0 var(--space-2); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface-raised); color: var(--color-text); font: inherit; }
+.provider-error { color: var(--color-danger); font-size: var(--text-sm); }
+.provider-form .actions { display: flex; gap: var(--space-2); }
+
 </style>
