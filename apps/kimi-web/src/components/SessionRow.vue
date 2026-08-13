@@ -16,9 +16,14 @@ import Tooltip from './ui/Tooltip.vue';
 
 const { t } = useI18n();
 
+type SidebarSession = Session & {
+  emoji?: string;
+  pinned?: boolean;
+};
+
 const props = withDefaults(
   defineProps<{
-    session: Session;
+    session: SidebarSession;
     active: boolean;
     /** Pending permission requests waiting for the user's approval. */
     approvalCount?: number;
@@ -36,6 +41,8 @@ const emit = defineEmits<{
   archive: [id: string];
   fork: [id: string];
   export: [id: string];
+  setEmoji: [id: string, emoji: string | undefined];
+  togglePinned: [id: string, pinned: boolean];
 }>();
 
 // Full, absolute timestamp shown on hover (the row's `time` is a short relative
@@ -118,6 +125,7 @@ onUnmounted(() => {
 const renaming = ref(false);
 const renameValue = ref('');
 const renameInputRef = ref<HTMLInputElement | null>(null);
+const renameComposing = ref(false);
 async function startRename(): Promise<void> {
   closeMenu();
   renaming.value = true;
@@ -166,6 +174,18 @@ function exportRow(): void {
   emit('export', props.session.id);
 }
 
+function setEmoji(): void {
+  const next = typeof window !== 'undefined' ? window.prompt(t('sidebar.setEmoji'), props.session.emoji ?? '') : null;
+  if (next === null) return;
+  emit('setEmoji', props.session.id, next.trim() || undefined);
+  closeMenu();
+}
+
+function togglePinned(): void {
+  emit('togglePinned', props.session.id, !props.session.pinned);
+  closeMenu();
+}
+
 // Archive — the modal confirm and the async work live in App.vue
 // (confirmArchiveSession); the row only emits the intent.
 function startArchive(): void {
@@ -195,12 +215,18 @@ defineExpose({ closeMenu });
           ref="renameInputRef"
           v-model="renameValue"
           class="rename-input"
+          :draggable="false"
           @click.stop
-          @keydown.enter.stop="commitRename"
-          @keydown.esc.stop="cancelRename"
+          @compositionstart="renameComposing = true"
+          @compositionend="renameComposing = false"
+          @keydown.enter.stop="!renameComposing && !$event.isComposing && commitRename()"
+          @keydown.esc.stop="!renameComposing && !$event.isComposing && cancelRename()"
           @blur="commitRename"
         />
-        <span v-else class="t" @dblclick.stop="startRename">{{ session.title }}</span>
+        <span v-else class="t" @dblclick.stop="startRename">
+          <span v-if="session.emoji" class="emoji" aria-hidden="true">{{ session.emoji }}</span>
+          {{ session.title }}
+        </span>
       </div>
 
       <!-- Pending tags — coloured per kind, shown even when the row isn't
@@ -278,6 +304,13 @@ defineExpose({ closeMenu });
         <MenuItem @click="startRename">
           <Icon name="pencil" size="sm" />
           {{ t('sidebar.rename') }}
+        </MenuItem>
+        <MenuItem @click="setEmoji">
+          {{ t('sidebar.setEmoji') }}
+        </MenuItem>
+        <MenuItem @click="togglePinned">
+          <Icon :name="session.pinned ? 'star' : 'star-outline'" size="sm" />
+          {{ session.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}
         </MenuItem>
         <MenuItem @click="forkRow">
           <Icon name="git-fork" size="sm" />
@@ -367,6 +400,7 @@ defineExpose({ closeMenu });
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.emoji { margin-right: var(--space-1); }
 
 .ts {
   color: var(--color-text-faint);

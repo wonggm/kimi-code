@@ -51,6 +51,27 @@ export interface CompactionStatus {
   trigger: 'manual' | 'auto';
 }
 
+/** Local streaming UI state; the shared AppEvent/AppSessionSnapshot contracts
+ * are intentionally left for the parent to extend. */
+export interface RetryProgress {
+  attempt: number;
+  maxAttempts: number;
+}
+
+export interface ConversationFailure {
+  message?: string;
+  promptId?: string;
+}
+
+interface LocalStreamingEvent {
+  type: 'retryProgressUpdated' | 'conversationFailureUpdated';
+  sessionId: string;
+  attempt?: number;
+  maxAttempts?: number;
+  message?: string;
+  promptId?: string;
+}
+
 export interface KimiClientState {
   sessions: AppSession[];
   activeSessionId?: string;
@@ -74,6 +95,8 @@ export interface KimiClientState {
    *  reach the events that set this. */
   turnActiveBySession: Record<string, boolean>;
   compactionBySession: Record<string, CompactionStatus>;
+  retryBySession: Record<string, RetryProgress>;
+  failureBySession: Record<string, ConversationFailure>;
   config?: AppConfig | null;
   warnings: AppWarning[];
 }
@@ -92,6 +115,8 @@ export function createInitialState(): KimiClientState {
     lastSeqBySession: {},
     turnActiveBySession: {},
     compactionBySession: {},
+    retryBySession: {},
+    failureBySession: {},
     warnings: [],
   };
 }
@@ -120,6 +145,8 @@ function cloneState(s: KimiClientState): KimiClientState {
     lastSeqBySession: { ...s.lastSeqBySession },
     turnActiveBySession: { ...s.turnActiveBySession },
     compactionBySession: { ...s.compactionBySession },
+    retryBySession: { ...s.retryBySession },
+    failureBySession: { ...s.failureBySession },
     warnings: [...s.warnings],
   };
 }
@@ -317,9 +344,28 @@ export function reduceAppEvent(
   meta: EventMeta,
 ): KimiClientState {
   const next = cloneState(state);
+  const localEvent = event as AppEvent | LocalStreamingEvent;
 
   // Always advance lastSeqBySession for every event that carries seq info.
   advanceSeq(next, meta.sessionId, meta.seq);
+
+  if (localEvent.type === 'retryProgressUpdated') {
+    if (typeof localEvent.attempt === 'number' && typeof localEvent.maxAttempts === 'number') {
+      next.retryBySession[localEvent.sessionId] = {
+        attempt: localEvent.attempt,
+        maxAttempts: localEvent.maxAttempts,
+      };
+    }
+    return next;
+  }
+  if (localEvent.type === 'conversationFailureUpdated') {
+    next.failureBySession[localEvent.sessionId] = {
+      message: localEvent.message,
+      promptId: localEvent.promptId,
+    };
+    delete next.retryBySession[localEvent.sessionId];
+    return next;
+  }
 
   switch (event.type) {
     // -------------------------------------------------------------------------
@@ -350,6 +396,8 @@ export function reduceAppEvent(
       delete next.questionsBySession[id];
       delete next.lastSeqBySession[id];
       delete next.turnActiveBySession[id];
+      delete next.retryBySession[id];
+      delete next.failureBySession[id];
       if (next.activeSessionId === id) {
         next.activeSessionId = undefined;
       }
@@ -761,6 +809,8 @@ export function reduceAppEvent(
       );
       if (event.active) {
         next.turnActiveBySession[event.sessionId] = true;
+        delete next.retryBySession[event.sessionId];
+        delete next.failureBySession[event.sessionId];
       } else {
         delete next.turnActiveBySession[event.sessionId];
       }
@@ -803,6 +853,12 @@ export function reduceAppEvent(
     case 'workspaceCreated':
     case 'workspaceUpdated':
     case 'workspaceDeleted':
+      break;
+
+    // Local streaming events are handled in the early-return path above the
+    // switch; listed here only to keep the exhaustiveness guard satisfied.
+    case 'retryProgressUpdated':
+    case 'conversationFailureUpdated':
       break;
 
     default: {

@@ -16,6 +16,7 @@ import Spinner from '../ui/Spinner.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { getVisibleWorkspaces } from '../../lib/workspacePicker';
 import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
+import { normalizeToolName } from '../../lib/toolMeta';
 
 const { t } = useI18n();
 
@@ -55,6 +56,10 @@ const props = defineProps<{
   /** The main conversation has an unfinished prompt (submitted or a main turn
    *  in flight) — the working moon. */
   working?: boolean;
+  /** Frontend-only automatic retry progress. */
+  retryProgress?: { attempt: number; maxAttempts: number } | null;
+  /** Persistent failed-turn state restored from the session snapshot when present. */
+  failure?: { message?: string; promptId?: string } | null;
   /** True while the empty-composer first prompt is being created + submitted.
    *  Drives the empty-session "starting conversation…" loading state. */
   starting?: boolean;
@@ -130,6 +135,8 @@ const emit = defineEmits<{
   refreshGitStatus: [];
   /** Edit + resend the last user message (App undoes, then refills composer). */
   editMessage: [payload: { text: string; attachments?: TurnAttachment[] }];
+  /** Resume the last failed model request using the parent's normal retry path. */
+  resumeFailure: [];
   /** Empty-composer workspace picker: start a new conversation elsewhere. */
   selectWorkspace: [workspaceId: string];
   /** Empty-composer workspace picker: create a new workspace. */
@@ -249,17 +256,48 @@ function resolveAgentTaskId(toolCallId: string): string | undefined {
 }
 provide('resolveAgentTaskId', resolveAgentTaskId);
 provide('pinScroll', pinScrollFor);
+
+function changedFilesForTurn(turn: ChatTurn): string[] {
+  const files: string[] = [];
+  for (const tool of turn.tools ?? []) {
+    const kind = normalizeToolName(tool.name);
+    if (kind !== 'edit' && kind !== 'write') continue;
+    try {
+      const input = JSON.parse(tool.arg) as unknown;
+      if (!input || typeof input !== 'object' || Array.isArray(input)) continue;
+      const value = (input as Record<string, unknown>).path ??
+        (input as Record<string, unknown>).file_path ??
+        (input as Record<string, unknown>).filePath ??
+        (input as Record<string, unknown>).filename;
+      if (typeof value === 'string' && value.length > 0 && !files.includes(value)) files.push(value);
+    } catch {
+      // Tool arguments may be opaque strings on older daemon versions.
+    }
+  }
+  return files;
+}
+
+const changedFiles = computed<string[]>(() => {
+  for (let i = props.turns.length - 1; i >= 0; i -= 1) {
+    const turn = props.turns[i];
+    if (turn?.role === 'assistant') return changedFilesForTurn(turn);
+  }
+  return [];
+});
+
 const todoDoneCount = computed(() => (props.todos ?? []).filter((td) => td.status === 'done').length);
 const hasDockWork = computed(() =>
   bashTasks.value.length > 0 ||
   subagentTasks.value.length > 0 ||
   (props.todos?.length ?? 0) > 0 ||
+  changedFiles.value.length > 0 ||
   (props.queued?.length ?? 0) > 0,
 );
-const dockPanel = ref<'bash' | 'subagent' | 'todos' | null>(null);
+type DockPanel = 'bash' | 'subagent' | 'todos' | 'changed-files';
+const dockPanel = ref<DockPanel | null>(null);
 const changesCount = computed(() => (props.gitInfo ? props.changes?.length ?? 0 : 0));
 
-function toggleDockPanel(panel: 'bash' | 'subagent' | 'todos'): void {
+function toggleDockPanel(panel: DockPanel): void {
   dockPanel.value = dockPanel.value === panel ? null : panel;
 }
 
@@ -1415,6 +1453,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :approvals="approvals"
               :turn-active="turnActive"
               :working="working"
+              :retry-progress="retryProgress"
+              :failure="failure"
               :fast-moon="fastMoon"
               :session-loading="sessionLoading"
               :compaction="compaction"
@@ -1432,6 +1472,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               @open-agent="emit('openAgent', $event)"
               @open-tool-diff="emit('openToolDiff', $event)"
               @edit-message="handleEditMessage"
+              @resume-failure="emit('resumeFailure')"
               @load-older-messages="handleLoadOlderMessages"
               @unqueue="emit('unqueue', $event)"
               @edit-queued="handleEditQueued"
@@ -1468,6 +1509,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :subagent-running="subagentRunning"
         :todo-done-count="todoDoneCount"
         :has-dock-work="hasDockWork"
+        :changed-files="changedFiles"
         :todos="todos"
         :pending-question="pendingQuestion"
         :question-busy-kind="questionBusyKind"

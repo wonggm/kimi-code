@@ -240,6 +240,7 @@ onMounted(async () => {
         :todos="todos"
         :bash-tasks="bashTasks"
         :subagent-tasks="subagentTasks"
+        :changed-files="[]"
         :bash-running="1"
         :subagent-running="1"
         :todo-done-count="1"

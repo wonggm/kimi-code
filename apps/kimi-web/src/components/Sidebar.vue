@@ -23,7 +23,9 @@ import { moveInOrder, type DropPosition, type WorkspaceSortMode } from '../lib/w
 import type { Session, WorkspaceGroup as WorkspaceGroupType, WorkspaceView } from '../types';
 import SearchSessionsDialog from './dialogs/SearchSessionsDialog.vue';
 import WorkspaceGroup from './WorkspaceGroup.vue';
+import SessionRow from './SessionRow.vue';
 import { isMacosDesktop } from '../lib/desktopFlag';
+import { useSidebarLayout } from '../composables/useSidebarLayout';
 import IconButton from './ui/IconButton.vue';
 import Icon from './ui/Icon.vue';
 import Kbd from './ui/Kbd.vue';
@@ -110,6 +112,8 @@ const emit = defineEmits<{
   archive: [id: string];
   fork: [id: string];
   export: [id: string];
+  setEmoji: [id: string, emoji: string | undefined];
+  togglePinned: [id: string, pinned: boolean];
   renameWorkspace: [id: string, name: string];
   deleteWorkspace: [id: string];
   reorderWorkspaces: [ids: string[]];
@@ -119,6 +123,25 @@ const emit = defineEmits<{
   openSettings: [];
   collapse: [];
 }>();
+
+const { sidebarViewMode, loadSidebarViewMode, toggleSidebarViewMode } = useSidebarLayout();
+const pinnedSessions = computed(() =>
+  props.groups
+    .flatMap((group) => group.sessions)
+    .filter((session) => session.pinned)
+    .toSorted((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()),
+);
+const unpinnedGroups = computed(() =>
+  props.groups.map((group) => ({ ...group, sessions: group.sessions.filter((session) => !session.pinned) })),
+);
+const flatSessions = computed(() => props.sessions.filter((session) => !session.pinned));
+
+function onSetEmoji(id: string, emoji: string | undefined): void {
+  emit('setEmoji', id, emoji);
+}
+function onTogglePinned(id: string, pinned: boolean): void {
+  emit('togglePinned', id, pinned);
+}
 
 // ---------------------------------------------------------------------------
 // Session search dialog (Spotlight-style; filters title + last prompt)
@@ -140,7 +163,10 @@ function onSearchKeydown(e: KeyboardEvent): void {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onSearchKeydown));
+onMounted(() => {
+  loadSidebarViewMode();
+  window.addEventListener('keydown', onSearchKeydown);
+});
 onBeforeUnmount(() => window.removeEventListener('keydown', onSearchKeydown));
 
 function isAppleShortcutPlatform(): boolean {
@@ -722,9 +748,36 @@ onBeforeUnmount(() => {
         </div>
 
         <template v-else>
+          <div v-if="pinnedSessions.length > 0" class="pinned-section">
+            <div class="side-section-label"><span class="side-section-title">{{ $t('sidebar.pinned') }}</span></div>
+            <SessionRow
+              v-for="session in pinnedSessions"
+              :key="session.id"
+              :session="session"
+              :active="session.id === activeId"
+              :approval-count="pendingBySession[session.id]?.approvals ?? 0"
+              :question-count="pendingBySession[session.id]?.questions ?? 0"
+              :unread="unreadBySession[session.id] ?? false"
+              @select="onSelectSession"
+              @rename="(id, title) => emit('rename', id, title)"
+              @archive="(id) => emit('archive', id)"
+              @fork="(id) => emit('fork', id)"
+              @export="(id) => emit('export', id)"
+              @set-emoji="onSetEmoji"
+              @toggle-pinned="onTogglePinned"
+            />
+          </div>
           <div class="side-section-label">
             <span class="side-section-title">{{ t('sidebar.workspaces') }}</span>
             <div class="side-section-actions">
+              <IconButton
+                class="side-section-toggle"
+                size="sm"
+                :label="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')"
+                @click.stop="toggleSidebarViewMode"
+              >
+                <Icon :name="sidebarViewMode === 'flat' ? 'folder' : 'list'" />
+              </IconButton>
               <IconButton
                 class="side-section-toggle"
                 size="sm"
@@ -746,8 +799,27 @@ onBeforeUnmount(() => {
               </IconButton>
             </div>
           </div>
+          <template v-if="sidebarViewMode === 'flat'">
+            <SessionRow
+              v-for="session in flatSessions"
+              :key="session.id"
+              :session="session"
+              :active="session.id === activeId"
+              :approval-count="pendingBySession[session.id]?.approvals ?? 0"
+              :question-count="pendingBySession[session.id]?.questions ?? 0"
+              :unread="unreadBySession[session.id] ?? false"
+              @select="onSelectSession"
+              @rename="(id, title) => emit('rename', id, title)"
+              @archive="(id) => emit('archive', id)"
+              @fork="(id) => emit('fork', id)"
+              @export="(id) => emit('export', id)"
+              @set-emoji="onSetEmoji"
+              @toggle-pinned="onTogglePinned"
+            />
+          </template>
+          <template v-else>
           <div
-            v-for="g in groups"
+            v-for="g in unpinnedGroups"
             :key="g.workspace.id"
             class="ws-drop-target"
             :class="{
@@ -779,6 +851,8 @@ onBeforeUnmount(() => {
               @archive-session="(id) => emit('archive', id)"
               @fork-session="(id) => emit('fork', id)"
               @export-session="(id) => emit('export', id)"
+              @set-emoji-session="onSetEmoji"
+              @toggle-pinned-session="onTogglePinned"
               @load-more="onLoadMore"
               @toggle-expand="toggleExpand"
               @confirm-rename="confirmRenameWorkspace"
@@ -788,6 +862,7 @@ onBeforeUnmount(() => {
               @ws-dragend="onWsDragend"
             />
           </div>
+          </template>
         </template>
       </div>
 

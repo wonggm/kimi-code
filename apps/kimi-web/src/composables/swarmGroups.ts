@@ -8,6 +8,8 @@ export interface SwarmMember {
    *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
    *  for rows from the snapshot roster. */
   model?: string;
+  /** Subagent thinking effort, when emitted by the spawn/snapshot payload. */
+  thinkingEffort?: string;
   phase: AppSubagentPhase;
   summary?: string;
   outputLines?: string[];
@@ -58,6 +60,9 @@ export function buildSwarmGroups(tasks: AppTask[]): SwarmGroup[] {
       name: task.description,
       subagentType: task.subagentType,
       model: task.model,
+      thinkingEffort: typeof (task as AppTask & { thinkingEffort?: unknown }).thinkingEffort === 'string'
+        ? (task as AppTask & { thinkingEffort: string }).thinkingEffort
+        : undefined,
       phase: phaseForTask(task),
       summary: task.outputPreview,
       outputLines: task.outputLines,
@@ -114,6 +119,9 @@ export function swarmMembersByToolCall(tasks: AppTask[]): Map<string, SwarmMembe
       name: task.description,
       subagentType: task.subagentType,
       model: task.model,
+      thinkingEffort: typeof (task as AppTask & { thinkingEffort?: unknown }).thinkingEffort === 'string'
+        ? (task as AppTask & { thinkingEffort: string }).thinkingEffort
+        : undefined,
       phase: phaseForTask(task),
       summary: task.outputPreview,
       outputLines: task.outputLines,

@@ -29,6 +29,7 @@ import type {
   KimiEventConnection,
   KimiEventHandlers,
   KimiWebApi,
+  ManagedUsageResult,
   OAuthLoginStartResult,
   Page,
   PageRequest,
@@ -60,6 +61,7 @@ import {
 } from './mappers';
 import type {
   WireAuthResult,
+  WireManagedUsageResult,
   WireTask,
   WireConfig,
   WireEvent,
@@ -423,11 +425,17 @@ export class DaemonKimiWebApi implements KimiWebApi {
       goalObjective?: string;
       goalControl?: 'pause' | 'resume' | 'cancel';
       thinking?: string;
+      emoji?: string;
+      pinned?: boolean;
     },
   ): Promise<AppSession> {
     const body: Record<string, unknown> = {};
     if (input.title !== undefined) body['title'] = input.title;
-    if (input.cwd !== undefined) body['metadata'] = { cwd: input.cwd };
+    const metadata: Record<string, unknown> = {};
+    if (input.cwd !== undefined) metadata['cwd'] = input.cwd;
+    if (input.emoji !== undefined) metadata['emoji'] = input.emoji;
+    if (input.pinned !== undefined) metadata['pinned'] = input.pinned;
+    if (Object.keys(metadata).length > 0) body['metadata'] = metadata;
     const agentConfig: Record<string, unknown> = {};
     if (input.model !== undefined) agentConfig['model'] = input.model;
     if (input.permissionMode !== undefined) agentConfig['permission_mode'] = input.permissionMode;
@@ -1352,6 +1360,12 @@ export class DaemonKimiWebApi implements KimiWebApi {
         ? { status: data.managed_provider.status }
         : null,
     };
+  }
+
+  async getManagedUsage(provider = 'managed:kimi-code'): Promise<ManagedUsageResult> {
+    return this.http.get<WireManagedUsageResult>(
+      `/oauth/usage?provider=${encodeURIComponent(provider)}`,
+    );
   }
 
   async startOAuthLogin(): Promise<OAuthLoginStartResult> {
