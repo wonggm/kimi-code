@@ -171,6 +171,81 @@ onUnmounted(() => {
   topSentinelObserver?.disconnect();
   topSentinelObserver = null;
 });
+
+// Keep the transcript's expensive assistant children (Markdown, syntax
+// highlighting, and tool cards) mounted only near the reading viewport. The
+// outer row remains in the DOM, so scroll anchors and the content-visibility
+// height estimate stay stable while long sessions release component memory.
+const evictedTurnIds = ref(new Set<string>());
+const measuredTurnHeights = new Map<string, number>();
+const turnAnchors = new Map<string, HTMLElement>();
+let turnVisibilityObserver: IntersectionObserver | null = null;
+
+function isTurnHeavyContentMounted(turn: ChatTurn): boolean {
+  return turn.role !== 'assistant' || turn.id === streamingTurnId.value || !evictedTurnIds.value.has(turn.id);
+}
+
+function placeholderStyle(turnId: string): Record<string, string> | undefined {
+  const height = measuredTurnHeights.get(turnId);
+  return height === undefined ? undefined : { minHeight: `${height}px` };
+}
+
+function setEvicted(turnId: string, evicted: boolean): void {
+  const currentlyEvicted = evictedTurnIds.value.has(turnId);
+  if (currentlyEvicted === evicted) return;
+  const next = new Set(evictedTurnIds.value);
+  if (evicted) next.add(turnId);
+  else next.delete(turnId);
+  evictedTurnIds.value = next;
+}
+
+function observeTurnAnchor(turnId: string, value: unknown): void {
+  if (!(value instanceof HTMLElement)) {
+    turnAnchors.delete(turnId);
+    return;
+  }
+  turnAnchors.set(turnId, value);
+  turnVisibilityObserver?.observe(value);
+}
+
+function observeTurnVisibility(): void {
+  if (typeof IntersectionObserver === 'undefined') return;
+  turnVisibilityObserver?.disconnect();
+  turnVisibilityObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const node = entry.target as HTMLElement;
+        const turnId = node.dataset.turnId;
+        if (!turnId) continue;
+        const turn = props.turns.find((candidate) => candidate.id === turnId);
+        // Never evict the active stream, even if a user scrolls away from it.
+        if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) {
+          setEvicted(turnId, false);
+          continue;
+        }
+        if (entry.isIntersecting) {
+          setEvicted(turnId, false);
+        } else if (!evictedTurnIds.value.has(turnId)) {
+          const height = node.getBoundingClientRect().height;
+          if (height > 0) measuredTurnHeights.set(turnId, height);
+          setEvicted(turnId, true);
+        }
+      }
+    },
+    // Keep a generous nearby window to avoid a visible mount during ordinary
+    // scrolling while still releasing distant turns in long transcripts.
+    { root: null, rootMargin: '800px 0px', threshold: 0 },
+  );
+  for (const node of turnAnchors.values()) turnVisibilityObserver.observe(node);
+}
+
+onMounted(observeTurnVisibility);
+onUnmounted(() => {
+  turnVisibilityObserver?.disconnect();
+  turnVisibilityObserver = null;
+  turnAnchors.clear();
+  measuredTurnHeights.clear();
+});
 watch(
   () => [props.hasMoreMessages, props.loadingMore, props.loadingMoreError],
   () => {
@@ -190,6 +265,20 @@ const streamingTurnId = computed<string | null>(() => {
   const last = props.turns.at(-1)!;
   return last.role === 'assistant' ? last.id : null;
 });
+
+watch(
+  [streamingTurnId, () => props.turns],
+  () => {
+    const currentIds = new Set(props.turns.map((turn) => turn.id));
+    for (const id of evictedTurnIds.value) {
+      if (!currentIds.has(id)) measuredTurnHeights.delete(id);
+    }
+    const next = new Set([...evictedTurnIds.value].filter((id) => currentIds.has(id)));
+    if (next.size !== evictedTurnIds.value.size) evictedTurnIds.value = next;
+    void nextTick().then(observeTurnVisibility);
+  },
+  { flush: 'post' },
+);
 
 // Trailing "working" moon: shown while the main conversation has an unfinished
 // prompt. `working` is the union of the optimistic submit window and the main
@@ -642,22 +731,31 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       <CronNotice v-else-if="turn.role === 'cron'" :text="turn.text" :cron="turn.cron" :turn-id="turn.id" :created-at="turn.createdAt" />
 
       <!-- Assistant turn → left-aligned, no name/role label. -->
-      <div v-else class="a-msg turn-anchor" :class="{ 'is-streaming': turn.id === streamingTurnId }" :data-turn-id="turn.id">
-        <template v-for="(blk, bi) in assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
-          <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
-          <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="(target) => emit('openFile', target)" /></div>
-          <ToolGroup
-            v-else-if="blk.kind === 'tool-stack'"
-            :tools="blk.tools"
-            mobile
-            :tool-diff-panel="toolDiffPanel"
-            @open-media="emit('openMedia', $event)"
-            @open-file="emit('openFile', $event)"
-            @open-tool-diff="emit('openToolDiff', $event)"
-            @open-agent="emit('openAgent', $event)"
-          />
-          <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
+      <div
+        v-else
+        :ref="(el) => observeTurnAnchor(turn.id, el)"
+        class="a-msg turn-anchor"
+        :class="{ 'is-streaming': turn.id === streamingTurnId }"
+        :data-turn-id="turn.id"
+      >
+        <template v-if="isTurnHeavyContentMounted(turn)">
+          <template v-for="(blk, bi) in assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
+            <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
+            <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="(target) => emit('openFile', target)" /></div>
+            <ToolGroup
+              v-else-if="blk.kind === 'tool-stack'"
+              :tools="blk.tools"
+              mobile
+              :tool-diff-panel="toolDiffPanel"
+              @open-media="emit('openMedia', $event)"
+              @open-file="emit('openFile', $event)"
+              @open-tool-diff="emit('openToolDiff', $event)"
+              @open-agent="emit('openAgent', $event)"
+            />
+            <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
+          </template>
         </template>
+        <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />
         <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && (assistantRunFinalText(ti).trim().length > 0 || turn.durationMs !== undefined)" class="a-msg-ft">
           <Tooltip :text="`${turn.durationMs} ms`">
             <span v-if="turn.durationMs !== undefined" class="a-duration">{{ formatDuration(turn.durationMs) }}</span>

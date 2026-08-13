@@ -670,6 +670,10 @@ export interface AppConfigProvider {
   type: string;
   baseUrl?: string;
   defaultModel?: string;
+  /** Optional model aliases supplied by the settings editor. */
+  models?: string[];
+  /** Present only when a write payload supplies a replacement credential. */
+  apiKey?: string;
   hasApiKey: boolean;
 }
 

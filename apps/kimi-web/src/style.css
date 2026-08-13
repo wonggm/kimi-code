@@ -1337,6 +1337,13 @@ body {
 .turn-anchor.is-streaming {
   content-visibility: visible;
 }
+/* ChatPane uses this stable shell while distant assistant children are
+   unmounted. It has no paint of its own; the cached height preserves scroll
+   geometry until the row is near the viewport again. */
+.turn-content-placeholder {
+  width: 100%;
+  min-height: 1px;
+}
 
 
 /* ---- perf: WS-1B ---- */

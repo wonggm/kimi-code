@@ -27,6 +27,7 @@ import SessionRow from './SessionRow.vue';
 import { isMacosDesktop } from '../lib/desktopFlag';
 import { useSidebarLayout } from '../composables/useSidebarLayout';
 import IconButton from './ui/IconButton.vue';
+import Tooltip from './ui/Tooltip.vue';
 import Icon from './ui/Icon.vue';
 import Kbd from './ui/Kbd.vue';
 import Menu from './ui/Menu.vue';
@@ -702,15 +703,16 @@ onBeforeUnmount(() => {
             </Pill>
           </template>
         </div>
-        <IconButton
-          v-if="!isMacosDesktop"
-          class="ch-collapse"
-          size="sm"
-          :label="t('sidebar.collapseSidebar')"
-          @click.stop="emit('collapse')"
-        >
-          <Icon name="panel-collapse" />
-        </IconButton>
+        <Tooltip v-if="!isMacosDesktop" :text="t('sidebar.collapseSidebar')">
+          <IconButton
+            class="ch-collapse"
+            size="sm"
+            :label="t('sidebar.collapseSidebar')"
+            @click.stop="emit('collapse')"
+          >
+            <Icon name="panel-collapse" />
+          </IconButton>
+        </Tooltip>
       </div>
 
       <!-- New chat + new workspace buttons -->
@@ -770,33 +772,39 @@ onBeforeUnmount(() => {
           <div class="side-section-label">
             <span class="side-section-title">{{ t('sidebar.workspaces') }}</span>
             <div class="side-section-actions">
-              <IconButton
-                class="side-section-toggle"
-                size="sm"
-                :label="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')"
-                @click.stop="toggleSidebarViewMode"
-              >
-                <Icon :name="sidebarViewMode === 'flat' ? 'folder' : 'list'" />
-              </IconButton>
-              <IconButton
-                class="side-section-toggle"
-                size="sm"
-                :label="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')"
-                @click.stop="allCollapsed ? expandAllWorkspaces() : collapseAllWorkspaces()"
-              >
-                <Icon v-if="allCollapsed" name="expand" />
-                <Icon v-else name="collapse" />
-              </IconButton>
-              <IconButton
-                class="side-section-toggle side-section-kebab"
-                size="sm"
-                :label="t('sidebar.options')"
-                aria-haspopup="menu"
-                :aria-expanded="sectionMenuOpen"
-                @click.stop="toggleSectionMenu($event)"
-              >
-                <Icon name="dots-horizontal" />
-              </IconButton>
+              <Tooltip :text="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')">
+                <IconButton
+                  class="side-section-toggle"
+                  size="sm"
+                  :label="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')"
+                  @click.stop="toggleSidebarViewMode"
+                >
+                  <Icon :name="sidebarViewMode === 'flat' ? 'folder' : 'list'" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip :text="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')">
+                <IconButton
+                  class="side-section-toggle"
+                  size="sm"
+                  :label="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')"
+                  @click.stop="allCollapsed ? expandAllWorkspaces() : collapseAllWorkspaces()"
+                >
+                  <Icon v-if="allCollapsed" name="expand" />
+                  <Icon v-else name="collapse" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip :text="t('sidebar.options')">
+                <IconButton
+                  class="side-section-toggle side-section-kebab"
+                  size="sm"
+                  :label="t('sidebar.options')"
+                  aria-haspopup="menu"
+                  :aria-expanded="sectionMenuOpen"
+                  @click.stop="toggleSectionMenu($event)"
+                >
+                  <Icon name="dots-horizontal" />
+                </IconButton>
+              </Tooltip>
             </div>
           </div>
           <template v-if="sidebarViewMode === 'flat'">

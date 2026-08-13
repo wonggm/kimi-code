@@ -13,6 +13,7 @@ import ChatDock from './ChatDock.vue';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
+import RiveAvatar from '../ui/RiveAvatar.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { getVisibleWorkspaces } from '../../lib/workspacePicker';
 import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
@@ -1348,6 +1349,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
             <!-- Empty session: Composer rendered in the centre of the pane -->
             <div class="empty-spacer" />
             <div class="empty-hint">
+              <RiveAvatar v-if="!starting" :size="56" class="empty-avatar" />
               <span class="empty-hint-title" :class="{ 'is-starting': starting }">
                 <Spinner v-if="starting" size="sm" />
                 <span>{{ starting ? t('conversation.starting') : t('composer.emptyConversationTitle') }}</span>
@@ -1747,6 +1749,9 @@ html[data-liquid-glass="on"] .panes.has-header {
   padding: 0 16px 16px;
   color: var(--color-text);
   font-family: var(--font-ui);
+}
+.empty-avatar {
+  margin-bottom: var(--space-1);
 }
 .empty-hint-title {
   font-size: calc(var(--ui-font-size) + 16px);

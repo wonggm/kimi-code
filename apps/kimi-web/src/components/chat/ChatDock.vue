@@ -284,6 +284,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       v-else-if="pendingApproval"
       :key="pendingApproval.approvalId"
       class="dock-approval"
+      :class="{ 'plan-approval': pendingApproval.block.kind === 'plan_review' }"
       :block="pendingApproval.block"
       :agent-name="pendingApproval.agentName"
       :busy="approvalBusy"
@@ -414,6 +415,19 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 
 .dock-approval {
   margin-top: 8px;
+}
+
+/* Plan review expands above the bottom dock without changing its height, so
+   work pills and the composer remain anchored to the window edge. */
+.dock-approval.plan-approval {
+  position: absolute;
+  left: var(--dock-inline-left);
+  right: var(--dock-inline-right);
+  bottom: calc(100% + var(--space-2));
+  z-index: var(--z-overlay);
+  max-height: min(70vh, calc(100vh - var(--dock-h, 0px) - var(--space-4)));
+  overflow-y: auto;
+  margin: 0;
 }
 
 @media (max-width: 640px) {

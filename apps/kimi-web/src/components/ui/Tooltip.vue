@@ -35,6 +35,7 @@ const SHOW_DELAY = 150;
 const trigger = ref<HTMLElement>();
 const bubble = ref<HTMLElement>();
 const open = ref(false);
+const mounted = ref(false);
 const positioned = ref(false);
 const bubbleStyle = ref<Record<string, string>>({ maxWidth: `${props.maxWidth}px` });
 
@@ -87,6 +88,7 @@ function show(): void {
   if (!props.text) return;
   window.clearTimeout(showTimer);
   showTimer = window.setTimeout(() => {
+    mounted.value = true;
     open.value = true;
     positioned.value = false;
     void nextTick(() => {
@@ -99,6 +101,7 @@ function show(): void {
 function hide(): void {
   window.clearTimeout(showTimer);
   open.value = false;
+  mounted.value = false;
   positioned.value = false;
 }
 
@@ -158,6 +161,7 @@ onBeforeUnmount(() => {
   </span>
   <Teleport to="body">
     <div
+      v-if="mounted"
       ref="bubble"
       v-show="open"
       class="ui-tip__bubble lg-glass"

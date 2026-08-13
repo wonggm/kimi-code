@@ -755,12 +755,14 @@ export function toAppProvider(wire: WireProvider): AppProvider {
 }
 
 export function toAppConfig(wire: WireConfig): AppConfig {
-  const providers: Record<string, { type: string; baseUrl?: string; defaultModel?: string; hasApiKey: boolean }> = {};
+  const providers: Record<string, { type: string; baseUrl?: string; defaultModel?: string; models?: string[]; apiKey?: string; hasApiKey: boolean }> = {};
   for (const [id, provider] of Object.entries(wire.providers)) {
     providers[id] = {
       type: provider.type,
       baseUrl: provider.base_url,
       defaultModel: provider.default_model,
+      models: provider.models,
+      apiKey: provider.api_key,
       hasApiKey: provider.has_api_key,
     };
   }

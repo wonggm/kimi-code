@@ -14,6 +14,7 @@ import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
 import type { Accent, ColorScheme } from '../../composables/useKimiWebClient';
 import type { AppConfig, AppModel } from '../../api/types';
 import { PERMISSION_MODES, useAgentDefaults } from '../../composables/useAgentDefaults';
+import { useCustomProviders } from '../../composables/useCustomProviders';
 import Dialog from '../ui/Dialog.vue';
 import Switch from '../ui/Switch.vue';
 import Button from '../ui/Button.vue';
@@ -124,6 +125,10 @@ const {
   config: () => props.config,
   models: () => props.models,
   backend: () => props.backend,
+  updateConfig: (patch) => emit('updateConfig', patch),
+});
+const customProviders = useCustomProviders({
+  config: () => props.config,
   updateConfig: (patch) => emit('updateConfig', patch),
 });
 
@@ -572,6 +577,37 @@ function archiveTime(iso: string): string {
               {{ t('settings.configUnavailable') }}
             </div>
           </section>
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">{{ t('settings.customProviders') }}</h3>
+              <Button variant="primary" size="sm" :disabled="configSaving" @click="customProviders.openAdd">{{ t('settings.customProviderAdd') }}</Button>
+            </div>
+            <p class="hint provider-desc">{{ t('settings.customProvidersHint') }}</p>
+            <div v-if="!config" class="empty-config">{{ t('settings.configUnavailable') }}</div>
+            <div v-else-if="customProviders.providers.length === 0 && !customProviders.adding" class="provider-empty">{{ t('settings.customProvidersEmpty') }}</div>
+            <div v-else class="provider-list">
+              <div v-for="[id, provider] in customProviders.providers" :key="id" class="provider-card">
+                <div class="provider-card-main">
+                  <strong>{{ id }}</strong>
+                  <span class="hint">{{ provider.type }} · {{ provider.baseUrl || t('settings.customProviderNoUrl') }}</span>
+                  <span class="hint">{{ provider.hasApiKey ? t('settings.customProviderKeySet') : t('settings.customProviderKeyMissing') }}<template v-if="provider.models?.length"> · {{ t('settings.customProviderModelCount', { count: provider.models.length }) }}</template></span>
+                </div>
+                <div class="actions">
+                  <Button variant="secondary" size="sm" :disabled="configSaving" @click="customProviders.openEdit(id, provider)">{{ t('settings.customProviderEdit') }}</Button>
+                  <Button variant="danger-soft" size="sm" :disabled="configSaving" @click="customProviders.remove(id)">{{ t('settings.customProviderRemove') }}</Button>
+                </div>
+              </div>
+            </div>
+            <form v-if="customProviders.editingId !== null || customProviders.adding" class="provider-form" @submit.prevent="customProviders.save">
+              <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" :disabled="customProviders.editingId !== null || configSaving" autocomplete="off" /></label>
+              <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
+              <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
+              <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" :placeholder="customProviders.editingId !== null ? '••••••••' : ''" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
+              <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
+              <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
+              <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
+            </form>
+          </section>
         </section>
 
         <!-- Advanced: diagnostics + data/privacy -->
@@ -806,6 +842,18 @@ function archiveTime(iso: string): string {
 }
 
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.provider-desc { margin: calc(var(--space-3) * -1) 0 var(--space-3); }
+.provider-empty { padding: var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-md); color: var(--color-text-faint); text-align: center; }
+.provider-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.provider-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
+.provider-card-main { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow: hidden; }
+.provider-card-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
+.provider-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--color-text-muted); }
+.provider-field input { height: 36px; padding: 0 var(--space-2); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface-raised); color: var(--color-text); font: inherit; }
+.provider-field input:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
+.provider-error { color: var(--color-danger); font-size: var(--text-sm); }
+.provider-form .actions { grid-column: 1 / -1; }
 
 @media (max-width: 640px) {
   .sd { flex-direction: column; }

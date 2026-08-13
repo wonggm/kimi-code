@@ -192,15 +192,17 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
         </span>
         <Badge v-if="agentName && !minimized" variant="neutral" size="sm">{{ t('approval.subagentBadge', { name: agentName }) }}</Badge>
         <Badge v-if="!minimized" variant="warning" size="sm" class="aw">{{ t('approval.required') }}</Badge>
-        <IconButton
-          class="amin"
-          size="sm"
-          :label="minimized ? t('question.expand') : t('question.minimize')"
-          @click="minimized = !minimized"
-        >
-          <Icon v-if="minimized" name="chevron-up" size="md" />
-          <Icon v-else name="minus" size="md" />
-        </IconButton>
+        <Tooltip :text="minimized ? t('question.expand') : t('question.minimize')">
+          <IconButton
+            class="amin"
+            size="sm"
+            :label="minimized ? t('question.expand') : t('question.minimize')"
+            @click="minimized = !minimized"
+          >
+            <Icon v-if="minimized" name="chevron-up" size="md" />
+            <Icon v-else name="minus" size="md" />
+          </IconButton>
+        </Tooltip>
       </div>
     </template>
 
