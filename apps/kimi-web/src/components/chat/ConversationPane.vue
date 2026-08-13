@@ -104,7 +104,7 @@ const emit = defineEmits<{
   cancelTask: [taskId: string];
   answer: [questionId: string, response: QuestionResponse];
   dismiss: [questionId: string];
-  command: [cmd: string];
+  command: [cmd: string, attachments?: PromptAttachment[]];
   interrupt: [];
   unqueue: [index: number];
   editQueued: [index: number];
@@ -1388,7 +1388,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :starting="starting"
               @submit="handleComposerSubmit"
               @steer="emit('steer', $event)"
-              @command="emit('command', $event)"
+              @command="(cmd, attachments) => emit('command', cmd, attachments)"
               @interrupt="handleInterrupt"
               @unqueue="emit('unqueue', $event)"
               @edit-queued="emit('editQueued', $event)"
@@ -1484,7 +1484,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         @control-goal="emit('controlGoal', $event)"
         @submit="handleComposerSubmit"
         @steer="emit('steer', $event)"
-        @command="emit('command', $event)"
+        @command="(cmd, attachments) => emit('command', cmd, attachments)"
         @interrupt="handleInterrupt"
         @set-permission="emit('setPermission', $event)"
         @set-thinking="emit('setThinking', $event)"

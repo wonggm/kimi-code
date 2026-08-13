@@ -815,6 +815,22 @@ describe('useWorkspaceState — startSessionAndActivateSkill', () => {
     expect(activateSkill).toHaveBeenCalledWith('write-goal', 'ship it', 'sess_new');
   });
 
+  it('passes through composer attachments', async () => {
+    // Attachments picked on the empty-session composer must ride into the
+    // activation, not get dropped when the session is created.
+    const activateSkill = vi.fn().mockResolvedValue(undefined);
+    const deps = skillDeps(activateSkill);
+    const ws = useWorkspaceState(createState(), deps);
+
+    await ws.startSessionAndActivateSkill('wd_1', 'pre-changelog', undefined, [
+      { fileId: 'file_1', kind: 'image' },
+    ]);
+
+    expect(activateSkill).toHaveBeenCalledWith('pre-changelog', undefined, 'sess_new', [
+      { fileId: 'file_1', kind: 'image' },
+    ]);
+  });
+
   it('awaits the profile POST before activating, so draft controls apply first', async () => {
     // Skill activation only carries `args`, so the daemon never sees the per-
     // prompt controls (plan/swarm plus permission) the user set on the draft.
