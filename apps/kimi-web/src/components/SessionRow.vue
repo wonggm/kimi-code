@@ -226,12 +226,13 @@ defineExpose({ closeMenu });
         </Badge>
       </Tooltip>
       <!-- Aborted: a distinct, low-key error tag — the session is quiet and
-           its last main turn was cancelled or failed. Hidden while input is
-           pending (the awaiting pills own the row then, exactly like the
-           retired awaiting_* lifecycle status superseded `aborted`). -->
+           its last main turn failed. Hidden while input is pending (the
+           awaiting pills own the row then, exactly like the retired
+           awaiting_* lifecycle status superseded `aborted`). Manually
+           cancelled sessions are NOT flagged (upstream #2697). -->
       <Tooltip :text="t('workspace.abortedTitle')">
         <Badge
-          v-if="!renaming && !session.busy && session.pendingInteraction !== 'question' && session.pendingInteraction !== 'approval' && questionCount === 0 && approvalCount === 0 && (session.lastTurnReason === 'cancelled' || session.lastTurnReason === 'failed')"
+          v-if="!renaming && !session.busy && session.pendingInteraction !== 'question' && session.pendingInteraction !== 'approval' && questionCount === 0 && approvalCount === 0 && session.lastTurnReason === 'failed'"
           variant="danger"
           size="sm"
         >
