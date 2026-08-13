@@ -596,13 +596,23 @@ function archiveTime(iso: string): string {
                   <Button variant="secondary" size="sm" :disabled="configSaving" @click="customProviders.openEdit(id, provider)">{{ t('settings.customProviderEdit') }}</Button>
                   <Button variant="danger-soft" size="sm" :disabled="configSaving" @click="customProviders.remove(id)">{{ t('settings.customProviderRemove') }}</Button>
                 </div>
+                <form v-if="customProviders.editingId === id" class="provider-form" @submit.prevent="customProviders.save">
+                  <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" disabled autocomplete="off" /></label>
+                  <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
+                  <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
+                  <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" placeholder="••••••••" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
+                  <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
+                  <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
+                  <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
+                </form>
               </div>
             </div>
-            <form v-if="customProviders.editingId !== null || customProviders.adding" class="provider-form" @submit.prevent="customProviders.save">
-              <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" :disabled="customProviders.editingId !== null || configSaving" autocomplete="off" /></label>
+            <span v-if="customProviders.error && !customProviders.adding && customProviders.editingId === null" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
+            <form v-if="customProviders.adding" class="provider-form" @submit.prevent="customProviders.save">
+              <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" :disabled="configSaving" autocomplete="off" /></label>
               <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
               <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
-              <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" :placeholder="customProviders.editingId !== null ? '••••••••' : ''" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
+              <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
               <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
               <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
               <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>

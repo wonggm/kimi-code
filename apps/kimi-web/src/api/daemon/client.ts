@@ -1266,8 +1266,9 @@ export class DaemonKimiWebApi implements KimiWebApi {
   }
 
   async deleteProvider(id: string): Promise<{ deleted: true }> {
-    // PRESUMED endpoint: DELETE /v1/providers/{id} → { deleted: true }
-    return this.http.delete<{ deleted: true }>(`/providers/${encodeURIComponent(id)}`);
+    // DELETE /providers/{id} returns 204 with no envelope body.
+    await this.http.delete<void>(`/providers/${encodeURIComponent(id)}`);
+    return { deleted: true };
   }
 
   async refreshProvider(id: string): Promise<ProviderRefreshResult> {
