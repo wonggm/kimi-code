@@ -822,6 +822,8 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
     lastSeqBySession: rawState.lastSeqBySession,
     turnActiveBySession: rawState.turnActiveBySession,
     compactionBySession: rawState.compactionBySession,
+    retryBySession: rawState.retryBySession,
+    failureBySession: rawState.failureBySession,
     config: rawState.config,
     warnings: rawState.warnings,
   };
@@ -839,6 +841,8 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
   rawState.lastSeqBySession = next.lastSeqBySession;
   rawState.turnActiveBySession = next.turnActiveBySession;
   rawState.compactionBySession = next.compactionBySession;
+  rawState.retryBySession = next.retryBySession;
+  rawState.failureBySession = next.failureBySession;
   rawState.config = next.config ?? null;
   rawState.warnings = next.warnings;
 
@@ -1917,6 +1921,11 @@ const sessions = computed<Session[]>(() => {
       busy: isMainTurnActive(s.id, s.mainTurnActive),
       pendingInteraction: s.pendingInteraction,
       lastTurnReason: s.lastTurnReason,
+      updatedAt: s.updatedAt,
+      lastPrompt: s.lastPrompt,
+      workspaceId: s.workspaceId,
+      emoji: s.emoji,
+      pinned: s.pinned,
     }));
 });
 
@@ -2803,6 +2812,8 @@ export function useKimiWebClient() {
     changesByPath,
     pendingApprovals,
     availableOpenInApps,
+    retryBySession: computed(() => rawState.retryBySession),
+    failureBySession: computed(() => rawState.failureBySession),
 
     // New Phase 1 computed
     connection,
