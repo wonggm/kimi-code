@@ -155,6 +155,7 @@ export function resolveSubagentTimeoutMs(config: IConfigService): number {
 }
 
 export const PRIMARY_SUBAGENT_MODEL_CHOICE = 'primary';
+export const SECONDARY_DERIVED_MODEL_ID = '__secondary__';
 
 export interface SubagentModelPool {
   readonly defaultModel?: string;
@@ -264,16 +265,18 @@ export function resolveSubagentBinding(
   own: { modelAlias: string; thinkingLevel: string },
   requested?: string,
   profileName?: string,
-): { model: string; thinking?: string } {
+): { model: string; thinking?: string; displayModel?: string } {
   const effort =
     profileName === undefined
       ? undefined
       : config.get<SubagentEffortsConfig | undefined>(SUBAGENT_EFFORTS_SECTION)?.[profileName];
+  const bind = (model: string, thinking?: string, displayModel = model) =>
+    profileName === undefined ? { model, thinking } : { model, thinking, displayModel };
   if (profileName !== undefined) {
     const pinned = config.get<SubagentModelsConfig | undefined>(SUBAGENT_MODELS_SECTION)?.[
       profileName
     ];
-    if (pinned !== undefined) return { model: pinned, thinking: effort ?? own.thinkingLevel };
+    if (pinned !== undefined) return bind(pinned, effort ?? own.thinkingLevel);
   }
   const enabled = flags.enabled(SECONDARY_MODEL_FLAG_ID);
   const section = config.get<SecondaryModelConfig | undefined>(SECONDARY_MODEL_SECTION);
@@ -296,10 +299,28 @@ export function resolveSubagentBinding(
         { details: { model: requested } },
       );
     }
-    return { model: forcedModel, thinking: effort ?? section.defaultEffort };
+    return bind(forcedModel, effort ?? section.defaultEffort);
+  }
+  if (profileName !== undefined && enabled && section?.model !== undefined) {
+    const hasPatch =
+      section.defaultEffort !== undefined ||
+      section.offEffort !== undefined ||
+      section.maxContextSize !== undefined ||
+      section.maxInputSize !== undefined ||
+      section.maxOutputSize !== undefined ||
+      section.capabilities !== undefined ||
+      section.displayName !== undefined ||
+      section.reasoningKey !== undefined ||
+      section.adaptiveThinking !== undefined ||
+      section.supportEfforts !== undefined;
+    return bind(
+      hasPatch ? SECONDARY_DERIVED_MODEL_ID : section.model,
+      effort ?? section.defaultEffort,
+      section.model,
+    );
   }
   if (requested === PRIMARY_SUBAGENT_MODEL_CHOICE) {
-    return { model: own.modelAlias, thinking: effort ?? own.thinkingLevel };
+    return bind(own.modelAlias, effort ?? own.thinkingLevel);
   }
   const pool = enabled ? resolveSubagentModelPool(config) : undefined;
   if (pool === undefined) {
@@ -310,7 +331,7 @@ export function resolveSubagentBinding(
         { details: { model: requested } },
       );
     }
-    return { model: own.modelAlias, thinking: effort ?? own.thinkingLevel };
+    return bind(own.modelAlias, effort ?? own.thinkingLevel);
   }
   if (Object.hasOwn(pool.models, PRIMARY_SUBAGENT_MODEL_CHOICE)) {
     throw new Error2(ErrorCodes.CONFIG_INVALID, SECONDARY_MODEL_PRIMARY_MODEL_RESERVED_MESSAGE, {
@@ -335,7 +356,7 @@ export function resolveSubagentBinding(
       { details: { model: choice, availableModels: available } },
     );
   }
-  return { model: choice, thinking: effort ?? section?.defaultEffort };
+  return bind(choice, effort ?? section?.defaultEffort);
 }
 
 export function resolveSubagentThinking(

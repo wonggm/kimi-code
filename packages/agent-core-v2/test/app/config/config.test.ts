@@ -88,6 +88,7 @@ import {
   resolveSubagentModelPool,
   resolveSubagentModelAlias,
   resolveSubagentTimeoutMs,
+  SECONDARY_DERIVED_MODEL_ID,
   SECONDARY_MODEL_SECTION,
   SUBAGENT_SECTION,
   SUBAGENT_TIMEOUT_ENV,
