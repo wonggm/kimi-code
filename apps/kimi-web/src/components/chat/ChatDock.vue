@@ -59,7 +59,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   submit: [payload: { text: string; attachments: PromptAttachment[] }];
   steer: [payload: { text: string; attachments: PromptAttachment[] }];
-  command: [cmd: string];
+  command: [cmd: string, attachments?: PromptAttachment[]];
   interrupt: [];
   setPermission: [mode: PermissionMode];
   setThinking: [level: ThinkingLevel];
@@ -287,7 +287,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       :starting="starting"
       @submit="emit('submit', $event)"
       @steer="emit('steer', $event)"
-      @command="emit('command', $event)"
+      @command="(cmd, attachments) => emit('command', cmd, attachments)"
       @interrupt="emit('interrupt')"
       @set-permission="emit('setPermission', $event)"
       @set-thinking="emit('setThinking', $event)"

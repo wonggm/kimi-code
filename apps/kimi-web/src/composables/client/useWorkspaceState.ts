@@ -1180,12 +1180,14 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
    * new-session screen silently dropped the activation (`activateSkill` needs a
    * session id). Shares createDraftSession so the model and draft modes are
    * applied identically to a prompt-started session; then persists any draft
-   * plan/swarm modes here, because skill activation carries only `args`.
+   * plan/swarm modes here, because skill activation carries only `args` and
+   * attachments.
    */
   async function startSessionAndActivateSkill(
     workspaceId: string,
     skillName: string,
     args?: string,
+    attachments?: PromptAttachment[],
   ): Promise<void> {
     // Same reentry window as startSessionAndSendPrompt (see the guard there):
     // draft-session creation selects the new session before the activation,
@@ -1195,8 +1197,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     try {
       const sid = await createDraftSession(workspaceId);
       if (!sid) return;
-      // Unlike a plain prompt, skill activation only carries `args`, so the
-      // daemon never sees the prompt-time controls the user may have changed on
+      // Unlike a plain prompt, skill activation carries only `args` (+ attachments),
+      // so the daemon never sees the prompt-time controls the user may have changed on
       // the draft (plan/swarm, plus permission via /auto|/yolo). Persist them
       // onto this new session's profile and await it before activating,
       // otherwise the first skill turn can start before applyAgentState and
@@ -1228,7 +1230,12 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       // The persist surfaces its own failure; activating at a stale profile
       // effort is worse than not activating (the finally still re-arms below).
       if (!persisted) return;
-      await modelProvider.activateSkill(skillName, args, sid);
+      // Without attachments keep the plain call shape (nothing extra to pass).
+      if (attachments !== undefined && attachments.length > 0) {
+        await modelProvider.activateSkill(skillName, args, sid, attachments);
+      } else {
+        await modelProvider.activateSkill(skillName, args, sid);
+      }
     } catch (err) {
       pushOperationFailure('startSessionAndActivateSkill', err);
     } finally {

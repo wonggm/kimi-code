@@ -469,6 +469,26 @@ describe('useModelProviderState thinking on model selection', () => {
     expect(apiMock.activateSkill).toHaveBeenCalledWith('session-1', 'gen-changesets', undefined);
   });
 
+  it('forwards composer attachments to the activation request', async () => {
+    // Attachments sent together with a skill must ride into the activation
+    // (same content-part shapes as the normal prompt path), not get dropped.
+    const state = createState({
+      activeSession: { id: 'session-1', model: effortAppModel.id },
+      defaultModel: booleanAppModel.id,
+    });
+    const provider = createModelProvider(state);
+
+    await provider.activateSkill('gen-changesets', undefined, undefined, [
+      { fileId: 'file_1', kind: 'image' },
+      { fileId: 'file_2', kind: 'file', name: 'notes.txt', mediaType: 'text/plain', size: 42 },
+    ]);
+
+    expect(apiMock.activateSkill).toHaveBeenCalledWith('session-1', 'gen-changesets', undefined, [
+      { type: 'image', source: { kind: 'file', fileId: 'file_1' } },
+      { type: 'file', fileId: 'file_2', name: 'notes.txt', mediaType: 'text/plain', size: 42 },
+    ]);
+  });
+
   it('pins the catalog default in memory when no thinking preference exists', async () => {
     const state = createState({ defaultModel: effortAppModel.id });
     state.thinking = undefined;

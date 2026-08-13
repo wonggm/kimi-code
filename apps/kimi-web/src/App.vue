@@ -497,8 +497,10 @@ async function handleEditMessage(payload: {
   conversationPaneRef.value?.loadComposerForEdit(payload.text, payload.attachments);
 }
 
-// Handler for slash commands emitted by Composer (via ConversationPane)
-function handleCommand(cmd: string): void {
+// Handler for slash commands emitted by Composer (via ConversationPane).
+// `attachments` carries the composer chips for skill commands — the Composer
+// already cleared them, so they must ride along or they'd be dropped.
+function handleCommand(cmd: string, attachments?: PromptAttachment[]): void {
   // `/compact <text>` carries an optional free-text instruction steering what
   // the summary should focus on (TUI parity).
   if (cmd === '/compact' || cmd.startsWith('/compact ')) {
@@ -596,9 +598,9 @@ function handleCommand(cmd: string): void {
       const args = space === -1 ? undefined : cmd.slice(space + 1).trim() || undefined;
       if (!name) break;
       if (!client.activeSessionId.value && client.activeWorkspaceId.value) {
-        void client.startSessionAndActivateSkill(client.activeWorkspaceId.value, name, args);
+        void client.startSessionAndActivateSkill(client.activeWorkspaceId.value, name, args, attachments);
       } else {
-        void client.activateSkill(name, args);
+        void client.activateSkill(name, args, undefined, attachments);
       }
       break;
     }

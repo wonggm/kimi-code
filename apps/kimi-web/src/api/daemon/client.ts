@@ -15,6 +15,7 @@ import type {
   ProviderRefreshResult,
   AppSession,
   AppSkill,
+  AppSkillAttachment,
   AppSessionCursor,
   AppSessionRuntimeStatus,
   AppSessionSnapshot,
@@ -50,6 +51,7 @@ import {
   toAppSession,
   toAppTask,
   toWireApprovalResponse,
+  toWireMessageContent,
   toWirePromptSubmission,
   toWireQuestionResponse,
   toAppWorkspace,
@@ -67,6 +69,7 @@ import type {
   WireFsHomeResult,
   WireGoalSnapshot,
   WireMessage,
+  WireMessageContent,
   WireModel,
   WireOAuthCancelResult,
   WireOAuthLoginPollResult,
@@ -910,10 +913,18 @@ export class DaemonKimiWebApi implements KimiWebApi {
     sessionId: string,
     skillName: string,
     args?: string,
+    attachments?: AppSkillAttachment[],
   ): Promise<{ activated: true; skillName: string }> {
+    // Attachments ride in the same wire shape as prompt content parts; the
+    // daemon appends them to the skill turn's user message.
+    const body: { args?: string; attachments?: WireMessageContent[] } = {};
+    if (args !== undefined && args.length > 0) body.args = args;
+    if (attachments !== undefined && attachments.length > 0) {
+      body.attachments = attachments.map(toWireMessageContent);
+    }
     const data = await this.http.post<{ activated: true; skill_name: string }>(
       `/sessions/${encodeURIComponent(sessionId)}/skills/${encodeURIComponent(skillName)}:activate`,
-      args !== undefined && args.length > 0 ? { args } : {},
+      body,
     );
     return { activated: data.activated, skillName: data.skill_name };
   }
