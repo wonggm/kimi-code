@@ -1,4 +1,5 @@
 import { computed, reactive, ref, toValue, type MaybeRefOrGetter } from 'vue';
+import { getKimiWebApi } from '../api';
 import type { AppConfig, AppConfigProvider } from '../api/types';
 
 export interface CustomProviderForm {
@@ -21,8 +22,11 @@ export function useCustomProviders(opts: UseCustomProvidersOptions) {
   const adding = ref(false);
   const form = reactive<CustomProviderForm>(emptyForm());
   const error = ref('');
+  const removedProviderIds = ref(new Set<string>());
 
-  const providers = computed(() => Object.entries(config.value?.providers ?? {}));
+  const providers = computed(() =>
+    Object.entries(config.value?.providers ?? {}).filter(([id]) => !removedProviderIds.value.has(id)),
+  );
 
   function emptyForm(): CustomProviderForm {
     return { id: '', type: 'openai', baseUrl: '', apiKey: '', defaultModel: '', models: '' };
@@ -64,6 +68,7 @@ export function useCustomProviders(opts: UseCustomProvidersOptions) {
       error.value = 'duplicate';
       return;
     }
+    removedProviderIds.value = new Set([...removedProviderIds.value].filter((key) => key !== id));
     const next: Record<string, AppConfigProvider> = {};
     for (const [key, provider] of providers.value) {
       if (key !== editingId.value && key !== id) next[key] = provider;
@@ -82,13 +87,15 @@ export function useCustomProviders(opts: UseCustomProvidersOptions) {
     adding.value = false;
   }
 
-  function remove(id: string): void {
-    const next: Record<string, AppConfigProvider> = {};
-    for (const [key, provider] of providers.value) {
-      if (key !== id) next[key] = provider;
+  async function remove(id: string): Promise<void> {
+    error.value = '';
+    try {
+      await getKimiWebApi().deleteProvider(id);
+      removedProviderIds.value = new Set([...removedProviderIds.value, id]);
+      if (editingId.value === id) cancel();
+    } catch {
+      error.value = 'removeFailed';
     }
-    opts.updateConfig({ providers: next });
-    if (editingId.value === id) cancel();
   }
 
   return reactive({ providers, editingId, adding, form, error, openAdd, openEdit, cancel, save, remove });

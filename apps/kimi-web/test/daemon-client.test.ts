@@ -76,6 +76,24 @@ function createApi(): DaemonKimiWebApi {
   });
 }
 
+describe('DaemonKimiWebApi.deleteProvider', () => {
+  beforeEach(() => {
+    vi.stubGlobal('location', { search: '?debug=1' });
+    clearTrace();
+  });
+
+  it('accepts the provider endpoint 204 empty response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createApi().deleteProvider('custom-provider')).resolves.toEqual({ deleted: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://daemon.test/api/v1/providers/custom-provider',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+});
+
 describe('DaemonKimiWebApi.exportSession', () => {
   beforeEach(() => {
     vi.stubGlobal('location', { search: '?debug=1' });

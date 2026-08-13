@@ -107,5 +107,5 @@ export default {
   customProviderKeySet: 'API key 已设置',
   customProviderKeyMissing: '未设置 API key',
   customProviderModelCount: '{count} 个模型',
-  customProviderError: { id: '必须填写提供商 ID', duplicate: '该提供商 ID 已存在' },
+  customProviderError: { id: '必须填写提供商 ID', duplicate: '该提供商 ID 已存在', removeFailed: '无法删除提供商' },
 };
