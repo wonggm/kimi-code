@@ -107,5 +107,5 @@ export default {
   customProviderKeySet: 'API key set',
   customProviderKeyMissing: 'API key not set',
   customProviderModelCount: '{count} models',
-  customProviderError: { id: 'Provider ID is required', duplicate: 'A provider with this ID already exists' },
+  customProviderError: { id: 'Provider ID is required', duplicate: 'A provider with this ID already exists', removeFailed: 'Provider could not be removed' },
 };
