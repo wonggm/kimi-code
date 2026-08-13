@@ -16,7 +16,6 @@ import {
   ISessionMetadata,
   ISessionLegacyService,
   ISessionTitleService,
-  ISessionSecondaryModelWarningService,
   IWorkspaceDirs,
   IEventService,
   SessionCreated,
