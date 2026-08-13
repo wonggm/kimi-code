@@ -90,7 +90,7 @@ const emit = defineEmits<{
   /** Steer the composer text (+ any queued prompts, merged by the parent)
       into the RUNNING turn — TUI ctrl+s. */
   steer: [payload: { text: string; attachments: PromptAttachment[] }];
-  command: [cmd: string];
+  command: [cmd: string, attachments?: PromptAttachment[]];
   interrupt: [];
   setPermission: [mode: PermissionMode];
   setThinking: [level: ThinkingLevel];
@@ -338,17 +338,28 @@ function handleSubmit(): void {
   // resolves to its prefixed menu entry (`/skill:deploy`), mirroring the TUI.
   if (trimmed) {
     const parsed = parseSlash(trimmed);
-    const known = parsed
-      ? buildSlashItems(props.skills).some(
+    const slashItem = parsed
+      ? buildSlashItems(props.skills).find(
           (item) => item.name === parsed.cmd || item.name === `/${SKILL_COMMAND_PREFIX}${parsed.cmd.slice(1)}`,
         )
-      : false;
-    if (parsed && known) {
+      : undefined;
+    if (parsed && slashItem) {
+      // Skill activations forward the composer's attachments into the turn
+      // (mirroring a normal submit) — otherwise they were silently dropped.
+      // Built-in commands leave any chips untouched.
+      const commandAttachments =
+        slashItem.isSkill === true && readyAttachments.length > 0
+          ? readyAttachments.map((a) => toPromptAttachment(a))
+          : undefined;
+      if (commandAttachments !== undefined) {
+        previewAttachment.value = null;
+        clearAfterSubmit();
+      }
       text.value = '';
       clearDraft();
       slashOpen.value = false;
       collapseAndRefit();
-      emit('command', parsed.arg ? `${parsed.cmd} ${parsed.arg}` : parsed.cmd);
+      emit('command', parsed.arg ? `${parsed.cmd} ${parsed.arg}` : parsed.cmd, commandAttachments);
       return;
     }
   }
