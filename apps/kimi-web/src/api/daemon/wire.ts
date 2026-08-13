@@ -407,6 +407,8 @@ export interface WireConfigProvider {
   type: string;
   base_url?: string;
   default_model?: string;
+  models?: string[];
+  api_key?: string;
   has_api_key: boolean;
 }
 

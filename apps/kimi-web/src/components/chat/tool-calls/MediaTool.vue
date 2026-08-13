@@ -3,6 +3,7 @@
 import { computed } from 'vue';
 import type { ToolCall, ToolMedia } from '../../../types';
 import Tooltip from '../../ui/Tooltip.vue';
+import Icon from '../../ui/Icon.vue';
 
 const props = withDefaults(defineProps<{ tool: ToolCall; mobile?: boolean }>(), { mobile: false });
 const emit = defineEmits<{ openMedia: [media: ToolMedia] }>();
@@ -29,7 +30,7 @@ const mediaTitle = computed(() => {
 
 function openMediaPreview(): void {
   const m = media.value;
-  if (m?.kind === 'image') emit('openMedia', m);
+  if (m?.kind === 'image' || m?.kind === 'video') emit('openMedia', m);
 }
 </script>
 
@@ -52,13 +53,19 @@ function openMediaPreview(): void {
         />
       </button>
     </Tooltip>
-    <video
-      v-else-if="media.kind === 'video'"
-      class="media-video"
-      :src="media.url"
-      controls
-      preload="metadata"
-    />
+    <div v-else-if="media.kind === 'video'" class="media-video-wrap">
+      <video
+        class="media-video"
+        :src="media.url"
+        controls
+        preload="metadata"
+      />
+      <Tooltip :text="media.path || mediaTitle">
+        <button type="button" class="media-expand lg-glass" aria-label="Open fullscreen" @click="openMediaPreview">
+          <Icon name="panel-expand" size="sm" />
+        </button>
+      </Tooltip>
+    </div>
     <audio v-else class="media-audio" :src="media.url" controls />
   </div>
 </template>
@@ -95,5 +102,24 @@ function openMediaPreview(): void {
 .media-audio {
   max-width: 100%;
   border-radius: var(--radius-md);
+}
+.media-video-wrap {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+.media-expand {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
 }
 </style>

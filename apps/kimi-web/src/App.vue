@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar.vue';
 import ResizeHandle from './components/ResizeHandle.vue';
 import ConversationPane from './components/chat/ConversationPane.vue';
 import FilePreview from './components/FilePreview.vue';
+import MediaPreview from './components/media/MediaPreview.vue';
 import ThinkingPanel from './components/chat/ThinkingPanel.vue';
 import AgentDetailPanel from './components/chat/AgentDetailPanel.vue';
 import ToolDiffPanel from './components/chat/ToolDiffPanel.vue';
@@ -29,7 +30,7 @@ import { isTraceEnabled } from './debug/trace';
 import { useKimiWebClient } from './composables/useKimiWebClient';
 import { useConfirmDialog } from './composables/useConfirmDialog';
 import type { PromptAttachment } from './composables/useKimiWebClient';
-import type { TurnAttachment } from './types';
+import type { ToolMedia, TurnAttachment } from './types';
 import { useAuthGate } from './composables/useAuthGate';
 import { usePageTitle } from './composables/usePageTitle';
 import { useSidebarLayout } from './composables/useSidebarLayout';
@@ -201,6 +202,7 @@ onUnmounted(() => {
   }
   document.documentElement.style.removeProperty('--app-height');
   document.documentElement.style.removeProperty('--app-top');
+  closeMediaPreview();
   if (offAuthRequired !== null) {
     offAuthRequired();
     offAuthRequired = null;
@@ -242,11 +244,56 @@ const {
   previewDownloadUrl,
   previewExternalActions,
   openFilePreview,
-  openMediaPreview,
   closeFilePreview,
   openPreviewInEditor,
   revealPreviewFile,
 } = useFilePreview({ client, detailTarget });
+
+const mediaPreview = ref<ToolMedia | null>(null);
+const mediaPreviewSrc = ref<string | null>(null);
+const mediaPreviewLoading = ref(false);
+let mediaPreviewObjectUrl: string | null = null;
+let mediaPreviewRequest = 0;
+
+function revokeMediaPreviewUrl(): void {
+  if (mediaPreviewObjectUrl !== null) {
+    URL.revokeObjectURL(mediaPreviewObjectUrl);
+    mediaPreviewObjectUrl = null;
+  }
+}
+
+function closeMediaPreview(): void {
+  mediaPreviewRequest += 1;
+  revokeMediaPreviewUrl();
+  mediaPreview.value = null;
+  mediaPreviewSrc.value = null;
+  mediaPreviewLoading.value = false;
+}
+
+function openMediaPreview(media: ToolMedia): void {
+  if (media.kind !== 'image' && media.kind !== 'video') return;
+  const request = ++mediaPreviewRequest;
+  revokeMediaPreviewUrl();
+  mediaPreview.value = media;
+  mediaPreviewSrc.value = null;
+  mediaPreviewLoading.value = Boolean(media.fileId);
+
+  if (media.fileId) {
+    void getKimiWebApi().getFileBlob(media.fileId).then((blob) => {
+      if (request !== mediaPreviewRequest || mediaPreview.value !== media) return;
+      mediaPreviewObjectUrl = URL.createObjectURL(blob);
+      mediaPreviewSrc.value = mediaPreviewObjectUrl;
+      mediaPreviewLoading.value = false;
+    }).catch(() => {
+      if (request !== mediaPreviewRequest || mediaPreview.value !== media) return;
+      mediaPreviewSrc.value = /^(?:https?:|blob:|data:)/i.test(media.url) ? media.url : null;
+      mediaPreviewLoading.value = false;
+    });
+    return;
+  }
+
+  mediaPreviewSrc.value = /^(?:https?:|blob:|data:)/i.test(media.url) ? media.url : null;
+}
 
 // True while the right-side slot is actually occupied, so the sidebar reserves
 // room for it and the conversation can never be squeezed. Keyed off detailTarget
@@ -367,7 +414,8 @@ const anyOverlayOpen = computed<boolean>(
     showSettings.value ||
     showOnboarding.value ||
     showMobileSwitcher.value ||
-    showMobileSettings.value,
+    showMobileSettings.value ||
+    mediaPreview.value !== null,
 );
 
 // Loading state for model/provider fetches
@@ -1197,6 +1245,13 @@ function openPr(url: string): void {
       @logout="client.logout"
     />
     </div>
+    <MediaPreview
+      v-if="mediaPreview"
+      :media="mediaPreview"
+      :src="mediaPreviewSrc"
+      :loading="mediaPreviewLoading"
+      @close="closeMediaPreview"
+    />
     <!-- Login Dialog overlay. It is outside `.app` so `/login` can open it too. -->
     <LoginDialog
       v-if="showLogin"

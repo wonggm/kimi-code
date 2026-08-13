@@ -880,7 +880,12 @@ function selectModel(modelId: string): void {
     <div v-if="previewAttachment" class="att-lightbox" @click.self="closeAttachmentPreview">
       <div class="att-lightbox-card">
         <Tooltip :text="t('model.close')">
-          <button type="button" class="att-lightbox-close" @click="closeAttachmentPreview">✕</button>
+          <button
+            type="button"
+            class="att-lightbox-close"
+            :aria-label="t('model.close')"
+            @click="closeAttachmentPreview"
+          >✕</button>
         </Tooltip>
         <video
           v-if="previewAttachment.kind === 'video'"
@@ -930,16 +935,17 @@ function selectModel(modelId: string): void {
             @compositionend="handleCompositionEnd"
             @input="handleInput"
           />
-          <button
-            v-if="expanded || isGrown"
-            class="expand-btn"
-            type="button"
-            :aria-label="expanded ? t('composer.collapseTitle') : t('composer.expandTitle')"
-            @click="toggleExpand"
-          >
-            <Icon v-if="expanded" name="collapse" size="sm" />
-            <Icon v-else name="expand" size="sm" />
-          </button>
+          <Tooltip v-if="expanded || isGrown" :text="expanded ? t('composer.collapseTitle') : t('composer.expandTitle')">
+            <button
+              class="expand-btn"
+              type="button"
+              :aria-label="expanded ? t('composer.collapseTitle') : t('composer.expandTitle')"
+              @click="toggleExpand"
+            >
+              <Icon v-if="expanded" name="collapse" size="sm" />
+              <Icon v-else name="expand" size="sm" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -961,15 +967,16 @@ function selectModel(modelId: string): void {
 
         <!-- Left: attach + permission + plan -->
         <div class="toolbar-left">
-          <IconButton
-            v-if="hasUpload"
-            class="attach-btn lg-glass"
-            size="md"
-            :label="t('composer.attachFile')"
-            @click="openFilePicker"
-          >
-            <Icon name="attachment" />
-          </IconButton>
+          <Tooltip v-if="hasUpload" :text="t('composer.attachFile')">
+            <IconButton
+              class="attach-btn lg-glass"
+              size="md"
+              :label="t('composer.attachFile')"
+              @click="openFilePicker"
+            >
+              <Icon name="attachment" />
+            </IconButton>
+          </Tooltip>
 
           <!-- Permission pill — click to open dropdown -->
           <span
@@ -1145,16 +1152,18 @@ function selectModel(modelId: string): void {
               <Icon name="stop" size="sm" />
             </button>
           </Tooltip>
-          <button
-            class="send"
-            :class="{ 'is-starting': starting }"
-            :aria-label="sendLabel"
-            :disabled="starting"
-            @click="handleSubmit()"
-          >
-            <Spinner v-if="starting" size="sm" />
-            <Icon v-else name="send" size="sm" />
-          </button>
+          <Tooltip :text="sendLabel">
+            <button
+              class="send"
+              :class="{ 'is-starting': starting }"
+              :aria-label="sendLabel"
+              :disabled="starting"
+              @click="handleSubmit()"
+            >
+              <Spinner v-if="starting" size="sm" />
+              <Icon v-else name="send" size="sm" />
+            </button>
+          </Tooltip>
         </div>
 
         <!-- Model dropdown — current provider models + controls + more -->
@@ -1729,6 +1738,8 @@ function selectModel(modelId: string): void {
   right: 10px;
   z-index: var(--z-dropdown);
   min-width: 200px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
   background: var(--color-surface-raised);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);

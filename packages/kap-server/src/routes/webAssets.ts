@@ -135,6 +135,10 @@ function mimeType(filePath: string): string {
       return 'image/x-icon';
     case '.woff2':
       return 'font/woff2';
+    case '.wasm':
+      return 'application/wasm';
+    case '.riv':
+      return 'application/octet-stream';
     default:
       return 'application/octet-stream';
   }
