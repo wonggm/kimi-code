@@ -476,6 +476,19 @@ export class DaemonHttpClient {
       });
     }
 
+    if (response.status === 204) {
+      traceRestResponse({
+        method,
+        path,
+        requestId,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        code: 0,
+        msg: '',
+      });
+      return undefined as T;
+    }
+
     // Parse envelope
     let envelope: WireEnvelope<T>;
     const responseForDiagnostics = response.clone();
