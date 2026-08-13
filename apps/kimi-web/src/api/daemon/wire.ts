@@ -73,6 +73,8 @@ export interface WireSession {
   last_turn_reason?: 'completed' | 'cancelled' | 'failed';
   archived: boolean;
   current_prompt_id?: string;
+  emoji?: string;
+  pinned?: boolean;
   /** Text of the most recent user prompt, for search/preview. */
   last_prompt?: string;
   // PRESUMED — daemon adds this once it ships the workspace registry; until then
@@ -331,6 +333,8 @@ export interface WireTask {
   output_bytes?: number;
   subagent_phase?: 'queued' | 'working' | 'suspended' | 'completed' | 'failed';
   subagent_type?: string;
+  thinking_effort?: string;
+  thinkingEffort?: string;
   /** Bound model alias the subagent is actually running on (resolved at
    *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
    *  for subagent rows from the snapshot roster; REST `/tasks` does not
@@ -456,6 +460,34 @@ export interface WireAuthResult {
   default_model: string | null;
   managed_provider: WireManagedProvider | null;
 }
+
+export type WireManagedUsageResult =
+  | {
+      kind: 'ok';
+      summary: {
+        name?: string;
+        window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
+        used: number;
+        limit: number;
+        reset_at?: string;
+      } | null;
+      limits: Array<{
+        name?: string;
+        window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
+        used: number;
+        limit: number;
+        reset_at?: string;
+      }>;
+      extra_usage: {
+        balance_cents: number;
+        total_cents: number;
+        monthly_charge_limit_enabled: boolean;
+        monthly_charge_limit_cents: number;
+        monthly_used_cents: number;
+        currency: string;
+      } | null;
+    }
+  | { kind: 'error'; message: string; status?: number };
 
 // `POST /oauth/login` returns one of two shapes, discriminated by `status`:
 //   - `pending`: a real device-code flow was started; all device fields are

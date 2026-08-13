@@ -40,7 +40,8 @@ import { openDialogCount } from './composables/dialogStack';
 import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
 import { initServerAuth, onAuthRequired } from './api/daemon/serverAuth';
-import type { AppConfig, ThinkingLevel } from './api/types';
+import { getKimiWebApi } from './api';
+import type { AppConfig, ManagedUsageResult, ThinkingLevel } from './api/types';
 import { commitLevel, effectiveThinkingLevel, segmentsFor } from './lib/modelThinking';
 import { stripSkillPrefix } from './lib/slashCommands';
 import Button from './components/ui/Button.vue';
@@ -319,6 +320,27 @@ const showLogin = ref(false);
 const showAddWorkspace = ref(false);
 const showStatusPanel = ref(false);
 const showSettings = ref(false);
+
+const planUsage = ref<ManagedUsageResult | null>(null);
+const planUsageLoading = ref(false);
+let usageLoadedForAuth = false;
+watch(client.authReady, (ready) => {
+  if (!ready) {
+    usageLoadedForAuth = false;
+    planUsage.value = null;
+    return;
+  }
+  if (usageLoadedForAuth) return;
+  usageLoadedForAuth = true;
+  planUsageLoading.value = true;
+  void getKimiWebApi().getManagedUsage().then((usage) => {
+    planUsage.value = usage;
+  }).catch(() => {
+    planUsage.value = { kind: 'error', message: 'Unable to load plan usage' };
+  }).finally(() => {
+    planUsageLoading.value = false;
+  });
+}, { immediate: true });
 
 type SubmitPayload = {
   text: string;
@@ -635,6 +657,26 @@ async function handleSubmit(payload: SubmitPayload): Promise<void> {
   void client.sendPrompt(payload.text, payload.attachments);
 }
 
+async function handleResumeFailure(): Promise<void> {
+  const turn = [...client.turns.value].reverse().find((item) => item.role === 'user');
+  if (!turn || !turn.text.trim()) return;
+  const attachments = (turn.attachments ?? [])
+    .filter((attachment): attachment is TurnAttachment & { fileId: string } => typeof attachment.fileId === 'string')
+    .map((attachment) => ({
+      fileId: attachment.fileId,
+      kind: attachment.kind,
+      name: attachment.name,
+      mediaType: attachment.mediaType,
+      size: attachment.size,
+    }));
+  await handleSubmit({ text: turn.text, attachments });
+}
+
+async function handleSessionUpdate(id: string, patch: { emoji?: string; pinned?: boolean }): Promise<void> {
+  await getKimiWebApi().updateSession(id, patch);
+  await client.load();
+}
+
 async function handleAddWorkspace(root: string): Promise<void> {
   addWorkspaceError.value = null;
   const added = await client.addWorkspaceByPath(root);
@@ -753,6 +795,8 @@ function openPr(url: string): void {
         @select-workspace="client.openWorkspace($event)"
         @add-workspace="showAddWorkspace = true"
         @rename="(id, title) => client.renameSession(id, title)"
+        @set-emoji="(id, emoji) => handleSessionUpdate(id, { emoji })"
+        @toggle-pinned="(id, pinned) => handleSessionUpdate(id, { pinned })"
         @archive="confirmArchiveSession($event)"
         @fork="(id) => client.forkSession(id)"
         @export="(id) => client.exportSession(id)"
@@ -815,6 +859,8 @@ function openPr(url: string): void {
       :running="running"
       :turn-active="client.turnActive.value"
       :queued="client.queued.value"
+      :retry-progress="client.retryBySession.value[client.activeSessionId.value]"
+      :failure="client.failureBySession.value[client.activeSessionId.value]"
       :search-files="client.searchFiles"
       :upload-image="client.uploadImage"
       :working="client.working.value"
@@ -872,6 +918,7 @@ function openPr(url: string): void {
       @open-agent="openAgentPanel($event)"
       @open-tool-diff="openToolDiff($event)"
       @edit-message="handleEditMessage"
+      @resume-failure="handleResumeFailure"
     />
 
     <!-- Sidebar toggle — floating only when the in-header control can't serve:
@@ -1004,6 +1051,8 @@ function openPr(url: string): void {
       :ui-font-size="client.uiFontSize.value"
       :auth-ready="client.authReady.value"
       :account-model="client.defaultModel.value"
+      :plan-usage="planUsage"
+      :plan-usage-loading="planUsageLoading"
       :notify="client.notifyOnComplete.value"
       :notify-question="client.notifyOnQuestion.value"
       :notify-approval="client.notifyOnApproval.value"
@@ -1108,6 +1157,8 @@ function openPr(url: string): void {
       @create-in-workspace="handleCreateSessionInWorkspace($event)"
       @add-workspace="showAddWorkspace = true"
       @rename="(id, title) => client.renameSession(id, title)"
+      @set-emoji="(id, emoji) => handleSessionUpdate(id, { emoji })"
+      @toggle-pinned="(id, pinned) => handleSessionUpdate(id, { pinned })"
       @archive="confirmArchiveSession($event)"
       @delete-workspace="confirmDeleteWorkspace($event)"
       @load-more="(id) => void client.loadMoreSessions(id)"
@@ -1125,6 +1176,9 @@ function openPr(url: string): void {
       :color-scheme="client.colorScheme.value"
       :ui-font-size="client.uiFontSize.value"
       :auth-ready="client.authReady.value"
+      :account-model="client.defaultModel.value"
+      :plan-usage="planUsage"
+      :plan-usage-loading="planUsageLoading"
       :conversation-toc="client.conversationToc.value"
       :server-version="client.serverVersion.value"
       :config="client.config.value"

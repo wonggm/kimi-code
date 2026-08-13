@@ -31,6 +31,7 @@ import Input from '../ui/Input.vue';
 import MenuSelect from '../ui/MenuSelect.vue';
 import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
+import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from '../settings/AccountPlanUsage.vue';
 
 const { t } = useI18n();
 
@@ -44,6 +45,10 @@ const props = withDefaults(
     colorScheme?: ColorScheme;
     uiFontSize?: number;
     authReady?: boolean;
+    accountModel?: string | null;
+    /** Managed OAuth account usage from GET /api/v1/oauth/usage. */
+    planUsage?: AccountPlanUsageData | null;
+    planUsageLoading?: boolean;
     conversationToc?: boolean;
     /** Server version from GET /api/v1/meta, shown as a read-only row. */
     serverVersion?: string;
@@ -452,6 +457,13 @@ function openAgent(): void {
         <span class="srow-label">{{ t('sidebar.signIn') }}</span>
       </span>
     </button>
+
+    <AccountPlanUsage
+      v-if="authReady"
+      :account="accountModel"
+      :usage="planUsage"
+      :loading="planUsageLoading"
+    />
 
     <!-- Server version -->
     <div v-if="serverVersion" class="srow read-only">

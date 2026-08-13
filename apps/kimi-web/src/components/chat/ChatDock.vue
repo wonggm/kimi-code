@@ -15,6 +15,7 @@ import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import TasksPane from './TasksPane.vue';
 import TodoCard from './TodoCard.vue';
+import ChangedFilesCard from './ChangedFilesCard.vue';
 import Icon from '../ui/Icon.vue';
 import Pill from '../ui/Pill.vue';
 
@@ -39,13 +40,14 @@ const props = defineProps<{
   skills?: AppSkill[];
   goal?: AppGoal | null;
   goalExpandSignal?: number;
-  dockPanel: 'bash' | 'subagent' | 'todos' | null;
+  dockPanel: 'bash' | 'subagent' | 'todos' | 'changed-files' | null;
   bashTasks: TaskItem[];
   subagentTasks: TaskItem[];
   bashRunning: number;
   subagentRunning: number;
   todoDoneCount: number;
   hasDockWork: boolean;
+  changedFiles: string[];
   todos?: TodoView[];
   pendingQuestion?: UIQuestion;
   /** Action kind in flight for the visible question (drives loading state). */
@@ -78,7 +80,7 @@ const emit = defineEmits<{
   dismiss: [questionId: string];
   approval: [approvalId: string, response: { decision: 'approved' | 'rejected' | 'cancelled'; scope?: 'session'; feedback?: string; selectedLabel?: string }];
   cancelTask: [taskId: string];
-  'toggle-dock-panel': [panel: 'bash' | 'subagent' | 'todos'];
+  'toggle-dock-panel': [panel: 'bash' | 'subagent' | 'todos' | 'changed-files'];
   'close-dock-panel': [];
   /** A background subagent chip was clicked — open its live detail panel. */
   openAgent: [taskId: string];
@@ -186,6 +188,12 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
           >
             {{ t('tasks.dockTodos') }} · {{ todoDoneCount }}/{{ todos?.length ?? 0 }}
           </span>
+          <span
+            v-else-if="dockPanel === 'changed-files'"
+            class="dock-work-tab static"
+          >
+            {{ t('conversation.changedFiles.title') }} · {{ changedFiles.length }}
+          </span>
         </div>
         <div class="dock-work-body">
           <TasksPane
@@ -202,6 +210,10 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
           <TodoCard
             v-else-if="dockPanel === 'todos'"
             :todos="todos ?? []"
+          />
+          <ChangedFilesCard
+            v-else-if="dockPanel === 'changed-files'"
+            :files="changedFiles"
           />
         </div>
       </div>
@@ -246,6 +258,17 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
         <Icon name="check-list" size="md" />
         <span>{{ t('tasks.dockTodos') }}</span>
         <span class="dw-count">(<b>{{ todoDoneCount }}/{{ todos?.length ?? 0 }}</b>)</span>
+      </Pill>
+      <Pill
+        v-if="changedFiles.length > 0"
+        class="lg-glass"
+        :active="dockPanel === 'changed-files'"
+        :aria-pressed="dockPanel === 'changed-files'"
+        @click="emit('toggle-dock-panel', 'changed-files')"
+      >
+        <Icon name="file-edit" size="md" />
+        <span>{{ t('conversation.changedFiles.title') }}</span>
+        <span class="dw-count">(<b>{{ changedFiles.length }}</b>)</span>
       </Pill>
     </div>
 

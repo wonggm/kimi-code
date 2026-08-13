@@ -230,6 +230,7 @@ export function toAgentMember(task: AppTask): AgentMember {
     name: task.description,
     subagentType: task.subagentType,
     model: task.model,
+    thinkingEffort: task.thinkingEffort,
     phase:
       task.subagentPhase ??
       (task.status === 'completed' ? 'completed' : task.status === 'failed' ? 'failed' : 'working'),

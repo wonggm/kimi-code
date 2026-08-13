@@ -19,6 +19,8 @@ const SIDEBAR_MAX = 480;
 // resize handle and collapse button stay inside the viewport even when a width
 // saved on a wider display is restored on a narrower one.
 const CONVERSATION_MIN = 320;
+const SIDEBAR_VIEW_MODE_KEY = 'kimi-web.sidebar-view-mode';
+export type SidebarViewMode = 'grouped' | 'flat';
 
 export interface UseSidebarLayoutOptions {
   /** True while the right-side detail/preview panel is open, so the sidebar
@@ -34,6 +36,17 @@ export function useSidebarLayout(options: UseSidebarLayoutOptions = {}) {
   // its width transition so it follows the pointer 1:1 (mirrors panelDragging
   // in useDetailPanel).
   const sidebarDragging = ref(false);
+  const sidebarViewMode = ref<SidebarViewMode>('grouped');
+
+  function loadSidebarViewMode(): void {
+    const value = safeGetString(SIDEBAR_VIEW_MODE_KEY);
+    sidebarViewMode.value = value === 'flat' ? 'flat' : 'grouped';
+  }
+
+  function toggleSidebarViewMode(): void {
+    sidebarViewMode.value = sidebarViewMode.value === 'grouped' ? 'flat' : 'grouped';
+    safeSetString(SIDEBAR_VIEW_MODE_KEY, sidebarViewMode.value);
+  }
 
   // Largest sidebar width that still leaves the conversation pane usable, then
   // clamped to SIDEBAR_MAX so it can never be dragged absurdly wide on large
@@ -80,6 +93,9 @@ export function useSidebarLayout(options: UseSidebarLayoutOptions = {}) {
     sessionColWidth,
     sidebarCollapsed,
     sidebarDragging,
+    sidebarViewMode,
+    loadSidebarViewMode,
+    toggleSidebarViewMode,
     sideWidth,
     loadSidebarCollapsed,
     toggleSidebarCollapse,

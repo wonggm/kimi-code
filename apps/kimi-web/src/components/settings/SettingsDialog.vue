@@ -21,6 +21,7 @@ import SegmentedControl from '../ui/SegmentedControl.vue';
 import MenuSelect from '../ui/MenuSelect.vue';
 import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from './AccountPlanUsage.vue';
 
 const { t } = useI18n();
 
@@ -30,6 +31,9 @@ const props = defineProps<{
   uiFontSize: number;
   authReady: boolean;
   accountModel?: string | null;
+  /** Managed OAuth account usage from GET /api/v1/oauth/usage. */
+  planUsage?: AccountPlanUsageData | null;
+  planUsageLoading?: boolean;
   /** Browser-notification-on-completion preference. */
   notify: boolean;
   /** Browser-notification-on-question (needs answer) preference. */
@@ -430,6 +434,12 @@ function archiveTime(iso: string): string {
               <Button v-if="authReady" variant="danger-soft" size="sm" @click="emit('logout')">{{ t('sidebar.signOut') }}</Button>
               <Button v-else variant="primary" size="sm" @click="emit('login')">{{ t('sidebar.signIn') }}</Button>
             </div>
+            <AccountPlanUsage
+              v-if="authReady"
+              :account="accountModel"
+              :usage="planUsage"
+              :loading="planUsageLoading"
+            />
           </section>
         </section>
 

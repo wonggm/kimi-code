@@ -16,13 +16,19 @@ import Menu from '../ui/Menu.vue';
 import MenuItem from '../ui/MenuItem.vue';
 import Tooltip from '../ui/Tooltip.vue';
 
+type SidebarSession = Session & {
+  emoji?: string;
+  pinned?: boolean;
+};
+type SidebarGroup = Omit<WorkspaceGroup, 'sessions'> & { sessions: SidebarSession[] };
+
 const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
     modelValue: boolean;
     /** Workspace groups (same list the desktop sidebar renders). */
-    groups: WorkspaceGroup[];
+    groups: SidebarGroup[];
     activeWorkspaceId: string | null;
     activeId: string;
     attentionBySession?: Record<string, number>;
@@ -46,6 +52,8 @@ const emit = defineEmits<{
   /** NOTE: App.vue wires this to confirmDeleteWorkspace (modal confirm + async delete). */
   deleteWorkspace: [workspaceId: string];
   loadMore: [workspaceId: string];
+  setEmoji: [id: string, emoji: string | undefined];
+  togglePinned: [id: string, pinned: boolean];
 }>();
 
 function close(): void {
@@ -108,7 +116,7 @@ function toggleExpand(id: string): void {
   expandedIds.value = next;
 }
 
-function visibleSessions(g: WorkspaceGroup): Session[] {
+function visibleSessions(g: SidebarGroup): SidebarSession[] {
   if (isExpanded(g.workspace.id)) return g.sessions;
   const head = g.sessions.slice(0, g.initialCount);
   // Keep the active session visible when it's beyond the first page (e.g.
@@ -139,16 +147,36 @@ function wsAttention(id: string): number {
 // Archive is confirmed via modal (consistent with remove-workspace).
 // ---------------------------------------------------------------------------
 const menuFor = ref<string | null>(null);
+const renamingId = ref<string | null>(null);
+const renameValue = ref('');
+const renameComposing = ref(false);
 
 function toggleMenu(id: string): void {
   menuFor.value = menuFor.value === id ? null : id;
   wsMenuFor.value = null;
 }
-function onRename(s: Session): void {
+function onRename(s: SidebarSession): void {
   menuFor.value = null;
-  const next = typeof window !== 'undefined' ? window.prompt(t('sidebar.rename'), s.title) : null;
-  const title = next?.trim();
+  renamingId.value = s.id;
+  renameValue.value = s.title;
+}
+function commitRename(s: SidebarSession): void {
+  const title = renameValue.value.trim();
   if (title) emit('rename', s.id, title);
+  renamingId.value = null;
+}
+function cancelRename(): void {
+  renamingId.value = null;
+}
+function setEmoji(s: SidebarSession): void {
+  const next = typeof window !== 'undefined' ? window.prompt(t('sidebar.setEmoji'), s.emoji ?? '') : null;
+  if (next === null) return;
+  emit('setEmoji', s.id, next.trim() || undefined);
+  menuFor.value = null;
+}
+function togglePinned(s: SidebarSession): void {
+  emit('togglePinned', s.id, !s.pinned);
+  menuFor.value = null;
 }
 function onArchive(id: string): void {
   menuFor.value = null;
@@ -257,7 +285,21 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
             @click="onSelectSession(s.id)"
           >
             <div class="m">
-              <div class="t" :class="{ run: s.busy, aborted: !s.busy && (attentionBySession[s.id] ?? 0) === 0 && s.lastTurnReason === 'failed' }">{{ s.title }}</div>
+              <input
+                v-if="renamingId === s.id"
+                v-model="renameValue"
+                class="rename-input"
+                :draggable="false"
+                @click.stop
+                @compositionstart="renameComposing = true"
+                @compositionend="renameComposing = false"
+                @keydown.enter.stop="!renameComposing && !$event.isComposing && commitRename(s)"
+                @keydown.esc.stop="!renameComposing && !$event.isComposing && cancelRename()"
+                @blur="commitRename(s)"
+              />
+              <div v-else class="t" :class="{ run: s.busy, aborted: !s.busy && (attentionBySession[s.id] ?? 0) === 0 && s.lastTurnReason === 'failed' }">
+                <span v-if="s.emoji" class="emoji" aria-hidden="true">{{ s.emoji }}</span>{{ s.title }}
+              </div>
               <div class="s">{{ s.time }}</div>
             </div>
             <span v-if="(attentionBySession[s.id] ?? 0) > 0" class="att">{{ attentionBySession[s.id] }}</span>
@@ -273,6 +315,8 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
             <!-- Kebab menu -->
             <Menu v-if="menuFor === s.id" class="kmenu" @click.stop>
               <MenuItem size="lg" @click="onRename(s)">{{ t('sidebar.rename') }}</MenuItem>
+              <MenuItem size="lg" @click="setEmoji(s)">{{ t('sidebar.setEmoji') }}</MenuItem>
+              <MenuItem size="lg" @click="togglePinned(s)">{{ s.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}</MenuItem>
               <MenuItem size="lg" danger @click="onArchive(s.id)">{{ t('sidebar.archive') }}</MenuItem>
             </Menu>
           </div>
@@ -420,6 +464,19 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.emoji { margin-right: var(--space-1); }
+.rename-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-xs);
+  padding: 2px 5px;
+  outline: none;
 }
 .srow.cur .m .t { color: var(--color-accent-hover); }
 

@@ -127,7 +127,7 @@ watch(
       <Badge variant="neutral" size="sm" class="ap-phase">{{ phaseLabel(member.phase) }}</Badge>
     </PanelHeader>
     <div ref="bodyEl" class="ap-body">
-      <div v-if="member.subagentType" class="ap-type">{{ member.subagentType }}<span v-if="displayModel"> ({{ displayModel }})</span></div>
+      <div v-if="member.subagentType" class="ap-type">{{ member.subagentType }}<span v-if="displayModel"> ({{ displayModel }}<span v-if="member.thinkingEffort">, {{ member.thinkingEffort }}</span>)</span><span v-else-if="member.thinkingEffort"> ({{ member.thinkingEffort }})</span></div>
       <div v-if="member.suspendedReason" class="ap-reason">{{ member.suspendedReason }}</div>
       <div v-if="member.prompt" class="ap-field">
         <span class="ap-field-label">Task</span>

@@ -41,6 +41,8 @@ export interface Session {
   workspaceId?: string;
   /** Workspace display name, joined from workspacesView. */
   workspaceName?: string;
+  emoji?: string;
+  pinned?: boolean;
 }
 
 export interface Workspace {
@@ -124,6 +126,8 @@ export interface AgentMember {
    *  for rows from the snapshot roster; older servers / REST `/tasks` do
    *  not carry it. */
   model?: string;
+  /** Thinking effort selected for this subagent, when reported by the daemon. */
+  thinkingEffort?: string;
   phase: AgentPhase;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
   /** The prompt/task the subagent was given (from the Agent tool input). */

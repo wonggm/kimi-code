@@ -66,6 +66,8 @@ export interface AppSession {
   mainTurnActive?: boolean;
   /** List-level fallback for the action-required badge. */
   pendingInteraction?: 'none' | 'approval' | 'question';
+  emoji?: string;
+  pinned?: boolean;
   /** Outcome of the main agent's most recent turn (when the server reports
    *  one). Presentation rule for the "aborted" tag:
    *  `!busy && (cancelled | failed)`. */
@@ -330,6 +332,7 @@ export interface AppTask {
   text?: string;
   subagentPhase?: AppSubagentPhase;
   subagentType?: string;
+  thinkingEffort?: string;
   /** Bound model alias the subagent is actually running on (resolved at
    *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
    *  for subagent rows from the snapshot roster; REST `/tasks` does not
@@ -471,6 +474,8 @@ export type AppEvent =
       kind?: 'line' | 'text';
     }
   | { type: 'taskCompleted'; sessionId: string; taskId: string; status: AppTaskStatus; outputPreview?: string; outputBytes?: number }
+  | { type: 'retryProgressUpdated'; sessionId: string; attempt: number; maxAttempts: number }
+  | { type: 'conversationFailureUpdated'; sessionId: string; message?: string; promptId?: string }
   // Prompt-level lifecycle (distinct from turn-level): a prompt that never
   // produced a turn — blocked by a pre-submit hook, or aborted while queued —
   // gets no turn.ended and no session status flip, so these are the web layer's
@@ -540,6 +545,7 @@ export interface AppSessionSnapshot {
   subagents: AppTask[];
   pendingApprovals: AppApprovalRequest[];
   pendingQuestions: AppQuestionRequest[];
+  failure?: { message?: string; promptId?: string } | null;
 }
 
 export interface KimiEventHandlers {
@@ -734,6 +740,30 @@ export interface AppSessionWarning {
   severity: 'info' | 'warning' | 'error';
 }
 
+export interface UsageRow {
+  name?: string;
+  window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
+  used: number;
+  limit: number;
+  reset_at?: string;
+}
+
+export type ManagedUsageResult =
+  | {
+      kind: 'ok';
+      summary: UsageRow | null;
+      limits: UsageRow[];
+      extra_usage: {
+        balance_cents: number;
+        total_cents: number;
+        monthly_charge_limit_enabled: boolean;
+        monthly_charge_limit_cents: number;
+        monthly_used_cents: number;
+        currency: string;
+      } | null;
+    }
+  | { kind: 'error'; message: string; status?: number };
+
 export interface KimiWebApi {
   getHealth(): Promise<{ status: 'ok'; uptimeSec: number }>;
   getMeta(): Promise<{ serverVersion: string; serverId: string; startedAt: string; capabilities: Record<string, boolean>; openInApps: string[]; dangerousBypassAuth: boolean; backend: 'v1' | 'v2' }>;
@@ -741,7 +771,8 @@ export interface KimiWebApi {
   createSession(input: { title?: string; cwd?: string; model?: string; workspaceId?: string }): Promise<AppSession>;
   /** Fetch one session by id (deep links beyond the first listSessions page). */
   getSession(sessionId: string): Promise<AppSession>;
-  updateSession(sessionId: string, input: { title?: string; cwd?: string; model?: string; permissionMode?: string; planMode?: boolean; swarmMode?: boolean; goalObjective?: string; goalControl?: 'pause' | 'resume' | 'cancel'; thinking?: string }): Promise<AppSession>;
+  updateSession(sessionId: string, input: { title?: string; cwd?: string; model?: string; permissionMode?: string; planMode?: boolean; swarmMode?: boolean; goalObjective?: string; goalControl?: 'pause' | 'resume' | 'cancel'; thinking?: string; emoji?: string; pinned?: boolean }): Promise<AppSession>;
+  getManagedUsage(provider?: string): Promise<ManagedUsageResult>;
   getSessionStatus(sessionId: string): Promise<AppSessionRuntimeStatus>;
   /** Current goal snapshot, or null when the session has no active goal. */
   getSessionGoal(sessionId: string): Promise<AppGoal | null>;

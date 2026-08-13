@@ -111,6 +111,10 @@ const props = withDefaults(
      * × to remove, drag the grip to reorder.
      */
     queued?: QueuedPromptView[];
+    /** Frontend-only retry progress from turn.step.retrying. */
+    retryProgress?: { attempt: number; maxAttempts: number } | null;
+    /** Persistent failed-turn state, including failures restored from a snapshot. */
+    failure?: { message?: string; promptId?: string } | null;
     /**
      * @deprecated No longer used — Composer is rendered by ConversationPane.
      */
@@ -127,6 +131,8 @@ const props = withDefaults(
     isFollowing: false,
     toolDiffPanel: false,
     queued: () => [],
+    retryProgress: null,
+    failure: null,
   },
 );
 
@@ -215,6 +221,8 @@ const emit = defineEmits<{
   editQueued: [index: number];
   /** Drag-to-reorder a queued message within the active session's queue. */
   reorderQueue: [payload: { from: number; to: number }];
+  /** Resume the failed prompt through the parent client's normal retry path. */
+  resumeFailure: [];
 }>();
 
 // ---- Inline queue (pending messages while running) ------------------------
@@ -673,11 +681,22 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
     <!-- Compaction in progress — body-sized moon activity notice -->
     <ActivityNotice v-if="compaction" :label="t('conversation.compacting')" />
 
-    <!-- Working placeholder — moon spinner while the conversation has an
-         unfinished prompt (covers a page refresh mid-stream, where the
-         optimistic submit flag was lost but the main turn is still in flight). -->
+    <!-- Persistent failed-turn card; unlike a toast it remains after the turn
+         and can be restored from a session snapshot. -->
+    <div v-if="failure && !showWorking" class="failure-card lg-glass" role="alert">
+      <div class="failure-title">{{ t('conversation.modelRequestFailed') }}</div>
+      <div v-if="failure.message" class="failure-message">{{ failure.message }}</div>
+      <button type="button" class="failure-resume" @click="emit('resumeFailure')">
+        {{ t('conversation.resumeRetry') }}
+      </button>
+    </div>
+
+    <!-- Retry progress stays inside the existing working-status rendering path. -->
     <div v-if="showWorking" class="sending-placeholder">
       <MoonSpinner :fast="fastMoon" />
+      <span v-if="retryProgress" class="retry-progress">
+        {{ t('conversation.retryAttempt', { attempt: retryProgress.attempt, max: retryProgress.maxAttempts }) }}
+      </span>
     </div>
 
     <!-- Inline queue — pending user messages shown after the running turn.
@@ -1118,11 +1137,41 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 /* NOTE: Chat/bubble styles live in src/style.css (global). Scoped `.u-bub`
    rules here did NOT win the cascade, so they were moved to the global sheet. */
 
+/* Persistent provider failure and its one-click continuation. */
+.failure-card {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: var(--chat-turn-gap);
+  padding: 12px 14px;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+}
+.failure-title { font-weight: var(--weight-medium); color: var(--color-danger); }
+.failure-message { color: var(--color-text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.failure-resume {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-danger);
+  font: inherit;
+  cursor: pointer;
+}
+.failure-resume:hover { background: var(--color-danger-soft); }
+
 /* Sending placeholder */
 .sending-placeholder {
   align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 0;
 }
+.retry-progress { color: var(--color-text-muted); font-size: var(--text-sm); }
 
 /* Skill activation card (replaces raw <kimi-skill-loaded> XML) */
 .skill-act {
