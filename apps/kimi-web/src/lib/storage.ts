@@ -42,6 +42,7 @@ export const STORAGE_KEYS = {
   openInLastTarget: 'kimi-web.open-in.last-target',
   sidebarCollapsed: 'kimi-web.sidebar-collapsed',
   sidebarWidth: 'kimi-web.sidebar-width',
+  sidebarViewMode: 'kimi-web.sidebar-view-mode',
   // deprecated cleanups (kept so the removals still fire for old users)
   codeFont: 'kimi-web.code-font',
   contentAlign: 'kimi-web.content-align',

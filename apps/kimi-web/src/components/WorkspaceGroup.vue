@@ -5,7 +5,7 @@
      search and the header stay in Sidebar; this component renders a single
      group and forwards every interaction back up. -->
 <script setup lang="ts">
-import { computed, type ComponentPublicInstance, type Ref } from 'vue';
+import { computed, ref, type ComponentPublicInstance, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { WorkspaceGroup, WorkspaceView } from '../types';
 import SessionRow from './SessionRow.vue';
@@ -43,6 +43,8 @@ const emit = defineEmits<{
   archiveSession: [id: string];
   forkSession: [id: string];
   exportSession: [id: string];
+  setEmojiSession: [id: string, emoji: string | undefined];
+  togglePinnedSession: [id: string, pinned: boolean];
   loadMore: [workspaceId: string];
   toggleExpand: [workspaceId: string];
   confirmRename: [];
@@ -96,7 +98,13 @@ function setRenameInputRef(el: Element | ComponentPublicInstance | null): void {
 // Drag-to-reorder: the group header is the drag handle. We stash the workspace
 // id on the dataTransfer (so drop targets elsewhere could read it) and tell the
 // sidebar which group is being dragged so it can compute the new order on drop.
+const renameComposing = ref(false);
+
 function onHeaderDragStart(event: DragEvent): void {
+  if (props.renamingId === props.group.workspace.id) {
+    event.preventDefault();
+    return;
+  }
   if (!event.dataTransfer) return;
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', props.group.workspace.id);
@@ -109,7 +117,7 @@ function onHeaderDragStart(event: DragEvent): void {
     <div
       class="gh"
       :class="{ on: group.workspace.id === activeWorkspaceId, collapsed: isCollapsed(group.workspace.id) }"
-      draggable="true"
+      :draggable="renamingId !== group.workspace.id"
       @click.stop="emit('groupClick', group.workspace.id, $event)"
       @contextmenu="emit('groupContextmenu', group.workspace, $event)"
       @dragstart="onHeaderDragStart"
@@ -130,8 +138,11 @@ function onHeaderDragStart(event: DragEvent): void {
           v-model="renameValueModel"
           class="gh-rename"
           type="text"
-          @keydown.enter="emit('confirmRename')"
-          @keydown.esc="emit('cancelRename')"
+          :draggable="false"
+          @compositionstart="renameComposing = true"
+          @compositionend="renameComposing = false"
+          @keydown.enter="!renameComposing && !$event.isComposing && emit('confirmRename')"
+          @keydown.esc="!renameComposing && !$event.isComposing && emit('cancelRename')"
           @blur="emit('cancelRename')"
           @click.stop
         />
@@ -185,6 +196,8 @@ function onHeaderDragStart(event: DragEvent): void {
         @archive="emit('archiveSession', $event)"
         @fork="emit('forkSession', $event)"
         @export="emit('exportSession', $event)"
+        @set-emoji="(id, emoji) => emit('setEmojiSession', id, emoji)"
+        @toggle-pinned="(id, pinned) => emit('togglePinnedSession', id, pinned)"
       />
       <button
         v-if="group.hasMore || group.loadingMore"

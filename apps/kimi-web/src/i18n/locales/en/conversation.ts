@@ -22,6 +22,14 @@ export default {
   yesterday: 'Yesterday',
   loadOlder: 'Load earlier messages',
   loadingOlder: 'Loading earlier messages…',
+  retryAttempt: 'Retrying — attempt {attempt} of {max}',
+  modelRequestFailed: 'Model request failed',
+  resumeRetry: 'Resume / Retry',
+  changedFiles: {
+    title: 'Changed files',
+    showMore: 'Show more',
+    showLess: 'Show less',
+  },
   cron: {
     fired: 'Scheduled reminder fired',
     missed: 'Missed scheduled reminders',

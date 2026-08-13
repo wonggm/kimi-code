@@ -987,6 +987,16 @@ export function createAgentProjector(): AgentProjector {
         // fire (observed: moon stuck when a turn ends with background tasks
         // still running, where no work_changed(busy:false) fallback exists).
         out.push({ type: 'turnActiveChanged', sessionId, active: false, reason: p?.reason });
+        if (reason === 'failed' || reason === 'blocked') {
+          // Local event until the parent extends AppEvent: the reducer keeps this
+          // state separate from transient warning toasts so it can render after reload.
+          out.push({
+            type: 'conversationFailureUpdated',
+            sessionId,
+            message: typeof p?.message === 'string' ? p.message : typeof p?.error === 'string' ? p.error : undefined,
+            promptId: typeof s.currentPromptId === 'string' ? s.currentPromptId : undefined,
+          } as AppEvent);
+        }
 
         if (msgId) {
           finishAssistantMessage(s, msgId);
@@ -1060,6 +1070,12 @@ export function createAgentProjector(): AgentProjector {
         // rendered next to the retry's full stream — the "text/tool shown
         // twice" duplication (far more visible since the retry budget grew).
         const msgId = s.currentAssistantMsgId;
+        out.push({
+          type: 'retryProgressUpdated',
+          sessionId,
+          attempt: typeof p?.attempt === 'number' ? p.attempt : 0,
+          maxAttempts: typeof p?.maxAttempts === 'number' ? p.maxAttempts : 0,
+        } as AppEvent);
         if (msgId !== undefined) {
           const msg = getMsgById(s, msgId);
           if (msg !== undefined) {
@@ -1093,7 +1109,7 @@ export function createAgentProjector(): AgentProjector {
       // -----------------------------------------------------------------------
       case 'subagent.spawned': {
         const taskId = typeof p?.subagentId === 'string' && p.subagentId.length > 0 ? p.subagentId : ulid('task_');
-        const task: AppTask = {
+        const task: AppTask & { thinkingEffort?: string } = {
           id: taskId,
           sessionId,
           kind: 'subagent',
@@ -1103,6 +1119,7 @@ export function createAgentProjector(): AgentProjector {
           subagentPhase: 'queued',
           subagentType: typeof p?.subagentName === 'string' ? p.subagentName : undefined,
           model: typeof p?.model === 'string' ? p.model : undefined,
+          thinkingEffort: typeof p?.thinkingEffort === 'string' ? p.thinkingEffort : undefined,
           parentToolCallId: typeof p?.parentToolCallId === 'string' ? p.parentToolCallId : undefined,
           swarmIndex: typeof p?.swarmIndex === 'number' ? p.swarmIndex : undefined,
           runInBackground: p?.runInBackground === true,

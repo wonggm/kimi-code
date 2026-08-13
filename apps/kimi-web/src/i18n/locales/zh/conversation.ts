@@ -22,6 +22,14 @@ export default {
   yesterday: '昨天',
   loadOlder: '加载更早的消息',
   loadingOlder: '正在加载更早的消息…',
+  retryAttempt: '重试中 — 第 {attempt} 次，共 {max} 次',
+  modelRequestFailed: '模型请求失败',
+  resumeRetry: '继续 / 重试',
+  changedFiles: {
+    title: '已更改文件',
+    showMore: '显示更多',
+    showLess: '显示更少',
+  },
   cron: {
     fired: '定时任务已触发',
     missed: '错过的定时提醒',
