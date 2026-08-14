@@ -13,7 +13,6 @@ import ChatDock from './ChatDock.vue';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
-import RiveAvatar from '../ui/RiveAvatar.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { getVisibleWorkspaces } from '../../lib/workspacePicker';
 import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
@@ -859,11 +858,49 @@ const scrollKey = computed<ScrollKey>(() => {
 });
 
 watch(scrollKey, async (next, prev) => {
+  // Refresh the fingerprint of the content the user last saw in the active
+  // session; it is captured by the per-session scroll state on switch-away.
+  const activeSid = props.sessionId;
+  if (activeSid) {
+    fingerprintBySession.set(activeSid, {
+      length: next.length,
+      lastId: next.lastId,
+      lastTextLen: next.lastTextLen,
+    });
+  }
   // Prepending older history changes this key; suppress only that exact case so
   // concurrent bottom appends still raise the new-message pill.
   if (historyLoadInProgress.value && isHistoryPrependOnly(prev, next)) {
     updateActiveTocQuery();
     return;
+  }
+  // A session switch defers the final position until the transcript is
+  // replaced by the snapshot refetch; re-evaluate it here on the first content
+  // change within the settle window.
+  if (activeSid) {
+    const pending = pendingScrollBySession.get(activeSid);
+    if (pending) {
+      pendingScrollBySession.delete(activeSid);
+      if (Date.now() <= pending.expiresAt) {
+        let grew: boolean;
+        if (pending.kind === 'bottom') {
+          grew = true;
+        } else {
+          grew =
+            next.length !== pending.saved.length ||
+            next.lastId !== pending.saved.lastId ||
+            next.lastTextLen !== pending.saved.lastTextLen;
+        }
+        if (grew) {
+          // The session gained content since the user left: land at the
+          // latest exchange. Unchanged content leaves the restored position
+          // in place.
+          scrollToBottom(false);
+        }
+        updateActiveTocQuery();
+        return;
+      }
+    }
   }
   await nextTick();
   if (following.value || hasUserActionFollowLock()) {
@@ -891,20 +928,69 @@ watch(
 // position and whether the user was following the bottom, instead of always
 // jumping to the bottom (which replayed the conversation when the session was
 // already there) or getting yanked to the bottom by a new message after
-// restoring a scrolled-up position.
-const scrollStateBySession = new Map<string, { top: number; following: boolean }>();
+// restoring a scrolled-up position. The fingerprint is the transcript shape
+// when the user left: a session that gained content since then lands at the
+// latest exchange instead of the old position.
+type SavedScrollState = {
+  top: number;
+  following: boolean;
+  length: number;
+  lastId: string;
+  lastTextLen: number;
+};
+
+type ContentFingerprint = { length: number; lastId: string; lastTextLen: number };
+
+const scrollStateBySession = new Map<string, SavedScrollState>();
+
+// Latest content fingerprint per session, refreshed whenever the active
+// session's transcript changes (see the scrollKey watcher).
+const fingerprintBySession = new Map<string, ContentFingerprint>();
+
+// Deferred scroll decision for the session being switched to. The reopen
+// refetch replaces the transcript shortly after the switch, so the final
+// position is re-evaluated on the first content change within this window;
+// after the window the intent is stale and dropped.
+const PENDING_SCROLL_WINDOW_MS = 5000;
+const pendingScrollBySession = new Map<
+  string,
+  { kind: 'bottom'; expiresAt: number } | { kind: 'restore'; saved: SavedScrollState; expiresAt: number }
+>();
 
 watch(
   () => props.fileReloadKey,
   async (newKey, oldKey) => {
     const el = panesRef.value;
     if (oldKey && el) {
-      scrollStateBySession.set(String(oldKey), { top: el.scrollTop, following: following.value });
+      const fp = fingerprintBySession.get(String(oldKey));
+      scrollStateBySession.set(String(oldKey), {
+        top: el.scrollTop,
+        following: following.value,
+        length: fp?.length ?? 0,
+        lastId: fp?.lastId ?? '',
+        lastTextLen: fp?.lastTextLen ?? 0,
+      });
+    }
+    // Defer the final scroll decision until the snapshot refetch lands: the
+    // transcript is replaced right after the switch, so an immediate restore
+    // can be applied against stale content and never corrected. The scrollKey
+    // watcher consumes this on the first content change within the window.
+    const saved = newKey ? scrollStateBySession.get(String(newKey)) : undefined;
+    if (saved) {
+      pendingScrollBySession.set(String(newKey), {
+        kind: 'restore',
+        saved,
+        expiresAt: Date.now() + PENDING_SCROLL_WINDOW_MS,
+      });
+    } else if (newKey) {
+      pendingScrollBySession.set(String(newKey), {
+        kind: 'bottom',
+        expiresAt: Date.now() + PENDING_SCROLL_WINDOW_MS,
+      });
     }
     cancelActiveScrollWrites();
     await nextTick();
     const el2 = panesRef.value;
-    const saved = newKey ? scrollStateBySession.get(String(newKey)) : undefined;
     if (saved && el2) {
       const pendingRestore = pendingHistoryRestoreBySession.get(String(newKey));
       const top = pendingRestore
@@ -1349,7 +1435,6 @@ defineExpose({ loadComposerForEdit, focusComposer });
             <!-- Empty session: Composer rendered in the centre of the pane -->
             <div class="empty-spacer" />
             <div class="empty-hint">
-              <RiveAvatar v-if="!starting" :size="56" class="empty-avatar" />
               <span class="empty-hint-title" :class="{ 'is-starting': starting }">
                 <Spinner v-if="starting" size="sm" />
                 <span>{{ starting ? t('conversation.starting') : t('composer.emptyConversationTitle') }}</span>
@@ -1749,9 +1834,6 @@ html[data-liquid-glass="on"] .panes.has-header {
   padding: 0 16px 16px;
   color: var(--color-text);
   font-family: var(--font-ui);
-}
-.empty-avatar {
-  margin-bottom: var(--space-1);
 }
 .empty-hint-title {
   font-size: calc(var(--ui-font-size) + 16px);
