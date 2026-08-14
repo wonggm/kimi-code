@@ -1307,36 +1307,18 @@ body {
   }
 }
 
-/* ---- perf: WS-1A ---- */
-/* Long-transcript scroll jank (scroll-long). Assistant rows and compaction
-   dividers skip rendering while fully off-screen: layout/paint of a 500-turn
-   document collapses to the visible slice, so async KaTeX/shiki commits to
-   off-screen turns no longer trigger document-wide layout, and scroll frames
-   stop paying for content nobody sees. Rows re-activate as they approach the
-   viewport; the `auto` keyword remembers each row's last rendered height so
-   re-skipping after a pass keeps the scrollbar geometry stable.
-   contain-intrinsic-size values are pre-render estimates only — first paint
-   of a visible row uses its real size.
-   User bubbles (.u-bub) are deliberately NOT covered: the bubble sits in the
-   top blur-band zone, and containment there interacted with the band's
-   per-frame backdrop-filter during streaming (measured: streaming-replay p95
-   16.8 → 33.3 ms with bubbles contained; clean once exempted). Bubbles are
-   cheap to render anyway — the heavy rows are the assistant ones. */
-.a-msg.turn-anchor {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 700px 160px;
-}
-.compact-divider.turn-anchor {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 700px 21px;
-}
-/* The actively streaming assistant row grows on every delta while auto-follow
-   re-scrolls the pane; keep it out of content-visibility — it is on screen
-   by definition, so nothing is saved by skipping its render. ChatPane sets
-   the class on the turn whose id matches streamingTurnId. */
-.turn-anchor.is-streaming {
-  content-visibility: visible;
-}
+/* ---- perf: WS-1A (revised) ---- */
+/* Chat rows are deliberately NOT under content-visibility: auto. An
+   unrendered contained row reports its contain-intrinsic-size estimate
+   (160 px for assistant rows) instead of its real height, and the estimate
+   only corrects when the row renders at the viewport edge — which shifts
+   every user bubble around it by the whole delta, a visible hard jump while
+   scrolling. The eviction system in ChatPane keeps off-screen assistant rows
+   as single-div placeholders whose min-height is measured from the real
+   layout, so the geometry is exact at all times and any height correction
+   happens 800 px away from the viewport. Off-screen layout stays cheap
+   (placeholders only); async KaTeX/shiki commits only affect rows near the
+   viewport. */
 /* ChatPane uses this stable shell while distant assistant children are
    unmounted. It has no paint of its own; the cached height preserves scroll
    geometry until the row is near the viewport again. */
