@@ -174,12 +174,18 @@ onUnmounted(() => {
 
 // Keep the transcript's expensive assistant children (Markdown, syntax
 // highlighting, and tool cards) mounted only near the reading viewport. The
-// outer row remains in the DOM, so scroll anchors and the content-visibility
-// height estimate stay stable while long sessions release component memory.
+// outer row remains in the DOM with a measured-height placeholder, so scroll
+// anchors and the scrollbar geometry stay stable while long sessions release
+// component memory. Eviction is idle-gated: rows that leave the margin are
+// queued and released only after scrolling stops, so a scroll pass never
+// unmounts and re-parses the same rows repeatedly.
 const evictedTurnIds = ref(new Set<string>());
 const measuredTurnHeights = new Map<string, number>();
 const turnAnchors = new Map<string, HTMLElement>();
 let turnVisibilityObserver: IntersectionObserver | null = null;
+const EVICT_IDLE_MS = 800;
+const pendingEvictions = new Set<string>();
+let evictionIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function isTurnHeavyContentMounted(turn: ChatTurn): boolean {
   return turn.role !== 'assistant' || turn.id === streamingTurnId.value || !evictedTurnIds.value.has(turn.id);
@@ -201,46 +207,90 @@ function setEvicted(turnId: string, evicted: boolean): void {
 
 function observeTurnAnchor(turnId: string, value: unknown): void {
   if (!(value instanceof HTMLElement)) {
+    const prev = turnAnchors.get(turnId);
+    if (prev) turnVisibilityObserver?.unobserve(prev);
     turnAnchors.delete(turnId);
     return;
   }
+  const prev = turnAnchors.get(turnId);
+  if (prev === value) return;
+  if (prev) turnVisibilityObserver?.unobserve(prev);
   turnAnchors.set(turnId, value);
   turnVisibilityObserver?.observe(value);
 }
 
-function observeTurnVisibility(): void {
-  if (typeof IntersectionObserver === 'undefined') return;
-  turnVisibilityObserver?.disconnect();
-  turnVisibilityObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        const node = entry.target as HTMLElement;
-        const turnId = node.dataset.turnId;
-        if (!turnId) continue;
-        const turn = props.turns.find((candidate) => candidate.id === turnId);
-        // Never evict the active stream, even if a user scrolls away from it.
-        if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) {
-          setEvicted(turnId, false);
-          continue;
-        }
-        if (entry.isIntersecting) {
-          setEvicted(turnId, false);
-        } else if (!evictedTurnIds.value.has(turnId)) {
-          const height = node.getBoundingClientRect().height;
-          if (height > 0) measuredTurnHeights.set(turnId, height);
-          setEvicted(turnId, true);
-        }
-      }
-    },
-    // Keep a generous nearby window to avoid a visible mount during ordinary
-    // scrolling while still releasing distant turns in long transcripts.
-    { root: null, rootMargin: '800px 0px', threshold: 0 },
-  );
-  for (const node of turnAnchors.values()) turnVisibilityObserver.observe(node);
+function handleTurnVisibilityEntries(entries: IntersectionObserverEntry[]): void {
+  // Any intersection change means the viewport moved; restart the idle window
+  // so a queued batch is not flushed mid-scroll.
+  if (evictionIdleTimer !== null) {
+    clearTimeout(evictionIdleTimer);
+    evictionIdleTimer = null;
+  }
+  for (const entry of entries) {
+    const node = entry.target as HTMLElement;
+    const turnId = node.dataset.turnId;
+    if (!turnId) continue;
+    const turn = props.turns.find((candidate) => candidate.id === turnId);
+    // Never evict the active stream, even if a user scrolls away from it.
+    if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) {
+      setEvicted(turnId, false);
+      continue;
+    }
+    if (entry.isIntersecting) {
+      pendingEvictions.delete(turnId);
+      setEvicted(turnId, false);
+    } else if (!evictedTurnIds.value.has(turnId)) {
+      pendingEvictions.add(turnId);
+    }
+  }
+  if (pendingEvictions.size > 0) {
+    evictionIdleTimer = setTimeout(flushPendingEvictions, EVICT_IDLE_MS);
+  }
 }
 
-onMounted(observeTurnVisibility);
+/** Release queued rows once scrolling has been idle for EVICT_IDLE_MS. */
+function flushPendingEvictions(): void {
+  evictionIdleTimer = null;
+  const targets = [...pendingEvictions];
+  pendingEvictions.clear();
+  for (const turnId of targets) {
+    if (evictedTurnIds.value.has(turnId)) continue;
+    const node = turnAnchors.get(turnId);
+    if (!node) continue;
+    const turn = props.turns.find((candidate) => candidate.id === turnId);
+    if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) continue;
+    // Evict only when a real height is known: a heightless placeholder
+    // (min-height: 1px) would collapse the row's scrollHeight contribution
+    // and yank the scrollbar while content is streaming in.
+    const height = node.getBoundingClientRect().height;
+    if (height > 0) {
+      measuredTurnHeights.set(turnId, height);
+      setEvicted(turnId, true);
+    }
+  }
+}
+
+onMounted(() => {
+  if (typeof IntersectionObserver === 'undefined') return;
+  // One observer for the component's lifetime. Function refs attach new rows
+  // and detach removed ones; never rebuild it, otherwise every turn-array
+  // change (i.e. every streaming delta) re-evaluates and re-evicts every row,
+  // tearing down and remounting heavy content in waves.
+  turnVisibilityObserver = new IntersectionObserver(handleTurnVisibilityEntries, {
+    // Keep a generous nearby window to avoid a visible mount during ordinary
+    // scrolling while still releasing distant turns in long transcripts.
+    root: null,
+    rootMargin: '800px 0px',
+    threshold: 0,
+  });
+  // Function refs fire during the patch, before this hook; register the
+  // anchors mounted by the first render now.
+  for (const node of turnAnchors.values()) turnVisibilityObserver.observe(node);
+});
 onUnmounted(() => {
+  if (evictionIdleTimer !== null) clearTimeout(evictionIdleTimer);
+  evictionIdleTimer = null;
+  pendingEvictions.clear();
   turnVisibilityObserver?.disconnect();
   turnVisibilityObserver = null;
   turnAnchors.clear();
@@ -269,13 +319,18 @@ const streamingTurnId = computed<string | null>(() => {
 watch(
   [streamingTurnId, () => props.turns],
   () => {
+    // Drop bookkeeping for turns that no longer exist. New anchors are
+    // observed/unobserved by the function refs as they render; the observer
+    // itself is created once and never rebuilt.
     const currentIds = new Set(props.turns.map((turn) => turn.id));
     for (const id of evictedTurnIds.value) {
       if (!currentIds.has(id)) measuredTurnHeights.delete(id);
     }
+    for (const id of pendingEvictions) {
+      if (!currentIds.has(id)) pendingEvictions.delete(id);
+    }
     const next = new Set([...evictedTurnIds.value].filter((id) => currentIds.has(id)));
     if (next.size !== evictedTurnIds.value.size) evictedTurnIds.value = next;
-    void nextTick().then(observeTurnVisibility);
   },
   { flush: 'post' },
 );
@@ -735,7 +790,6 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
         v-else
         :ref="(el) => observeTurnAnchor(turn.id, el)"
         class="a-msg turn-anchor"
-        :class="{ 'is-streaming': turn.id === streamingTurnId }"
         :data-turn-id="turn.id"
       >
         <template v-if="isTurnHeavyContentMounted(turn)">
@@ -789,7 +843,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       </button>
     </div>
 
-    <!-- Retry progress stays inside the existing working-status rendering path. -->
+    <!-- Working indicator — moon remains the chat waiting visual. -->
     <div v-if="showWorking" class="sending-placeholder">
       <MoonSpinner :fast="fastMoon" />
       <span v-if="retryProgress" class="retry-progress">
