@@ -1006,44 +1006,6 @@ body {
   overflow: hidden;
 }
 
-/* ---------------------------------------------------------------------------
-   Global scrollbars: thin + faint on every scroller (chat, tasks, file tree,
-   terminal, dialogs…). Firefox reads scrollbar-width/color; WebKit/Blink read
-   the ::-webkit-scrollbar pseudo-elements. The track stays transparent so the
-   bar floats, and the thumb is a neutral semi-transparent gray that reads as a
-   soft hairline on both light and dark surfaces and darkens slightly on hover.
-   A single mid-gray works on either background, so no per-theme tokens needed.
-   Components may still override locally (e.g. the sidebar's even-thinner rule).
-   --------------------------------------------------------------------------- */
-/* Firefox-only fallback: the standard scrollbar properties DISABLE the whole
-   ::-webkit-scrollbar customisation in Chromium 121+ (any non-auto value wins
-   over the pseudo-element styles), silently replacing the 6px/4px custom bars
-   with the ~11px native thin gutter. Scope them to engines that don't know
-   the webkit pseudo-element instead. */
-@supports not selector(::-webkit-scrollbar) {
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(128, 128, 128, 0.3) transparent;
-  }
-}
-*::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.3);
-  border-radius: 999px;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.5);
-}
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
 body {
   font-family: var(--sans);
   color: var(--color-text);
