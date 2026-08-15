@@ -530,6 +530,7 @@ function distanceFromBottom(): number {
 }
 
 let lastScrollTop = 0;
+let lastEventScrollHeight = 0;
 let userActionFollowUntil = 0;
 let lastSmoothScroll = 0;
 // While a smooth scroll is in flight, instant `scrollToBottom(false)` calls
@@ -549,6 +550,19 @@ function onPanesScroll(): void {
   const el = panesRef.value;
   if (!el) return;
   const top = el.scrollTop;
+  const scrollHeight = el.scrollHeight;
+
+  // A document that shrank since the last event clamps scrollTop down on its
+  // own; that is the browser absorbing a height correction (eviction or
+  // KaTeX/shiki estimate settling), not the user scrolling up. Treating it as
+  // a user scroll drops the follow and lets the tail drift while a fresh
+  // session's rows finish rendering.
+  if (scrollHeight < lastEventScrollHeight - 1) {
+    lastScrollTop = top;
+    lastEventScrollHeight = scrollHeight;
+    return;
+  }
+  lastEventScrollHeight = scrollHeight;
 
   if (isPinned()) {
     lastScrollTop = top;
@@ -864,6 +878,7 @@ watch(scrollKey, async (next, prev) => {
   if (activeSid) {
     fingerprintBySession.set(activeSid, {
       length: next.length,
+      firstId: next.firstId,
       lastId: next.lastId,
       lastTextLen: next.lastTextLen,
     });
@@ -873,34 +888,6 @@ watch(scrollKey, async (next, prev) => {
   if (historyLoadInProgress.value && isHistoryPrependOnly(prev, next)) {
     updateActiveTocQuery();
     return;
-  }
-  // A session switch defers the final position until the transcript is
-  // replaced by the snapshot refetch; re-evaluate it here on the first content
-  // change within the settle window.
-  if (activeSid) {
-    const pending = pendingScrollBySession.get(activeSid);
-    if (pending) {
-      pendingScrollBySession.delete(activeSid);
-      if (Date.now() <= pending.expiresAt) {
-        let grew: boolean;
-        if (pending.kind === 'bottom') {
-          grew = true;
-        } else {
-          grew =
-            next.length !== pending.saved.length ||
-            next.lastId !== pending.saved.lastId ||
-            next.lastTextLen !== pending.saved.lastTextLen;
-        }
-        if (grew) {
-          // The session gained content since the user left: land at the
-          // latest exchange. Unchanged content leaves the restored position
-          // in place.
-          scrollToBottom(false);
-        }
-        updateActiveTocQuery();
-        return;
-      }
-    }
   }
   await nextTick();
   if (following.value || hasUserActionFollowLock()) {
@@ -928,34 +915,114 @@ watch(
 // position and whether the user was following the bottom, instead of always
 // jumping to the bottom (which replayed the conversation when the session was
 // already there) or getting yanked to the bottom by a new message after
-// restoring a scrolled-up position. The fingerprint is the transcript shape
-// when the user left: a session that gained content since then lands at the
+// restoring a scrolled-up position. The fingerprint is the transcript shape the
+// user last saw: a session that gained new content since then lands at the
 // latest exchange instead of the old position.
 type SavedScrollState = {
   top: number;
   following: boolean;
   length: number;
+  firstId: string;
   lastId: string;
   lastTextLen: number;
 };
 
-type ContentFingerprint = { length: number; lastId: string; lastTextLen: number };
+type ScrollFingerprint = { length: number; firstId: string; lastId: string; lastTextLen: number };
 
 const scrollStateBySession = new Map<string, SavedScrollState>();
 
 // Latest content fingerprint per session, refreshed whenever the active
 // session's transcript changes (see the scrollKey watcher).
-const fingerprintBySession = new Map<string, ContentFingerprint>();
+const fingerprintBySession = new Map<string, ScrollFingerprint>();
 
 // Deferred scroll decision for the session being switched to. The reopen
-// refetch replaces the transcript shortly after the switch, so the final
-// position is re-evaluated on the first content change within this window;
-// after the window the intent is stale and dropped.
+// refetch replaces the transcript right after the switch, so the final
+// position is re-evaluated once the snapshot has actually landed (see
+// consumePendingScroll) instead of being applied against soon-to-be-stale
+// content and never corrected.
 const PENDING_SCROLL_WINDOW_MS = 5000;
 const pendingScrollBySession = new Map<
   string,
   { kind: 'bottom'; expiresAt: number } | { kind: 'restore'; saved: SavedScrollState; expiresAt: number }
 >();
+let pendingScrollTimer: ReturnType<typeof setTimeout> | null = null;
+
+function grewSinceSaved(saved: SavedScrollState): boolean {
+  const t = props.turns;
+  const last = t.at(-1);
+  // "Grew" means new content arrived at the tail (or content was replaced):
+  // a different last turn, a longer last turn, or more turns while the first
+  // turn is unchanged. Prepended older history keeps the tail intact and does
+  // not count as new content.
+  return (
+    (last !== undefined && last.id !== saved.lastId) ||
+    (last?.text.length ?? 0) !== saved.lastTextLen ||
+    (t.length > saved.length && (t[0]?.id ?? '') === saved.firstId)
+  );
+}
+
+/**
+ * Apply the deferred scroll decision for `key` (the session being switched
+ * to). Re-evaluated on every turns-identity change within the intent window —
+ * the reopen snapshot merge always yields a new turns array, and the LAST
+ * such change carries the final content, so an early application against the
+ * pre-snapshot (cached) transcript is corrected by the later one. The
+ * sessionLoading transition and the intent-window expiry are fallback
+ * triggers. If a later switch superseded this key, the pending decision is
+ * dropped untouched. Returns true when a decision was applied.
+ */
+function consumePendingScroll(key: string): boolean {
+  const pending = pendingScrollBySession.get(key);
+  if (!pending) return false;
+  if (props.sessionId !== key || Date.now() > pending.expiresAt) {
+    pendingScrollBySession.delete(key);
+    return false;
+  }
+  const el = panesRef.value;
+  if (!el) return false;
+  if (pending.kind === 'bottom') {
+    // First open (or a locally created empty session): land at the tail.
+    following.value = true;
+    lastScrollTop = 0;
+    scrollToBottom(false);
+    scheduleStableFollow();
+    return true;
+  }
+  const saved = pending.saved;
+  const grew = grewSinceSaved(saved);
+  if (grew) {
+    // The session gained content since the user left: land at the latest
+    // exchange and keep the follow armed while the new content renders.
+    // Unchanged content leaves the restored position in place.
+    following.value = true;
+    scrollToBottom(false);
+    scheduleStableFollow();
+    return true;
+  }
+  const pendingRestore = pendingHistoryRestoreBySession.get(key);
+  const top = pendingRestore ? restoreHistoryScroll(el, pendingRestore, saved.top) : saved.top;
+  if (pendingRestore) pendingHistoryRestoreBySession.delete(key);
+  following.value = saved.following;
+  el.scrollTop = top;
+  lastScrollTop = el.scrollTop;
+  showPill.value = !saved.following && distanceFromBottom() > 1;
+  if (saved.following) {
+    scheduleStableFollow();
+  }
+  return true;
+}
+
+// Re-apply the active session's pending scroll decision on every turns-identity
+// change within its intent window (see consumePendingScroll). Created once for
+// the component's lifetime; harmless no-op when no decision is pending.
+watch(
+  () => props.turns,
+  () => {
+    const key = props.sessionId ? String(props.sessionId) : null;
+    if (key !== null) consumePendingScroll(key);
+  },
+  { flush: 'post' },
+);
 
 watch(
   () => props.fileReloadKey,
@@ -967,43 +1034,42 @@ watch(
         top: el.scrollTop,
         following: following.value,
         length: fp?.length ?? 0,
+        firstId: fp?.firstId ?? '',
         lastId: fp?.lastId ?? '',
         lastTextLen: fp?.lastTextLen ?? 0,
       });
     }
-    // Defer the final scroll decision until the snapshot refetch lands: the
-    // transcript is replaced right after the switch, so an immediate restore
-    // can be applied against stale content and never corrected. The scrollKey
-    // watcher consumes this on the first content change within the window.
-    const saved = newKey ? scrollStateBySession.get(String(newKey)) : undefined;
-    if (saved) {
-      pendingScrollBySession.set(String(newKey), {
-        kind: 'restore',
-        saved,
-        expiresAt: Date.now() + PENDING_SCROLL_WINDOW_MS,
-      });
-    } else if (newKey) {
-      pendingScrollBySession.set(String(newKey), {
-        kind: 'bottom',
-        expiresAt: Date.now() + PENDING_SCROLL_WINDOW_MS,
-      });
+    if (pendingScrollTimer !== null) {
+      clearTimeout(pendingScrollTimer);
+      pendingScrollTimer = null;
     }
     cancelActiveScrollWrites();
     await nextTick();
-    const el2 = panesRef.value;
-    if (saved && el2) {
-      const pendingRestore = pendingHistoryRestoreBySession.get(String(newKey));
-      const top = pendingRestore
-        ? restoreHistoryScroll(el2, pendingRestore, saved.top)
-        : saved.top;
-      if (pendingRestore) pendingHistoryRestoreBySession.delete(String(newKey));
-      following.value = saved.following;
-      el2.scrollTop = top;
-      lastScrollTop = el2.scrollTop;
-      showPill.value = !saved.following && distanceFromBottom() > 1;
-      if (saved.following) {
-        scheduleStableFollow();
+    // Defer the final scroll decision: the transcript is replaced right after
+    // the switch (reopenSession's snapshot refetch), so applying a restore now
+    // would land on content that is about to be swapped out. The decision is
+    // recorded here and re-evaluated by the turns-identity watcher above each
+    // time the transcript changes within the window; the timeout below is the
+    // fallback when no identity change ever arrives (e.g. failed snapshot).
+    const key = newKey ? String(newKey) : null;
+    if (key !== null) {
+      const saved = scrollStateBySession.get(key);
+      if (saved) {
+        pendingScrollBySession.set(key, {
+          kind: 'restore',
+          saved,
+          expiresAt: Date.now() + PENDING_SCROLL_WINDOW_MS,
+        });
+      } else {
+        pendingScrollBySession.set(key, {
+          kind: 'bottom',
+          expiresAt: Date.now() + PENDING_SCROLL_WINDOW_MS,
+        });
       }
+      pendingScrollTimer = setTimeout(() => {
+        pendingScrollTimer = null;
+        consumePendingScroll(key);
+      }, PENDING_SCROLL_WINDOW_MS);
     } else {
       following.value = true;
       lastScrollTop = 0;
@@ -1018,6 +1084,14 @@ watch(
   () => props.sessionLoading,
   async (loading, was) => {
     if (loading || !was) return;
+    const key = props.sessionId ? String(props.sessionId) : null;
+    if (key !== null) {
+      await nextTick();
+      if (consumePendingScroll(key)) {
+        updateActiveTocQuery();
+        return;
+      }
+    }
     following.value = true;
     await nextTick();
     scheduleStableFollow();
@@ -1350,6 +1424,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (pendingScrollTimer !== null) clearTimeout(pendingScrollTimer);
   if (contentObserver) contentObserver.disconnect();
   if (resizeObserver) resizeObserver.disconnect();
   if (scrollRaf) cancelRaf(scrollRaf);
@@ -1672,9 +1747,12 @@ defineExpose({ loadComposerForEdit, focusComposer });
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* Keep the visible message stable while the user browses history. Bottom
-     following and history prepend use explicit scroll writes, so they opt out. */
-  overflow-anchor: auto;
+  /* No native scroll anchoring. While the user browses history (not
+     following), assistant rows above the viewport change height as the
+     eviction/content-visibility machinery skips and re-renders them, and the
+     browser's anchor correction then yanks scrollTop back down mid-scroll.
+     Bottom following and history prepend use explicit scroll writes. */
+  overflow-anchor: none;
   scrollbar-gutter: stable;
 }
 /* Edge vignette — fade the transcript to invisible at the top and bottom so
@@ -1770,11 +1848,6 @@ html[data-liquid-glass="on"] .chat-layout::after {
    or the empty session, where the extra height would add a stray scrollbar). */
 html[data-liquid-glass="on"] .panes.has-header {
   padding-top: var(--panel-head-h, 48px);
-}
-
-.panes.is-following,
-.panes.history-prepending {
-  overflow-anchor: none;
 }
 
 /* Chat tab layout: the message list scrolls, while the dock stays as the
