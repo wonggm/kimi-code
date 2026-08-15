@@ -1308,17 +1308,18 @@ body {
 }
 
 /* ---- perf: WS-1A (revised) ---- */
-/* Chat rows are deliberately NOT under content-visibility: auto. An
-   unrendered contained row reports its contain-intrinsic-size estimate
-   (160 px for assistant rows) instead of its real height, and the estimate
-   only corrects when the row renders at the viewport edge — which shifts
-   every user bubble around it by the whole delta, a visible hard jump while
-   scrolling. The eviction system in ChatPane keeps off-screen assistant rows
-   as single-div placeholders whose min-height is measured from the real
-   layout, so the geometry is exact at all times and any height correction
-   happens 800 px away from the viewport. Off-screen layout stays cheap
-   (placeholders only); async KaTeX/shiki commits only affect rows near the
-   viewport. */
+/* Chat rows are deliberately NOT under content-visibility: auto. A skipped
+   row reports its contain-intrinsic-size estimate (700px/160px fallback, or
+   the last-rendered height) instead of its real height, and the estimate only
+   corrects when the row renders at the viewport edge — which shifts every
+   message around it by the whole delta, a visible hard jump while scrolling.
+   Measured on a 34-turn transcript (headless chromium): 78 content-shift
+   events up to 1657 px during a single scroll-up pass, all eliminated by
+   disabling containment. The eviction system in ChatPane keeps off-screen
+   assistant rows as single-div placeholders whose min-height is measured from
+   the real layout, so the geometry is exact at all times. Off-screen layout
+   stays cheap (placeholders only); async KaTeX/shiki commits only affect rows
+   near the viewport. */
 /* ChatPane uses this stable shell while distant assistant children are
    unmounted. It has no paint of its own; the cached height preserves scroll
    geometry until the row is near the viewport again. */
