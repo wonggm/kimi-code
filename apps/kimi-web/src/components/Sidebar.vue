@@ -1210,24 +1210,13 @@ onBeforeUnmount(() => {
 
 /* Sessions — owns the vertical padding around the list (the 12px gap to the
    search row above and the bottom breathing room). Scrolled content passes
-   through the top padding and clips at the .search-wrap seam. Scrollbar: the
-   4px ::-webkit-scrollbar below; standard scrollbar-width would kill it on
-   Chromium (see the global scrollbar block in style.css). */
+   through the top padding and clips at the .search-wrap seam. */
 .sessions {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-3) var(--sb-inset);
   min-height: 0;
 }
-.sessions::-webkit-scrollbar { width: 4px; }
-.sessions::-webkit-scrollbar-track { background: transparent; }
-.sessions::-webkit-scrollbar-thumb {
-  /* Neutral, text-derived translucency — adapts to both schemes and sits
-     quietly on the sidebar surface (no accent tint on hover). */
-  background: color-mix(in srgb, var(--color-text) 12%, transparent);
-  border-radius: var(--radius-full);
-}
-.sessions::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color-text) 25%, transparent); }
 
 /* Footer — settings entry pinned under the session list. Same list-style
    control family as search / New chat (full-width, left-aligned, hover
