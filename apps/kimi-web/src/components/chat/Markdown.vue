@@ -106,7 +106,11 @@ const isDark = useIsDark();
 // blocks blank in our internal chat scroller when visibility events are missed
 // during a session/theme switch. Keep batching for history, but always mount the
 // actual nodes so every code block has at least its plain fallback immediately.
-const allowBatchRender = computed(() => !props.streaming);
+// Batching defers offscreen node rendering until the row nears the viewport;
+// the deferred content mounts at different heights (markdown renderers, tool
+// outputs), which makes rows jump by hundreds of pixels while scrolling.
+// Render everything at mount so the document height settles once, at open.
+const allowBatchRender = computed(() => false);
 
 // ---------------------------------------------------------------------------
 // Local image resolution — rewrite the SOURCE TEXT before markstream sees it.
