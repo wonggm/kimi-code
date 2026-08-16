@@ -135,6 +135,11 @@ function cloneState(s: KimiClientState): KimiClientState {
     // so the sidebar computeds (sessionsForView / workspaceGroups /
     // mergedWorkspaces) are not dirtied by unrelated events.
     sessions: s.sessions,
+    // The per-session maps are shallow-cloned here (sharing the inner slices).
+    // finalizeState compares each clone against the original at the end of
+    // reduceAppEvent and falls back to the ORIGINAL map reference when nothing
+    // inside it changed, so dependents (turns / tasks / goal / … computeds)
+    // only re-fire for events that actually touched that map.
     messagesBySession: { ...s.messagesBySession },
     approvalsBySession: { ...s.approvalsBySession },
     planReviewByToolCallId: { ...s.planReviewByToolCallId },
@@ -149,6 +154,58 @@ function cloneState(s: KimiClientState): KimiClientState {
     failureBySession: { ...s.failureBySession },
     warnings: [...s.warnings],
   };
+}
+
+/** Compare a freshly-rebuilt per-session map against the previous one and
+ *  return the OLD reference when every entry is unchanged (`===`). The clone in
+ *  cloneState shares the inner values with the original, so a per-key scan is
+ *  sufficient: a replaced slice differs by reference, a deleted key differs by
+ *  key count, an untouched key shares the old value. `undefined`-valued keys
+ *  are handled by the key-count check (a key added with an undefined value
+ *  must not masquerade as "unchanged"). */
+function finalizeMap<T>(prev: Record<string, T>, next: Record<string, T>): Record<string, T> {
+  let prevCount = 0;
+  let nextCount = 0;
+  for (const key in next) {
+    nextCount += 1;
+    if (next[key] !== prev[key]) return next;
+  }
+  for (const key in prev) {
+    prevCount += 1;
+    if (!(key in next)) return next;
+  }
+  return prevCount === nextCount ? prev : next;
+}
+
+/** Array analogue of finalizeMap for `warnings` (element-wise `===`). */
+function finalizeArray<T>(prev: T[], next: T[]): T[] {
+  if (next.length !== prev.length) return next;
+  for (let i = 0; i < next.length; i++) {
+    if (next[i] !== prev[i]) return next;
+  }
+  return prev;
+}
+
+/** Drop the fresh map clones that ended up unchanged, so the returned state
+ *  keeps the OLD references for everything the event did not touch — events
+ *  for one session no longer re-fire every other session's computeds (and a
+ *  content no-op like a delta for an unknown message keeps the old map).
+ *  Mutates `next` in place and returns it. */
+function finalizeState(original: KimiClientState, next: KimiClientState): KimiClientState {
+  next.messagesBySession = finalizeMap(original.messagesBySession, next.messagesBySession);
+  next.approvalsBySession = finalizeMap(original.approvalsBySession, next.approvalsBySession);
+  next.planReviewByToolCallId = finalizeMap(original.planReviewByToolCallId, next.planReviewByToolCallId);
+  next.questionsBySession = finalizeMap(original.questionsBySession, next.questionsBySession);
+  next.tasksBySession = finalizeMap(original.tasksBySession, next.tasksBySession);
+  next.goalBySession = finalizeMap(original.goalBySession, next.goalBySession);
+  next.goalVersionBySession = finalizeMap(original.goalVersionBySession, next.goalVersionBySession);
+  next.lastSeqBySession = finalizeMap(original.lastSeqBySession, next.lastSeqBySession);
+  next.turnActiveBySession = finalizeMap(original.turnActiveBySession, next.turnActiveBySession);
+  next.compactionBySession = finalizeMap(original.compactionBySession, next.compactionBySession);
+  next.retryBySession = finalizeMap(original.retryBySession, next.retryBySession);
+  next.failureBySession = finalizeMap(original.failureBySession, next.failureBySession);
+  next.warnings = finalizeArray(original.warnings, next.warnings);
+  return next;
 }
 
 function advanceSeq(state: KimiClientState, sessionId: string | undefined, seq: number | undefined): void {
@@ -356,7 +413,7 @@ export function reduceAppEvent(
         maxAttempts: localEvent.maxAttempts,
       };
     }
-    return next;
+    return finalizeState(state, next);
   }
   if (localEvent.type === 'conversationFailureUpdated') {
     next.failureBySession[localEvent.sessionId] = {
@@ -364,7 +421,7 @@ export function reduceAppEvent(
       promptId: localEvent.promptId,
     };
     delete next.retryBySession[localEvent.sessionId];
-    return next;
+    return finalizeState(state, next);
   }
 
   switch (event.type) {
@@ -869,5 +926,5 @@ export function reduceAppEvent(
     }
   }
 
-  return next;
+  return finalizeState(state, next);
 }

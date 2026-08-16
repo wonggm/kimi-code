@@ -83,9 +83,33 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
       <div v-if="tasks.length === 0" class="tp-empty">{{ t('tasks.emptyTasks') }}</div>
 
       <template v-else>
+        <!-- v-memo on the row list (pattern from ChatPane's turn list): a row's
+             subtree re-renders only when one of its rendered inputs changed.
+             `timing` changes every second for running rows (keeps the elapsed
+             clock live); settled rows keep constant keys and skip re-renders on
+             unrelated updates. `task` itself is a fresh object per recompute,
+             so the keys are its rendered fields rather than the object.
+             `task.output` is keyed only while expanded (the collapsed row does
+             not render it, and its reference churns for preview-split output);
+             hasDetail/isClickable cover the class/chevron/role bindings that
+             depend on output presence. -->
         <div
           v-for="task in tasks"
           :key="task.id"
+          v-memo="[
+            task.id,
+            task.state,
+            task.name,
+            task.kind,
+            task.timing,
+            task.meta,
+            isClickable(task),
+            hasDetail(task),
+            expandedIds.has(task.id) ? task.output : null,
+            expandedIds.has(task.id),
+            copiedCommandIds.has(task.id),
+            copiedOutputIds.has(task.id),
+          ]"
           class="tp-row"
           :class="{ done: task.state === 'done', fail: task.state === 'fail', expandable: isClickable(task) }"
         >
