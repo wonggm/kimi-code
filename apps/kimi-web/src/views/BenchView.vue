@@ -20,6 +20,7 @@ import { computed, nextTick, onMounted, provide, ref } from 'vue';
 import type { AppApprovalRequest, AppMessage, AppModel, AppSkill, AppWarning } from '../api/types';
 import type { ChatTurn, ConversationStatus, TaskItem, TodoView } from '../types';
 import { messagesToTurns } from '../composables/messagesToTurns';
+import { reconcileTurns } from '../composables/reconcileTurns';
 import { useAppearance } from '../composables/client/useAppearance';
 import { buildLongConversation, streamingMarkdown, BENCH_EPOCH_ISO } from '../bench/fixtures';
 import { Sampler, signalDone, signalReady } from '../bench/sampler';
@@ -46,7 +47,18 @@ provide('resolveImage', (src: string) => Promise.resolve(src));
 const messages = ref<AppMessage[]>([]);
 const approvals = ref<AppApprovalRequest[]>([]);
 const turnActive = ref(false);
-const turns = computed<ChatTurn[]>(() => messagesToTurns(messages.value, approvals.value));
+// Reconcile against the previous build so unchanged turns keep their object
+// identity across recomputes — the bench measures the real path, so it mirrors
+// the same reconcile pattern useKimiWebClient uses (no session switches here,
+// so just the prevTurns closure).
+let benchPrevTurns: ChatTurn[] = [];
+const turns = computed<ChatTurn[]>(() => {
+  benchPrevTurns = reconcileTurns(
+    benchPrevTurns,
+    messagesToTurns(messages.value, approvals.value),
+  );
+  return benchPrevTurns;
+});
 
 // --- overlay / dock / toast state ------------------------------------------
 const dialogOpen = ref(false);

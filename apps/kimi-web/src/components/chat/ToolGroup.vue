@@ -25,7 +25,15 @@ const emit = defineEmits<{
   openAgent: [toolCallId: string];
 }>();
 
-const open = ref(true);
+// Persist the user's manual open/closed choice across row eviction (see
+// ChatPane's toolExpandState). A tool-stack has no id of its own, so it keys
+// off its first tool's id — the same anchor renderBlockKey uses — namespaced
+// to avoid any collision with individual card keys.
+const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
+const firstTool = props.tools[0];
+const expandKey = firstTool ? `group:${firstTool.tool.id || firstTool.sourceIndex}` : '';
+const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
+const open = ref(persisted ?? true);
 
 const count = computed(() => props.tools.length);
 const aggregateStatus = computed<'running' | 'error' | 'done'>(() => {
@@ -48,6 +56,7 @@ const statusLabel = computed(() => {
 
 function toggle(): void {
   open.value = !open.value;
+  if (expandKey && toolExpandState) toolExpandState.set(expandKey, open.value);
 }
 
 const pinScroll = inject<(el: HTMLElement, ms?: number) => void>('pinScroll', () => {});
