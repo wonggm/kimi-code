@@ -101,16 +101,15 @@ const renderPlan = computed(() => {
 // Code blocks follow the app colour scheme (shiki re-renders on flip).
 const isDark = useIsDark();
 
-// markstream's chat mode can batch nodes and defer offscreen nodes. Batching is
-// safe for settled history, but viewport deferral can leave individual code
-// blocks blank in our internal chat scroller when visibility events are missed
-// during a session/theme switch. Keep batching for history, but always mount the
-// actual nodes so every code block has at least its plain fallback immediately.
-// Batching defers offscreen node rendering until the row nears the viewport;
-// the deferred content mounts at different heights (markdown renderers, tool
-// outputs), which makes rows jump by hundreds of pixels while scrolling.
-// Render everything at mount so the document height settles once, at open.
-const allowBatchRender = computed(() => false);
+// markstream's chat mode can batch nodes and defer offscreen node mounting
+// until the row nears the viewport; the deferred content mounts at different
+// heights (markdown renderers, tool outputs), which makes rows jump by hundreds
+// of pixels while scrolling. That is safe only for the actively-streaming turn,
+// which is bottom-anchored — everything below it is the scroll bottom, so its
+// deferred offscreen nodes never disturb the visible document. Settled rows are
+// exactly the ones the user scrolls past, so they render fully at mount and the
+// document height settles once, at open.
+const batchRenderWhileStreaming = computed(() => props.streaming);
 
 // ---------------------------------------------------------------------------
 // Local image resolution — rewrite the SOURCE TEXT before markstream sees it.
@@ -306,6 +305,9 @@ onUnmounted(() => {
 // github-dark when the app colour scheme is dark.
 const CODE_LIGHT_THEME = 'github-light';
 const CODE_DARK_THEME = 'github-dark';
+// Module-level so the array identity is stable across renders — an inline
+// literal would be a new identity per render and defeat the row-level v-memo.
+const CODE_THEMES = [CODE_LIGHT_THEME, CODE_DARK_THEME];
 
 // Props forwarded to each code block. markstream's CodeBlock ships its own
 // header with a copy button + language label, so we keep the header + copy
@@ -445,11 +447,11 @@ function copyDiff(code: string, idx: number) {
         :is-dark="isDark"
         :code-block-light-theme="CODE_LIGHT_THEME"
         :code-block-dark-theme="CODE_DARK_THEME"
-        :themes="[CODE_LIGHT_THEME, CODE_DARK_THEME]"
+        :themes="CODE_THEMES"
         :code-block-props="codeBlockProps"
         :final="final"
         :smooth-streaming="streaming"
-        :batch-rendering="allowBatchRender"
+        :batch-rendering="batchRenderWhileStreaming"
         :defer-nodes-until-visible="false"
         @copy="copyCodeBlockFallback"
       />
@@ -689,6 +691,15 @@ function copyDiff(code: string, idx: number) {
 .md :deep(.code-block-container .code-pre-fallback) {
   padding-left: 1ch;
   line-height: 1.65 !important;
+}
+/* markstream ships the fallback <pre> as pre-wrap (an is-wrap class) while the
+   settled renderer scrolls horizontally (overflow-x:auto, no wrap) — a long
+   line wraps to N rows in the fallback and 1 row when settled, a height delta
+   of up to ~470px per block at swap time. Force the fallback onto the same
+   no-wrap geometry so the fallback → settled swap is height-neutral. */
+.md :deep(.code-block-container .code-pre-fallback) {
+  white-space: pre !important;
+  overflow-x: auto !important;
 }
 .md :deep(.code-block-container pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)),
 .md :deep(.markstream-pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)) {

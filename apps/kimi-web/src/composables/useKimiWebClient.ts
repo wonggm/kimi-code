@@ -78,6 +78,7 @@ import { createInitialState, reduceAppEvent, type CompactionStatus, type KimiCli
 import { isPlaceholderSessionUsage, toAppEvent } from '../api/daemon/mappers';
 
 import { messagesToTurns } from './messagesToTurns';
+import { reconcileTurns } from './reconcileTurns';
 import { latestTodos } from './latestTodos';
 import { buildSwarmGroups, countSwarmMembers, swarmMembersByToolCall } from './swarmGroups';
 import type { SwarmGroup, SwarmMember } from './swarmGroups';
@@ -1970,19 +1971,34 @@ const activeAppTasks = computed<AppTask[]>(() => {
 
 const taskPoller = useTaskPoller(rawState, activeAppTasks);
 
+// Reconcile cache for `turns`: each recompute reconciles the freshly-built turn
+// list against the previous one so unchanged rows keep their object identity
+// (row-level v-memo in ChatPane can skip re-rendering them). Reset when the
+// active session changes — the previous turns belong to a different session.
+let prevTurns: ChatTurn[] = [];
+let turnsLastSessionId: string | undefined;
+
 const turns = computed<ChatTurn[]>(() => {
   const sid = rawState.activeSessionId;
+  if (sid !== turnsLastSessionId) {
+    turnsLastSessionId = sid;
+    prevTurns = [];
+  }
   if (!sid) return [];
   const hiddenIds = new Set(rawState.sideChatUserMessageIdsBySession[sid] ?? []);
   const messages = (rawState.messagesBySession[sid] ?? []).filter((m) => !hiddenIds.has(m.id));
   const approvals = rawState.approvalsBySession[sid] ?? [];
-  return messagesToTurns(
-    messages,
-    approvals,
-    (fileId) => getKimiWebApi().getFileUrl(fileId),
-    turnActive.value,
-    rawState.planReviewByToolCallId,
+  prevTurns = reconcileTurns(
+    prevTurns,
+    messagesToTurns(
+      messages,
+      approvals,
+      (fileId) => getKimiWebApi().getFileUrl(fileId),
+      turnActive.value,
+      rawState.planReviewByToolCallId,
+    ),
   );
+  return prevTurns;
 });
 
 /** The MAIN agent of the active session has a turn in flight — the working

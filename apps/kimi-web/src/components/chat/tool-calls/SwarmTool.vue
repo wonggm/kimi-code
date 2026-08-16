@@ -121,12 +121,16 @@ const segments = computed<Segment[]>(() =>
   ),
 );
 
-// Running swarms start expanded so live progress is visible without a click;
-// settled cards (history, finished runs) stay collapsed — §04 tool rows
-// expand on demand. The default applies only at mount; manual toggles stick.
-const open = ref(status.value === 'running' || inProgress.value > 0);
+// Running swarms start expanded; the persisted user choice overrides that on
+// re-mount after a row eviction (see ChatPane's toolExpandState). Only manual
+// toggles persist — the auto-expand default does not.
+const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
+const expandKey = props.tool.id;
+const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
+const open = ref(persisted ?? (status.value === 'running' || inProgress.value > 0));
 function toggle(): void {
   open.value = !open.value;
+  if (expandKey && toolExpandState) toolExpandState.set(expandKey, open.value);
 }
 
 // When AgentSwarm produces no structured result but the tool is no longer
