@@ -1,6 +1,6 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/EditTool.vue -->
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, inject, ref } from 'vue';
 import type { DiffViewLine, FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { diffStats } from '../../../lib/diffLines';
 import { buildEditDiffLines } from '../../../lib/toolDiff';
@@ -41,7 +41,13 @@ const chip = computed(() => {
 });
 
 const hasOutput = computed(() => !!props.tool.output && props.tool.output.length > 0);
-const open = ref(false);
+// Persist the user's manual open/closed choice across row eviction (see
+// ChatPane's toolExpandState): Edit cards default closed, so without this a
+// re-mounted card would collapse even if the user had it open.
+const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
+const expandKey = props.tool.id;
+const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
+const open = ref(persisted ?? false);
 const canExpand = computed(() => hasOutput.value && !props.toolDiffPanel);
 
 function toggle(): void {
@@ -49,7 +55,10 @@ function toggle(): void {
     emit('openToolDiff', props.tool.id);
     return;
   }
-  if (hasOutput.value) open.value = !open.value;
+  if (hasOutput.value) {
+    open.value = !open.value;
+    if (expandKey && toolExpandState) toolExpandState.set(expandKey, open.value);
+  }
 }
 </script>
 

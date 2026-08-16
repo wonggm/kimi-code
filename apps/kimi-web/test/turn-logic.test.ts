@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { AppMessage, AppMessageContent } from '../src/api/types';
 import { latestTodos } from '../src/composables/latestTodos';
 import { messagesToTurns } from '../src/composables/messagesToTurns';
+import { reconcileTurns } from '../src/composables/reconcileTurns';
 import { isPlayableMediaUrl } from '../src/composables/useFilePreview';
+import type { ChatTurn, ToolCall } from '../src/types';
 
 function message(
   id: string,
@@ -962,5 +964,111 @@ describe('isPlayableMediaUrl', () => {
   it('rejects other non-loadable inputs', () => {
     expect(isPlayableMediaUrl('/api/v1/files/f_abc')).toBe(false);
     expect(isPlayableMediaUrl('')).toBe(false);
+  });
+});
+
+describe('reconcileTurns', () => {
+  const turn = (id: string, text: string, no = 1, role: ChatTurn['role'] = 'user'): ChatTurn => ({
+    id,
+    role,
+    no,
+    text,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  // A tool card exactly as messagesToTurns builds it: the block's tool object is
+  // the SAME object that lives in `tools` (they are kept in sync by reference).
+  const withTool = (status: ToolCall['status']): ChatTurn => {
+    const tool: ToolCall = { id: 'tool-1', name: 'bash', arg: 'ls', status };
+    return {
+      ...turn('a1', 'running a command', 1, 'assistant'),
+      tools: [tool],
+      blocks: [{ kind: 'tool', tool }],
+    };
+  };
+
+  it('reuses the previous turn identities when only a turn is appended', () => {
+    const first = [turn('u1', 'hello'), turn('a1', 'hi there', 2, 'assistant')];
+    const reconciled = reconcileTurns([], first);
+    expect(reconciled).toBe(first);
+
+    const appended = [...first, turn('u2', 'one more', 3)];
+    const reconciled2 = reconcileTurns(reconciled, appended);
+    expect(reconciled2).toHaveLength(3);
+    // Unchanged rows keep their exact object identity…
+    expect(reconciled2[0]).toBe(reconciled[0]);
+    expect(reconciled2[1]).toBe(reconciled[1]);
+    // …the appended row comes from `next`, and the array itself is always fresh.
+    expect(reconciled2[2]).toBe(appended[2]);
+    expect(reconciled2).not.toBe(appended);
+  });
+
+  it('replaces a turn whose text changed and keeps the others', () => {
+    const first = [
+      turn('u1', 'hello'),
+      turn('a1', 'one', 2, 'assistant'),
+      turn('a2', 'two', 3, 'assistant'),
+    ];
+    const reconciled = reconcileTurns([], first);
+    const changed = [
+      turn('u1', 'hello'),
+      turn('a1', 'ONE CHANGED', 2, 'assistant'),
+      turn('a2', 'two', 3, 'assistant'),
+    ];
+    const reconciled2 = reconcileTurns(reconciled, changed);
+    expect(reconciled2[0]).toBe(reconciled[0]);
+    expect(reconciled2[1]).toBe(changed[1]);
+    expect(reconciled2[1]).not.toBe(reconciled[1]);
+    expect(reconciled2[2]).toBe(reconciled[2]);
+  });
+
+  it('replaces a turn when a tool status changes', () => {
+    const running = [withTool('running')];
+    const reconciled = reconcileTurns([], running);
+    const done = [withTool('ok')];
+    const reconciled2 = reconcileTurns(reconciled, done);
+    expect(reconciled2[0]).toBe(done[0]);
+    expect(reconciled2[0]).not.toBe(reconciled[0]);
+  });
+
+  it('replaces a turn when its approval state resolves', () => {
+    const awaiting: ChatTurn = {
+      ...turn('a1', 'approve this', 1, 'assistant'),
+      approval: { kind: 'shell', command: 'make clean' },
+      approvalId: 'ap-1',
+    };
+    const resolved: ChatTurn = turn('a1', 'approve this', 1, 'assistant');
+    const reconciled = reconcileTurns([], [awaiting]);
+    const reconciled2 = reconcileTurns(reconciled, [resolved]);
+    expect(reconciled2[0]).toBe(resolved);
+    expect(reconciled2[0]).not.toBe(reconciled[0]);
+  });
+
+  it('compares by index: a prepended turn shifts later turns to new identities but keeps all content', () => {
+    const first = [turn('u1', 'first'), turn('a1', 'second', 2, 'assistant')];
+    const reconciled = reconcileTurns([], first);
+    const prepended = [
+      turn('u0', 'new first'),
+      turn('u1', 'first', 2),
+      turn('a1', 'second', 3, 'assistant'),
+    ];
+    const reconciled2 = reconcileTurns(reconciled, prepended);
+    // Index shift → every row gets a fresh identity (acceptable — the reconciler
+    // compares by index; documented in reconcileTurns.ts).
+    expect(reconciled2[0]).toBe(prepended[0]);
+    expect(reconciled2[1]).toBe(prepended[1]);
+    expect(reconciled2[1]).not.toBe(reconciled[0]);
+    expect(reconciled2[2]).toBe(prepended[2]);
+    expect(reconciled2[2]).not.toBe(reconciled[1]);
+    // All the content is still present, in order.
+    expect(reconciled2.map((t) => t.text)).toEqual(['new first', 'first', 'second']);
+  });
+
+  it('handles empty inputs', () => {
+    expect(reconcileTurns([], [])).toEqual([]);
+    const turns = [turn('u1', 'hello')];
+    // Nothing to reconcile against → `next` passes through as-is.
+    expect(reconcileTurns([], turns)).toBe(turns);
+    // Empty `next` wins (the transcript is empty).
+    expect(reconcileTurns(turns, [])).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 <!-- apps/kimi-web/src/components/chat/ChatPane.vue -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolMedia, QueuedPromptView, TurnAttachment } from '../../types';
 import ToolCall from './ToolCall.vue';
@@ -29,8 +29,12 @@ import {
   turnToMarkdown,
 } from '../chatTurnRendering';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { confirm } = useConfirmDialog();
+// Silence noUnusedLocals: `locale` is referenced only inside the turn v-memo
+// dependency array (template-only, which vue-tsc does not scan) so a language
+// switch re-renders the transcript.
+void locale;
 
 onUnmounted(() => {
   if (copiedTimer !== null) {
@@ -172,14 +176,23 @@ onUnmounted(() => {
   topSentinelObserver = null;
 });
 
+// Tool-card expand/collapse persistence. Tool cards keep their open/closed
+// state in component-local refs, which are lost when an evicted row unmounts
+// them — a re-mounted row would re-render every card in its default state
+// (tool groups open, Edit cards closed), changing the row's height by 60-70%
+// and shifting the document. The plain Map (not reactive: it is only read at
+// card mount and written on toggle) survives eviction and is consumed via
+// inject('toolExpandState') by ToolGroup and the tool-call cards.
+const toolExpandState = new Map<string, boolean>();
+provide('toolExpandState', toolExpandState);
+
 // Keep the transcript's expensive assistant children (Markdown, syntax
 // highlighting, and tool cards) mounted only near the reading viewport. The
-// outer row remains in the DOM, so scroll anchors and the content-visibility
-// height estimate stay stable while long sessions release component memory.
+// outer row remains in the DOM, so scroll anchors and the height estimate stay
+// stable while long sessions release component memory.
 const evictedTurnIds = ref(new Set<string>());
 const measuredTurnHeights = new Map<string, number>();
 const turnAnchors = new Map<string, HTMLElement>();
-let turnVisibilityObserver: IntersectionObserver | null = null;
 
 function isTurnHeavyContentMounted(turn: ChatTurn): boolean {
   return turn.role !== 'assistant' || turn.id === streamingTurnId.value || !evictedTurnIds.value.has(turn.id);
@@ -199,97 +212,212 @@ function setEvicted(turnId: string, evicted: boolean): void {
   evictedTurnIds.value = next;
 }
 
-function observeTurnAnchor(turnId: string, value: unknown): void {
-  if (!(value instanceof HTMLElement)) {
-    turnAnchors.delete(turnId);
-    return;
-  }
+// Shared row ref. Reads the turn id from the rendered `data-turn-id` attribute
+// instead of closing over it, so the function reference is stable across
+// renders (a fresh closure per render would defeat v-memo's subtree skipping).
+// The anchor element is registered with both observers exactly once on first
+// appearance; IntersectionObserver.observe() on an already-observed element is
+// a no-op, so a replaced element re-adding itself causes no re-observation
+// churn. Vue calls the ref with null on unmount, which carries no element (and
+// therefore no turn id) — stale map entries for removed turns are pruned by
+// the turns watcher and onUnmounted instead.
+function observeTurnAnchor(value: unknown): void {
+  if (!(value instanceof HTMLElement)) return;
+  const turnId = value.dataset.turnId;
+  if (!turnId) return;
   turnAnchors.set(turnId, value);
-  turnVisibilityObserver?.observe(value);
+  mountObserver?.observe(value);
+  evictObserver?.observe(value);
 }
 
-const EVICT_IDLE_MS = 800;
-const pendingEvictions = new Set<string>();
-let evictionIdleTimer: ReturnType<typeof setTimeout> | null = null;
+// Two observers with overlapping margins provide the mount/evict hysteresis: a
+// row is mounted when it enters the 800px margin but only evicted after it
+// leaves the 1600px margin. The 800px gap keeps a row hovering near a single
+// boundary from oscillating between mounted and evicted during slow scrolling.
+const MOUNT_MARGIN = '800px 0px';
+const EVICT_MARGIN = '1600px 0px';
+let mountObserver: IntersectionObserver | null = null;
+let evictObserver: IntersectionObserver | null = null;
 
-function handleTurnVisibilityEntries(entries: IntersectionObserverEntry[]): void {
-  // Any intersection change means the viewport moved; restart the idle window
-  // so a queued batch is not flushed mid-scroll.
-  if (evictionIdleTimer !== null) {
-    clearTimeout(evictionIdleTimer);
-    evictionIdleTimer = null;
-  }
+function handleMountEntries(entries: IntersectionObserverEntry[]): void {
   for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    const node = entry.target as HTMLElement;
+    const turnId = node.dataset.turnId;
+    if (!turnId) continue;
+    // A row re-entering the mount window is no longer pending eviction.
+    pendingHeights.delete(turnId);
+    if (!evictedTurnIds.value.has(turnId)) continue;
+    // Re-mounting after eviction: hold the row's height at its eviction-time
+    // value while the content re-renders (KaTeX/shiki can commit at a
+    // transient height), so the document scrollHeight doesn't move under the
+    // user. Released once the content reaches the measured height or the
+    // bounded window elapses — see startHeightLock.
+    const measured = measuredTurnHeights.get(turnId);
+    if (measured !== undefined) startHeightLock(turnId, node, measured);
+    setEvicted(turnId, false);
+  }
+}
+
+function handleEvictEntries(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    if (entry.isIntersecting) continue; // back inside the 1600px window — mounting is the mount observer's job
     const node = entry.target as HTMLElement;
     const turnId = node.dataset.turnId;
     if (!turnId) continue;
     const turn = props.turns.find((candidate) => candidate.id === turnId);
-    // Never evict the active stream, even if a user scrolls away from it.
-    if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) {
-      setEvicted(turnId, false);
+    // Never evict the active stream or non-assistant rows.
+    if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) continue;
+    if (evictedTurnIds.value.has(turnId)) continue;
+    // Settle-gated eviction: evict only once two measurements ~100ms apart
+    // agree (within 1px), so a transient height while KaTeX/shiki is
+    // mid-commit is never recorded as the row's locked height.
+    const height = node.getBoundingClientRect().height;
+    const previous = pendingHeights.get(turnId);
+    if (previous !== undefined && Math.abs(height - previous) <= 1) {
+      pendingHeights.delete(turnId);
+      // Evict only when a real height is known: a heightless placeholder
+      // (min-height: 1px) would collapse the row's scrollHeight contribution
+      // and yank the scrollbar while content is streaming in.
+      if (height > 0) {
+        measuredTurnHeights.set(turnId, height);
+        setEvicted(turnId, true);
+      }
       continue;
     }
-    if (entry.isIntersecting) {
-      pendingEvictions.delete(turnId);
-      setEvicted(turnId, false);
-    } else if (!evictedTurnIds.value.has(turnId)) {
-      pendingEvictions.add(turnId);
-    }
-  }
-  if (pendingEvictions.size > 0) {
-    evictionIdleTimer = setTimeout(flushPendingEvictions, EVICT_IDLE_MS);
+    pendingHeights.set(turnId, height);
+    scheduleEvictionCheck();
   }
 }
 
-/**
- * Release queued rows once scrolling has been idle for EVICT_IDLE_MS. Evicting
- * only after the scroll stops keeps the transcript's geometry stable while the
- * user reads: an immediate eviction during a scroll pass unmounts and re-mounts
- * the same rows repeatedly, and each re-mount replays the markdown render
- * pipeline (code/math fallback states with different heights), which makes the
- * document height oscillate and the viewport content jump.
- */
+const EVICT_SETTLE_MS = 100;
+const pendingHeights = new Map<string, number>();
+let evictionCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleEvictionCheck(): void {
+  if (evictionCheckTimer !== null) return;
+  evictionCheckTimer = setTimeout(flushPendingEvictions, EVICT_SETTLE_MS);
+}
+
 function flushPendingEvictions(): void {
-  evictionIdleTimer = null;
-  const targets = [...pendingEvictions];
-  pendingEvictions.clear();
-  for (const turnId of targets) {
-    if (evictedTurnIds.value.has(turnId)) continue;
+  evictionCheckTimer = null;
+  for (const turnId of pendingHeights.keys()) {
+    if (evictedTurnIds.value.has(turnId)) {
+      pendingHeights.delete(turnId);
+      continue;
+    }
     const node = turnAnchors.get(turnId);
-    if (!node) continue;
     const turn = props.turns.find((candidate) => candidate.id === turnId);
-    if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) continue;
-    // Evict only when a real height is known: a heightless placeholder
-    // (min-height: 1px) would collapse the row's scrollHeight contribution
-    // and yank the scrollbar while content is streaming in.
+    if (!node || !turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) {
+      pendingHeights.delete(turnId);
+      continue;
+    }
+    // The row scrolled back inside the 1600px window: drop it from the queue —
+    // the mount observer will mount it once it reaches the 800px margin.
+    if (isWithinEvictWindow(node)) {
+      pendingHeights.delete(turnId);
+      continue;
+    }
     const height = node.getBoundingClientRect().height;
-    if (height > 0) {
-      measuredTurnHeights.set(turnId, height);
-      setEvicted(turnId, true);
+    if (Math.abs(height - (pendingHeights.get(turnId) ?? height)) <= 1) {
+      pendingHeights.delete(turnId);
+      if (height > 0) {
+        measuredTurnHeights.set(turnId, height);
+        setEvicted(turnId, true);
+      }
+    } else {
+      pendingHeights.set(turnId, height);
     }
   }
+  if (pendingHeights.size > 0) scheduleEvictionCheck();
 }
 
-function observeTurnVisibility(): void {
+// Mirror the evict observer's rootMargin (root: null = the viewport) so a
+// queued row that scrolled back within the window isn't evicted mid-approach.
+function isWithinEvictWindow(node: HTMLElement): boolean {
+  const rect = node.getBoundingClientRect();
+  return rect.bottom >= -1600 && rect.top <= window.innerHeight + 1600;
+}
+
+// Height-locked re-mount: while a re-mounted row's content re-renders, the row
+// is clamped to its measured (eviction-time) height via a min-height style on
+// the row element itself. The lock is released when the content outgrows it
+// (the ResizeObserver fires — the natural height reached the measured height)
+// or after HEIGHT_LOCK_MS, whichever comes first; the Markdown fallback-height
+// fix makes the matched height the normal case.
+const HEIGHT_LOCK_MS = 1000;
+const heightLocks = reactive(new Map<string, number>());
+const heightLockWatchers = new Map<
+  string,
+  { observer: ResizeObserver | null; timer: ReturnType<typeof setTimeout> }
+>();
+
+function rowLockStyle(turnId: string): Record<string, string> | undefined {
+  const height = heightLocks.get(turnId);
+  return height === undefined ? undefined : { minHeight: `${height}px` };
+}
+
+function releaseHeightLock(turnId: string): void {
+  const watcher = heightLockWatchers.get(turnId);
+  if (watcher) {
+    watcher.observer?.disconnect();
+    clearTimeout(watcher.timer);
+    heightLockWatchers.delete(turnId);
+  }
+  heightLocks.delete(turnId);
+}
+
+function startHeightLock(turnId: string, node: HTMLElement, measured: number): void {
+  releaseHeightLock(turnId);
+  heightLocks.set(turnId, measured);
+  const timer = setTimeout(() => releaseHeightLock(turnId), HEIGHT_LOCK_MS);
+  let observer: ResizeObserver | null = null;
+  if (typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(() => {
+      // The min-height clamp pins the row to `measured` until the content
+      // naturally exceeds it; a larger rect means the content has settled.
+      if (node.getBoundingClientRect().height > measured + 1) releaseHeightLock(turnId);
+    });
+    observer.observe(node);
+  }
+  heightLockWatchers.set(turnId, { observer, timer });
+}
+
+// Both observers are created once and live for the component's lifetime; rows
+// are (re)observed only when a new anchor element first appears.
+function setupTurnObservers(): void {
   if (typeof IntersectionObserver === 'undefined') return;
-  turnVisibilityObserver?.disconnect();
-  turnVisibilityObserver = new IntersectionObserver(handleTurnVisibilityEntries, {
-    // Keep a generous nearby window to avoid a visible mount during ordinary
-    // scrolling while still releasing distant turns in long transcripts.
+  mountObserver = new IntersectionObserver(handleMountEntries, {
     root: null,
-    rootMargin: '800px 0px',
+    rootMargin: MOUNT_MARGIN,
     threshold: 0,
   });
-  for (const node of turnAnchors.values()) turnVisibilityObserver.observe(node);
+  evictObserver = new IntersectionObserver(handleEvictEntries, {
+    root: null,
+    rootMargin: EVICT_MARGIN,
+    threshold: 0,
+  });
+  for (const node of turnAnchors.values()) {
+    mountObserver.observe(node);
+    evictObserver.observe(node);
+  }
 }
 
-onMounted(observeTurnVisibility);
+onMounted(setupTurnObservers);
 onUnmounted(() => {
-  if (evictionIdleTimer !== null) clearTimeout(evictionIdleTimer);
-  evictionIdleTimer = null;
-  pendingEvictions.clear();
-  turnVisibilityObserver?.disconnect();
-  turnVisibilityObserver = null;
+  if (evictionCheckTimer !== null) clearTimeout(evictionCheckTimer);
+  evictionCheckTimer = null;
+  pendingHeights.clear();
+  mountObserver?.disconnect();
+  evictObserver?.disconnect();
+  mountObserver = null;
+  evictObserver = null;
+  for (const { observer, timer } of heightLockWatchers.values()) {
+    observer?.disconnect();
+    clearTimeout(timer);
+  }
+  heightLockWatchers.clear();
+  heightLocks.clear();
   turnAnchors.clear();
   measuredTurnHeights.clear();
 });
@@ -316,16 +444,31 @@ const streamingTurnId = computed<string | null>(() => {
 watch(
   [streamingTurnId, () => props.turns],
   () => {
+    // Bookkeeping only: prune state for turns that left the transcript. The
+    // observers themselves are never rebuilt — rows removed from the DOM are
+    // unobserved here, and replaced anchors re-register via the stable row ref.
     const currentIds = new Set(props.turns.map((turn) => turn.id));
     for (const id of evictedTurnIds.value) {
       if (!currentIds.has(id)) measuredTurnHeights.delete(id);
     }
-    for (const id of pendingEvictions) {
-      if (!currentIds.has(id)) pendingEvictions.delete(id);
+    for (const id of pendingHeights.keys()) {
+      if (!currentIds.has(id)) pendingHeights.delete(id);
+    }
+    for (const id of heightLockWatchers.keys()) {
+      if (!currentIds.has(id)) releaseHeightLock(id);
+    }
+    for (const id of turnAnchors.keys()) {
+      if (!currentIds.has(id)) {
+        const node = turnAnchors.get(id);
+        if (node) {
+          mountObserver?.unobserve(node);
+          evictObserver?.unobserve(node);
+        }
+        turnAnchors.delete(id);
+      }
     }
     const next = new Set([...evictedTurnIds.value].filter((id) => currentIds.has(id)));
     if (next.size !== evictedTurnIds.value.size) evictedTurnIds.value = next;
-    void nextTick().then(observeTurnVisibility);
   },
   { flush: 'post' },
 );
@@ -653,9 +796,27 @@ function onAttachmentClick(att: TurnAttachment): void {
   });
 }
 
+// The trailing "streaming" block is the LAST block of the actively-streaming
+// turn. Cached per turn object: turns are rebuilt on every store update (see
+// messagesToTurns), so the cache recomputes once per turn render instead of
+// once per block — turnBlocks() is O(blocks), so per-block calls would make
+// rendering a turn O(blocks²).
+const streamingLastBlockCache = new WeakMap<ChatTurn, number>();
+
 function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }): boolean {
   if (turn.id !== streamingTurnId.value) return false;
-  return block.sourceIndex === turnBlocks(turn).length - 1;
+  let lastBlockIndex = streamingLastBlockCache.get(turn);
+  if (lastBlockIndex === undefined) {
+    lastBlockIndex = turnBlocks(turn).length - 1;
+    streamingLastBlockCache.set(turn, lastBlockIndex);
+  }
+  return block.sourceIndex === lastBlockIndex;
+}
+
+// Stable handler for Markdown's `open-file` event — a per-render closure would
+// churn Markdown's props on every re-render of the row.
+function forwardOpenFile(target: FilePreviewRequest): void {
+  emit('openFile', target);
 }
 
 // NOTE: the turn-summary line ("已调用 N 个工具…") was removed in f9417af. If it
@@ -694,7 +855,27 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       </span>
     </div>
 
-    <template v-for="(turn, ti) in turns" :key="turn.id">
+    <!-- v-memo on the turn list: a turn's whole subtree is re-rendered only
+         when one of the row-level inputs below changed. `ti` is REQUIRED
+         because isAssistantRunEnd(ti) / copyAssistantRun(ti) capture the
+         index — older-history prepends shift every index, costing one full
+         re-render of the transcript per prepend (acceptable). -->
+    <template
+      v-for="(turn, ti) in turns"
+      :key="turn.id"
+      v-memo="[
+        turn,
+        ti,
+        turn.id === streamingTurnId,
+        evictedTurnIds.has(turn.id),
+        heightLocks.has(turn.id),
+        copiedTurn === turn.id,
+        undoingTurnId === turn.id,
+        turn.id === lastUserTurnId,
+        working,
+        locale,
+      ]"
+    >
       <!-- User turn → right-aligned soft-blue bubble (undo affordance lives
            outside the bubble with an inline confirm step). -->
       <template v-if="turn.role === 'user'">
@@ -783,15 +964,16 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div
         v-else
-        :ref="(el) => observeTurnAnchor(turn.id, el)"
+        :ref="observeTurnAnchor"
         class="a-msg turn-anchor"
         :class="{ 'is-streaming': turn.id === streamingTurnId }"
+        :style="rowLockStyle(turn.id)"
         :data-turn-id="turn.id"
       >
         <template v-if="isTurnHeavyContentMounted(turn)">
           <template v-for="(blk, bi) in assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
             <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
-            <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="(target) => emit('openFile', target)" /></div>
+            <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
             <ToolGroup
               v-else-if="blk.kind === 'tool-stack'"
               :tools="blk.tools"

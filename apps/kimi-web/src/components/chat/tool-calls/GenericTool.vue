@@ -1,6 +1,6 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/GenericTool.vue -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, inject, ref, watch } from 'vue';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { toolChip, toolGlyph, toolLabel, toolSummary } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
@@ -27,7 +27,15 @@ const isRunningBash = computed(
 );
 const hasOutput = computed(() => !!props.tool.output && props.tool.output.length > 0);
 const canExpand = computed(() => hasOutput.value || isRunningBash.value);
-const open = ref(props.tool.defaultExpanded === true && canExpand.value);
+// Persist the user's manual open/closed choice across row eviction (see
+// ChatPane's toolExpandState): a re-mounted card would otherwise re-render in
+// its default state, changing the row's height. Keyed by tool id (unique per
+// session); the persisted value overrides the default on re-mount, while the
+// auto-expand watch below keeps its existing behavior for running tools.
+const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
+const expandKey = props.tool.id;
+const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
+const open = ref(persisted ?? (props.tool.defaultExpanded === true && canExpand.value));
 
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const label = computed(() => toolLabel(props.tool.name));
@@ -45,7 +53,9 @@ const chip = computed(() =>
 );
 
 function toggle(): void {
-  if (canExpand.value) open.value = !open.value;
+  if (!canExpand.value) return;
+  open.value = !open.value;
+  if (expandKey && toolExpandState) toolExpandState.set(expandKey, open.value);
 }
 
 watch(
