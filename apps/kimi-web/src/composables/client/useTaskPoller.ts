@@ -5,7 +5,8 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue';
 import { getKimiWebApi } from '../../api';
 import type { AppTask } from '../../api/types';
-import { keepLiveSubagents } from '../../lib/taskMerge';
+import { createBashCommandIndexCache, type BashCommandIndexCache } from '../../lib/bashCommandIndex';
+import { keepLiveSubagents, taskListsEqual } from '../../lib/taskMerge';
 import type { ExtendedState } from '../useKimiWebClient';
 
 const TASK_OUTPUT_POLL_INTERVAL_MS = 1000;
@@ -27,6 +28,59 @@ export function useTaskPoller(
   let lastPolledSessionId: string | undefined;
   const fetchedTerminalTaskOutputIds = new Set<string>();
 
+  // Per-session memoized bash-command indexes. Filling `command` on AppTask
+  // rows lets the UI task mapper's `task.command ?? findBashCommandForTask`
+  // fallback short-circuit, so the expensive per-event message scan (measured
+  // ~148 ms) only runs when a session's tool-call content actually changed.
+  const bashCommandCaches = new Map<string, BashCommandIndexCache>();
+
+  function bashCommandCacheFor(sessionId: string): BashCommandIndexCache {
+    let cache = bashCommandCaches.get(sessionId);
+    if (cache === undefined) {
+      cache = createBashCommandIndexCache();
+      bashCommandCaches.set(sessionId, cache);
+    }
+    return cache;
+  }
+
+  /**
+   * Attach the recovered bash command to bash tasks that lack one. Runs on a
+   * pre-flush watch so the command is in place before any render reads the
+   * derived task lists — the per-event / per-second re-derivation then stays on
+   * the cheap `task.command` path instead of re-scanning the message list for
+   * every bash task.
+   */
+  function attachBashCommands(sessionId: string | undefined): void {
+    if (sessionId === undefined) return;
+    const tasks = rawState.tasksBySession[sessionId];
+    if (tasks === undefined || tasks.length === 0) return;
+
+    const messages = rawState.messagesBySession[sessionId];
+    const cache = bashCommandCacheFor(sessionId);
+    let changed = false;
+    const patched = tasks.map((task) => {
+      if (task.kind !== 'bash' || task.command !== undefined) return task;
+      const command = cache.commandForTask(messages, task.id);
+      if (command === undefined) return task;
+      changed = true;
+      return { ...task, command };
+    });
+    if (!changed) return;
+    rawState.tasksBySession = {
+      ...rawState.tasksBySession,
+      [sessionId]: patched,
+    };
+  }
+
+  // Pre-flush so the command attachment lands before the render that consumes
+  // `tasks`. Watches both the task list and the messages (a bash task row may
+  // arrive before its tool result, or vice versa); both are re-assigned on
+  // every event, but attachBashCommands is a cheap no-op once commands exist.
+  watch(
+    [() => rawState.tasksBySession, () => rawState.messagesBySession],
+    () => attachBashCommands(rawState.activeSessionId),
+  );
+
   async function loadTasksForSession(sessionId: string): Promise<void> {
     try {
       const api = getKimiWebApi();
@@ -39,6 +93,9 @@ export function useTaskPoller(
       // Completed tasks may have real terminal output that never streamed over
       // WS. Fetch it once now so the rows are expandable when the session opens.
       await fetchTerminalTaskOutputs(sessionId, taskList);
+      // Fill in recovered bash commands synchronously so the UI task mapper
+      // never hits its expensive message-scan fallback on the first render.
+      attachBashCommands(sessionId);
     } catch {
       // Tasks are side data; old/stale sessions may fail without blocking messages.
     }
@@ -176,16 +233,24 @@ export function useTaskPoller(
         // Preserve any WS-driven outputLines / streamed text (future taskProgress events).
         outputLines: old?.outputLines,
         text: old?.text,
+        // Preserve the recovered bash command (REST /tasks does not carry it) —
+        // also keeps the no-op check below from re-assigning every second.
+        command: old?.command ?? fresh.command,
         outputPreview: polled?.preview ?? old?.outputPreview,
         outputBytes: polled?.bytes ?? old?.outputBytes,
       };
     });
 
+    const merged = keepLiveSubagents(refreshed, existing);
+    if (taskListsEqual(existing, merged)) return;
     rawState.tasksBySession = {
       ...rawState.tasksBySession,
       // Keep WS-delivered swarm subagents that REST /tasks omits (see keepLiveSubagents).
-      [sessionId]: keepLiveSubagents(refreshed, existing),
+      [sessionId]: merged,
     };
+    // Attach recovered bash commands for the fresh rows (the pre-flush watch
+    // also covers this; doing it here keeps the first render scan-free).
+    attachBashCommands(sessionId);
   }
 
   function startTaskOutputPolling(sessionId: string): void {

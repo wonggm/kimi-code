@@ -337,7 +337,18 @@ const conversationTocItems = computed<ConversationTocItem[]>(() =>
 
 const activeTurnId = ref<string | null>(null);
 
+// TOC active-item tracking: the full pass below forces layout (one
+// getBoundingClientRect per anchor). Per-delta triggers (scroll events and the
+// scrollKey watcher while streaming) go through scheduleActiveTocQuery(), which
+// allows at most one pass per 100 ms and coalesces pending triggers into a
+// single trailing pass. Session switches and the initial mount call
+// updateActiveTocQuery() directly so the highlight lands immediately.
+const TOC_QUERY_THROTTLE_MS = 100;
+let lastTocQueryAt = 0;
+let tocQueryTimer: ReturnType<typeof setTimeout> | null = null;
+
 function updateActiveTocQuery(): void {
+  lastTocQueryAt = Date.now();
   const pane = panesRef.value;
   if (!pane) return;
   const anchors = pane.querySelectorAll<HTMLElement>('.turn-anchor[data-turn-id]');
@@ -366,6 +377,27 @@ function updateActiveTocQuery(): void {
     if (top <= paneMiddle) bestId = id;
   });
   activeTurnId.value = bestId ?? items[0]!.id;
+}
+
+/** Throttled/coalesced variant for high-frequency triggers: run immediately
+    when the gate is open, otherwise fold the trigger into a single pending
+    trailing pass for the rest of the window. */
+function scheduleActiveTocQuery(): void {
+  const now = Date.now();
+  const elapsed = now - lastTocQueryAt;
+  if (elapsed >= TOC_QUERY_THROTTLE_MS) {
+    if (tocQueryTimer !== null) {
+      clearTimeout(tocQueryTimer);
+      tocQueryTimer = null;
+    }
+    updateActiveTocQuery();
+    return;
+  }
+  if (tocQueryTimer !== null) return;
+  tocQueryTimer = setTimeout(() => {
+    tocQueryTimer = null;
+    updateActiveTocQuery();
+  }, TOC_QUERY_THROTTLE_MS - elapsed);
 }
 
 // --- TOC occlusion by wide tables -------------------------------------------
@@ -584,12 +616,14 @@ function onPanesScroll(): void {
   if (top < lastScrollTop - 1 && dist > 1) {
     following.value = false;
     showPill.value = true;
+    userScrolledSincePendingArm = true;
   } else if (dist <= BOTTOM_THRESHOLD && top > lastScrollTop + 1) {
     following.value = true;
     showPill.value = false;
+    userScrolledSincePendingArm = true;
   }
   lastScrollTop = top;
-  updateActiveTocQuery();
+  scheduleActiveTocQuery();
 }
 
 function scrollToBottom(smooth = false): void {
@@ -856,10 +890,12 @@ const scrollKey = computed<ScrollKey>(() => {
   const last = t.at(-1);
   const thinkingLen = last?.thinking?.length ?? 0;
   const toolsLen =
-    last?.tools?.reduce(
-      (n, tool) => n + tool.name.length + (tool.arg?.length ?? 0) + (tool.output?.join('').length ?? 0),
-      0,
-    ) ?? 0;
+    last?.tools?.reduce((n, tool) => {
+      // Sum the output part lengths instead of join('').length: identical
+      // value (output is string[]), but no per-delta joined-string allocation.
+      const outputLen = tool.output?.reduce((sum, part) => sum + part.length, 0) ?? 0;
+      return n + tool.name.length + (tool.arg?.length ?? 0) + outputLen;
+    }, 0) ?? 0;
   return {
     length: t.length,
     firstId: t[0]?.id ?? '',
@@ -886,17 +922,19 @@ watch(scrollKey, async (next, prev) => {
   // Prepending older history changes this key; suppress only that exact case so
   // concurrent bottom appends still raise the new-message pill.
   if (historyLoadInProgress.value && isHistoryPrependOnly(prev, next)) {
-    updateActiveTocQuery();
+    scheduleActiveTocQuery();
     return;
   }
   await nextTick();
   if (following.value || hasUserActionFollowLock()) {
     // An undo or compaction shortens the transcript — glide to the new
     // bottom smoothly; growth (new turns / streaming) snaps instantly so the
-    // follow keeps up with the tail.
-    scrollToBottom(next.length < prev.length);
+    // follow keeps up with the tail. The write itself is deferred into the
+    // shared rAF follow pass so the watcher and the mutation observer coalesce
+    // into at most one scroll write per animation frame.
+    scheduleFollow(next.length < prev.length);
   } else showPill.value = true;
-  updateActiveTocQuery();
+  scheduleActiveTocQuery();
 });
 
 watch(dockRef, () => {
@@ -946,6 +984,12 @@ const pendingScrollBySession = new Map<
   { kind: 'bottom'; expiresAt: number } | { kind: 'restore'; saved: SavedScrollState; expiresAt: number }
 >();
 let pendingScrollTimer: ReturnType<typeof setTimeout> | null = null;
+// Set when the user manually scrolls after a session switch armed a pending
+// scroll decision; consumePendingScroll then drops the deferred landing so it
+// cannot yank the viewport away from where the user moved it. Programmatic
+// writes (scrollToBottom, restore, history delta) update lastScrollTop /
+// lastSmoothScroll first, so their follow-up scroll events do not set this.
+let userScrolledSincePendingArm = false;
 
 function grewSinceSaved(saved: SavedScrollState): boolean {
   const t = props.turns;
@@ -977,6 +1021,13 @@ function consumePendingScroll(key: string): boolean {
   if (props.sessionId !== key || Date.now() > pending.expiresAt) {
     pendingScrollBySession.delete(key);
     return false;
+  }
+  if (userScrolledSincePendingArm) {
+    // The user took manual control after the switch (wheel / touch / scrollbar
+    // / keyboard / TOC click / tool toggle); drop the deferred landing instead
+    // of yanking the viewport away from where they scrolled to.
+    pendingScrollBySession.delete(key);
+    return true;
   }
   const el = panesRef.value;
   if (!el) return false;
@@ -1053,6 +1104,7 @@ watch(
     // fallback when no identity change ever arrives (e.g. failed snapshot).
     const key = newKey ? String(newKey) : null;
     if (key !== null) {
+      userScrolledSincePendingArm = false;
       const saved = scrollStateBySession.get(key);
       if (saved) {
         pendingScrollBySession.set(key, {
@@ -1108,7 +1160,7 @@ watch(
     if (!following.value && !hasUserActionFollowLock()) return;
     await nextTick();
     scheduleStableFollow(48);
-    updateActiveTocQuery();
+    scheduleActiveTocQuery();
   },
 );
 
@@ -1190,19 +1242,28 @@ function setHistoryLoadInProgress(sessionId: string, inProgress: boolean): void 
   historyLoadingSessions.value = next;
 }
 
-function scheduleFollow(): void {
+// Smooth-scroll intent for the next follow pass. The scrollKey watcher passes
+// `true` when an undo/compaction shortens the transcript; the flag survives
+// until the tick consumes it so a later instant trigger cannot downgrade it.
+let pendingFollowSmooth = false;
+
+function scheduleFollow(smooth = false): void {
   if (historyLoadInProgress.value) return;
+  if (smooth) pendingFollowSmooth = true;
   if (scrollRaf) return;
   scrollRaf = raf(() => {
     scrollRaf = 0;
+    const doSmooth = pendingFollowSmooth;
+    pendingFollowSmooth = false;
     if (historyLoadInProgress.value) return;
     if (isPinned()) return;
-    if (following.value || hasUserActionFollowLock()) scrollToBottom(false);
+    if (following.value || hasUserActionFollowLock()) scrollToBottom(doSmooth);
   });
 }
 
 function cancelScheduledFollow(): void {
   stableFollowToken++;
+  pendingFollowSmooth = false;
   if (stableFollowRaf) {
     cancelRaf(stableFollowRaf);
     stableFollowRaf = 0;
@@ -1237,6 +1298,7 @@ function stopFollowingForUserIntent(): void {
   const el = panesRef.value;
   if (!el || (el.scrollHeight - el.clientHeight <= 1 && !props.hasMoreMessages)) return;
 
+  userScrolledSincePendingArm = true;
   following.value = false;
   cancelActiveScrollWrites();
   if (el.scrollHeight - el.clientHeight > 1) showPill.value = true;
@@ -1343,7 +1405,6 @@ function rebindScrollObservers(): void {
 function onContentMutated(): void {
   ensureContentObserved();
   scheduleFollow();
-  scheduleTocTableHitTest();
 }
 
 function onVisibilityChange(): void {
@@ -1425,6 +1486,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (pendingScrollTimer !== null) clearTimeout(pendingScrollTimer);
+  if (tocQueryTimer !== null) {
+    clearTimeout(tocQueryTimer);
+    tocQueryTimer = null;
+  }
   if (contentObserver) contentObserver.disconnect();
   if (resizeObserver) resizeObserver.disconnect();
   if (scrollRaf) cancelRaf(scrollRaf);

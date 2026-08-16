@@ -549,8 +549,12 @@ function setActiveSessionId(id: string | undefined): void {
 // ---------------------------------------------------------------------------
 // rawState.messagesBySession — single mutation funnel.
 // ---------------------------------------------------------------------------
-/** Replace the whole messages map (e.g. from the reducer snapshot). */
+/** Replace the whole messages map (e.g. from the reducer snapshot). Keeping the
+ *  previous reference when nothing changed (the reducer now returns the old map
+ *  for events that did not touch it) stops cross-session events from re-firing
+ *  the visible session's turns computed. */
 function setMessagesBySession(next: Record<string, AppMessage[]>): void {
+  if (next === rawState.messagesBySession) return;
   rawState.messagesBySession = next;
 }
 /** Set one session's message list. */
@@ -1975,29 +1979,95 @@ const taskPoller = useTaskPoller(rawState, activeAppTasks);
 // list against the previous one so unchanged rows keep their object identity
 // (row-level v-memo in ChatPane can skip re-rendering them). Reset when the
 // active session changes — the previous turns belong to a different session.
+//
+// Streaming fast path: a streamed delta rebuilds ONLY the tail message (the
+// reducer replaces the slice with the other messages keeping their object
+// identity). When the previous filtered message list is element-identical up to
+// the tail AND none of the other turn-shaping inputs changed, reconcileTurns is
+// told to reuse the untouched prefix without re-comparing it — otherwise the
+// prefix re-verification runs per event. Snapshot resyncs, mid-list updates,
+// approval / plan-review changes, hidden-message toggles and turn-active flips
+// all break the assumption and fall back to the full comparison.
+//
+// Stable empty refs for the gates below: `?? []` would mint a fresh array per
+// run and defeat the reference-equality checks.
+const EMPTY_MESSAGES: AppMessage[] = [];
+const EMPTY_APPROVALS: AppApprovalRequest[] = [];
+const EMPTY_HIDDEN_IDS: string[] = [];
+
 let prevTurns: ChatTurn[] = [];
 let turnsLastSessionId: string | undefined;
+let prevFilteredMessages: AppMessage[] | undefined;
+let prevHiddenArray: string[] | undefined;
+let prevTurnActiveValue: boolean | undefined;
+let prevApprovalsRef: AppApprovalRequest[] | undefined;
+let prevPlanReviewRef: Record<string, { plan: string; path?: string }> | undefined;
 
 const turns = computed<ChatTurn[]>(() => {
   const sid = rawState.activeSessionId;
   if (sid !== turnsLastSessionId) {
     turnsLastSessionId = sid;
     prevTurns = [];
+    prevFilteredMessages = undefined;
+    prevHiddenArray = undefined;
+    prevTurnActiveValue = undefined;
+    prevApprovalsRef = undefined;
+    prevPlanReviewRef = undefined;
   }
   if (!sid) return [];
-  const hiddenIds = new Set(rawState.sideChatUserMessageIdsBySession[sid] ?? []);
-  const messages = (rawState.messagesBySession[sid] ?? []).filter((m) => !hiddenIds.has(m.id));
-  const approvals = rawState.approvalsBySession[sid] ?? [];
-  prevTurns = reconcileTurns(
-    prevTurns,
-    messagesToTurns(
-      messages,
-      approvals,
-      (fileId) => getKimiWebApi().getFileUrl(fileId),
-      turnActive.value,
-      rawState.planReviewByToolCallId,
-    ),
+  const hiddenArray = rawState.sideChatUserMessageIdsBySession[sid] ?? EMPTY_HIDDEN_IDS;
+  const hiddenIds = new Set(hiddenArray);
+  const messages = (rawState.messagesBySession[sid] ?? EMPTY_MESSAGES).filter(
+    (m) => !hiddenIds.has(m.id),
   );
+  const approvals = rawState.approvalsBySession[sid] ?? EMPTY_APPROVALS;
+  const planReview = rawState.planReviewByToolCallId;
+  const active = turnActive.value;
+  const built = messagesToTurns(
+    messages,
+    approvals,
+    (fileId) => getKimiWebApi().getFileUrl(fileId),
+    active,
+    planReview,
+  );
+
+  // Fast path: only the TAIL message changed (and no other turn-shaping input
+  // did), so the untouched prefix keeps its previous identity without a
+  // re-fingerprint. The scan is a message-object identity walk — messages are
+  // immutable once in the reducer, so identity equality implies the derived
+  // turn content is unchanged.
+  let reusePrefix = 0;
+  if (
+    prevTurns.length > 0 &&
+    prevFilteredMessages !== undefined &&
+    prevHiddenArray === hiddenArray &&
+    prevTurnActiveValue === active &&
+    prevApprovalsRef === approvals &&
+    prevPlanReviewRef === planReview
+  ) {
+    const prevMsgs = prevFilteredMessages;
+    const common = Math.min(prevMsgs.length, messages.length);
+    let i = 0;
+    while (i < common && prevMsgs[i] === messages[i]) i += 1;
+    if (i === common && messages.length > prevMsgs.length) {
+      // Pure append: only the previous last turn (possibly re-flushed/settled)
+      // and the appended turns can differ.
+      reusePrefix = prevTurns.length - 1;
+    } else if (
+      i === common - 1 &&
+      common === prevMsgs.length &&
+      messages.length === prevMsgs.length
+    ) {
+      // Grow-last: only the final message is a new object.
+      reusePrefix = prevTurns.length - 1;
+    }
+  }
+  prevTurns = reconcileTurns(prevTurns, built, reusePrefix);
+  prevFilteredMessages = messages;
+  prevHiddenArray = hiddenArray;
+  prevTurnActiveValue = active;
+  prevApprovalsRef = approvals;
+  prevPlanReviewRef = planReview;
   return prevTurns;
 });
 
