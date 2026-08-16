@@ -37,6 +37,7 @@ import { useSidebarLayout } from './composables/useSidebarLayout';
 import { useFilePreview, type DetailTarget } from './composables/useFilePreview';
 import { useDetailPanel } from './composables/useDetailPanel';
 import { useIsMobile } from './composables/useIsMobile';
+import { useMemoizedSwarmMembers } from './composables/useMemoizedSwarmMembers';
 import { openDialogCount } from './composables/dialogStack';
 import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
@@ -72,9 +73,13 @@ provide('resolveImage', client.resolveImageUrl);
 // tasks are gone and the card falls back to the parsed tool result. Includes
 // single-member "swarms" (e.g. AgentSwarm with one resume_agent_ids entry),
 // which buildSwarmGroups filters out for the badge counter.
+// Memoized on the active task slice's identity: every event re-assigns
+// tasksBySession (and thus re-derives the client's swarm map), so without this
+// the member map would be rebuilt per event.
+const memoizedSwarmMembersByToolCallId = useMemoizedSwarmMembers(client.activeAppTasks);
 provide(
   'resolveSwarmMembers',
-  (toolCallId: string): SwarmMember[] => client.swarmMembersByToolCallId.value.get(toolCallId) ?? [],
+  (toolCallId: string): SwarmMember[] => memoizedSwarmMembersByToolCallId.value.get(toolCallId) ?? [],
 );
 const { t } = useI18n();
 const { confirm } = useConfirmDialog();

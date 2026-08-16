@@ -62,6 +62,52 @@ export function keepLiveSubagents(restBased: AppTask[], existing: AppTask[]): Ap
 }
 
 /**
+ * All AppTask fields compared by reference/primitive equality. The task poller
+ * uses this to skip re-assigning `tasksBySession` when a poll produced no
+ * change, so the per-second poll does not re-run the whole derived-task
+ * cascade (tasks → bash/subagent lists → dock → task rows) for identical data.
+ * The poller preserves WS-owned array/string references (outputLines, text,
+ * command) across refreshes, so reference equality is exact for those.
+ */
+export function taskListsEqual(a: readonly AppTask[], b: readonly AppTask[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x === y) continue;
+    if (x === undefined || y === undefined) return false;
+    if (
+      x.id !== y.id ||
+      x.sessionId !== y.sessionId ||
+      x.kind !== y.kind ||
+      x.description !== y.description ||
+      x.status !== y.status ||
+      x.command !== y.command ||
+      x.createdAt !== y.createdAt ||
+      x.startedAt !== y.startedAt ||
+      x.completedAt !== y.completedAt ||
+      x.outputPreview !== y.outputPreview ||
+      x.outputBytes !== y.outputBytes ||
+      x.outputLines !== y.outputLines ||
+      x.text !== y.text ||
+      x.subagentPhase !== y.subagentPhase ||
+      x.subagentType !== y.subagentType ||
+      x.thinkingEffort !== y.thinkingEffort ||
+      x.model !== y.model ||
+      x.parentToolCallId !== y.parentToolCallId ||
+      x.suspendedReason !== y.suspendedReason ||
+      x.swarmIndex !== y.swarmIndex ||
+      x.runInBackground !== y.runInBackground ||
+      x.backgroundTaskId !== y.backgroundTaskId
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Seed the task store from the snapshot's subagent roster. The roster is
  * authoritative for identity/status/phase; keep reducer-owned accumulated
  * output (outputLines/text) from any already-live task, and keep tasks the

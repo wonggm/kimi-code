@@ -5,9 +5,9 @@
 // Wiring: the composable is real; daemon requests are stubbed.
 // Run: pnpm --filter @moonshot-ai/kimi-web exec vitest run test/task-poller.test.ts
 
-import { computed } from 'vue';
+import { computed, nextTick, reactive } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppTask } from '../src/api/types';
+import type { AppMessage, AppMessageContent, AppTask } from '../src/api/types';
 import { createInitialState } from '../src/api/daemon/eventReducer';
 import { useTaskPoller } from '../src/composables/client/useTaskPoller';
 import type { ExtendedState } from '../src/composables/useKimiWebClient';
@@ -21,12 +21,15 @@ vi.mock('../src/api', () => ({
   getKimiWebApi: () => apiMock,
 }));
 
-function createState(tasks: AppTask[]): ExtendedState {
-  return {
+// Reactive so useTaskPoller's watches fire in tests (the real client state is
+// reactive too); the pre-flush watchers flush on nextTick().
+function createState(tasks: AppTask[], messages: AppMessage[] = []): ExtendedState {
+  return reactive({
     ...createInitialState(),
     activeSessionId: 'sess_1',
     tasksBySession: { sess_1: tasks },
-  } as unknown as ExtendedState;
+    messagesBySession: { sess_1: messages },
+  }) as unknown as ExtendedState;
 }
 
 function subagent(id: string, overrides: Partial<AppTask> = {}): AppTask {
@@ -117,5 +120,87 @@ describe('useTaskPoller terminal-output backfill', () => {
     await poller.loadTasksForSession('sess_1');
     expect(apiMock.getTask).toHaveBeenCalledTimes(2);
     expect(state.tasksBySession['sess_1']?.[0]?.outputPreview).toBe('final result');
+  });
+});
+
+describe('useTaskPoller bash-command attachment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function bashTask(id: string, overrides: Partial<AppTask> = {}): AppTask {
+    return {
+      id,
+      sessionId: 'sess_1',
+      kind: 'bash',
+      description: `bash ${id}`,
+      status: 'completed',
+      completedAt: '2026-01-01T00:01:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  function message(
+    id: string,
+    role: AppMessage['role'],
+    content: AppMessageContent[],
+  ): AppMessage {
+    return { id, sessionId: 'sess_1', role, content, createdAt: '2026-01-01T00:00:00.000Z' };
+  }
+
+  function bashCallMessages(taskId: string, command: string): AppMessage[] {
+    return [
+      message('m1', 'assistant', [
+        { type: 'toolUse', toolCallId: 'tool_1', toolName: 'Bash', input: { command } },
+      ]),
+      message('m2', 'tool', [
+        { type: 'toolResult', toolCallId: 'tool_1', output: `task_id: ${taskId}\n` },
+      ]),
+    ];
+  }
+
+  it('attaches the recovered bash command on load so the UI mapper short-circuits', async () => {
+    const state = createState(
+      [bashTask('bash-1')],
+      bashCallMessages('bash-1', 'echo hi'),
+    );
+    apiMock.listTasks.mockResolvedValue([bashTask('bash-1')]);
+
+    const poller = useTaskPoller(state, computed(() => []));
+    await poller.loadTasksForSession('sess_1');
+    await nextTick();
+
+    expect(state.tasksBySession['sess_1']?.[0]?.command).toBe('echo hi');
+  });
+
+  it('picks up a bash call that arrives after the task row', async () => {
+    const state = createState([bashTask('bash-1')], []);
+    apiMock.listTasks.mockResolvedValue([bashTask('bash-1')]);
+
+    const poller = useTaskPoller(state, computed(() => []));
+    await poller.loadTasksForSession('sess_1');
+    await nextTick();
+    expect(state.tasksBySession['sess_1']?.[0]?.command).toBeUndefined();
+
+    // The tool use + result stream in after the task row.
+    state.messagesBySession = {
+      ...state.messagesBySession,
+      sess_1: bashCallMessages('bash-1', 'echo hi'),
+    };
+    await nextTick();
+
+    expect(state.tasksBySession['sess_1']?.[0]?.command).toBe('echo hi');
+  });
+
+  it('does not attach commands for non-bash tasks', async () => {
+    const state = createState([liveRow()], bashCallMessages('agent-1', 'echo hi'));
+    apiMock.listTasks.mockResolvedValue([restRow()]);
+
+    const poller = useTaskPoller(state, computed(() => []));
+    await poller.loadTasksForSession('sess_1');
+    await nextTick();
+
+    expect(state.tasksBySession['sess_1']?.[0]?.command).toBeUndefined();
   });
 });

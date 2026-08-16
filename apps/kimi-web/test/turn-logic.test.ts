@@ -4,7 +4,7 @@ import { latestTodos } from '../src/composables/latestTodos';
 import { messagesToTurns } from '../src/composables/messagesToTurns';
 import { reconcileTurns } from '../src/composables/reconcileTurns';
 import { isPlayableMediaUrl } from '../src/composables/useFilePreview';
-import type { ChatTurn, ToolCall } from '../src/types';
+import type { ChatTurn, ToolCall, TurnAttachment } from '../src/types';
 
 function message(
   id: string,
@@ -1070,5 +1070,249 @@ describe('reconcileTurns', () => {
     expect(reconcileTurns([], turns)).toBe(turns);
     // Empty `next` wins (the transcript is empty).
     expect(reconcileTurns(turns, [])).toEqual([]);
+  });
+});
+
+describe('reconcileTurns fingerprint semantics', () => {
+  // A realistic assistant turn: the tool card object is the SAME object in both
+  // `tools` and `blocks` (messagesToTurns keeps them in sync by reference).
+  const assistantTurn = (): ChatTurn => {
+    const tool: ToolCall = {
+      id: 'tool-1',
+      name: 'bash',
+      arg: 'ls',
+      status: 'ok',
+      output: ['total 8', 'done'],
+    };
+    return {
+      id: 'a1',
+      role: 'assistant',
+      no: 1,
+      text: 'done',
+      thinking: 'plan',
+      tools: [tool],
+      blocks: [{ kind: 'tool', tool }],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      durationMs: 1234,
+    };
+  };
+
+  const userTurn = (id: string, text: string): ChatTurn => ({
+    id,
+    role: 'user',
+    no: 1,
+    text,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  it('keeps the exact same identity when a content-identical turn is rebuilt', () => {
+    const first = reconcileTurns([], [assistantTurn()]);
+    const rebuilt = reconcileTurns(first, [assistantTurn()]);
+    // Every field — including the nested tools/blocks objects and their inner
+    // output arrays — is rebuilt fresh, yet the content is identical, so the
+    // previous turn object must be reused.
+    expect(rebuilt[0]).toBe(first[0]);
+    expect(rebuilt).not.toBe(first);
+  });
+
+  it('produces a different value when a single scalar field changes', () => {
+    const first = reconcileTurns([], [assistantTurn()]);
+    const variants: ChatTurn[] = [
+      { ...assistantTurn(), text: 'done!' },
+      { ...assistantTurn(), thinking: 're-planned' },
+      { ...assistantTurn(), durationMs: 999 },
+      { ...assistantTurn(), approvalId: 'ap-1' },
+      { ...assistantTurn(), no: 2 },
+    ];
+    for (const variant of variants) {
+      const out = reconcileTurns(first, [variant]);
+      expect(out[0]).not.toBe(first[0]);
+      expect(out[0]).toBe(variant);
+    }
+  });
+
+  it('detects an added or removed element in the tools array', () => {
+    const first = reconcileTurns([], [assistantTurn()]);
+    const added: ToolCall = { id: 'tool-2', name: 'read', arg: 'src/a.ts', status: 'running' };
+    const withAdded: ChatTurn = {
+      ...assistantTurn(),
+      tools: [...(assistantTurn().tools ?? []), added],
+      blocks: [...(assistantTurn().blocks ?? []), { kind: 'tool', tool: added }],
+    };
+    expect(reconcileTurns(first, [withAdded])[0]).toBe(withAdded);
+
+    const removed: ChatTurn = { ...assistantTurn(), tools: [], blocks: [] };
+    expect(reconcileTurns(first, [removed])[0]).toBe(removed);
+  });
+
+  it('detects a deep content change inside a tool element', () => {
+    const first = reconcileTurns([], [assistantTurn()]);
+
+    // Same tool id, output grew by one line.
+    const grown = assistantTurn();
+    const grownTool = { ...grown.tools![0]!, output: ['total 8', 'done', 'extra line'] };
+    grown.tools = [grownTool];
+    grown.blocks = [{ kind: 'tool', tool: grownTool }];
+    expect(reconcileTurns(first, [grown])[0]).toBe(grown);
+
+    // Same shape, one output line edited.
+    const edited = assistantTurn();
+    const editedTool = { ...edited.tools![0]!, output: ['total 8', 'DONE'] };
+    edited.tools = [editedTool];
+    edited.blocks = [{ kind: 'tool', tool: editedTool }];
+    expect(reconcileTurns(first, [edited])[0]).toBe(edited);
+
+    // The tool card's argument string changed.
+    const reargued = assistantTurn();
+    const rearguedTool = { ...reargued.tools![0]!, arg: 'ls -la' };
+    reargued.tools = [rearguedTool];
+    reargued.blocks = [{ kind: 'tool', tool: rearguedTool }];
+    expect(reconcileTurns(first, [reargued])[0]).toBe(reargued);
+  });
+
+  it('detects a deep content change inside a block', () => {
+    const withTextBlock = (text: string): ChatTurn => ({
+      ...assistantTurn(),
+      tools: undefined,
+      blocks: [{ kind: 'text', text }],
+    });
+    const first = reconcileTurns([], [withTextBlock('same')]);
+    expect(reconcileTurns(first, [withTextBlock('same')])[0]).toBe(first[0]);
+    const different = withTextBlock('different');
+    const changed = reconcileTurns(first, [different]);
+    expect(changed[0]).not.toBe(first[0]);
+    expect(changed[0]).toBe(different);
+  });
+
+  it('detects changes inside approval / compaction / cron / skill / plugin metadata', () => {
+    const withApproval = (command: string): ChatTurn => ({
+      ...assistantTurn(),
+      approval: { kind: 'shell', command },
+      approvalId: 'ap-1',
+    });
+    const approvalFirst = reconcileTurns([], [withApproval('make clean')]);
+    expect(reconcileTurns(approvalFirst, [withApproval('make clean')])[0]).toBe(approvalFirst[0]);
+    const differentApproval = withApproval('make all');
+    expect(reconcileTurns(approvalFirst, [differentApproval])[0]).toBe(differentApproval);
+
+    const withCron = (missedCount: number): ChatTurn => ({
+      id: 'c1',
+      role: 'cron',
+      no: 1,
+      text: 'Daily report',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      cron: { missedCount },
+    });
+    const cronFirst = reconcileTurns([], [withCron(3)]);
+    expect(reconcileTurns(cronFirst, [withCron(3)])[0]).toBe(cronFirst[0]);
+    const differentCron = withCron(4);
+    expect(reconcileTurns(cronFirst, [differentCron])[0]).toBe(differentCron);
+
+    const withSkill = (args: string): ChatTurn => ({
+      ...userTurn('u1', ''),
+      skillActivation: { name: 'my-skill', args },
+    });
+    const skillFirst = reconcileTurns([], [withSkill('--fast')]);
+    expect(reconcileTurns(skillFirst, [withSkill('--fast')])[0]).toBe(skillFirst[0]);
+    const differentSkill = withSkill('--slow');
+    expect(reconcileTurns(skillFirst, [differentSkill])[0]).toBe(differentSkill);
+
+    const withPlugin = (args: string): ChatTurn => ({
+      ...userTurn('u1', ''),
+      pluginCommand: { pluginId: 'p1', commandName: 'build', args },
+    });
+    const pluginFirst = reconcileTurns([], [withPlugin('--prod')]);
+    expect(reconcileTurns(pluginFirst, [withPlugin('--prod')])[0]).toBe(pluginFirst[0]);
+    const differentPlugin = withPlugin('--dev');
+    expect(reconcileTurns(pluginFirst, [differentPlugin])[0]).toBe(differentPlugin);
+  });
+
+  it('detects attachment changes (inner field edits and array shape)', () => {
+    const att = (size: number): TurnAttachment => ({
+      kind: 'file',
+      url: '/api/v1/files/f_x',
+      fileId: 'f_x',
+      name: 'a.pdf',
+      mediaType: 'application/pdf',
+      size,
+    });
+    const withAttachments = (attachments: TurnAttachment[]): ChatTurn => ({
+      ...userTurn('u1', 'check these'),
+      attachments,
+    });
+    const first = reconcileTurns([], [withAttachments([att(100)])]);
+    expect(reconcileTurns(first, [withAttachments([att(100)])])[0]).toBe(first[0]);
+    const resized = withAttachments([att(101)]);
+    expect(reconcileTurns(first, [resized])[0]).toBe(resized);
+    const extra = withAttachments([att(100), att(100)]);
+    expect(reconcileTurns(first, [extra])[0]).toBe(extra);
+  });
+});
+
+describe('reconcileTurns reusePrefix streaming fast path', () => {
+  const assistantTurn = (id: string, text: string, no: number): ChatTurn => ({
+    id,
+    role: 'assistant',
+    no,
+    text,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  const userTurn = (id: string, text: string, no = 1): ChatTurn => ({
+    id,
+    role: 'user',
+    no,
+    text,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  it('reuses the untouched prefix when only the last turn grew', () => {
+    const first = [userTurn('u1', 'hello'), assistantTurn('a1', 'one', 2)];
+    const reconciled = reconcileTurns([], first);
+    const grown = [userTurn('u1', 'hello'), assistantTurn('a1', 'one two', 2)];
+    const out = reconcileTurns(reconciled, grown, 1);
+    // The caller asserted only the tail may differ: the prefix keeps its
+    // previous identity (no re-fingerprint) and the grown tail is replaced.
+    expect(out[0]).toBe(reconciled[0]);
+    expect(out[1]).toBe(grown[1]);
+    expect(out[1]).not.toBe(reconciled[1]);
+  });
+
+  it('reuses the prefix on a pure append and compares the old last turn', () => {
+    const first = [userTurn('u1', 'hello'), assistantTurn('a1', 'one', 2)];
+    const reconciled = reconcileTurns([], first);
+    const appended = [userTurn('u1', 'hello'), assistantTurn('a1', 'one', 2), userTurn('u2', 'more', 3)];
+    const out = reconcileTurns(reconciled, appended, 1);
+    expect(out[0]).toBe(reconciled[0]);
+    expect(out[1]).toBe(reconciled[1]); // unchanged last turn keeps its identity
+    expect(out[2]).toBe(appended[2]);
+  });
+
+  it('ignores reusePrefix when next is shorter than prev (comparison stays exact)', () => {
+    const prev = [userTurn('u1', 'OLD'), assistantTurn('a1', 'one', 2)];
+    const shrunk = [userTurn('u1', 'NEW')];
+    const out = reconcileTurns(prev, shrunk, 1);
+    // A shrink can shift turn content, so the hint must be dropped and the
+    // turn compared normally → the fresh (changed) object wins.
+    expect(out[0]).toBe(shrunk[0]);
+    expect(out[0]).not.toBe(prev[0]);
+  });
+
+  it('clamps an out-of-range reusePrefix to the prev length', () => {
+    const first = [userTurn('u1', 'hello')];
+    const reconciled = reconcileTurns([], first);
+    const out = reconcileTurns(reconciled, [userTurn('u1', 'hello')], 99);
+    expect(out[0]).toBe(reconciled[0]);
+  });
+
+  it('documents the caller contract: a wrong hint is trusted, not verified', () => {
+    // reusePrefix is an ASSERTION, not a check — the caller must prove the
+    // prefix content-identical (the turns computed does this with a message
+    // identity scan). A wrong hint would reuse a stale turn. This test pins
+    // that the hint is honored, i.e. the fast path actually skips the compare.
+    const prev = [userTurn('u1', 'OLD')];
+    const next = [userTurn('u1', 'NEW')];
+    const out = reconcileTurns(prev, next, 1);
+    expect(out[0]).toBe(prev[0]);
+    expect(out[0]).not.toBe(next[0]);
   });
 });

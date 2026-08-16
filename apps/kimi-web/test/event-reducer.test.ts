@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
-import type { AppMessage, AppSession, AppTask } from '../src/api/types';
+import type { AppGoal, AppMessage, AppSession, AppTask } from '../src/api/types';
 import { i18n } from '../src/i18n';
 
 function makeSession(id: string, updatedAt: string): AppSession {
@@ -697,5 +697,137 @@ describe('reduceAppEvent unknown agent error', () => {
   it('still renders agent warnings as plain strings', () => {
     const next = reduceRaw({ _agentWarning: true, message: 'heads up' });
     expect(next.warnings[0]).toBe(`${i18n.global.t('warnings.noteLabel')}: heads up`);
+  });
+});
+
+describe('reduceAppEvent map reference stability', () => {
+  const msgId = 'msg_2026-01-01T00:00:00.000Z';
+  const seededState = () => ({
+    ...createInitialState(),
+    messagesBySession: { s1: [makeMessage('s1', '2026-01-01T00:00:00.000Z')] },
+    tasksBySession: { s1: [makeSubagentTask('t1', 's1')] },
+    lastSeqBySession: { s1: 0 },
+    turnActiveBySession: { s1: true },
+  });
+
+  it('keeps every unrelated map reference when only tasks change', () => {
+    const state = seededState();
+    const next = reduceAppEvent(
+      state,
+      { type: 'taskProgress', sessionId: 's1', taskId: 't1', kind: 'text', outputChunk: 'line' },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.tasksBySession).not.toBe(state.tasksBySession); // task text grew
+    // All other maps are untouched by a task event → the OLD references.
+    expect(next.messagesBySession).toBe(state.messagesBySession);
+    expect(next.approvalsBySession).toBe(state.approvalsBySession);
+    expect(next.planReviewByToolCallId).toBe(state.planReviewByToolCallId);
+    expect(next.questionsBySession).toBe(state.questionsBySession);
+    expect(next.goalBySession).toBe(state.goalBySession);
+    expect(next.goalVersionBySession).toBe(state.goalVersionBySession);
+    expect(next.turnActiveBySession).toBe(state.turnActiveBySession);
+    expect(next.compactionBySession).toBe(state.compactionBySession);
+    expect(next.retryBySession).toBe(state.retryBySession);
+    expect(next.failureBySession).toBe(state.failureBySession);
+    expect(next.warnings).toBe(state.warnings);
+    expect(next.sessions).toBe(state.sessions);
+    // Only lastSeqBySession advances (seq > 0) → new reference.
+    expect(next.lastSeqBySession).not.toBe(state.lastSeqBySession);
+  });
+
+  it('replaces only the messages map (and its slice) when a delta streams', () => {
+    const state = seededState();
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'assistantDelta',
+        sessionId: 's1',
+        messageId: msgId,
+        contentIndex: 0,
+        delta: { text: 'x' },
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.messagesBySession).not.toBe(state.messagesBySession);
+    expect(next.messagesBySession['s1']).not.toBe(state.messagesBySession['s1']);
+    expect(next.messagesBySession['s1']).toHaveLength(1);
+    expect(next.tasksBySession).toBe(state.tasksBySession);
+    expect(next.turnActiveBySession).toBe(state.turnActiveBySession);
+  });
+
+  it('rebuilds the slice for a delta targeting an unknown message but preserves message identity', () => {
+    // The reducer always maps the slice (a fresh array), so per-key reference
+    // equality replaces the map — but every message object keeps its identity,
+    // so the turns computed's identity scan still reuses all rows.
+    const state = seededState();
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'assistantDelta',
+        sessionId: 's1',
+        messageId: 'does-not-exist',
+        contentIndex: 0,
+        delta: { text: 'x' },
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.messagesBySession).not.toBe(state.messagesBySession); // slice rebuilt
+    expect(next.messagesBySession['s1']).not.toBe(state.messagesBySession['s1']);
+    expect(next.messagesBySession['s1']?.[0]).toBe(state.messagesBySession['s1']?.[0]);
+  });
+
+  it('keeps ALL map references when a no-op event advances only the seq', () => {
+    const state = seededState();
+    const next = reduceAppEvent(
+      state,
+      { type: 'unknown', raw: { _noop: true } },
+      { sessionId: 's1', seq: 2 },
+    );
+    expect(next.messagesBySession).toBe(state.messagesBySession);
+    expect(next.tasksBySession).toBe(state.tasksBySession);
+    expect(next.turnActiveBySession).toBe(state.turnActiveBySession);
+    expect(next.warnings).toBe(state.warnings);
+    expect(next.lastSeqBySession).not.toBe(state.lastSeqBySession);
+  });
+
+  it('keeps the old references when a replayed event does not advance the seq', () => {
+    const state = seededState();
+    const next = reduceAppEvent(
+      state,
+      { type: 'unknown', raw: { _noop: true } },
+      { sessionId: 's1', seq: 0 }, // stale replay — seq does not move
+    );
+    expect(next.lastSeqBySession).toBe(state.lastSeqBySession);
+    expect(next.messagesBySession).toBe(state.messagesBySession);
+  });
+
+  it('replaces goal maps only when a goal event arrives', () => {
+    const goal: AppGoal = {
+      goalId: 'g1',
+      objective: 'fix perf',
+      status: 'active',
+      turnsUsed: 1,
+      tokensUsed: 10,
+      wallClockMs: 100,
+      budget: {
+        tokenBudget: null,
+        remainingTokens: null,
+        turnBudget: null,
+        remainingTurns: null,
+        wallClockBudgetMs: null,
+        remainingWallClockMs: null,
+        overBudget: false,
+      },
+    };
+    const state = { ...seededState(), goalBySession: { s1: goal } };
+    const next = reduceAppEvent(
+      state,
+      { type: 'goalUpdated', sessionId: 's1', goal: null },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.goalVersionBySession).not.toBe(state.goalVersionBySession);
+    expect(next.goalBySession).not.toBe(state.goalBySession); // entry deleted
+    expect(next.messagesBySession).toBe(state.messagesBySession);
+    expect(next.tasksBySession).toBe(state.tasksBySession);
   });
 });
