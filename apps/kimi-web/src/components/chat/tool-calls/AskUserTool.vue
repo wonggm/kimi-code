@@ -12,7 +12,7 @@
      the answer JSON; those fall back to a raw output view so the task id /
      failure reason is not hidden behind an empty option list. -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
@@ -95,14 +95,23 @@ const hasOutput = computed(() => !!props.tool.output && props.tool.output.length
 const canExpand = computed(
   () => (recognized.value && (questions.value.length > 0 || isDismissed.value)) || hasOutput.value,
 );
-const open = ref(props.tool.defaultExpanded === true && canExpand.value);
+// Persist the user's manual open/closed choice across row eviction (see
+// ChatPane's toolExpandState); the persisted value overrides the default on
+// re-mount, while the auto-expand watch below keeps its existing behavior for
+// running tools.
+const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
+const expandKey = props.tool.id;
+const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
+const open = ref(persisted ?? (props.tool.defaultExpanded === true && canExpand.value));
 
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
 
 function toggle(): void {
-  if (canExpand.value) open.value = !open.value;
+  if (!canExpand.value) return;
+  open.value = !open.value;
+  if (expandKey && toolExpandState) toolExpandState.set(expandKey, open.value);
 }
 
 watch(
