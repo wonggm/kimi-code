@@ -1,14 +1,3 @@
-/**
- * Pre-bootstrap loader for user-defined agent profiles.
- *
- * Reads `agent_profiles` from the raw TOML config file, scans the listed
- * paths for `.yaml` / `.yml` / `.md` profile files, and registers them via
- * `registerAgentProfile()` — all before `bootstrap()` constructs the DI
- * container and snapshots the catalog.
- *
- * Supports both native YAML profiles and Markdown-with-frontmatter profiles.
- */
-
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join } from 'pathe';
 import { parse as parseToml } from 'smol-toml';
@@ -52,9 +41,7 @@ export function preloadAgentProfiles(configPath: string): void {
       try {
         const profile = loadProfileFile(file);
         if (profile) registerAgentProfile(profile);
-      } catch {
-        // Skip unparseable files — don't crash bootstrap
-      }
+      } catch {}
     }
   }
 }

@@ -32,7 +32,7 @@ function writeConfig(profilePaths: string[]): string {
 describe('preloadAgentProfiles', () => {
   it('registers YAML profiles from a directory', () => {
     const profileDir = join(workDir, 'profiles');
-    mkdtempSync(profileDir + '-'); // won't work, use mkdirSync
+    mkdtempSync(profileDir + '-');
     const { mkdirSync } = require('node:fs');
     mkdirSync(profileDir, { recursive: true });
     writeFileSync(

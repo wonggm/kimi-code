@@ -2318,7 +2318,6 @@ describe('subagent_models config section', () => {
     expect(resolveSubagentModelAlias(config, 'plan', 'caller/model')).toBe(
       'deepseek/deepseek-v4-pro',
     );
-    // Unlisted profile inherits the caller's model.
     expect(resolveSubagentModelAlias(config, 'coder', 'caller/model')).toBe('caller/model');
     disposables.dispose();
   });
@@ -2330,7 +2329,6 @@ describe('subagent_models config section', () => {
       '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n',
     );
 
-    // A listed profile binds to its pinned model...
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, 'explore'),
     ).toEqual({
@@ -2338,7 +2336,6 @@ describe('subagent_models config section', () => {
       thinking: 'medium',
       displayModel: 'deepseek/deepseek-v4-flash',
     });
-    // ...absolutely: even an explicit 'primary' does not override the table.
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(false), own, 'primary', 'explore'),
     ).toEqual({
@@ -2346,14 +2343,11 @@ describe('subagent_models config section', () => {
       thinking: 'medium',
       displayModel: 'deepseek/deepseek-v4-flash',
     });
-    // An unlisted profile inherits the caller model.
     expect(
       resolveSubagentBinding(config, secondaryModelFlags(false), own, undefined, 'coder'),
     ).toEqual({ model: 'provider/main', thinking: 'medium', displayModel: 'provider/main' });
     disposables.dispose();
 
-    // The table also wins over a configured secondary model for listed profiles,
-    // while unlisted profiles still fall through to the secondary model.
     const withSecondary = await createConfig(
       {},
       '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n\n[secondary_model]\nmodel = "provider/secondary"\n',
@@ -2402,17 +2396,14 @@ describe('subagent_models config section', () => {
       '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n',
     );
 
-    // Bound model matches the table → no mismatch.
     expect(
       detectSubagentModelTableMismatch(config, 'explore', 'deepseek/deepseek-v4-flash'),
     ).toBeUndefined();
-    // Bound model diverges from the table → mismatch descriptor.
     expect(detectSubagentModelTableMismatch(config, 'explore', 'provider/main')).toEqual({
       profileName: 'explore',
       configured: 'deepseek/deepseek-v4-flash',
       bound: 'provider/main',
     });
-    // Unlisted profile → no mismatch.
     expect(detectSubagentModelTableMismatch(config, 'coder', 'provider/main')).toBeUndefined();
 
     disposables.dispose();

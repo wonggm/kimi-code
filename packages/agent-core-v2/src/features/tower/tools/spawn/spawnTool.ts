@@ -34,9 +34,12 @@ import { subagentLabels } from '#/session/agentLifecycle/subagentMetadata';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import {
   DEFAULT_SUBAGENT_TIMEOUT_MS,
+  SUBAGENT_MODELS_SECTION,
+  detectSubagentModelTableMismatch,
   resolveSubagentBinding,
   resolveSubagentThinking,
   wrapSubagentModelError,
+  type SubagentModelsConfig,
 } from '#/session/subagent/configSection';
 import { emitAgentRunSpawned, mirrorAgentRun } from '#/session/subagent/mirrorAgentRun';
 import { ISessionSubagentService } from '#/session/subagent/subagent';
@@ -166,6 +169,12 @@ export class TowerSpawnTool implements ITowerSpawnTool {
       try {
         const controller = new AbortController();
         const own = this.profile.data();
+        const pinnedProfile =
+          this.config.get<SubagentModelsConfig | undefined>(SUBAGENT_MODELS_SECTION)?.[
+            TOWER_WORKER_PROFILE
+          ] === undefined
+            ? undefined
+            : TOWER_WORKER_PROFILE;
         const binding =
           own.modelAlias === undefined
             ? undefined
@@ -174,7 +183,20 @@ export class TowerSpawnTool implements ITowerSpawnTool {
                 this.flags,
                 { modelAlias: own.modelAlias, thinkingLevel: own.thinkingLevel },
                 args.kind === 'reviewer' ? 'primary' : undefined,
+                pinnedProfile,
               );
+        if (binding !== undefined && pinnedProfile !== undefined) {
+          const tableMismatch = detectSubagentModelTableMismatch(
+            this.config,
+            pinnedProfile,
+            binding.model,
+          );
+          if (tableMismatch !== undefined) {
+            throw new Error(
+              `[subagent_models] pin ignored: profile "${tableMismatch.profileName}" is configured to run on "${tableMismatch.configured}" but the spawn binding resolved "${tableMismatch.bound}". The spawn binding likely lost the [subagent_models] wiring (e.g. after an upstream rebase).`,
+            );
+          }
+        }
         let handle: SubagentHandle;
         try {
           handle = await this.launch(prompt, description, toolCallId, controller, binding);
