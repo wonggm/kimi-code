@@ -335,6 +335,32 @@ describe('step-boundary delta alignment', () => {
     );
   });
 
+  it('creates a fresh assistant message when a resumed turn boundary was missed', () => {
+    const projector = createAgentProjector();
+    projector.project('turn.started', { turnId: 1 }, 's1');
+    const firstStep = projector.project('turn.step.started', { turnId: 1, step: 1 }, 's1');
+    const firstMessage = firstStep.find((event) => event.type === 'messageCreated');
+    projector.project('assistant.delta', { turnId: 1, delta: 'stopped' }, 's1', { offset: 0 });
+
+    // The stop/resume transition can miss turn.ended and turn.started on the
+    // browser stream. The first delta of the resumed turn must not be appended
+    // to the interrupted assistant bubble.
+    const resumed = projector.project('assistant.delta', { turnId: 2, delta: 'resumed' }, 's1', { offset: 0 });
+    const resumedMessage = resumed.find((event) => event.type === 'messageCreated');
+
+    expect(firstMessage).toBeDefined();
+    expect(resumedMessage).toBeDefined();
+    expect(resumed).toContainEqual(
+      expect.objectContaining({
+        type: 'assistantDelta',
+        delta: { text: 'resumed' },
+      }),
+    );
+    expect((resumedMessage as { message: { id: string } }).message.id).not.toBe(
+      (firstMessage as { message: { id: string } }).message.id,
+    );
+  });
+
   it('seeds only the current step and aligns live deltas against the seeded length', () => {
     const projector = createAgentProjector();
     const seeded = projector.seedInFlight('s1', {
