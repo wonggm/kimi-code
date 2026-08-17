@@ -98,6 +98,7 @@ interface SessionState {
   // Turn ID → promptId binding
   turnPromptId: Map<number, string>;
   currentPromptId: string | undefined;
+  currentTurnId: number | undefined;
 
   // Assistant message tracking
   currentAssistantMsgId: string | undefined;
@@ -137,6 +138,7 @@ function createSessionState(): SessionState {
   return {
     turnPromptId: new Map(),
     currentPromptId: undefined,
+    currentTurnId: undefined,
     currentAssistantMsgId: undefined,
     turnTextLen: 0,
     turnThinkLen: 0,
@@ -615,6 +617,29 @@ export function createAgentProjector(): AgentProjector {
     return 'append';
   }
 
+  /** Recover a new live turn when stop/resume lost its durable boundary frame. */
+  function recoverMissedTurn(
+    state: SessionState,
+    sessionId: string,
+    turnId: number | undefined,
+    out: AppEvent[],
+  ): void {
+    if (turnId === undefined || state.currentTurnId === undefined || turnId === state.currentTurnId) return;
+
+    const promptId = state.turnPromptId.get(turnId) ?? state.currentPromptId ?? ulid('pr_');
+    state.currentTurnId = turnId;
+    state.currentPromptId = promptId;
+    state.turnPromptId.set(turnId, promptId);
+    state.currentAssistantMsgId = undefined;
+    state.retryReuseMsgId = undefined;
+    state.turnTextLen = 0;
+    state.turnThinkLen = 0;
+
+    const message = startAssistantMessage(state, sessionId, promptId);
+    state.currentAssistantMsgId = message.id;
+    out.push({ type: 'messageCreated', message: cloneMessage(message) });
+  }
+
   function _project(
     rawType: string,
     payload: unknown,
@@ -708,6 +733,7 @@ export function createAgentProjector(): AgentProjector {
         // transition); projecting a second busy flip per turn from the raw
         // stream made every turn-end consumer fire twice.
         const turnId: number = p?.turnId;
+        s.currentTurnId = turnId;
         const existingPromptId = s.currentPromptId ?? ulid('pr_');
         s.currentPromptId = existingPromptId;
         if (turnId !== undefined) {
@@ -725,6 +751,7 @@ export function createAgentProjector(): AgentProjector {
       // -----------------------------------------------------------------------
       case 'turn.step.started': {
         const turnId: number = p?.turnId;
+        s.currentTurnId = turnId;
         let promptId = s.turnPromptId.get(turnId) ?? s.currentPromptId;
         if (!promptId) {
           // Joined mid-turn (reconnect/resync wiped the binding): synthesize a
@@ -762,10 +789,11 @@ export function createAgentProjector(): AgentProjector {
 
       // -----------------------------------------------------------------------
       case 'thinking.delta': {
-        const msgId = s.currentAssistantMsgId;
-        if (!msgId) break;
         const delta: string = p?.delta ?? '';
         if (!delta) break;
+        recoverMissedTurn(s, sessionId, numberField(p ?? {}, 'turnId'), out);
+        const msgId = s.currentAssistantMsgId;
+        if (!msgId) break;
 
         // Same missed-turn-boundary self-heal as assistant.delta (see there).
         if (meta?.offset === 0 && s.turnThinkLen > 0) {
@@ -794,10 +822,11 @@ export function createAgentProjector(): AgentProjector {
 
       // -----------------------------------------------------------------------
       case 'assistant.delta': {
-        const msgId = s.currentAssistantMsgId;
-        if (!msgId) break;
         const delta: string = p?.delta ?? '';
         if (!delta) break;
+        recoverMissedTurn(s, sessionId, numberField(p ?? {}, 'turnId'), out);
+        const msgId = s.currentAssistantMsgId;
+        if (!msgId) break;
 
         // Self-heal a missed turn boundary: a pre-append offset of 0 while we
         // still believe we are mid-stream means the daemon began a fresh
