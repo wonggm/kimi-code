@@ -67,9 +67,6 @@ export function registerConfigRoutes(app: ConfigRouteHost, core: Scope): void {
         }
         delete camelPatch['yolo'];
         for (const domain of Object.keys(camelPatch)) {
-          // These per-profile tables are sent by clients as FULL tables (a
-          // removed key means "clear this profile"), so they need whole-section
-          // replace — deep-merge `set` can never drop a key.
           if (domain === 'subagentModels' || domain === 'subagentEfforts') {
             await config.replace(domain, camelPatch[domain]);
           } else {

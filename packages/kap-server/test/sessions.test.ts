@@ -1100,14 +1100,11 @@ describe('server-v2 /api/v1/sessions', () => {
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
     const id = created.body.data.id;
     const accessor = (server as RunningServer).core.accessor;
-    // Created sessions have a live handle — confirm the pre-reload baseline.
     expect(getLiveSessionById(accessor, id)).toBeDefined();
 
     const reloaded = await postJson<Record<string, never>>(`/api/v1/sessions/${id}:reload`);
     expect(reloaded.body.code).toBe(0);
     expect(reloaded.body.data).toEqual({});
-    // After reload the session still has a live handle (re-resumed by the route)
-    // and the index still projects it.
     expect(getLiveSessionById(accessor, id)).toBeDefined();
     const got = await getJson<SessionWire>(`/api/v1/sessions/${id}`);
     expect(got.body.code).toBe(0);
@@ -1115,10 +1112,6 @@ describe('server-v2 /api/v1/sessions', () => {
   });
 
   it('rejects reload on a busy session with SESSION_BUSY and does not close it', async () => {
-    // A real provider isn't available; a stub config with a non-routable URL
-    // makes the prompt submission enqueue a turn that keeps the agent busy
-    // long enough to observe the guard. Same pattern as the title-derivation
-    // test below.
     const cwd = home as string;
     await writeFile(join(cwd, 'config.toml'), [
       'default_model = "stub"', '', '[providers.stub]', 'type = "openai"',
@@ -1129,20 +1122,14 @@ describe('server-v2 /api/v1/sessions', () => {
     const id = created.body.data.id;
     const accessor = (server as RunningServer).core.accessor;
 
-    // Enqueue a turn — busy state comes from the session's main agent having
-    // a queued / running turn, which is the same condition the route guards on.
     const submitted = await postJson<{ prompt_id: string; status: string }>(
       `/api/v1/sessions/${id}/prompts`,
       { content: [{ type: 'text', text: 'busy' }] },
     );
     expect(submitted.body.code).toBe(0);
 
-    // The reload guard returns 40901 and does NOT touch the live handle.
     const reloaded = await postJson<null>(`/api/v1/sessions/${id}:reload`);
     if (reloaded.body.code !== 40901) {
-      // The stub provider rejected the prompt synchronously and the turn is
-      // already idle — skip the assertion rather than fabricate a busy state.
-      // The idle path is covered by the first test above.
       return;
     }
     expect(reloaded.body.msg).toMatch(/cannot be reloaded while a turn is running/i);
@@ -1154,23 +1141,16 @@ describe('server-v2 /api/v1/sessions', () => {
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
     const id = created.body.data.id;
     const accessor = (server as RunningServer).core.accessor;
-    // Cold the session (persisted-only) — the close path the reload guard
-    // branches on: `getLiveSessionById` is undefined, so reload skips close
-    // and goes straight to resume.
     await closeSessionById(accessor, id);
     expect(getLiveSessionById(accessor, id)).toBeUndefined();
 
     const reloaded = await postJson<Record<string, never>>(`/api/v1/sessions/${id}:reload`);
     expect(reloaded.body.code).toBe(0);
     expect(reloaded.body.data).toEqual({});
-    // Cold → live: the route re-resumed the session.
     expect(getLiveSessionById(accessor, id)).toBeDefined();
   });
 
   it('returns 40401 when reload\'s resume() cannot materialize the session', async () => {
-    // The route has no index pre-check; the 40401 comes from `resume()`
-    // returning undefined (doResume → index.get miss), the same guard
-    // btw/restore/archive use.
     const { body } = await postJson<null>('/api/v1/sessions/sess_missing:reload');
     expect(body.code).toBe(40401);
   });
@@ -1192,8 +1172,6 @@ describe('server-v2 /api/v1/sessions', () => {
   });
 
   it('rejects add-dir on a busy session with SESSION_BUSY', async () => {
-    // Same stub-provider busy pattern as the reload busy test: a non-routable
-    // provider URL keeps the turn alive long enough to observe the guard.
     const cwd = home as string;
     await writeFile(join(cwd, 'config.toml'), [
       'default_model = "stub"', '', '[providers.stub]', 'type = "openai"',
@@ -1211,9 +1189,6 @@ describe('server-v2 /api/v1/sessions', () => {
 
     const added = await postJson<null>(`/api/v1/sessions/${id}:add-dir`, { path: cwd, persist: false });
     if (added.body.code !== 40901) {
-      // The stub provider rejected the prompt synchronously and the turn is
-      // already idle — skip rather than fabricate a busy state; the idle path
-      // is covered by the test above.
       return;
     }
     expect(added.body.msg).toMatch(/cannot add a directory while a turn is running/i);
@@ -1232,8 +1207,6 @@ describe('server-v2 /api/v1/sessions', () => {
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
     const id = created.body.data.id;
 
-    // The v2 service throws `config.invalid` for a missing directory; the
-    // route maps it to VALIDATION_FAILED (40001) rather than INTERNAL_ERROR.
     const added = await postJson<null>(`/api/v1/sessions/${id}:add-dir`, {
       path: '/definitely/not/here',
       persist: false,
