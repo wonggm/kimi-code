@@ -1,19 +1,3 @@
-/**
- * `/agent_profiles` REST route — server-v2.
- *
- *   GET  /agent_profiles    data: { profiles: AgentProfileDescriptor[] }
- *
- * Exposes the App-scoped `IBuiltinAgentProfileLoader` catalog so clients can
- * populate the per-agent-profile subagent-model picker. Each profile is
- * projected to its wire descriptor (`name` / `description` / `whenToUse` /
- * `modelPreference`); the prompt-rendering surface (`systemPrompt`, tool
- * allowlists, summary policy) is intentionally dropped — it is not client
- * configuration.
- *
- * **Anti-corruption**: route resolves the service via the accessor; no SDK
- * imports.
- */
-
 import {
   IBuiltinAgentProfileLoader,
   type AgentProfile,
@@ -61,14 +45,9 @@ export function registerAgentProfilesRoutes(app: AgentProfilesRouteHost, core: S
   );
 }
 
-// ---------------------------------------------------------------------------
-// Projection — v2 `AgentProfile` → protocol `AgentProfileDescriptor`.
-// ---------------------------------------------------------------------------
-
 function toProtocolAgentProfile(profile: AgentProfile): AgentProfileDescriptor {
   const base: AgentProfileDescriptor = { name: profile.name };
   if (profile.description !== undefined) base.description = profile.description;
   if (profile.whenToUse !== undefined) base.whenToUse = profile.whenToUse;
-  if (profile.modelPreference !== undefined) base.modelPreference = profile.modelPreference;
   return base;
 }
