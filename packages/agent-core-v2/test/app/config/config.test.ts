@@ -2568,7 +2568,6 @@ describe('subagent_models config section', () => {
     expect(resolveSubagentModelAlias(config, 'plan', 'caller/model')).toBe(
       'deepseek/deepseek-v4-pro',
     );
-    // Unlisted profile inherits the caller's model.
     expect(resolveSubagentModelAlias(config, 'coder', 'caller/model')).toBe('caller/model');
     disposables.dispose();
   });
@@ -2600,8 +2599,6 @@ describe('subagent_models config section', () => {
     });
     disposables.dispose();
 
-    // The table also wins over a configured secondary model for listed profiles,
-    // while unlisted profiles still fall through to the secondary model.
     const withSecondary = await createConfig(
       {},
       '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n\n[secondary_model]\nmodel = "provider/secondary"\n',
@@ -2642,17 +2639,14 @@ describe('subagent_models config section', () => {
       '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n',
     );
 
-    // Bound model matches the table → no mismatch.
     expect(
       detectSubagentModelTableMismatch(config, 'explore', 'deepseek/deepseek-v4-flash'),
     ).toBeUndefined();
-    // Bound model diverges from the table → mismatch descriptor.
     expect(detectSubagentModelTableMismatch(config, 'explore', 'provider/main')).toEqual({
       profileName: 'explore',
       configured: 'deepseek/deepseek-v4-flash',
       bound: 'provider/main',
     });
-    // Unlisted profile → no mismatch.
     expect(detectSubagentModelTableMismatch(config, 'coder', 'provider/main')).toBeUndefined();
 
     disposables.dispose();

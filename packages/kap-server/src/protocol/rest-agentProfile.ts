@@ -1,7 +1,3 @@
-/**
- * GET /v1/agent_profiles
- *   Reply: { profiles: AgentProfileDescriptor[] }
- */
 import { z } from 'zod';
 
 export const agentProfileDescriptorSchema = z.object({
