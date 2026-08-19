@@ -116,14 +116,14 @@ describe('useSlashMenu — update', () => {
   });
 
   it('includes session skills as /skill:<skill-name>', () => {
-    const { slash } = setup('/', [{ name: 'deploy', description: 'deploy stuff', source: 'project' } as AppSkill]);
+    const { slash } = setup('/', [{ name: 'deploy', description: 'deploy stuff', source: 'project', path: '/skills/deploy/SKILL.md' } as AppSkill]);
     slash.update();
     const names = slash.items.value.map((i) => i.name);
     expect(names).toContain('/skill:deploy');
   });
 
   it('keeps builtin-sourced skills unprefixed', () => {
-    const { slash } = setup('/', [{ name: 'update-config', description: 'edit config', source: 'builtin' } as AppSkill]);
+    const { slash } = setup('/', [{ name: 'update-config', description: 'edit config', source: 'builtin', path: '/skills/update-config/SKILL.md' } as AppSkill]);
     slash.update();
     const names = slash.items.value.map((i) => i.name);
     expect(names).toContain('/update-config');
@@ -131,7 +131,7 @@ describe('useSlashMenu — update', () => {
   });
 
   it('matches a prefixed skill when filtering by its bare name', () => {
-    const { slash } = setup('/depl', [{ name: 'deploy', description: 'deploy stuff', source: 'project' } as AppSkill]);
+    const { slash } = setup('/depl', [{ name: 'deploy', description: 'deploy stuff', source: 'project', path: '/skills/deploy/SKILL.md' } as AppSkill]);
     slash.update();
     expect(slash.items.value.map((i) => i.name)).toContain('/skill:deploy');
   });
