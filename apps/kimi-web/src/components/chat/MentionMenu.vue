@@ -1,26 +1,27 @@
 <!-- apps/kimi-web/src/components/chat/MentionMenu.vue -->
-<!-- Popup list of file paths shown when user types @ in the Composer textarea.
-     Long lists get a scroll fade plus a draggable floating scrollbar (see
-     useMenuScrollbar). -->
+<!-- Popup list shown when user types @ in the Composer textarea: searched file
+     paths, then session skills. Long lists get a scroll fade plus a draggable
+     floating scrollbar (see useMenuScrollbar). -->
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { iconSvg } from '../../lib/icons';
 import { useMenuScrollbar } from '../../composables/useMenuScrollbar';
 import type { FileItem } from '../../types';
+import type { MentionItem } from '../../composables/useMentionMenu';
 
 // Re-exported for the .vue consumers (Composer / ChatDock / ConversationPane)
 // that import FileItem from this component.
 export type { FileItem };
 
 const props = defineProps<{
-  items: FileItem[];
+  items: MentionItem[];
   activeIndex: number;
   loading: boolean;
 }>();
 
 const emit = defineEmits<{
-  select: [item: FileItem];
+  select: [item: MentionItem];
   hover: [index: number];
 }>();
 
@@ -31,11 +32,11 @@ const { maskStyle, thumbStyle, onScroll, onThumbPointerDown } = useMenuScrollbar
 
 // ---------------------------------------------------------------------------
 // File-type glyphs: small line-SVG icons (viewBox 0 0 16 16) keyed off the
-// extension. Categories: folder, code, doc/markdown, image, generic.
-// Subtle + muted; never an emoji.
+// extension, plus the folder and skill glyphs. Subtle + muted; never an emoji.
 // ---------------------------------------------------------------------------
 
 const ICON_FOLDER = iconSvg('folder', 'sm');
+const ICON_SKILL = iconSvg('sparkles', 'sm');
 const ICON_CODE = iconSvg('code', 'sm');
 const ICON_DOC = iconSvg('file-text', 'sm');
 const ICON_IMAGE = iconSvg('image', 'sm');
@@ -50,11 +51,10 @@ const CODE_EXT = new Set([
 const DOC_EXT = new Set(['md', 'markdown', 'mdx', 'txt', 'rst', 'adoc', 'pdf', 'doc', 'docx']);
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'avif']);
 
-function fileIcon(item: FileItem): string {
-  const path = item.path;
+function fileIcon(path: string): string {
   // Trailing slash → folder.
   if (path.endsWith('/')) return ICON_FOLDER;
-  const base = item.name || path.split('/').pop() || path;
+  const base = path.split('/').pop() ?? path;
   const dot = base.lastIndexOf('.');
   const ext = dot > 0 ? base.slice(dot + 1).toLowerCase() : '';
   if (!ext) return ICON_GENERIC;
@@ -62,6 +62,17 @@ function fileIcon(item: FileItem): string {
   if (DOC_EXT.has(ext)) return ICON_DOC;
   if (IMAGE_EXT.has(ext)) return ICON_IMAGE;
   return ICON_GENERIC;
+}
+
+function rowIcon(item: MentionItem): string {
+  if (item.kind === 'skill') return ICON_SKILL;
+  return fileIcon(item.path);
+}
+
+const firstSkillIndex = computed(() => props.items.findIndex((item) => item.kind === 'skill'));
+
+function itemKey(item: MentionItem): string {
+  return item.kind === 'skill' ? `skill:${item.name}` : item.path;
 }
 </script>
 
@@ -73,24 +84,27 @@ function fileIcon(item: FileItem): string {
     <!-- Empty state (not loading, no items) -->
     <div v-else-if="props.items.length === 0" class="mention-state dim">{{ t('mention.noMatch') }}</div>
 
-    <!-- File items -->
+    <!-- Items: searched files, then a skill section -->
     <div v-else ref="scrollEl" class="menu-scroll" :style="maskStyle" @scroll="onScroll">
-      <div
-        v-for="(item, i) in props.items"
-        :key="item.path"
-        class="mention-item"
-        :class="{ active: i === props.activeIndex }"
-        role="option"
-        :aria-selected="i === props.activeIndex"
-        @mouseenter="emit('hover', i)"
-        @mousedown.prevent="emit('select', item)"
-      >
-        <!-- file-type glyph (line-SVG) -->
-        <!-- eslint-disable-next-line vue/no-v-html -->
-        <span class="mention-icon" v-html="fileIcon(item)" aria-hidden="true" />
-        <span class="mention-name">{{ item.name }}</span>
-        <span class="mention-path">{{ item.path }}</span>
-      </div>
+      <template v-for="(item, i) in props.items" :key="itemKey(item)">
+        <div v-if="i === firstSkillIndex" class="mention-section">
+          {{ t('mention.skills') }}
+        </div>
+        <div
+          class="mention-item"
+          :class="{ active: i === props.activeIndex }"
+          role="option"
+          :aria-selected="i === props.activeIndex"
+          @mouseenter="emit('hover', i)"
+          @mousedown.prevent="emit('select', item)"
+        >
+          <!-- type glyph (line-SVG) -->
+          <!-- eslint-disable-next-line vue/no-v-html -->
+          <span class="mention-icon" v-html="rowIcon(item)" aria-hidden="true" />
+          <span class="mention-name">{{ item.name }}</span>
+          <span class="mention-path">{{ item.path }}</span>
+        </div>
+      </template>
     </div>
     <div
       v-if="thumbStyle"
@@ -162,6 +176,15 @@ function fileIcon(item: FileItem): string {
   color: var(--color-text-muted);
 }
 
+.mention-section {
+  padding: 5px 10px 2px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0;
+  font-weight: var(--weight-semibold);
+}
+
 .mention-item {
   display: flex;
   align-items: center;
@@ -207,6 +230,9 @@ function fileIcon(item: FileItem): string {
   font-weight: 500;
   min-width: 80px;
   flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mention-path {

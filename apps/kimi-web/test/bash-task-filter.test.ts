@@ -13,6 +13,7 @@ const tasks: TaskItem[] = [
   bashTask('bash-1', 'run'),
   bashTask('bash-2', 'done'),
   bashTask('bash-3', 'fail'),
+  bashTask('bash-4', 'cancel'),
 ];
 
 describe('filterBashTasks', () => {
@@ -24,8 +25,8 @@ describe('filterBashTasks', () => {
     expect(filterBashTasks(tasks, 'running')).toEqual([tasks[0]]);
   });
 
-  it('keeps every settled task (done and failed) for done', () => {
-    expect(filterBashTasks(tasks, 'done')).toEqual([tasks[1], tasks[2]]);
+  it('keeps every settled task (done, failed and cancelled) for done', () => {
+    expect(filterBashTasks(tasks, 'done')).toEqual([tasks[1], tasks[2], tasks[3]]);
   });
 
   it('returns an empty list when no task matches the filter', () => {

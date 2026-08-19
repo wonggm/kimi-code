@@ -513,6 +513,32 @@ export class DaemonKimiWebApi implements KimiWebApi {
     return toAppSession(data);
   }
 
+  /**
+   * Batch archive/restore by id. The v1-compatible transport has no server-side
+   * batch endpoint (kap-server exposes one only at /api/v2/sessions:archive,
+   * unreachable through this /api/v1-pinned client), so the batch runs the
+   * per-id endpoints. Each id settles independently; the call resolves when all
+   * are done, so a single failed session can't abort the rest. Returns how many
+   * succeeded/failed for result toasts.
+   */
+  async setSessionsArchivedBatch(
+    ids: readonly string[],
+    archived: boolean,
+  ): Promise<{ succeeded: number; failed: number }> {
+    const results = await Promise.allSettled(
+      ids.map((id) =>
+        archived ? this.archiveSession(id) : this.restoreSession(id),
+      ),
+    );
+    let succeeded = 0;
+    let failed = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled') succeeded += 1;
+      else failed += 1;
+    }
+    return { succeeded, failed };
+  }
+
   // -------------------------------------------------------------------------
   // Messages
   // -------------------------------------------------------------------------

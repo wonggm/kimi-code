@@ -5,6 +5,8 @@ import { useI18n } from 'vue-i18n';
 import Sidebar from './components/Sidebar.vue';
 import ResizeHandle from './components/ResizeHandle.vue';
 import ConversationPane from './components/chat/ConversationPane.vue';
+import SessionAdminView from './views/SessionAdminView.vue';
+import { loadLabSidebarTabs, saveLabSidebarTabs } from './lib/storage';
 import FilePreview from './components/FilePreview.vue';
 import MediaPreview from './components/media/MediaPreview.vue';
 import ThinkingPanel from './components/chat/ThinkingPanel.vue';
@@ -405,6 +407,40 @@ const pendingWorkspaceSubmit = ref<SubmitPayload | null>(null);
 // the picker's backdrop and persists until the user retries or closes.
 const addWorkspaceError = ref<string | null>(null);
 
+// ---------------------------------------------------------------------------
+// Main view (the app has no router): the chat pane or the experimental Lab
+// session-admin page. The admin page owns its own Escape handler (its close
+// resets this to 'chat'); anyOverlayOpen below keeps the global Escape from
+// closing side panels underneath it.
+// ---------------------------------------------------------------------------
+const mainView = ref<'chat' | 'sessionAdmin'>('chat');
+
+/** Experimental Lab flag: multi-tab sidebar (Open / Done / Workspaces). Owned
+ *  here (storage-backed) and passed down to Sidebar + SettingsDialog — mirror
+ *  of the wideMode appearance flags. */
+const labSidebarTabs = ref<boolean>(loadLabSidebarTabs());
+function setLabSidebarTabs(on: boolean): void {
+  labSidebarTabs.value = on;
+  saveLabSidebarTabs(on);
+}
+
+function openSessionAdmin(): void {
+  mainView.value = 'sessionAdmin';
+}
+
+/** Open a session picked from the admin table: leave the admin view and select
+ *  it in the chat pane. */
+function openSessionFromAdmin(sessionId: string): void {
+  mainView.value = 'chat';
+  client.selectSession(sessionId);
+}
+
+/** The search dialog can land on a workspace while the sidebar is collapsed;
+ *  expand it so the selection is visible. */
+function expandSidebar(): void {
+  if (sidebarCollapsed.value) toggleSidebarCollapse();
+}
+
 // Any of these modal/overlay layers, when open, owns Escape. The global
 // capture-phase handler must NOT close a background side panel out from under an
 // open dialog — otherwise Escape dismisses the panel behind the dialog and the
@@ -421,7 +457,8 @@ const anyOverlayOpen = computed<boolean>(
     showOnboarding.value ||
     showMobileSwitcher.value ||
     showMobileSettings.value ||
-    mediaPreview.value !== null,
+    mediaPreview.value !== null ||
+    mainView.value !== 'chat',
 );
 
 // Loading state for model/provider fetches
@@ -898,6 +935,7 @@ function openPr(url: string): void {
         :workspace-sort-mode="client.workspaceSortMode.value"
         :backend="client.backend.value"
         :auto-session-title="autoSessionTitle"
+        :lab-sidebar-tabs="labSidebarTabs"
         @select="client.selectSession($event)"
         @create="handleCreateSession"
         @create-in-workspace="handleCreateSessionInWorkspace($event)"
@@ -908,6 +946,7 @@ function openPr(url: string): void {
         @toggle-pinned="(id, pinned) => handleSessionUpdate(id, { pinned })"
         @generate-title="handleGenerateSessionTitle"
         @archive="confirmArchiveSession($event)"
+        @restore="client.restoreSession($event)"
         @fork="(id) => client.forkSession(id)"
         @export="(id) => client.exportSession(id)"
         @rename-workspace="(id, name) => client.renameWorkspace(id, name)"
@@ -916,6 +955,8 @@ function openPr(url: string): void {
         @set-workspace-sort-mode="client.setWorkspaceSortMode($event)"
         @load-more-sessions="(id) => void client.loadMoreSessions(id)"
         @load-all-sessions="void client.loadAllSessions()"
+        @open-session-admin="openSessionAdmin"
+        @expand-sidebar="expandSidebar"
         @open-settings="showSettings = true"
         @collapse="toggleSidebarCollapse"
       />
@@ -943,7 +984,9 @@ function openPr(url: string): void {
       @open-settings="showMobileSettings = true"
     />
 
+    <!-- Main chat pane — swapped for the session-admin main view when open. -->
     <ConversationPane
+      v-if="mainView === 'chat' || isMobile"
       ref="conversationPaneRef"
       :mobile="isMobile"
       :turns="client.turns.value"
@@ -1032,6 +1075,12 @@ function openPr(url: string): void {
       @open-tool-diff="openToolDiff($event)"
       @edit-message="handleEditMessage"
       @resume-failure="handleResumeFailure"
+    />
+    <SessionAdminView
+      v-else
+      :workspaces="client.workspacesView.value"
+      @open-session="openSessionFromAdmin"
+      @close="mainView = 'chat'"
     />
 
     <!-- Sidebar toggle — floating only when the in-header control can't serve:
@@ -1174,6 +1223,7 @@ function openPr(url: string): void {
       :conversation-toc="client.conversationToc.value"
       :liquid-glass="client.liquidGlass.value"
       :wide-mode="client.wideMode.value"
+      :lab-sidebar-tabs="labSidebarTabs"
       :config="client.config.value"
       :models="client.models.value"
       :config-saving="configSaving"
@@ -1189,6 +1239,7 @@ function openPr(url: string): void {
       @set-conversation-toc="client.setConversationToc($event)"
       @set-liquid-glass="client.setLiquidGlass($event)"
       @set-wide-mode="client.setWideMode($event)"
+      @set-lab-sidebar-tabs="setLabSidebarTabs"
       @update-config="handleUpdateConfig($event)"
       @login="() => { showSettings = false; openLogin(); }"
       @logout="client.logout"

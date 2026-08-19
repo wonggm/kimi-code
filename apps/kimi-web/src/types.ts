@@ -298,7 +298,7 @@ export interface TodoView {
   status: 'pending' | 'in_progress' | 'done';
 }
 
-export type TaskState = 'run' | 'done' | 'fail';
+export type TaskState = 'run' | 'done' | 'fail' | 'cancel';
 
 export interface TaskItem {
   id: string;
