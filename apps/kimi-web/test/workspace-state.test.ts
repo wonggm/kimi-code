@@ -10,7 +10,15 @@ import { DaemonApiError } from '../src/api/errors';
 import { createInitialState } from '../src/api/daemon/eventReducer';
 import { mergeWorkspaces } from '../src/lib/mergeWorkspaces';
 import { loadWorkspaceNameOverrides, saveWorkspaceNameOverrides } from '../src/lib/storage';
-import { useWorkspaceState, forgetLocalTurnState, type UseWorkspaceStateDeps } from '../src/composables/client/useWorkspaceState';
+import { loadLabSidebarTabs, STORAGE_KEYS } from '../src/lib/storage';
+import {
+  labSidebarTabs,
+  setLabSidebarTabs,
+  splitByArchived,
+  useWorkspaceState,
+  forgetLocalTurnState,
+  type UseWorkspaceStateDeps,
+} from '../src/composables/client/useWorkspaceState';
 import type { ExtendedState } from '../src/composables/useKimiWebClient';
 import { clearTrace, traceKeyEvent } from '../src/debug/trace';
 
@@ -22,6 +30,8 @@ const apiMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   exportSession: vi.fn(),
   updateSession: vi.fn(),
+  archiveSession: vi.fn(),
+  restoreSession: vi.fn(),
   getGitStatus: vi.fn(),
   submitPrompt: vi.fn(),
   respondQuestion: vi.fn(),
@@ -2207,5 +2217,141 @@ describe('useWorkspaceState — upsertWorkspacePreserveOrder hidden roots', () =
     ws.upsertWorkspacePreserveOrder(workspace('wd_y', '/home/foo', 'foo'));
 
     expect(state.hiddenWorkspaceRoots).toEqual(['/home/Foo']);
+  });
+});
+
+describe('splitByArchived — Open/Done tab boundary', () => {
+  it('splits a mixed list by the archived flag, preserving order', () => {
+    const open = { id: 'a', archived: false };
+    const done = { id: 'b', archived: true };
+    const { open: opens, done: dones } = splitByArchived([open, done, { id: 'c', archived: true }, { id: 'd', archived: false }]);
+    expect(opens.map((s) => s.id)).toEqual(['a', 'd']);
+    expect(dones.map((s) => s.id)).toEqual(['b', 'c']);
+  });
+
+  it('handles empty input', () => {
+    const { open, done } = splitByArchived([]);
+    expect(open).toEqual([]);
+    expect(done).toEqual([]);
+  });
+});
+
+describe('useWorkspaceState — Done-tab archived list', () => {
+  function archivedSession(id: string, updatedAt: string) {
+    return { ...createSession(), id, archived: true, updatedAt, busy: false };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('ensureDoneSessions loads the first page and paginates on demand', async () => {
+    const first = archivedSession('arch_a', '2026-01-05T00:00:00.000Z');
+    const second = archivedSession('arch_b', '2026-01-04T00:00:00.000Z');
+    apiMock.listSessions
+      .mockResolvedValueOnce({ items: [first], hasMore: true })
+      .mockResolvedValueOnce({ items: [second], hasMore: false });
+
+    const workspace = useWorkspaceState(createState(), createDeps());
+    await workspace.ensureDoneSessions();
+
+    expect(apiMock.listSessions).toHaveBeenCalledWith({
+      archivedOnly: true,
+      pageSize: 50,
+      beforeId: undefined,
+    });
+    expect(workspace.doneSessions.value.map((s) => s.id)).toEqual(['arch_a']);
+    expect(workspace.doneSessionsHasMore.value).toBe(true);
+
+    // Second call without force = next page (cursor advanced past arch_a).
+    await workspace.ensureDoneSessions();
+    expect(workspace.doneSessions.value.map((s) => s.id)).toEqual(['arch_a', 'arch_b']);
+    expect(workspace.doneSessionsHasMore.value).toBe(false);
+    expect(apiMock.listSessions).toHaveBeenLastCalledWith({
+      archivedOnly: true,
+      pageSize: 50,
+      beforeId: 'arch_a',
+    });
+  });
+
+  it('dedupes rows that reappear across pages', async () => {
+    const dup = archivedSession('arch_a', '2026-01-05T00:00:00.000Z');
+    const extra = archivedSession('arch_b', '2026-01-04T00:00:00.000Z');
+    apiMock.listSessions
+      .mockResolvedValueOnce({ items: [dup], hasMore: true })
+      .mockResolvedValueOnce({ items: [dup, extra], hasMore: false });
+
+    const workspace = useWorkspaceState(createState(), createDeps());
+    await workspace.ensureDoneSessions();
+    await workspace.ensureDoneSessions();
+
+    expect(workspace.doneSessions.value.map((s) => s.id)).toEqual(['arch_a', 'arch_b']);
+  });
+
+  it('force=true resets the list and reloads from the newest page', async () => {
+    const old = archivedSession('arch_a', '2026-01-05T00:00:00.000Z');
+    apiMock.listSessions
+      .mockResolvedValueOnce({ items: [old], hasMore: false })
+      .mockResolvedValueOnce({ items: [archivedSession('arch_new', '2026-02-01T00:00:00.000Z')], hasMore: false });
+
+    const workspace = useWorkspaceState(createState(), createDeps());
+    await workspace.ensureDoneSessions();
+    await workspace.ensureDoneSessions(true);
+
+    expect(workspace.doneSessions.value.map((s) => s.id)).toEqual(['arch_new']);
+    expect(apiMock.listSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it('archiveSession mirrors the archived session into the done list', async () => {
+    apiMock.archiveSession.mockResolvedValueOnce({ archived: true });
+    const state = createState();
+    const workspace = useWorkspaceState(state, createDeps());
+
+    await workspace.archiveSession('sess_1');
+
+    expect(apiMock.archiveSession).toHaveBeenCalledWith('sess_1');
+    expect(workspace.doneSessions.value.map((s) => s.id)).toContain('sess_1');
+  });
+
+  it('restoreSession removes the row from the done list', async () => {
+    apiMock.restoreSession.mockResolvedValueOnce(createSession());
+    const done = archivedSession('arch_a', '2026-01-05T00:00:00.000Z');
+    const workspace = useWorkspaceState(createState(), createDeps());
+    workspace.doneSessions.value = [done];
+
+    const ok = await workspace.restoreSession('arch_a');
+
+    expect(ok).toBe(true);
+    expect(workspace.doneSessions.value.map((s) => s.id)).toEqual([]);
+  });
+});
+
+describe('Lab sidebar-tabs flag — storage round-trip', () => {
+  beforeEach(() => {
+    installStorage(createMemoryStorage());
+  });
+
+  afterEach(() => {
+    setLabSidebarTabs(false);
+  });
+
+  it('loadLabSidebarTabs defaults to off', () => {
+    expect(loadLabSidebarTabs()).toBe(false);
+    expect(labSidebarTabs.value).toBe(false);
+  });
+
+  it('setLabSidebarTabs persists to storage', () => {
+    setLabSidebarTabs(true);
+    expect(labSidebarTabs.value).toBe(true);
+    expect(loadLabSidebarTabs()).toBe(true);
+
+    setLabSidebarTabs(false);
+    expect(labSidebarTabs.value).toBe(false);
+    expect(loadLabSidebarTabs()).toBe(false);
+  });
+
+  it('reads a previously persisted value', () => {
+    localStorage.setItem(STORAGE_KEYS.labSidebarTabs, 'true');
+    expect(loadLabSidebarTabs()).toBe(true);
   });
 });

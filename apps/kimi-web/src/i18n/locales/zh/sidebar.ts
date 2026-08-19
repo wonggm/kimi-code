@@ -46,8 +46,18 @@ export default {
   loadingMore: '加载中…',
   collapseSidebar: '收起侧边栏',
   expandSidebar: '展开侧边栏',
-  searchPlaceholder: '搜索会话',
+  /** 实验性多标签页侧边栏（Lab 开关 labSidebarTabs）：会话区显示「进行中 / 已完成 / 工作空间」标签页。 */
+  tabOpen: '进行中',
+  tabDone: '已完成',
+  tabWorkspaces: '工作空间',
+  markDone: '标记完成',
+  reopen: '恢复进行中',
+  noOpenSessions: '还没有进行中的会话',
+  noDoneSessions: '还没有已完成的会话',
+  /** 跨工作空间的会话管理页入口（Lab）。 */
+  sessionAdmin: '会话管理',
+  searchPlaceholder: '搜索会话和工作空间',
   search: '搜索',
   searchHint: '↑↓ 选择 · ↵ 打开 · Esc 关闭',
-  searchNoResults: '没有匹配的会话',
+  searchNoResults: '没有匹配的会话或工作空间',
 };

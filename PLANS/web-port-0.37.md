@@ -10,7 +10,7 @@ pulled by the 2026-08-19 rebase onto upstream `f13f37904`:
   released as **0.37.2** — 2 web changesets.
 
 22 blurbs total, verbatim below — the only written spec that exists.
-**No user triage decision yet for these 22 items.**
+**All 22 verdicts recorded (2026-08-19) — see "Verdicts" at the bottom.**
 
 ## Porting menu
 
@@ -80,3 +80,53 @@ pulled by the 2026-08-19 rebase onto upstream `f13f37904`:
 - `eaa3969dd` — kap-server v2 sessions: page mode, `updated_before`, batch
   archive/restore.
 - `8267bb8fc` — kap-server workspace `fs:suggest` file completion.
+
+## Verdicts (2026-08-19, accounting gate — every blurb has a verdict)
+
+User decisions taken up front: sidebar tabs keep our flat/grouped toggle
+(inside the Open/Done tabs); document-title behavior adopted from upstream
+(with the fork's session-title suffix kept); "Background Agent" rename
+adopted; cancelled tasks get a distinct state (not folded into failed).
+
+### Sync `e31b3a335` (0.37.0)
+
+| Changeset | Verdict | Evidence / files |
+|---|---|---|
+| `composer-mention-pills` | PORTED | `src/lib/mentionTokens.ts`, `components/chat/MentionText.vue` (user-bubble pills), `Composer.vue`, `MentionMenu.vue`, `useMentionMenu.ts`; tests `mention-tokens.test.ts` + `mention-menu.test.ts` |
+| `dock-subagent-rename` | PORTED | `i18n/locales/{en,zh}/tasks.ts` — "Sub Agent" → "Background Agent"; pixel references re-baselined for the wider dock pill |
+| `markdown-frontmatter-meta-block` | PORTED | `src/lib/frontmatter.ts` + `Markdown.vue` frontmatter segment; `test/markdown-frontmatter.test.ts` |
+| `markdown-verbatim-text` | PORTED | `Markdown.vue` — `registerMarkdownPlugin((md) => md.set({ typographer: false }))`; tests in `test/lib-logic.test.ts` |
+| `mention-pill-tooltip` | PORTED | `components/chat/MentionTip.vue` (detail bubble; skill open button works where a resolver exists — follow-up deferred), strike-through for deleted absolute paths, middle-ellipsis names |
+| `panel-header-title-overflow` | PORTED | `components/ui/PanelHeader.vue` — title `flex: 1 1 auto` + ellipsis + tooltip |
+| `paste-folder-insert-path` | PORTED | `composables/useAttachmentUpload.ts` — pasted folders split off as folder mentions instead of failing the upload |
+| `perf-web-animations-power` | NOT APPLICABLE | the fork has no mascot/home doodle; reduced-motion is already uniform (`style.css:1149` global kill + MoonSpinner pause) |
+| `plan-feedback-autogrow` | PORTED | `ApprovalCard.vue` — `autosizeFeedback()` (composer pattern) + re-expand on reopen, 11rem cap |
+| `search-workspace-locate` | PORTED | `SearchSessionsDialog.vue` workspace hits (kind: 'session' \| 'workspace') + `Sidebar.vue` expand + `scrollIntoView` via `data-wsid` anchors |
+| `session-media-attachments` | ALREADY PRESENT | `mappers.ts:161-170` (image/video round-trip incl. `kind: 'file'`), `messagesToTurns.ts:771-786,849-916` (attachment projection), `ChatPane.vue` `AuthMedia`/`AttachmentChip`. Caveat: upstream's newer `sessionMedia` image-source kind is unmapped (future shape, not this blurb) |
+| `sidebar-status-tabs` | PORTED | `Sidebar.vue` Open/Done/Workspaces tab strip; Done = archived sessions (paginated fetch, restore); pinned section above tabs; flat/grouped toggle inside Open/Done (user decision) |
+| `stopped-empty-reply-timestamp` | PORTED | `ChatPane.vue` — `.a-msg-ft` footer now requires a non-empty final text (dropped the `|| createdAt` clause) |
+| `subagent-cancel-startup-window` | ALREADY PRESENT | `SubagentGrid.vue` Stop button is gated only on `state === 'run'` with the id from `taskCreated` — cancellable from the first moment |
+| `subagent-dock-foreground-rows` | ALREADY PRESENT + HARDENED | `ConversationPane.vue:241` has filtered the dock list to `runInBackground` subagents since the grid port; the same exclusion was added inside `lib/subagentFilter.ts` (+ test) as defense in depth |
+| `task-panel-copy-menu` | PORTED | `TasksPane.vue` single copy trigger + `Menu` (copy command / output / all), `lib/taskCopy.ts` payload composer, `test/task-copy.test.ts` |
+| `task-terminated-status-mapping` | PORTED | distinct `cancel` task state (user decision): `types.ts` `TaskState`, `useKimiWebClient.ts` `toUiTask` mapping, muted styling in `TasksPane.vue`/`SubagentGrid.vue`, `stateCancelled` i18n, filter tests |
+| `web-document-title` | PORTED | `composables/usePageTitle.ts` `composePageTitle` — `web_title` (`GET /meta`, one-off fetch since `WireMeta` strips it) > workspace dir · session title > `Kimi Code Web`; engine side (`--web-title` → `web_title`) was pulled by the rebase |
+| `web-session-admin-page` | PORTED | `views/SessionAdminView.vue` (filters, pagination, batch mark-done/reopen), `admin.*` i18n en+zh, `client.setSessionsArchivedBatch` (per-id settle — `/api/v1` has no batch route), sidebar kebab entry (Lab-gated), `test/session-admin.test.ts` |
+| `web-session-search-cmd-k` | PORTED | `Sidebar.vue` `matchSearchShortcut`/`isAppleShortcutPlatform` — Cmd-K only on Apple platforms; Ctrl-K deletes to end of line elsewhere |
+
+### Sync `5c661f461` (0.37.2)
+
+| Changeset | Verdict | Evidence / files |
+|---|---|---|
+| `agent-detail-inspector` | PORTED (fold half) / NOT APPLICABLE (footer half) | `AgentDetailPanel.vue` — fold machinery (`expandedGroups`, thresholds, `.ap-fold`) removed, working process renders fully expanded; our panel never had an end-of-turn timestamp footer |
+| `lab-sidebar-tabs-toggle` | PORTED | `lib/storage.ts` `labSidebarTabs` (default off) + `SettingsDialog.vue` Lab tab Switch + `useWorkspaceState.ts` done-session fetch plumbing; `test/workspace-state.test.ts` +13 |
+
+### Deferred follow-ups (noted, not blocking)
+
+- MentionTip skill "Open" button needs a resolver prop follow-up (agent B).
+- Done-tab rows reuse `SessionRow`, whose kebab still says "Archive" while
+  acting as reopen — needs a `SessionRow` archived prop (agent D note).
+- Agent D's lab-flag/done-list state lives in `useWorkspaceState` but is not
+  re-exported through `useKimiWebClient`; App.vue reads the flag from storage
+  directly (SettingsDialog precedent). Optional 5-line chain addition.
+- `usePageTitle` fetches `/api/v1/meta` raw because `WireMeta` lacks
+  `web_title`; cleaner to add the field to the wire type (agent E note).

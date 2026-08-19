@@ -237,11 +237,13 @@ const {
   update: updateMentionMenu,
   select: selectMentionItem,
   close: closeMentionMenu,
+  insertMention: insertMentionText,
 } = useMentionMenu({
   text,
   textareaRef,
   autosize,
   searchFiles: () => props.searchFiles,
+  skills: () => props.skills,
 });
 
 // Close both popup menus when the composer loses focus — the menu items use
@@ -284,7 +286,15 @@ const {
   handleDrop,
   clearAfterSubmit,
   loadAttachments,
-} = useAttachmentUpload({ uploadImage: () => props.uploadImage, sessionId: () => props.sessionId });
+} = useAttachmentUpload({
+  uploadImage: () => props.uploadImage,
+  sessionId: () => props.sessionId,
+  // A pasted folder is not an upload — its name becomes a folder mention in
+  // the composer text through the shared insertMention helper.
+  onFolderPath: (name) => {
+    insertMentionText({ kind: 'folder', name, path: `${name}/` });
+  },
+});
 
 // Silence noUnusedLocals: fileInputRef is used as a template ref (ref="fileInputRef").
 void fileInputRef;

@@ -7,6 +7,11 @@ export default {
     account: '账户',
     advanced: '高级',
     archived: '已归档',
+    lab: '实验室',
+  },
+  lab: {
+    sidebarTabs: '多标签页侧边栏',
+    sidebarTabsHint: '侧边栏显示「进行中 / 已完成 / 工作空间」三个标签页',
   },
   appearance: '外观',
   notifications: '通知',

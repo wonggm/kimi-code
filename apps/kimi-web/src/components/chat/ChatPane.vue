@@ -12,12 +12,14 @@ import CronNotice from './CronNotice.vue';
 import MessageTime from './MessageTime.vue';
 import AuthMedia from './AuthMedia.vue';
 import AttachmentChip from './AttachmentChip.vue';
+import MentionText from './MentionText.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
 import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { openFileAttachment } from '../../lib/openFileAttachment';
+import { getKimiWebApi } from '../../api';
 import {
   assistantRenderBlocks,
   formatTokens,
@@ -817,6 +819,19 @@ function forwardOpenFile(target: FilePreviewRequest): void {
   emit('openFile', target);
 }
 
+// Mention-pill existence probe: hover-only, cheap. The daemon folder picker
+// (fs:browse) is the only session-free stat-like endpoint in the web API, and
+// it requires an absolute path — so absolute folder mentions get real
+// missing-detection (struck through), while workspace-relative paths and file
+// mentions stay "unknown" (fs:read / download are bound to a session, which
+// ChatPane does not have). If ChatPane ever gains a session-id prop, switch
+// the file probe to readFileContent, mirroring the file-preview flow.
+function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolean> {
+  const isAbsolute = path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path);
+  if (kind !== 'folder' || !isAbsolute) return Promise.resolve(true);
+  return getKimiWebApi().browseFs(path).then((result) => result.path !== '');
+}
+
 // NOTE: the turn-summary line ("已调用 N 个工具…") was removed in f9417af. If it
 // comes back, rebuild it from turnBlocks() with i18n strings — the old
 // implementation lives in git history at f9417af^.
@@ -909,8 +924,11 @@ function forwardOpenFile(target: FilePreviewRequest): void {
               </div>
               <div v-if="turn.pluginCommand.args" class="skill-act-args">{{ turn.pluginCommand.args }}</div>
             </div>
-            <!-- User input renders verbatim (pre-wrap), never through Markdown -->
-            <div v-else class="u-text">{{ turn.text }}</div>
+            <!-- User input renders verbatim (pre-wrap), never through Markdown;
+                 @-mentioned files/folders/skills render as icon pills. -->
+            <div v-else class="u-text">
+              <MentionText :text="turn.text" :open-file="forwardOpenFile" :probe-path="probeMentionPath" />
+            </div>
           </div>
           <div v-if="turn.createdAt || canEditTurn(turn)" class="u-meta">
             <div v-if="canEditTurn(turn)" class="u-edit-wrap" :class="{ undoing: undoingTurnId === turn.id }">
@@ -986,7 +1004,7 @@ function forwardOpenFile(target: FilePreviewRequest): void {
           </template>
         </template>
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />
-        <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && (assistantRunFinalText(ti).trim().length > 0 || turn.createdAt !== undefined)" class="a-msg-ft">
+        <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && assistantRunFinalText(ti).trim().length > 0" class="a-msg-ft">
           <MessageTime v-if="turn.createdAt" :time="turn.createdAt" />
           <button
             v-if="assistantRunFinalText(ti).trim().length > 0"

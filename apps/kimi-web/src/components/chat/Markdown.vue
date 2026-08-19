@@ -6,6 +6,8 @@ import {
   MarkdownRender,
   enableKatex,
   enableMermaid,
+  registerMarkdownPlugin,
+  type MarkdownIt,
   setKaTeXWorker,
   clearKaTeXWorker,
   setMermaidWorker,
@@ -14,6 +16,7 @@ import {
 import { useIsDark } from '../../composables/useIsDark';
 import type { FilePreviewRequest } from '../../types';
 import { collectFilePathAliases, findFilePathLinks } from '../../lib/filePathLinks';
+import { extractFrontmatter } from '../../lib/frontmatter';
 import { markdownRenderPlan } from '../../lib/markdownPerformance';
 import { copyCodeBlockFallback, copyTextToClipboard } from '../../lib/clipboard';
 import { protectInlineCodeDollars, restoreInlineCodeDollars } from '../../lib/inlineCodeMath';
@@ -42,6 +45,14 @@ enableKatex();
 // setMermaidWorker), the MermaidBlockNode can validate partial-stream code
 // off-thread so the UI stays responsive during live diagram output.
 enableMermaid();
+
+// Plain text renders verbatim: the parser's default smart-typography rules
+// rewrite (c)/(tm)/(r) → ©/™/® and --/--- → –/— inside message text, silently
+// changing what the agent wrote. The registered plugin flips typographer off
+// on every parser instance (getMarkdown applies registered plugins after
+// building the instance, so this wins over the factory default). KaTeX math is
+// unaffected — it runs in its own gated rule, independent of typographer.
+registerMarkdownPlugin((md: MarkdownIt) => md.set({ typographer: false }));
 
 // ---------------------------------------------------------------------------
 // Off-main-thread workers for KaTeX and Mermaid
@@ -383,7 +394,8 @@ const codeBlockProps = {
 
 type Segment =
   | { kind: 'md'; text: string }
-  | { kind: 'diff'; code: string };
+  | { kind: 'diff'; code: string }
+  | { kind: 'frontmatter'; text: string };
 
 // Match a fenced ```diff block (``` or ~~~, optional info after `diff`). The
 // closing fence must use the same marker. Capture group 2 is the body.
@@ -391,13 +403,24 @@ const DIFF_FENCE_RE = /(^|\n)(?:```|~~~)diff\b[^\n]*\n([\s\S]*?)(?:\n)?(?:```|~~
 
 const segments = computed<Segment[]>(() => {
   const text = rewriteImageSrcs(props.text ?? '');
-  // Protect `$` inside inline code spans from the parser's inline-math rule
-  // (see inlineCodeMath.ts). Only applied to SETTLED turns: during streaming
-  // the code spans are mid-state and the protection could render another
-  // frame of PUA placeholders; at stream end markstream re-parses the final
-  // text with protection on, and restoreInlineCodeDollars swaps them back.
-  const safe = props.streaming ? text : protectInlineCodeDollars(text);
+  // A leading YAML frontmatter block (`---\nkey: value\n---`) is split off the
+  // source BEFORE the diff-fence pass so it renders as a small meta block
+  // instead of a giant heading. Only a COMPLETE block matches (opening `---`
+  // on line 1 plus a closing fence), so an in-progress stream renders normally
+  // until the block finishes. The split runs on the image-rewritten text so a
+  // `path:` line can't be misread as an image source, and the frontmatter
+  // itself is never run through protectInlineCodeDollars — its raw YAML is
+  // displayed as-is and the `$` sentinel restore pass only looks in <code>.
+  const { frontmatter, body } = extractFrontmatter(text);
+  // Protect `$` inside inline code spans of the BODY from the parser's
+  // inline-math rule (see inlineCodeMath.ts). Only applied to SETTLED turns:
+  // during streaming the code spans are mid-state and the protection could
+  // render another frame of PUA placeholders; at stream end markstream
+  // re-parses the final text with protection on, and restoreInlineCodeDollars
+  // swaps them back.
+  const safe = props.streaming ? body : protectInlineCodeDollars(body);
   const out: Segment[] = [];
+  if (frontmatter !== null) out.push({ kind: 'frontmatter', text: frontmatter });
   let lastIndex = 0;
   DIFF_FENCE_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -469,6 +492,10 @@ function copyDiff(code: string, idx: number) {
         :defer-nodes-until-visible="false"
         @copy="copyCodeBlockFallback"
       />
+
+      <!-- YAML frontmatter → raw meta block (kept out of the parser, which
+           would render the `key: value` lines as a giant heading) -->
+      <pre v-else-if="seg.kind === 'frontmatter'" class="md-frontmatter">{{ seg.text }}</pre>
 
       <!-- ```diff fence → local renderer (preserves +/- markers + colours) -->
       <div v-else class="diff-wrap">
@@ -857,6 +884,23 @@ function copyDiff(code: string, idx: number) {
    the scoped component style is injected. */
 .md :deep(.table-node) tbody tr:hover {
   background-color: transparent !important;
+}
+
+/* ---------------------------------------------------------------------------
+   YAML frontmatter meta block — a small sunken mono box, so a message that
+   starts with `---\nkey: value\n---` reads as metadata instead of a giant
+   heading. Mirrors the code-block chrome below it.
+--------------------------------------------------------------------------- */
+.md-frontmatter {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  box-shadow: var(--shadow-xs);
+  overflow-x: auto;
+  color: var(--color-text-muted);
+  font: var(--text-sm)/1.65 var(--font-mono);
 }
 
 /* ---------------------------------------------------------------------------

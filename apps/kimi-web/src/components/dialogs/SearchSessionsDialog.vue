@@ -1,24 +1,30 @@
 <!-- apps/kimi-web/src/components/dialogs/SearchSessionsDialog.vue -->
-<!-- Spotlight-style session search: type to filter by title + last prompt, each
-     hit shows its workspace, the session title, and a snippet of the matched
-     content with the query highlighted. ↑/↓ to move, ↵ to open, Esc to close. -->
+<!-- Spotlight-style search: workspace hits sit at the top (folder icon), then
+     session hits filtered by title + last prompt + workspace, each showing its
+     workspace, the session title, and a snippet of the matched content with the
+     query highlighted. ↑/↓ to move, ↵ to open, Esc to close. -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { Session } from '../../types';
+import type { Session, WorkspaceView } from '../../types';
 import { highlightHtml, snippet } from '../../lib/searchHighlight';
 import Dialog from '../ui/Dialog.vue';
 import Icon from '../ui/Icon.vue';
 
 const { t } = useI18n();
 
-const props = defineProps<{
-  sessions: Session[];
-  activeId: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    sessions: Session[];
+    workspaces?: WorkspaceView[];
+    activeId: string;
+  }>(),
+  { workspaces: () => [] },
+);
 
 const emit = defineEmits<{
   select: [id: string];
+  selectWorkspace: [workspaceId: string];
   close: [];
 }>();
 
@@ -31,21 +37,42 @@ const query = ref('');
 const inputRef = ref<HTMLInputElement | null>(null);
 const listRef = ref<HTMLElement | null>(null);
 
-interface Hit {
-  session: Session;
-  /** Title matched the query (controls title highlighting). */
-  inTitle: boolean;
-  /** Workspace name matched the query (controls workspace highlighting). */
-  inWorkspace: boolean;
-  /** Snippet of lastPrompt to preview under the title (empty when absent). */
-  snippetText: string;
-}
+type Hit =
+  | { kind: 'workspace'; workspace: WorkspaceView; inName: boolean; inRoot: boolean }
+  | {
+      kind: 'session';
+      session: Session;
+      /** Title matched the query (controls title highlighting). */
+      inTitle: boolean;
+      /** Workspace name matched the query (controls workspace highlighting). */
+      inWorkspace: boolean;
+      /** Snippet of lastPrompt to preview under the title (empty when absent). */
+      snippetText: string;
+    };
 
 const RESULT_CAP = 200;
+// Workspaces shown on an empty query — keeps the "recent sessions" list from
+// being crowded out by workspace rows.
+const EMPTY_QUERY_WORKSPACE_CAP = 12;
 
 const results = computed<Hit[]>(() => {
   const q = query.value.trim().toLowerCase();
   const out: Hit[] = [];
+  // Standalone workspace hits first: matched against the display name and the
+  // root path. An empty query lists all registered workspaces (capped).
+  for (const ws of props.workspaces) {
+    if (q.length > 0 && !ws.name.toLowerCase().includes(q) && !ws.shortPath.toLowerCase().includes(q)) {
+      continue;
+    }
+    out.push({
+      kind: 'workspace',
+      workspace: ws,
+      inName: q.length > 0 && ws.name.toLowerCase().includes(q),
+      inRoot: q.length > 0 && ws.shortPath.toLowerCase().includes(q),
+    });
+    if (out.length >= (q.length > 0 ? RESULT_CAP : EMPTY_QUERY_WORKSPACE_CAP)) break;
+  }
+  if (out.length >= RESULT_CAP) return out;
   for (const s of props.sessions) {
     const title = s.title ?? '';
     const last = s.lastPrompt ?? '';
@@ -56,6 +83,7 @@ const results = computed<Hit[]>(() => {
     // Empty query → show the full (recent) list; otherwise require a hit.
     if (q.length > 0 && !inTitle && !inLast && !inWorkspace) continue;
     out.push({
+      kind: 'session',
       session: s,
       inTitle,
       inWorkspace,
@@ -91,14 +119,17 @@ function move(delta: number): void {
   void scrollSelectedIntoView();
 }
 
-function openHit(id: string): void {
-  emit('select', id);
+function openHit(id: string, kind: Hit['kind']): void {
+  if (kind === 'workspace') emit('selectWorkspace', id);
+  else emit('select', id);
   emit('close');
 }
 
 function openSelected(): void {
   const hit = results.value[selectedIndex.value];
-  if (hit) openHit(hit.session.id);
+  if (!hit) return;
+  if (hit.kind === 'workspace') openHit(hit.workspace.id, 'workspace');
+  else openHit(hit.session.id, 'session');
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -145,31 +176,47 @@ onMounted(() => {
       <template v-if="results.length > 0">
         <button
           v-for="(hit, i) in results"
-          :key="hit.session.id"
+          :key="hit.kind === 'workspace' ? hit.workspace.id : hit.session.id"
           class="sd-row"
-          :class="{ on: i === selectedIndex, active: hit.session.id === activeId }"
+          :class="{ on: i === selectedIndex, active: hit.kind === 'session' && hit.session.id === activeId }"
           role="option"
           :aria-selected="i === selectedIndex"
-          @click="openHit(hit.session.id)"
+          @click="hit.kind === 'workspace' ? openHit(hit.workspace.id, 'workspace') : openHit(hit.session.id, 'session')"
           @mousemove="selectedIndex = i"
         >
-          <span class="sd-meta">
-            <Icon class="sd-folder" name="folder-closed" size="sm" />
+          <!-- Workspace hit: folder icon + root path meta, name as the title. -->
+          <template v-if="hit.kind === 'workspace'">
+            <span class="sd-meta">
+              <Icon class="sd-folder" name="folder" size="sm" />
+              <!-- eslint-disable-next-line vue/no-v-html -- highlightHtml escapes the source before injecting <mark>. -->
+              <span
+                class="sd-ws"
+                v-html="highlightHtml(hit.workspace.shortPath, hit.inRoot ? query : '')"
+              ></span>
+            </span>
+            <!-- eslint-disable-next-line vue/no-v-html -- highlightHtml escapes the source before injecting <mark>. -->
+            <span class="sd-title" v-html="highlightHtml(hit.workspace.name, hit.inName ? query : '')"></span>
+          </template>
+          <!-- Session hit: workspace meta + title + last-prompt snippet. -->
+          <template v-else>
+            <span class="sd-meta">
+              <Icon class="sd-folder" name="folder-closed" size="sm" />
+              <!-- eslint-disable-next-line vue/no-v-html -- highlightHtml escapes the source before injecting <mark>. -->
+              <span
+                class="sd-ws"
+                v-html="highlightHtml(hit.session.workspaceName ?? hit.session.workspaceId ?? '', hit.inWorkspace ? query : '')"
+              ></span>
+              <span class="sd-time">{{ hit.session.time }}</span>
+            </span>
+            <!-- eslint-disable-next-line vue/no-v-html -- highlightHtml escapes the source before injecting <mark>. -->
+            <span class="sd-title" v-html="highlightHtml(hit.session.title, hit.inTitle ? query : '')"></span>
             <!-- eslint-disable-next-line vue/no-v-html -- highlightHtml escapes the source before injecting <mark>. -->
             <span
-              class="sd-ws"
-              v-html="highlightHtml(hit.session.workspaceName ?? hit.session.workspaceId ?? '', hit.inWorkspace ? query : '')"
+              v-if="hit.snippetText"
+              class="sd-snippet"
+              v-html="highlightHtml(hit.snippetText, query)"
             ></span>
-            <span class="sd-time">{{ hit.session.time }}</span>
-          </span>
-          <!-- eslint-disable-next-line vue/no-v-html -- highlightHtml escapes the source before injecting <mark>. -->
-          <span class="sd-title" v-html="highlightHtml(hit.session.title, hit.inTitle ? query : '')"></span>
-          <!-- eslint-disable-next-line vue/no-v-html -- highlightHtml escapes the source before injecting <mark>. -->
-          <span
-            v-if="hit.snippetText"
-            class="sd-snippet"
-            v-html="highlightHtml(hit.snippetText, query)"
-          ></span>
+          </template>
         </button>
       </template>
       <div v-else class="sd-empty">{{ t('sidebar.searchNoResults') }}</div>

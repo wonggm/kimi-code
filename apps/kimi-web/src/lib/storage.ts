@@ -44,6 +44,9 @@ export const STORAGE_KEYS = {
   sidebarCollapsed: 'kimi-web.sidebar-collapsed',
   sidebarWidth: 'kimi-web.sidebar-width',
   sidebarViewMode: 'kimi-web.sidebar-view-mode',
+  // Experimental Lab settings (default off): multi-tab sidebar (Open / Done /
+  // Workspaces). The admin page shares this flag's Lab gate.
+  labSidebarTabs: 'kimi-web.lab.sidebar-tabs',
   // deprecated cleanups (kept so the removals still fire for old users)
   codeFont: 'kimi-web.code-font',
   contentAlign: 'kimi-web.content-align',
@@ -202,4 +205,18 @@ export function loadWorkspaceSort(): string | null {
 
 export function saveWorkspaceSort(mode: string): void {
   safeSetString(STORAGE_KEYS.workspaceSort, mode);
+}
+
+// ---------------------------------------------------------------------------
+// Experimental Lab flags (default off). Persisted as 'true'/'false' strings —
+// a missing key (or any other value) means off, so the Lab features never
+// sneak in for users who never touched them.
+// ---------------------------------------------------------------------------
+
+export function loadLabSidebarTabs(): boolean {
+  return safeGetString(STORAGE_KEYS.labSidebarTabs) === 'true';
+}
+
+export function saveLabSidebarTabs(on: boolean): void {
+  safeSetString(STORAGE_KEYS.labSidebarTabs, on ? 'true' : 'false');
 }

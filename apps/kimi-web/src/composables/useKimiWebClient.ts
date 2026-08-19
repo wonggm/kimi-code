@@ -1889,6 +1889,8 @@ function toUiTask(task: AppTask): TaskItem {
     state = 'run';
   } else if (task.status === 'completed') {
     state = 'done';
+  } else if (task.status === 'cancelled') {
+    state = 'cancel';
   } else {
     state = 'fail';
   }

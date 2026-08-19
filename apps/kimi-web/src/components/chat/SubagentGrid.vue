@@ -41,6 +41,8 @@ const EMPTY_BY_FILTER: Record<SubagentFilter, string> = {
 };
 
 function glyphStatus(state: string): StatusGlyphStatus {
+  // 'cancel' falls through to 'pending' — the muted glyph, deliberately not
+  // the danger (fail) or success (done) coloring.
   if (state === 'run' || state === 'done' || state === 'fail') return state;
   return 'pending';
 }
@@ -70,10 +72,16 @@ function displayModel(task: TaskItem): string | undefined {
         v-for="task in visibleTasks"
         :key="task.id"
         class="sg-card"
-        :class="{ run: task.state === 'run', done: task.state === 'done', fail: task.state === 'fail' }"
+        :class="{
+          run: task.state === 'run',
+          done: task.state === 'done',
+          fail: task.state === 'fail',
+          cancel: task.state === 'cancel',
+        }"
       >
         <div class="sg-main" role="button" :aria-label="task.name" @click="emit('open', task.id)">
           <StatusGlyph :status="glyphStatus(task.state)" />
+          <span v-if="task.state === 'cancel'" class="sg-state">{{ t('tasks.stateCancelled') }}</span>
           <span class="sg-name" :title="task.name">{{ task.name }}</span>
         </div>
         <div class="sg-meta">
@@ -132,6 +140,13 @@ function displayModel(task: TaskItem): string | undefined {
 .sg-card.run { border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line)); }
 .sg-card.done { opacity: 0.72; }
 .sg-card.fail .sg-name { color: var(--color-danger); }
+.sg-card.cancel .sg-name { color: var(--color-text-muted); }
+
+.sg-state {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
 
 .sg-main {
   display: flex;

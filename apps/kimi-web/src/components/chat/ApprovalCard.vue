@@ -62,6 +62,16 @@ const feedbackOpen = ref(false);
 const feedbackText = ref('');
 const feedbackRef = ref<HTMLTextAreaElement | null>(null);
 
+/** Fit the feedback box to its content height. The resting height comes from
+ *  `rows`, the upper bound from CSS `max-height`; once content outgrows the cap
+ *  `overflow-y: auto` scrolls internally. */
+function autosizeFeedback(): void {
+  const el = feedbackRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 function openFeedback(): void {
   if (props.busy) return;
   feedbackOpen.value = true;
@@ -69,6 +79,12 @@ function openFeedback(): void {
   // Focus textarea next tick
   setTimeout(() => feedbackRef.value?.focus(), 0);
 }
+
+// The textarea mounts via v-if; whenever it appears (open, or re-expand after
+// minimize) fit its height to the current text right away.
+watch(feedbackOpen, (open) => {
+  if (open) setTimeout(() => autosizeFeedback(), 0);
+});
 
 function submitFeedback(): void {
   if (props.busy) return;
@@ -294,6 +310,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
           class="feedback-ta"
           :placeholder="t('approval.feedbackPlaceholder')"
           rows="2"
+          @input="autosizeFeedback"
           @keydown="onFeedbackKeydown"
         />
         <div class="feedback-hint">{{ t('approval.feedbackHint') }}</div>
@@ -538,6 +555,8 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   border-radius: var(--radius-sm);
   resize: none;
   outline: none;
+  max-height: 11rem;
+  overflow-y: auto;
   color: var(--color-text);
   background: var(--color-surface-raised);
 }

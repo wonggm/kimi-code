@@ -810,6 +810,9 @@ export interface KimiWebApi {
   getSessionWarnings(sessionId: string): Promise<AppSessionWarning[]>;
   archiveSession(sessionId: string): Promise<{ archived: true }>;
   restoreSession(sessionId: string): Promise<AppSession>;
+  /** Batch archive/restore via the per-id endpoints; resolves when every id
+   *  settles, reporting per-id success/failure counts for result toasts. */
+  setSessionsArchivedBatch(ids: readonly string[], archived: boolean): Promise<{ succeeded: number; failed: number }>;
   listMessages(sessionId: string, input?: PageRequest & { role?: AppMessageRole }): Promise<Page<AppMessage>>;
   /** v2 initial sync: atomic session state + `asOfSeq` watermark + epoch. */
   getSessionSnapshot(sessionId: string): Promise<AppSessionSnapshot>;

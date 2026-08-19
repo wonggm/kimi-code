@@ -25,7 +25,9 @@ defineEmits<{ close: [] }>();
 
 <template>
   <div class="ui-panel-header" :class="{ wrap }">
-    <span class="ui-panel-header__title">{{ title }}</span>
+    <Tooltip :text="title">
+      <span class="ui-panel-header__title">{{ title }}</span>
+    </Tooltip>
     <Tooltip :text="subtitle">
       <span v-if="subtitle" class="ui-panel-header__sub">{{ subtitle }}</span>
     </Tooltip>
@@ -56,7 +58,11 @@ defineEmits<{ close: [] }>();
   background: var(--color-surface);
 }
 .ui-panel-header__title {
-  flex: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: var(--weight-semibold) var(--text-xs) var(--font-mono);
   letter-spacing: 0.04em;
   color: var(--color-text);

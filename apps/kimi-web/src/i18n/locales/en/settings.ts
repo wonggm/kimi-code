@@ -7,6 +7,11 @@ export default {
     account: 'Account',
     advanced: 'Advanced',
     archived: 'Archived',
+    lab: 'Lab',
+  },
+  lab: {
+    sidebarTabs: 'Multi-tab sidebar',
+    sidebarTabsHint: 'The sidebar shows Open / Done / Workspaces tabs',
   },
   appearance: 'Appearance',
   notifications: 'Notifications',
