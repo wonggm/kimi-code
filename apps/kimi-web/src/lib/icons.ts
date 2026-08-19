@@ -45,6 +45,7 @@ import RiArchiveLine from '~icons/ri/archive-line';
 import RiArrowDownLine from '~icons/ri/arrow-down-line';
 import RiArrowDownSLine from '~icons/ri/arrow-down-s-line';
 import RiArrowGoBackLine from '~icons/ri/arrow-go-back-line';
+import RiArrowLeftSLine from '~icons/ri/arrow-left-s-line';
 import RiArrowRightLine from '~icons/ri/arrow-right-line';
 import RiArrowRightSLine from '~icons/ri/arrow-right-s-line';
 import RiArrowUpLine from '~icons/ri/arrow-up-line';
@@ -117,6 +118,7 @@ import RawArchiveLine from '~icons/ri/archive-line?raw';
 import RawArrowDownLine from '~icons/ri/arrow-down-line?raw';
 import RawArrowDownSLine from '~icons/ri/arrow-down-s-line?raw';
 import RawArrowGoBackLine from '~icons/ri/arrow-go-back-line?raw';
+import RawArrowLeftSLine from '~icons/ri/arrow-left-s-line?raw';
 import RawArrowRightLine from '~icons/ri/arrow-right-line?raw';
 import RawArrowRightSLine from '~icons/ri/arrow-right-s-line?raw';
 import RawArrowUpLine from '~icons/ri/arrow-up-line?raw';
@@ -191,6 +193,7 @@ export type IconName =
   | 'sliders'
   | 'log-in'
   | 'chevron-down'
+  | 'chevron-left'
   | 'chevron-right'
   | 'chevron-up'
   | 'arrow-up'
@@ -277,6 +280,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   sliders: entry(RiEqualizerLine, RawEqualizerLine),
   'log-in': entry(RiLoginBoxLine, RawLoginBoxLine),
   'chevron-down': entry(RiArrowDownSLine, RawArrowDownSLine),
+  'chevron-left': entry(RiArrowLeftSLine, RawArrowLeftSLine),
   'chevron-right': entry(RiArrowRightSLine, RawArrowRightSLine),
   'chevron-up': entry(RiArrowUpSLine, RawArrowUpSLine),
   'arrow-up': entry(RiArrowUpLine, RawArrowUpLine),
@@ -376,6 +380,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
     'Navigation & layout',
     [
       'chevron-down',
+      'chevron-left',
       'chevron-right',
       'chevron-up',
       'arrow-up',

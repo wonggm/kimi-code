@@ -64,7 +64,7 @@ describe('useMentionMenu — update', () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(searchFiles).toHaveBeenCalledWith('a');
     expect(mention.open.value).toBe(true);
-    expect(mention.items.value).toEqual([{ path: 'src/a.ts', name: 'a.ts' }]);
+    expect(mention.items.value).toEqual([{ kind: 'file', path: 'src/a.ts', name: 'a.ts' }]);
     expect(mention.loading.value).toBe(false);
     expect(mention.active.value).toBe(0);
   });
@@ -115,18 +115,18 @@ describe('useMentionMenu — close', () => {
 });
 
 describe('useMentionMenu — select', () => {
-  it('replaces the @token with the chosen path', async () => {
+  it('replaces the @token with the mention link', async () => {
     const { text, textarea, mention } = setup('hello @a');
     textarea.value = 'hello @a';
-    mention.select({ path: 'src/a.ts', name: 'a.ts' });
-    expect(text.value).toBe('hello src/a.ts');
+    mention.select({ kind: 'file', name: 'a.ts', path: 'src/a.ts' });
+    expect(text.value).toBe('hello [a.ts](src/a.ts)');
     expect(mention.open.value).toBe(false);
     await nextTick();
   });
 
   it('is a no-op when there is no @token', () => {
     const { text, mention } = setup('hello');
-    mention.select({ path: 'src/a.ts', name: 'a.ts' });
+    mention.select({ kind: 'file', name: 'a.ts', path: 'src/a.ts' });
     expect(text.value).toBe('hello');
   });
 });

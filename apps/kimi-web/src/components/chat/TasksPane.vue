@@ -4,12 +4,17 @@
      right. Clicking a row selects it and fills the detail pane; running rows
      keep an inline Stop button. -->
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, nextTick, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { TaskItem } from '../../types';
 import { filterBashTasks, type BashFilter } from '../../lib/bashTaskFilter';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { composeTaskCopyPayload, type TaskCopyKind } from '../../lib/taskCopy';
 import SegmentedControl from '../ui/SegmentedControl.vue';
+import IconButton from '../ui/IconButton.vue';
+import Icon from '../ui/Icon.vue';
+import Menu from '../ui/Menu.vue';
+import MenuItem from '../ui/MenuItem.vue';
 import StatusGlyph, { type StatusGlyphStatus } from './StatusGlyph.vue';
 
 const props = defineProps<{ tasks: TaskItem[] }>();
@@ -41,8 +46,90 @@ const EMPTY_BY_FILTER: Record<BashFilter, string> = {
   done: 'tasks.bash.emptyDone',
 };
 
-const copiedCommandIds = reactive(new Set<string>());
-const copiedOutputIds = reactive(new Set<string>());
+// ---------------------------------------------------------------------------
+// Task detail copy menu: one trigger opens a menu with copy command / copy
+// output / copy all (command + output joined by a blank line). A single
+// "copied" feedback flips the trigger icon for whichever item last fired.
+// ---------------------------------------------------------------------------
+const copiedKind = ref<TaskCopyKind | null>(null);
+
+const selectedPayload = computed(() =>
+  selected.value
+    ? composeTaskCopyPayload(selected.value.meta, selected.value.output)
+    : null,
+);
+const copyCommandAvailable = computed(() => Boolean(selectedPayload.value?.command));
+const copyOutputAvailable = computed(() => Boolean(selectedPayload.value?.output));
+const copyAnything = computed(() => Boolean(selectedPayload.value?.all));
+
+const menuOpen = ref(false);
+const triggerRef = ref<InstanceType<typeof IconButton> | null>(null);
+const menuRef = ref<InstanceType<typeof Menu> | null>(null);
+const menuStyle = ref<Record<string, string>>({});
+
+function onDocClick(e: MouseEvent): void {
+  const target = e.target as Node;
+  if (menuRef.value?.el?.contains(target) || triggerRef.value?.el?.contains(target)) return;
+  closeMenu();
+}
+
+function onScrollOrResize(): void {
+  closeMenu();
+}
+
+async function toggleMenu(e: Event): Promise<void> {
+  e.stopPropagation();
+  if (menuOpen.value) {
+    closeMenu();
+    return;
+  }
+  if (!copyAnything.value) return;
+  menuOpen.value = true;
+  document.addEventListener('mousedown', onDocClick);
+  window.addEventListener('resize', onScrollOrResize);
+  await nextTick();
+  const btn = triggerRef.value?.el;
+  const menu = menuRef.value?.el;
+  if (!btn || !menu) return;
+  const r = btn.getBoundingClientRect();
+  const gap = 4;
+  const margin = 8;
+  const menuW = menu.offsetWidth;
+  const menuH = menu.offsetHeight;
+  let top = r.bottom + gap;
+  if (top + menuH > window.innerHeight - margin) {
+    top = Math.max(margin, r.top - menuH - gap);
+  }
+  let left = r.right - menuW;
+  if (left < margin) left = margin;
+  menuStyle.value = {
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
+  };
+}
+
+function closeMenu(): void {
+  menuOpen.value = false;
+  document.removeEventListener('mousedown', onDocClick);
+  window.removeEventListener('resize', onScrollOrResize);
+}
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onDocClick);
+  window.removeEventListener('resize', onScrollOrResize);
+});
+
+async function onCopyPayload(kind: TaskCopyKind): Promise<void> {
+  const text = selectedPayload.value?.[kind] ?? '';
+  if (!text) return;
+  closeMenu();
+  const ok = await copyTextToClipboard(text);
+  if (!ok) return;
+  copiedKind.value = kind;
+  setTimeout(() => {
+    if (copiedKind.value === kind) copiedKind.value = null;
+  }, 1500);
+}
 
 function select(task: TaskItem): void {
   selectedId.value = task.id;
@@ -53,26 +140,10 @@ function hasDetail(task: TaskItem): boolean {
 }
 
 function glyphStatus(state: string): StatusGlyphStatus {
+  // 'cancel' falls through to 'pending' — the muted glyph, deliberately not
+  // the danger (fail) or success (done) coloring.
   if (state === 'run' || state === 'done' || state === 'fail') return state;
   return 'pending';
-}
-
-async function copyToClipboard(text: string, taskId: string, set: Set<string>): Promise<void> {
-  const ok = await copyTextToClipboard(text);
-  if (!ok) return;
-  set.add(taskId);
-  setTimeout(() => set.delete(taskId), 1500);
-}
-
-async function copyTaskCommand(task: TaskItem): Promise<void> {
-  if (!task.meta) return;
-  await copyToClipboard(task.meta, task.id, copiedCommandIds);
-}
-
-async function copyTaskOutput(task: TaskItem): Promise<void> {
-  const text = task.output?.join('\n') ?? '';
-  if (!text) return;
-  await copyToClipboard(text, task.id, copiedOutputIds);
 }
 </script>
 
@@ -96,13 +167,12 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
             task.kind,
             task.timing,
             selectedId === task.id,
-            copiedCommandIds.has(task.id),
-            copiedOutputIds.has(task.id),
           ]"
           class="tp-row"
           :class="{
             done: task.state === 'done',
             fail: task.state === 'fail',
+            cancel: task.state === 'cancel',
             selected: selectedId === task.id,
           }"
           :role="hasDetail(task) ? 'button' : undefined"
@@ -110,6 +180,7 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
           @click="hasDetail(task) && select(task)"
         >
           <StatusGlyph :status="glyphStatus(task.state)" />
+          <span v-if="task.state === 'cancel'" class="tp-state">{{ t('tasks.stateCancelled') }}</span>
           <span class="tp-name">{{ task.name }}</span>
           <span class="tp-time">{{ task.timing }}</span>
           <button
@@ -126,6 +197,7 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
         <template v-else>
           <div class="tp-detail-head">
             <StatusGlyph :status="glyphStatus(selected.state)" />
+            <span v-if="selected.state === 'cancel'" class="tp-state">{{ t('tasks.stateCancelled') }}</span>
             <span class="tp-detail-name">{{ selected.name }}</span>
             <span class="tp-detail-time">{{ selected.timing }}</span>
             <button
@@ -133,25 +205,45 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
               class="tp-stop"
               @click.stop="emit('cancel', selected.id)"
             >{{ t('tasks.stop') }}</button>
+            <IconButton
+              ref="triggerRef"
+              class="tp-copy-menu"
+              :class="{ open: menuOpen }"
+              size="sm"
+              :label="t('tasks.copy')"
+              :disabled="!copyAnything"
+              aria-haspopup="menu"
+              :aria-expanded="menuOpen"
+              @click.stop="toggleMenu($event)"
+            >
+              <Icon :name="copiedKind ? 'check' : 'copy'" size="sm" />
+            </IconButton>
+            <Menu
+              v-if="menuOpen"
+              ref="menuRef"
+              class="tp-menu"
+              :style="menuStyle"
+              @click.stop
+            >
+              <MenuItem :disabled="!copyCommandAvailable" @click="onCopyPayload('command')">
+                <Icon name="terminal" size="sm" />
+                {{ copiedKind === 'command' ? t('tasks.copied') : t('tasks.copyCommand') }}
+              </MenuItem>
+              <MenuItem :disabled="!copyOutputAvailable" @click="onCopyPayload('output')">
+                <Icon name="file-text" size="sm" />
+                {{ copiedKind === 'output' ? t('tasks.copied') : t('tasks.copyOutput') }}
+              </MenuItem>
+              <MenuItem separator />
+              <MenuItem :disabled="!copyAnything" @click="onCopyPayload('all')">
+                <Icon name="copy" size="sm" />
+                {{ copiedKind === 'all' ? t('tasks.copied') : t('tasks.copyAll') }}
+              </MenuItem>
+            </Menu>
           </div>
           <div v-if="selected.meta" class="tp-codebox">
-            <button
-              class="tp-copy"
-              :class="{ copied: copiedCommandIds.has(selected.id) }"
-              @click.stop="copyTaskCommand(selected)"
-            >
-              {{ copiedCommandIds.has(selected.id) ? t('tasks.copied') : t('tasks.copy') }}
-            </button>
             <pre class="tp-pre"><code><span class="tp-cmd">{{ selected.meta }}</span></code></pre>
           </div>
           <div v-if="selected.output && selected.output.length > 0" class="tp-codebox">
-            <button
-              class="tp-copy"
-              :class="{ copied: copiedOutputIds.has(selected.id) }"
-              @click.stop="copyTaskOutput(selected)"
-            >
-              {{ copiedOutputIds.has(selected.id) ? t('tasks.copied') : t('tasks.copy') }}
-            </button>
             <pre class="tp-pre"><code>
               <span v-for="(line, i) in selected.output" :key="i" class="tp-line">{{ line }}</span>
             </code></pre>
@@ -221,6 +313,15 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
 .tp-row.fail .tp-name {
   color: var(--color-danger);
 }
+.tp-row.cancel .tp-name {
+  color: var(--color-text-muted);
+}
+
+.tp-state {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
 
 .tp-name {
   flex: 1;
@@ -269,6 +370,7 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
   align-items: center;
   gap: var(--space-2);
   flex: none;
+  min-width: 0;
 }
 .tp-detail-name {
   flex: 1;
@@ -285,42 +387,24 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
   color: var(--color-text-faint);
 }
 
+/* Copy menu trigger + float, anchored to the detail head row (same pattern as
+   the header kebab menu: fixed positioning, surface/items from Menu + MenuItem). */
+.tp-copy-menu.open {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+.tp-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-dropdown);
+}
+
 .tp-codebox {
-  position: relative;
   flex: none;
   background: var(--color-surface-sunken);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-sm);
-}
-
-.tp-copy {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  z-index: 1;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity var(--duration-fast) ease, visibility var(--duration-fast) ease;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-xs);
-  color: var(--color-text-muted);
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  padding: 1px var(--space-2);
-  cursor: pointer;
-}
-.tp-codebox:hover .tp-copy,
-.tp-copy:focus-visible {
-  opacity: 1;
-  visibility: visible;
-}
-.tp-copy:hover {
-  background: var(--color-surface-sunken);
-}
-.tp-copy.copied {
-  color: var(--color-success);
-  border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-line));
 }
 
 .tp-pre {

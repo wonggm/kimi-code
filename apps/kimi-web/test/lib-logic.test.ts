@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { bucketPastedData } from '../src/composables/useAttachmentUpload';
+import { mentionToText, tokenizeMentions } from '../src/lib/mentionTokens';
 import {
   collectFilePathAliases,
   findFilePathLinks,
   parseFilePathLinkCandidate,
 } from '../src/lib/filePathLinks';
 import { parseDiff } from '../src/lib/parseDiff';
+import { extractFrontmatter } from '../src/lib/frontmatter';
 import { buildDiffLines } from '../src/lib/diffLines';
 import { buildEditDiffLines } from '../src/lib/toolDiff';
 import { createCoalescedAsyncRunner } from '../src/lib/snapshotSync';
@@ -43,6 +46,7 @@ import {
   traceToJsonl,
   traceWsIn,
 } from '../src/debug/trace';
+import { composePageTitle } from '../src/composables/usePageTitle';
 
 // The trace tests exercise its exported recording/serialization contract:
 // session exports receive only bounded, explicitly selected metadata.
@@ -861,5 +865,169 @@ describe('keepLiveSubagents', () => {
     const [merged] = keepLiveSubagents(rest, [live]);
     expect(merged?.outputPreview).toBe('final result');
     expect(merged?.outputBytes).toBe(200);
+  });
+});
+
+describe('extractFrontmatter', () => {
+  it('splits a leading ---fenced block from the body', () => {
+    expect(extractFrontmatter('---\nkey: value\n---\nrest of message')).toEqual({
+      frontmatter: 'key: value\n',
+      body: 'rest of message',
+    });
+  });
+
+  it('returns no frontmatter for a plain message', () => {
+    expect(extractFrontmatter('plain text')).toEqual({ frontmatter: null, body: 'plain text' });
+    expect(extractFrontmatter('')).toEqual({ frontmatter: null, body: '' });
+  });
+
+  it('treats an unterminated opening fence as plain body', () => {
+    expect(extractFrontmatter('---\nkey: value\n')).toEqual({
+      frontmatter: null,
+      body: '---\nkey: value\n',
+    });
+  });
+
+  it('treats an empty ---/--- block as plain body', () => {
+    expect(extractFrontmatter('---\n---\nrest')).toEqual({
+      frontmatter: null,
+      body: '---\n---\nrest',
+    });
+  });
+
+  it('handles CRLF line endings in both fences', () => {
+    expect(extractFrontmatter('---\r\nkey: value\r\n---\r\nrest')).toEqual({
+      frontmatter: 'key: value\r\n',
+      body: 'rest',
+    });
+  });
+
+  it('does not treat a --- fence later in the message as frontmatter', () => {
+    expect(extractFrontmatter('text before\n---\nkey: value\n---\nrest')).toEqual({
+      frontmatter: null,
+      body: 'text before\n---\nkey: value\n---\nrest',
+    });
+  });
+
+  it('tolerates trailing whitespace on the fence lines', () => {
+    expect(extractFrontmatter('---  \nkey: value\n--- \nrest')).toEqual({
+      frontmatter: 'key: value\n',
+      body: 'rest',
+    });
+  });
+
+  it('returns an empty body when the message is only frontmatter', () => {
+    expect(extractFrontmatter('---\nkey: value\n---')).toEqual({ frontmatter: 'key: value\n', body: '' });
+    expect(extractFrontmatter('---\nkey: value\n---\n')).toEqual({ frontmatter: 'key: value\n', body: '' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Paste bucketing — useAttachmentUpload.bucketPastedData (pure helper).
+// ---------------------------------------------------------------------------
+
+interface FakeItem {
+  kind: string;
+  file?: File | null;
+  isDirectory?: boolean;
+}
+
+function fakeFile(name: string, type = '', size = 10): File {
+  return { name, type, size } as unknown as File;
+}
+
+function source(items: FakeItem[], files: File[] = []): { items: unknown; files: unknown } {
+  return {
+    items: items.map((item) => ({
+      kind: item.kind,
+      getAsFile: () => item.file ?? null,
+      ...(item.isDirectory !== undefined
+        ? { webkitGetAsEntry: () => (item.isDirectory ? { isDirectory: true } : null) }
+        : {}),
+    })),
+    files,
+  };
+}
+
+describe('bucketPastedData', () => {
+  it('buckets a pasted folder into folderNames and never uploads it', () => {
+    const bucket = bucketPastedData(source([{ kind: 'file', file: fakeFile('assets'), isDirectory: true }]));
+    expect(bucket.hasFolders).toBe(true);
+    expect(bucket.folderNames).toEqual(['assets']);
+    expect(bucket.files).toEqual([]);
+  });
+
+  it('keeps files alongside folders and strips the folder twin from FileList', () => {
+    const items = [
+      { kind: 'file', file: fakeFile('assets'), isDirectory: true },
+      { kind: 'file', file: fakeFile('a.png', 'image/png') },
+    ];
+    const files = [fakeFile('assets'), fakeFile('screenshot.png', 'image/png')];
+    const bucket = bucketPastedData(source(items, files));
+    expect(bucket.hasFolders).toBe(true);
+    expect(bucket.folderNames).toEqual(['assets']);
+    expect(bucket.files.map((f) => f.name)).toEqual(['a.png', 'screenshot.png']);
+  });
+
+  it('reports hasFolders when a directory entry yields no name', () => {
+    const bucket = bucketPastedData(source([{ kind: 'file', file: null, isDirectory: true }]));
+    expect(bucket.hasFolders).toBe(true);
+    expect(bucket.folderNames).toEqual([]);
+    expect(bucket.files).toEqual([]);
+  });
+
+  it('ignores non-file items and dedupes repeated entries', () => {
+    const items = [
+      { kind: 'string', file: fakeFile('x.png') },
+      { kind: 'file', file: fakeFile('a.png', 'image/png') },
+      { kind: 'file', file: fakeFile('a.png', 'image/png') },
+      { kind: 'file', file: fakeFile('b.txt', 'text/plain') },
+    ];
+    const bucket = bucketPastedData(source(items));
+    expect(bucket.hasFolders).toBe(false);
+    expect(bucket.folderNames).toEqual([]);
+    expect(bucket.files.map((f) => f.name)).toEqual(['a.png', 'b.txt']);
+  });
+
+  it('falls back to plain files when webkitGetAsEntry is unavailable', () => {
+    const items = [{ kind: 'file', file: fakeFile('folder') }];
+    const bucket = bucketPastedData(source(items));
+    expect(bucket.hasFolders).toBe(false);
+    expect(bucket.files.map((f) => f.name)).toEqual(['folder']);
+  });
+
+  it('a pasted folder name round-trips into a folder mention token', () => {
+    const text = mentionToText({ kind: 'folder', name: 'assets', path: 'assets/' });
+    const segments = tokenizeMentions(text);
+    expect(segments).toEqual([{ kind: 'folder', name: 'assets', path: 'assets/' }]);
+  });
+});
+
+describe('composePageTitle', () => {
+  it('uses the --web-title override verbatim when set', () => {
+    expect(
+      composePageTitle({ webTitle: 'My Dev Box', workspaceName: 'muon-sim', sessionTitle: 'scan' }),
+    ).toBe('My Dev Box');
+  });
+
+  it('treats an empty web_title as unset', () => {
+    expect(
+      composePageTitle({ webTitle: '', workspaceName: 'muon-sim', sessionTitle: 'scan' }),
+    ).toBe('muon-sim · scan');
+  });
+
+  it('joins the workspace dir name and session title when both are known', () => {
+    expect(composePageTitle({ workspaceName: 'muon-sim', sessionTitle: 'fitting' })).toBe('muon-sim · fitting');
+  });
+
+  it('falls back to the bare workspace name without a session title', () => {
+    expect(composePageTitle({ workspaceName: 'muon-sim', sessionTitle: null })).toBe('muon-sim');
+    expect(composePageTitle({ workspaceName: 'muon-sim', sessionTitle: '' })).toBe('muon-sim');
+  });
+
+  it('falls back to the product name when nothing is known', () => {
+    expect(composePageTitle({})).toBe('Kimi Code Web');
+    expect(composePageTitle({ workspaceName: null, sessionTitle: null })).toBe('Kimi Code Web');
+    expect(composePageTitle({ webTitle: null })).toBe('Kimi Code Web');
   });
 });

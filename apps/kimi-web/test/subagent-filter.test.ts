@@ -9,7 +9,7 @@ import {
 function task(
   id: string,
   state: TaskItem['state'],
-  opts: { completedAt?: string; createdAt?: string } = {},
+  opts: { completedAt?: string; createdAt?: string; runInBackground?: boolean } = {},
 ): TaskItem {
   return {
     id,
@@ -19,7 +19,7 @@ function task(
     timing: '',
     createdAt: opts.createdAt ?? '2026-01-01T00:00:00.000Z',
     completedAt: opts.completedAt,
-    runInBackground: true,
+    runInBackground: opts.runInBackground ?? true,
     model: 'opencode-go/deepseek-v4-flash',
   };
 }
@@ -31,25 +31,27 @@ describe('filterSubagentTasks', () => {
   });
 
   it('selects only running tasks for "running"', () => {
-    const tasks = [task('a', 'run'), task('b', 'done'), task('c', 'fail')];
+    const tasks = [task('a', 'run'), task('b', 'done'), task('c', 'fail'), task('d', 'cancel')];
     expect(filterSubagentTasks(tasks, 'running').map((t) => t.id)).toEqual(['a']);
   });
 
-  it('selects every settled task for "done" (including failed)', () => {
-    const tasks = [task('a', 'run'), task('b', 'done'), task('c', 'fail')];
-    expect(filterSubagentTasks(tasks, 'done').map((t) => t.id)).toEqual(['b', 'c']);
+  it('selects every settled task for "done" (failed and cancelled included)', () => {
+    const tasks = [task('a', 'run'), task('b', 'done'), task('c', 'fail'), task('d', 'cancel')];
+    expect(filterSubagentTasks(tasks, 'done').map((t) => t.id)).toEqual(['b', 'c', 'd']);
   });
 
   it('"recent" keeps all running tasks then the most recently finished ones', () => {
     const tasks = [
       task('old-done', 'done', { createdAt: '2026-01-01T00:00:00.000Z', completedAt: '2026-01-01T01:00:00.000Z' }),
       task('run', 'run', { createdAt: '2026-01-03T00:00:00.000Z' }),
+      task('new-cancel', 'cancel', { createdAt: '2026-01-02T00:00:00.000Z', completedAt: '2026-01-02T13:00:00.000Z' }),
       task('new-done', 'done', { createdAt: '2026-01-02T00:00:00.000Z', completedAt: '2026-01-02T12:00:00.000Z' }),
       task('run2', 'run', { createdAt: '2026-01-02T00:00:00.000Z' }),
     ];
     const recent = filterSubagentTasks(tasks, 'active');
-    // Running first (source order), then finished by completion time desc.
-    expect(recent.map((t) => t.id)).toEqual(['run', 'run2', 'new-done', 'old-done']);
+    // Running first (source order), then finished by completion time desc —
+    // cancelled rows group with the finished ones, not with running.
+    expect(recent.map((t) => t.id)).toEqual(['run', 'run2', 'new-cancel', 'new-done', 'old-done']);
   });
 
   it('"recent" caps the finished group at RECENT_FINISHED_CAP', () => {
@@ -76,6 +78,19 @@ describe('filterSubagentTasks', () => {
     ];
     const recent = filterSubagentTasks(tasks, 'active');
     expect(recent.map((t) => t.id)).toEqual(['with-completed', 'no-completed']);
+  });
+
+  it('excludes foreground subagents from every filter (they render inline as the Agent tool card)', () => {
+    const tasks = [
+      task('fg-run', 'run', { runInBackground: false }),
+      task('bg-run', 'run'),
+      task('fg-done', 'done', { runInBackground: false }),
+      task('bg-done', 'done'),
+    ];
+    expect(filterSubagentTasks(tasks, 'all').map((t) => t.id)).toEqual(['bg-run', 'bg-done']);
+    expect(filterSubagentTasks(tasks, 'running').map((t) => t.id)).toEqual(['bg-run']);
+    expect(filterSubagentTasks(tasks, 'done').map((t) => t.id)).toEqual(['bg-done']);
+    expect(filterSubagentTasks(tasks, 'active').map((t) => t.id)).toEqual(['bg-run', 'bg-done']);
   });
 
   it('each filter variant is a valid SubagentFilter', () => {

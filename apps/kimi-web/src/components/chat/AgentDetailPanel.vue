@@ -58,26 +58,6 @@ function groupProgress(lines: string[]): ProgressGroup[] {
 
 const progressGroups = computed(() => groupProgress(progressLines.value));
 
-/** Group keys whose folded output is expanded. */
-const expandedGroups = ref<Set<string>>(new Set());
-
-const OUTPUT_FOLD_THRESHOLD = 8;
-const OUTPUT_HEAD = 5;
-const OUTPUT_TAIL = 2;
-
-function isExpanded(key: string): boolean {
-  return expandedGroups.value.has(key);
-}
-function toggleGroup(key: string): void {
-  const next = new Set(expandedGroups.value);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  expandedGroups.value = next;
-}
-function foldCount(group: ProgressGroup): number {
-  return group.output.length - OUTPUT_HEAD - OUTPUT_TAIL;
-}
-
 function phaseLabel(phase: AgentMember['phase']): string {
   switch (phase) {
     case 'queued': return 'Queued';
@@ -146,16 +126,7 @@ watch(
               {{ group.call }}
             </div>
             <div v-if="group.output.length > 0" class="ap-output">
-              <template v-if="group.output.length <= OUTPUT_FOLD_THRESHOLD || isExpanded(group.key)">
-                <div v-for="(line, li) in group.output" :key="li" class="ap-out-line">{{ line }}</div>
-              </template>
-              <template v-else>
-                <div v-for="(line, li) in group.output.slice(0, OUTPUT_HEAD)" :key="li" class="ap-out-line">{{ line }}</div>
-                <button type="button" class="ap-fold" @click="toggleGroup(group.key)">
-                  … ({{ foldCount(group) }} more)
-                </button>
-                <div v-for="(line, li) in group.output.slice(-OUTPUT_TAIL)" :key="'t' + li" class="ap-out-line">{{ line }}</div>
-              </template>
+              <div v-for="(line, li) in group.output" :key="li" class="ap-out-line">{{ line }}</div>
             </div>
           </div>
         </div>
@@ -255,22 +226,5 @@ watch(
   min-width: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-.ap-fold {
-  display: inline-block;
-  margin: 2px 0;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--color-accent);
-  font: inherit;
-  cursor: pointer;
-}
-.ap-fold:hover {
-  text-decoration: underline;
-}
-.ap-fold:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
 }
 </style>

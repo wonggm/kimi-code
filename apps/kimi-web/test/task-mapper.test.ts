@@ -25,6 +25,13 @@ describe('toAppTask model threading', () => {
     const app = toAppTask(baseWire());
     expect(app.model).toBeUndefined();
   });
+
+  it('threads every AppTaskStatus including "cancelled" through untouched', () => {
+    const statuses = ['running', 'completed', 'failed', 'cancelled'] as const;
+    for (const status of statuses) {
+      expect(toAppTask(baseWire({ status })).status).toBe(status);
+    }
+  });
 });
 
 function baseConfig(overrides: Partial<WireConfig> = {}): WireConfig {
