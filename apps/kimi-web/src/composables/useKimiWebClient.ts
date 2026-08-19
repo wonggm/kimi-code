@@ -3131,6 +3131,13 @@ export function useKimiWebClient() {
     generateSessionTitle: workspaceState.generateSessionTitle,
     restoreSession: workspaceState.restoreSession,
     loadArchivedSessions: workspaceState.loadArchivedSessions,
+    // Experimental Lab: multi-tab sidebar flag + Done-tab (archived) list
+    labSidebarTabs: workspaceState.labSidebarTabs,
+    setLabSidebarTabs: workspaceState.setLabSidebarTabs,
+    doneSessions: workspaceState.doneSessions,
+    doneSessionsLoading: workspaceState.doneSessionsLoading,
+    doneSessionsHasMore: workspaceState.doneSessionsHasMore,
+    ensureDoneSessions: workspaceState.ensureDoneSessions,
     compact: workspaceState.compact,
     forkSession: workspaceState.forkSession,
     undo: workspaceState.undo,

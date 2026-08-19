@@ -8,8 +8,7 @@
 
 import { computed, onUnmounted, ref, watch, watchEffect, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { DaemonHttpClient } from '../api/daemon/http';
-import { readKimiApiConfig } from '../api/config';
+import { getKimiWebApi } from '../api';
 import { useKimiWebClient } from './useKimiWebClient';
 
 /** Pure page-title composition — exported for unit tests. */
@@ -45,20 +44,14 @@ export interface UsePageTitleOptions {
 export function usePageTitle({ running, showAuthGate, title, webTitle, workspaceName, sessionTitle }: UsePageTitleOptions): void {
   const { t } = useI18n();
 
-  // The daemon client's getMeta() doesn't expose web_title, so when the caller
-  // didn't hand in the --web-title override fetch /meta once ourselves.
+  // The client's typed getMeta() exposes web_title; when the caller didn't
+  // hand in the --web-title override, fetch /meta once ourselves.
   const fetchedWebTitle = ref<string | null>(null);
   if (webTitle === undefined) {
     void (async () => {
       try {
-        const cfg = readKimiApiConfig();
-        const meta = await new DaemonHttpClient(cfg.serverHttpUrl, {
-          clientId: cfg.clientId,
-          clientName: cfg.clientName,
-          clientVersion: cfg.clientVersion,
-          clientUiMode: cfg.clientUiMode,
-        }).get<{ web_title?: string }>('/meta');
-        fetchedWebTitle.value = meta.web_title ?? null;
+        const meta = await getKimiWebApi().getMeta();
+        fetchedWebTitle.value = meta.webTitle;
       } catch {
         // Non-fatal: the title falls back to the workspace/session composition.
       }

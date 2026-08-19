@@ -34,8 +34,11 @@ const props = withDefaults(
     /** Experimental `auto_session_title` flag — shows the in-rename "generate
      *  title" button and emits `generateTitle` on click. */
     autoSessionTitle?: boolean;
+    /** Archived session (Done tab): the kebab item reads as its reopen action.
+     *  The row still emits `archive` — the parent routes Done rows to restore. */
+    archived?: boolean;
   }>(),
-  { approvalCount: 0, questionCount: 0, unread: false, autoSessionTitle: false },
+  { approvalCount: 0, questionCount: 0, unread: false, autoSessionTitle: false, archived: false },
 );
 
 const emit = defineEmits<{
@@ -387,9 +390,9 @@ defineExpose({ closeMenu });
           <Icon name="download" size="sm" />
           {{ t('sidebar.export') }}
         </MenuItem>
-        <MenuItem danger @click="startArchive">
-          <Icon name="archive" size="sm" />
-          {{ t('sidebar.archive') }}
+        <MenuItem :danger="!archived" @click="startArchive">
+          <Icon :name="archived ? 'undo' : 'archive'" size="sm" />
+          {{ archived ? t('sidebar.reopen') : t('sidebar.archive') }}
         </MenuItem>
         <MenuItem separator />
         <div class="menu-time">{{ fullTime }}</div>
