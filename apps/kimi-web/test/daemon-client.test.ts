@@ -227,6 +227,43 @@ describe('DaemonKimiWebApi.getSessionGoal', () => {
   });
 });
 
+describe('DaemonKimiWebApi.getMeta', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps web_title from the wire meta', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        server_version: '0.0.0',
+        server_id: 'srv_1',
+        started_at: '2026-01-01T00:00:00Z',
+        capabilities: {},
+        web_title: 'My Dev Box',
+      }),
+    );
+    const meta = await createApi().getMeta();
+    expect(meta.webTitle).toBe('My Dev Box');
+  });
+
+  it('maps an absent web_title to null', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        server_version: '0.0.0',
+        server_id: 'srv_1',
+        started_at: '2026-01-01T00:00:00Z',
+        capabilities: {},
+      }),
+    );
+    const meta = await createApi().getMeta();
+    expect(meta.webTitle).toBeNull();
+  });
+});
+
 describe('DaemonKimiWebApi.getSessionPlans', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());

@@ -171,8 +171,9 @@ const emit = defineEmits<{
   setWorkspaceSortMode: [mode: WorkspaceSortMode];
   loadMoreSessions: [workspaceId: string];
   loadAllSessions: [];
-  /** Restore an archived session from the Done tab (row "archive" acts as its
-   *  reopen action — SessionRow has no restore menu entry). */
+  /** Restore an archived session from the Done tab — the row's kebab shows
+   *  the reopen action there (SessionRow labels it "Mark as open" when its
+   *  `archived` prop is set; it always emits `archive`, routed here). */
   restore: [id: string];
   /** Lab: open the cross-workspace session admin page (App main view). */
   openSessionAdmin: [];
@@ -1097,6 +1098,7 @@ onBeforeUnmount(() => {
                       :data-wsid="g.workspaceId"
                       :session="session"
                       :active="session.id === activeId"
+                      :archived="true"
                       :auto-session-title="autoSessionTitle"
                       @select="onSelectSession"
                       @rename="(id, title) => emit('rename', id, title)"
@@ -1116,6 +1118,7 @@ onBeforeUnmount(() => {
                     :data-wsid="session.workspaceId"
                     :session="session"
                     :active="session.id === activeId"
+                    :archived="true"
                     :auto-session-title="autoSessionTitle"
                     @select="onSelectSession"
                     @rename="(id, title) => emit('rename', id, title)"

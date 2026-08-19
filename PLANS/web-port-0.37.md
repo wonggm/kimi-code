@@ -120,13 +120,25 @@ adopted; cancelled tasks get a distinct state (not folded into failed).
 | `agent-detail-inspector` | PORTED (fold half) / NOT APPLICABLE (footer half) | `AgentDetailPanel.vue` — fold machinery (`expandedGroups`, thresholds, `.ap-fold`) removed, working process renders fully expanded; our panel never had an end-of-turn timestamp footer |
 | `lab-sidebar-tabs-toggle` | PORTED | `lib/storage.ts` `labSidebarTabs` (default off) + `SettingsDialog.vue` Lab tab Switch + `useWorkspaceState.ts` done-session fetch plumbing; `test/workspace-state.test.ts` +13 |
 
-### Deferred follow-ups (noted, not blocking)
+### Deferred follow-ups — ALL RESOLVED 2026-08-19 (same day, user requested)
 
-- MentionTip skill "Open" button needs a resolver prop follow-up (agent B).
-- Done-tab rows reuse `SessionRow`, whose kebab still says "Archive" while
-  acting as reopen — needs a `SessionRow` archived prop (agent D note).
-- Agent D's lab-flag/done-list state lives in `useWorkspaceState` but is not
-  re-exported through `useKimiWebClient`; App.vue reads the flag from storage
-  directly (SettingsDialog precedent). Optional 5-line chain addition.
-- `usePageTitle` fetches `/api/v1/meta` raw because `WireMeta` lacks
-  `web_title`; cleaner to add the field to the wire type (agent E note).
+- ~~MentionTip skill "Open" button needs a resolver prop follow-up~~ — DONE:
+  `AppSkill` gained `path: string` (the wire descriptor always had it), both
+  `listSkills*` mappers pass it through, ChatPane gets a `skills` prop +
+  stable `resolveSkillMention` and feeds MentionText, ConversationPane passes
+  `:skills` to ChatPane; BenchView/slash-menu fixtures updated.
+- ~~Done-tab rows reuse `SessionRow`, whose kebab still says "Archive" while
+  acting as reopen~~ — DONE: `SessionRow` `archived?: boolean` prop; the kebab
+  item becomes non-danger `undo` icon + existing `sidebar.reopen` label when
+  archived (both Done-tab call sites pass `:archived="true"`). Mobile twin
+  checked — open-sessions only, unchanged.
+- ~~Agent D's lab-flag/done-list state lives in `useWorkspaceState` but is not
+  re-exported through `useKimiWebClient`~~ — DONE: `labSidebarTabs`,
+  `setLabSidebarTabs`, `doneSessions`, `doneSessionsLoading`,
+  `doneSessionsHasMore`, `ensureDoneSessions` re-exported; App.vue consumes
+  `client.*` instead of reading storage directly (same module-scoped ref, so
+  reactivity is unchanged).
+- ~~`usePageTitle` fetches `/api/v1/meta` raw because `WireMeta` lacks
+  `web_title`~~ — DONE: `WireMeta.web_title?` + `getMeta()` maps it to
+  `webTitle: string | null` on `KimiWebApi`; `usePageTitle` uses the typed
+  getter (precedence unchanged); +2 getMeta tests in `daemon-client.test.ts`.

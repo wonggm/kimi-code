@@ -6,7 +6,6 @@ import Sidebar from './components/Sidebar.vue';
 import ResizeHandle from './components/ResizeHandle.vue';
 import ConversationPane from './components/chat/ConversationPane.vue';
 import SessionAdminView from './views/SessionAdminView.vue';
-import { loadLabSidebarTabs, saveLabSidebarTabs } from './lib/storage';
 import FilePreview from './components/FilePreview.vue';
 import MediaPreview from './components/media/MediaPreview.vue';
 import ThinkingPanel from './components/chat/ThinkingPanel.vue';
@@ -414,15 +413,6 @@ const addWorkspaceError = ref<string | null>(null);
 // closing side panels underneath it.
 // ---------------------------------------------------------------------------
 const mainView = ref<'chat' | 'sessionAdmin'>('chat');
-
-/** Experimental Lab flag: multi-tab sidebar (Open / Done / Workspaces). Owned
- *  here (storage-backed) and passed down to Sidebar + SettingsDialog — mirror
- *  of the wideMode appearance flags. */
-const labSidebarTabs = ref<boolean>(loadLabSidebarTabs());
-function setLabSidebarTabs(on: boolean): void {
-  labSidebarTabs.value = on;
-  saveLabSidebarTabs(on);
-}
 
 function openSessionAdmin(): void {
   mainView.value = 'sessionAdmin';
@@ -935,7 +925,7 @@ function openPr(url: string): void {
         :workspace-sort-mode="client.workspaceSortMode.value"
         :backend="client.backend.value"
         :auto-session-title="autoSessionTitle"
-        :lab-sidebar-tabs="labSidebarTabs"
+        :lab-sidebar-tabs="client.labSidebarTabs.value"
         @select="client.selectSession($event)"
         @create="handleCreateSession"
         @create-in-workspace="handleCreateSessionInWorkspace($event)"
@@ -1223,7 +1213,7 @@ function openPr(url: string): void {
       :conversation-toc="client.conversationToc.value"
       :liquid-glass="client.liquidGlass.value"
       :wide-mode="client.wideMode.value"
-      :lab-sidebar-tabs="labSidebarTabs"
+      :lab-sidebar-tabs="client.labSidebarTabs.value"
       :config="client.config.value"
       :models="client.models.value"
       :config-saving="configSaving"
@@ -1239,7 +1229,7 @@ function openPr(url: string): void {
       @set-conversation-toc="client.setConversationToc($event)"
       @set-liquid-glass="client.setLiquidGlass($event)"
       @set-wide-mode="client.setWideMode($event)"
-      @set-lab-sidebar-tabs="setLabSidebarTabs"
+      @set-lab-sidebar-tabs="client.setLabSidebarTabs"
       @update-config="handleUpdateConfig($event)"
       @login="() => { showSettings = false; openLogin(); }"
       @logout="client.logout"

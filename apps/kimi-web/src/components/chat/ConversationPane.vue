@@ -1707,6 +1707,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :is-following="following"
               :tool-diff-panel="true"
               :queued="queued"
+              :skills="skills"
               @open-file="emit('openFile', $event)"
               @open-media="emit('openMedia', $event)"
               @copy-conversation-copied="handleCopyConversationCopied"

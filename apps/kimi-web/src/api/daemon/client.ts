@@ -160,6 +160,8 @@ interface WireMeta {
   dangerous_bypass_auth?: boolean;
   /** Engine generation serving the API; older (v1) servers omit the field. */
   backend?: 'v1' | 'v2';
+  /** Browser-tab title override (the daemon's `--web-title`); absent when unset. */
+  web_title?: string;
 }
 
 interface WireAbortResult {
@@ -335,6 +337,8 @@ export class DaemonKimiWebApi implements KimiWebApi {
     dangerousBypassAuth: boolean;
     /** Engine generation: 'v2' = kap-server / agent-core-v2; absent ⇒ 'v1'. */
     backend: 'v1' | 'v2';
+    /** Server --web-title override (browser-tab base title); null when unset. */
+    webTitle: string | null;
   }> {
     const data = await this.http.get<WireMeta>('/meta');
     return {
@@ -345,6 +349,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
       openInApps: Array.isArray(data.open_in_apps) ? data.open_in_apps : [],
       dangerousBypassAuth: data.dangerous_bypass_auth === true,
       backend: data.backend === 'v2' ? 'v2' : 'v1',
+      webTitle: data.web_title ?? null,
     };
   }
 
@@ -954,6 +959,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
       name: s.name,
       description: s.description,
       source: s.source,
+      path: s.path,
     }));
   }
 
@@ -965,6 +971,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
       name: s.name,
       description: s.description,
       source: s.source,
+      path: s.path,
     }));
   }
 

@@ -3,6 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolMedia, QueuedPromptView, TurnAttachment } from '../../types';
+import type { AppSkill } from '../../api/types';
 import ToolCall from './ToolCall.vue';
 import ToolGroup from './ToolGroup.vue';
 import Markdown from './Markdown.vue';
@@ -115,6 +116,11 @@ const props = withDefaults(
      * × to remove, drag the grip to reorder.
      */
     queued?: QueuedPromptView[];
+    /**
+     * Session skills resolved by MentionText's skill pills — enables their
+     * hover tip "open skill file" button and click-to-open.
+     */
+    skills?: AppSkill[];
     /** Frontend-only retry progress from turn.step.retrying. */
     retryProgress?: { attempt: number; maxAttempts: number } | null;
     /** Persistent failed-turn state, including failures restored from a snapshot. */
@@ -135,6 +141,7 @@ const props = withDefaults(
     isFollowing: false,
     toolDiffPanel: false,
     queued: () => [],
+    skills: () => [],
     retryProgress: null,
     failure: null,
   },
@@ -819,6 +826,15 @@ function forwardOpenFile(target: FilePreviewRequest): void {
   emit('openFile', target);
 }
 
+// Stable resolver for MentionText's skill pills (same per-render churn concern):
+// finds the skill by name in the `skills` prop so the hover tip can show its
+// description and an "open skill file" button (clicking the pill goes through
+// the same `openFile` flow, since a skill resolves to its SKILL.md path).
+function resolveSkillMention(name: string): { description?: string; path?: string } | null {
+  const skill = props.skills?.find((s) => s.name === name);
+  return skill ? { description: skill.description, path: skill.path } : null;
+}
+
 // Mention-pill existence probe: hover-only, cheap. The daemon folder picker
 // (fs:browse) is the only session-free stat-like endpoint in the web API, and
 // it requires an absolute path — so absolute folder mentions get real
@@ -927,7 +943,12 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
             <!-- User input renders verbatim (pre-wrap), never through Markdown;
                  @-mentioned files/folders/skills render as icon pills. -->
             <div v-else class="u-text">
-              <MentionText :text="turn.text" :open-file="forwardOpenFile" :probe-path="probeMentionPath" />
+              <MentionText
+                :text="turn.text"
+                :open-file="forwardOpenFile"
+                :probe-path="probeMentionPath"
+                :resolve-skill="resolveSkillMention"
+              />
             </div>
           </div>
           <div v-if="turn.createdAt || canEditTurn(turn)" class="u-meta">
