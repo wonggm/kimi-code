@@ -60,4 +60,15 @@ export default {
     answered: 'Answered',
     more: '(+{count} more)',
   },
+  plan: {
+    review: {
+      pending: 'Pending review',
+      approved: 'Approved',
+      rejected: 'Rejected',
+      cancelled: 'Cancelled',
+    },
+    selectedOption: 'Selected option',
+    feedback: 'Feedback',
+    pathOnlyHint: 'Plan file',
+  },
 } as const;

@@ -20,6 +20,11 @@ export default {
   uploading: 'Uploading',
   uploadFailed: 'Upload failed',
   attachFile: 'Attach file',
+  addMenu: 'Add',
+  addFiles: 'Files',
+  addGoalDesc: 'Set a goal to keep pursuing',
+  addPlanDesc: 'Turn plan mode on',
+  addSwarmDesc: 'Turn swarm mode on',
   previewAttachment: 'Preview {name}',
   interrupt: 'Interrupt',
   interruptTitle: 'Interrupt current operation',
@@ -30,5 +35,6 @@ export default {
   quickStartPlaceholder: 'Type a message to start a new conversation…',
   thinkingSuffix: ' · thinking',
   thinkingSuffixEffort: ' · {level}',
+  noCommands: 'No matching commands',
 
 } as const;

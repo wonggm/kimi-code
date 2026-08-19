@@ -1,6 +1,8 @@
 // apps/kimi-web/src/lib/slashCommands.ts
 // Pure TS — no Vue, no side effects. Slash-command metadata + parsers.
 
+import { filterSlashFuzzy, type SlashMatchRanges } from './slashFuzzy';
+
 export interface SlashCommand {
   name: string;
   /**
@@ -102,27 +104,35 @@ export function buildSlashItems(
  * matches come before arbitrary substring matches. If query is empty or just
  * "/", returns all items. Defaults to the built-in commands; pass a merged list
  * (see buildSlashItems) to include skills.
+ *
+ * When `resolveDesc` is provided, commands are also found through their
+ * localized description text and its pinyin / pinyin initials (see
+ * slashFuzzy.ts); without it only the command name is searched.
  */
 export function filterCommands(
   query: string,
   items: SlashCommand[] = SLASH_COMMANDS,
+  resolveDesc?: (item: SlashCommand) => string,
 ): SlashCommand[] {
-  const q = query.toLowerCase().trim().replace(/^\//, '');
-  if (q === '') return items;
+  return filterSlashCommands(query, items, resolveDesc).map((m) => m.item);
+}
 
-  return items
-    .map((item, index) => {
-      const name = item.name.toLowerCase().replace(/^\//, '');
-      let score = 0;
-      if (name === q) score = 3;
-      else if (name.startsWith(q)) score = 2;
-      else if (name.includes(q)) score = 1;
-      return { item, index, score };
-    })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => {
-      if (a.score !== b.score) return b.score - a.score;
-      return a.index - b.index;
-    })
-    .map(({ item }) => item);
+/**
+ * Like filterCommands, but also returns the highlight ranges for each match
+ * (bold fragments in the slash menu). Ranges index into the command name
+ * (leading `/` stripped) and into the resolved description.
+ */
+export function filterSlashCommands(
+  query: string,
+  items: SlashCommand[] = SLASH_COMMANDS,
+  resolveDesc?: (item: SlashCommand) => string,
+): Array<{ item: SlashCommand; ranges: SlashMatchRanges }> {
+  const withDesc = items.map((item) => ({
+    name: item.name,
+    desc: resolveDesc ? resolveDesc(item) : '',
+  }));
+  return filterSlashFuzzy(query, withDesc).map((m) => ({
+    item: items[m.score.index]!,
+    ranges: m.ranges,
+  }));
 }

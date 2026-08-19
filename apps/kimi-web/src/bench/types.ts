@@ -9,7 +9,7 @@ import type { Sampler } from './sampler';
 
 export type Theme = 'dark' | 'light';
 
-export type DockPanel = 'bash' | 'subagent' | 'todos' | 'changed-files' | null;
+export type DockPanel = 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan' | null;
 
 export interface BenchContext {
   sampler: Sampler;

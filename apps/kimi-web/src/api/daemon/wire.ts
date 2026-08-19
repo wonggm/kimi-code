@@ -346,6 +346,30 @@ export interface WireTask {
   run_in_background?: boolean;
 }
 
+/** Projected review outcome of one ExitPlanMode plan (`transcriptPlanReviewSchema`). */
+export interface WirePlanReview {
+  state: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  selected_option?: string;
+  feedback?: string;
+}
+
+/** One ExitPlanMode tool call's plan information (`transcriptPlanEntrySchema`). */
+export interface WirePlanEntry {
+  tool_call_id: string;
+  turn_id: string;
+  source: 'interaction' | 'display' | 'output';
+  plan: string;
+  path?: string;
+  options?: { label: string; description?: string }[];
+  review?: WirePlanReview;
+}
+
+/** `GET /sessions/{id}/transcript/plan` response (`transcriptPlanResponseSchema`). */
+export interface WirePlanResponse {
+  agent_id: string;
+  plans: WirePlanEntry[];
+}
+
 // ---------------------------------------------------------------------------
 // File System
 // ---------------------------------------------------------------------------

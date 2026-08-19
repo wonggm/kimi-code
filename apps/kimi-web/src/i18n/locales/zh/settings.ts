@@ -30,6 +30,7 @@ export default {
   planUsageRemaining: '剩余：{remaining}',
   planUsageResets: '重置时间：{time}',
   planUsageNoReset: '无重置时间',
+  planUsageUsedPct: '已使用 {pct}%',
   uiFontSize: '字体大小',
   agentDefaults: 'Agent 默认值',
   providers: '提供商',

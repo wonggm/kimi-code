@@ -79,6 +79,41 @@ describe('useMentionMenu — update', () => {
   });
 });
 
+describe('useMentionMenu — close', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('close() cancels a pending debounced search', async () => {
+    const searchFiles = vi.fn().mockResolvedValue([{ path: 'src/a.ts', name: 'a.ts' }]);
+    const { mention } = setup('@a', searchFiles);
+    mention.update();
+    mention.close();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(searchFiles).not.toHaveBeenCalled();
+    expect(mention.open.value).toBe(false);
+  });
+
+  it('a search resolving after close() cannot reopen the menu', async () => {
+    let resolveSearch: (items: FileItem[]) => void = () => {};
+    const searchFiles = vi.fn().mockImplementation(
+      () => new Promise<FileItem[]>((resolve) => { resolveSearch = resolve; }),
+    );
+    const { mention } = setup('@a', searchFiles);
+    mention.update();
+    await vi.advanceTimersByTimeAsync(200);
+    mention.close();
+    resolveSearch([{ path: 'src/a.ts', name: 'a.ts' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mention.open.value).toBe(false);
+    expect(mention.items.value).toEqual([]);
+  });
+});
+
 describe('useMentionMenu — select', () => {
   it('replaces the @token with the chosen path', async () => {
     const { text, textarea, mention } = setup('hello @a');

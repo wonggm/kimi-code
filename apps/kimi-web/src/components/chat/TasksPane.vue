@@ -1,50 +1,55 @@
 <!-- apps/kimi-web/src/components/chat/TasksPane.vue -->
-<!-- TUI-inspired todo list: clean rows with status glyphs, strikethrough done,
-     compact output, minimal chrome. Matches the terminal todo-panel style. -->
+<!-- Background bash task panel (dock "Bash"): a status filter on top, the
+     task list on the left and the selected task's command + output on the
+     right. Clicking a row selects it and fills the detail pane; running rows
+     keep an inline Stop button. -->
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { TaskItem } from '../../types';
+import { filterBashTasks, type BashFilter } from '../../lib/bashTaskFilter';
 import { copyTextToClipboard } from '../../lib/clipboard';
-import Badge from '../ui/Badge.vue';
-import Icon from '../ui/Icon.vue';
+import SegmentedControl from '../ui/SegmentedControl.vue';
 import StatusGlyph, { type StatusGlyphStatus } from './StatusGlyph.vue';
 
-defineProps<{ tasks: TaskItem[] }>();
+const props = defineProps<{ tasks: TaskItem[] }>();
 
-const emit = defineEmits<{
-  cancel: [taskId: string];
-  /** A subagent row was clicked — open its live detail in the side panel. */
-  open: [taskId: string];
-}>();
+const emit = defineEmits<{ cancel: [taskId: string] }>();
 
 const { t } = useI18n();
 
-// Which task rows are expanded (showing their output/detail). Click a row to
-// toggle. Persisted only for the component's lifetime.
-const expandedIds = reactive(new Set<string>());
+const filters = computed<{ value: BashFilter; label: string }[]>(() => [
+  { value: 'all', label: t('tasks.bash.filterAll') },
+  { value: 'running', label: t('tasks.bash.filterRunning') },
+  { value: 'done', label: t('tasks.bash.filterDone') },
+]);
+
+const activeFilter = ref<BashFilter>('running');
+
+const visibleTasks = computed(() => filterBashTasks(props.tasks, activeFilter.value));
+
+// Clicked row id. The detail pane is derived from it, so switching filters to
+// a view that hides the row simply empties the detail side (the selection
+// survives in case the filter is switched back).
+const selectedId = ref<string | null>(null);
+
+const selected = computed(() => visibleTasks.value.find((task) => task.id === selectedId.value) ?? null);
+
+const EMPTY_BY_FILTER: Record<BashFilter, string> = {
+  all: 'tasks.emptyBash',
+  running: 'tasks.bash.emptyRunning',
+  done: 'tasks.bash.emptyDone',
+};
+
 const copiedCommandIds = reactive(new Set<string>());
 const copiedOutputIds = reactive(new Set<string>());
 
+function select(task: TaskItem): void {
+  selectedId.value = task.id;
+}
+
 function hasDetail(task: TaskItem): boolean {
   return Boolean((task.output && task.output.length > 0) || task.meta);
-}
-
-function handleClick(task: TaskItem): void {
-  // Subagents open their live detail in the right-side panel instead of
-  // expanding inline — the dock only lists background subagents, and their
-  // streaming progress belongs in the side panel.
-  if (task.kind === 'subagent') {
-    emit('open', task.id);
-    return;
-  }
-  if (!hasDetail(task)) return;
-  if (expandedIds.has(task.id)) expandedIds.delete(task.id);
-  else expandedIds.add(task.id);
-}
-
-function isClickable(task: TaskItem): boolean {
-  return task.kind === 'subagent' || hasDetail(task);
 }
 
 function glyphStatus(state: string): StatusGlyphStatus {
@@ -73,28 +78,16 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
 
 <template>
   <div class="taskspane">
-    <!-- TUI-style header: border line + title -->
     <div class="tp-head">
-      <span class="tp-title">{{ t('tasks.tag') }}</span>
-      <span class="tp-count">{{ tasks.length }}</span>
+      <SegmentedControl v-model="activeFilter" :options="filters" size="sm" />
     </div>
 
-    <div class="tp-list">
-      <div v-if="tasks.length === 0" class="tp-empty">{{ t('tasks.emptyTasks') }}</div>
+    <div class="tp-split">
+      <div class="tp-list">
+        <div v-if="visibleTasks.length === 0" class="tp-empty">{{ t(EMPTY_BY_FILTER[activeFilter]) }}</div>
 
-      <template v-else>
-        <!-- v-memo on the row list (pattern from ChatPane's turn list): a row's
-             subtree re-renders only when one of its rendered inputs changed.
-             `timing` changes every second for running rows (keeps the elapsed
-             clock live); settled rows keep constant keys and skip re-renders on
-             unrelated updates. `task` itself is a fresh object per recompute,
-             so the keys are its rendered fields rather than the object.
-             `task.output` is keyed only while expanded (the collapsed row does
-             not render it, and its reference churns for preview-split output);
-             hasDetail/isClickable cover the class/chevron/role bindings that
-             depend on output presence. -->
         <div
-          v-for="task in tasks"
+          v-for="task in visibleTasks"
           :key="task.id"
           v-memo="[
             task.id,
@@ -102,177 +95,202 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
             task.name,
             task.kind,
             task.timing,
-            task.meta,
-            isClickable(task),
-            hasDetail(task),
-            expandedIds.has(task.id) ? task.output : null,
-            expandedIds.has(task.id),
+            selectedId === task.id,
             copiedCommandIds.has(task.id),
             copiedOutputIds.has(task.id),
           ]"
           class="tp-row"
-          :class="{ done: task.state === 'done', fail: task.state === 'fail', expandable: isClickable(task) }"
+          :class="{
+            done: task.state === 'done',
+            fail: task.state === 'fail',
+            selected: selectedId === task.id,
+          }"
+          :role="hasDetail(task) ? 'button' : undefined"
+          :aria-pressed="selectedId === task.id || undefined"
+          @click="hasDetail(task) && select(task)"
         >
-          <div class="tp-main" :role="isClickable(task) ? 'button' : undefined" @click="handleClick(task)">
-            <StatusGlyph :status="glyphStatus(task.state)" />
-            <span class="tp-name">{{ task.name }}</span>
-            <Badge variant="neutral" size="sm">{{ task.kind }}</Badge>
-            <span class="tp-time">{{ task.timing }}</span>
-            <button
-              v-if="task.state === 'run'"
-              class="tp-stop"
-              @click.stop="emit('cancel', task.id)"
-            >{{ t('tasks.stop') }}</button>
-            <Icon v-if="task.kind === 'subagent'" class="tp-chevron" name="chevron-right" size="sm" />
-            <Icon v-else-if="hasDetail(task)" class="tp-chevron" :class="{ open: expandedIds.has(task.id) }" name="chevron-right" size="sm" />
-          </div>
-          <div
-            v-if="expandedIds.has(task.id) && hasDetail(task)"
-            class="tp-detail"
-          >
-            <div v-if="task.meta" class="tp-codebox">
-              <button
-                class="tp-copy"
-                :class="{ copied: copiedCommandIds.has(task.id) }"
-                @click.stop="copyTaskCommand(task)"
-              >
-                {{ copiedCommandIds.has(task.id) ? '已复制' : '复制' }}
-              </button>
-              <pre class="tp-pre"><code><span class="tp-cmd">{{ task.meta }}</span></code></pre>
-            </div>
-            <div v-if="task.output && task.output.length > 0" class="tp-codebox">
-              <button
-                class="tp-copy"
-                :class="{ copied: copiedOutputIds.has(task.id) }"
-                @click.stop="copyTaskOutput(task)"
-              >
-                {{ copiedOutputIds.has(task.id) ? '已复制' : '复制' }}
-              </button>
-              <pre class="tp-pre"><code>
-                <span v-for="(line, i) in task.output" :key="i" class="tp-line">{{ line }}</span>
-              </code></pre>
-            </div>
-          </div>
+          <StatusGlyph :status="glyphStatus(task.state)" />
+          <span class="tp-name">{{ task.name }}</span>
+          <span class="tp-time">{{ task.timing }}</span>
+          <button
+            v-if="task.state === 'run'"
+            class="tp-stop"
+            @click.stop="emit('cancel', task.id)"
+          >{{ t('tasks.stop') }}</button>
         </div>
-      </template>
+      </div>
+
+      <div class="tp-detail">
+        <div v-if="!selected" class="tp-empty tp-hint">{{ t('tasks.bash.selectTask') }}</div>
+
+        <template v-else>
+          <div class="tp-detail-head">
+            <StatusGlyph :status="glyphStatus(selected.state)" />
+            <span class="tp-detail-name">{{ selected.name }}</span>
+            <span class="tp-detail-time">{{ selected.timing }}</span>
+            <button
+              v-if="selected.state === 'run'"
+              class="tp-stop"
+              @click.stop="emit('cancel', selected.id)"
+            >{{ t('tasks.stop') }}</button>
+          </div>
+          <div v-if="selected.meta" class="tp-codebox">
+            <button
+              class="tp-copy"
+              :class="{ copied: copiedCommandIds.has(selected.id) }"
+              @click.stop="copyTaskCommand(selected)"
+            >
+              {{ copiedCommandIds.has(selected.id) ? t('tasks.copied') : t('tasks.copy') }}
+            </button>
+            <pre class="tp-pre"><code><span class="tp-cmd">{{ selected.meta }}</span></code></pre>
+          </div>
+          <div v-if="selected.output && selected.output.length > 0" class="tp-codebox">
+            <button
+              class="tp-copy"
+              :class="{ copied: copiedOutputIds.has(selected.id) }"
+              @click.stop="copyTaskOutput(selected)"
+            >
+              {{ copiedOutputIds.has(selected.id) ? t('tasks.copied') : t('tasks.copy') }}
+            </button>
+            <pre class="tp-pre"><code>
+              <span v-for="(line, i) in selected.output" :key="i" class="tp-line">{{ line }}</span>
+            </code></pre>
+          </div>
+          <div v-else-if="selected && !selected.meta" class="tp-empty tp-hint">{{ t('tasks.bash.noOutput') }}</div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .taskspane {
-  padding: 14px 18px 10px;
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-/* TUI-style header: top border + bold title */
-.tp-head {
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.tp-title {
-  color: var(--color-accent-hover);
-  font-weight: 500;
-  font-size: var(--text-base);
-  text-transform: capitalize;
-}
-.tp-count {
-  color: var(--muted);
-  font-size: var(--text-base);
-}
-
-/* List: no cards, just clean rows. Shows ALL tasks and scrolls internally once
-   they overflow the pane (no "+N more" cap) so nothing is silently hidden. */
-.tp-list {
+  gap: var(--space-2);
+  min-height: 0;
   flex: 1;
+}
+
+.tp-head {
+  flex: none;
+  display: flex;
+}
+
+/* Two-column master/detail: the list stays at a fixed reading width, the
+   detail pane takes the rest and scrolls independently. */
+.tp-split {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  gap: var(--space-3);
+}
+
+.tp-list {
+  flex: none;
+  width: 208px;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding-right: var(--space-1);
 }
 
 .tp-row {
-  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+}
+.tp-row[role="button"] {
+  cursor: pointer;
+}
+.tp-row[role="button"]:hover {
+  background: var(--color-surface-sunken);
+}
+.tp-row.selected {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 .tp-row.done .tp-name {
-  color: var(--muted);
+  color: var(--color-text-muted);
   text-decoration: line-through;
 }
 .tp-row.fail .tp-name {
   color: var(--color-danger);
 }
 
-.tp-main {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: var(--text-base);
-}
-.tp-row.expandable > .tp-main {
-  cursor: pointer;
-  border-radius: 4px;
-}
-.tp-row.expandable > .tp-main:hover {
-  background: var(--panel2);
-}
-.tp-chevron {
-  flex: none;
-  color: var(--muted);
-  transition: transform 0.12s;
-}
-.tp-chevron.open {
-  transform: rotate(90deg);
-}
-
 .tp-name {
-  color: var(--color-text);
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--text-sm);
 }
 
 .tp-time {
   flex: none;
-  font-size: var(--text-base);
-  color: var(--muted);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
 }
 
 .tp-stop {
   flex: none;
   background: none;
-  border: 1px solid color-mix(in srgb, var(--color-danger) 22%, var(--bg));
-  border-radius: var(--radius-xs);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 22%, var(--color-line));
+  border-radius: var(--radius-sm);
   color: var(--color-danger);
-  font-size: max(9px, calc(var(--ui-font-size) - 3.5px));
-  padding: 1px 8px;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
   cursor: pointer;
-  font-family: var(--mono);
 }
-.tp-stop:hover { background: var(--panel); }
+.tp-stop:hover {
+  background: var(--color-surface-sunken);
+}
 
-/* Expanded detail: separate code boxes for command and terminal output */
+/* Detail pane: summary row on top, then code boxes for command and output. */
 .tp-detail {
-  margin: 4px 0 0 23px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
+  border-left: 1px solid var(--color-line);
+  padding-left: var(--space-3);
+}
+.tp-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.tp-detail-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+.tp-detail-time {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
 }
 
 .tp-codebox {
   position: relative;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xs);
+  flex: none;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
 }
 
 .tp-copy {
@@ -282,15 +300,15 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
   z-index: 1;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.12s ease, visibility 0.12s ease;
-  background: var(--panel2);
-  border: 1px solid var(--line);
+  transition: opacity var(--duration-fast) ease, visibility var(--duration-fast) ease;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-xs);
-  color: var(--dim);
-  font-size: max(9px, calc(var(--ui-font-size) - 3.5px));
-  padding: 1px 7px;
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
   cursor: pointer;
-  font-family: var(--sans);
 }
 .tp-codebox:hover .tp-copy,
 .tp-copy:focus-visible {
@@ -298,60 +316,63 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
   visibility: visible;
 }
 .tp-copy:hover {
-  background: var(--panel);
+  background: var(--color-surface-sunken);
 }
 .tp-copy.copied {
   color: var(--color-success);
-  border-color: color-mix(in srgb, var(--color-success) 30%, var(--line));
+  border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-line));
 }
 
 .tp-pre {
   margin: 0;
   padding: 6px 10px;
-  max-height: 320px;
+  max-height: 180px;
   overflow: auto;
   contain: layout paint;
 }
 .tp-pre code {
   display: block;
-  font-family: var(--mono);
-  font-size: var(--text-base);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   line-height: 1.55;
-  color: var(--dim);
+  color: var(--color-text-muted);
   white-space: pre-wrap;
   word-break: break-word;
 }
 .tp-cmd {
   display: block;
-  color: var(--muted);
+  color: var(--color-text);
 }
 .tp-line {
   display: block;
 }
 
 .tp-empty {
-  padding: 24px 0;
+  padding: var(--space-6) var(--space-4);
   text-align: center;
-  color: var(--faint);
-  font-size: var(--ui-font-size-sm);
+  color: var(--color-text-faint);
+  font-size: var(--text-sm);
+}
+.tp-hint {
+  margin: auto;
 }
 
-/* Mobile */
+/* Mobile: stack the list above the detail pane; the panel scrolls as one. */
 @media (max-width: 640px) {
-  .taskspane { padding: 14px 14px 16px; }
-  .tp-main { flex-wrap: wrap; row-gap: 4px; }
-  .tp-name { font-size: var(--ui-font-size-sm); }
-  .tp-stop {
-    min-height: 32px;
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: var(--ui-font-size-xs);
+  .tp-split {
+    flex-direction: column;
+    gap: var(--space-2);
   }
-  .tp-detail { margin-left: 0; }
-  .tp-pre { font-size: var(--ui-font-size-xs); }
+  .tp-list {
+    width: 100%;
+    max-height: 40%;
+    padding-right: 0;
+  }
+  .tp-detail {
+    border-left: none;
+    border-top: 1px solid var(--color-line);
+    padding-left: 0;
+    padding-top: var(--space-2);
+  }
 }
-
-.tp-stop { border-radius: var(--radius-md); font-family: var(--sans); }
 </style>

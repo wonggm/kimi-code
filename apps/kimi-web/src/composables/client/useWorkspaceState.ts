@@ -7,7 +7,7 @@
 // the view-model computeds stay in the facade; cross-dependencies are injected
 // here as params.
 
-import { reactive, type ComputedRef, type Ref } from 'vue';
+import { reactive, ref, type ComputedRef, type Ref } from 'vue';
 import { getKimiWebApi } from '../../api';
 import { i18n } from '../../i18n';
 import { useConfirmDialog } from '../useConfirmDialog';
@@ -46,6 +46,7 @@ import type {
 } from '../../types';
 import type { ExtendedState, PromptAttachment } from '../useKimiWebClient';
 import type { UseModelProviderState } from './useModelProviderState';
+import type { UseSessionPlans } from './useSessionPlans';
 import type { UseSideChat } from './useSideChat';
 import type { UseTaskPoller } from './useTaskPoller';
 
@@ -207,8 +208,16 @@ export interface PersistSessionProfilePatch {
   thinking?: string;
 }
 
+/** Protocol envelope code for "payload too large" (packages/protocol
+ *  ErrorCode.FILE_TOO_LARGE). The server rejects an oversized session export
+ *  with it; mapping it to an actionable message is what the export failure
+ *  toast relies on. */
+const EXPORT_TOO_LARGE_CODE = 41301;
+
 export interface UseWorkspaceStateDeps {
   taskPoller: UseTaskPoller;
+  /** ExitPlanMode plan history loader (dock plan viewer panel). */
+  sessionPlans: UseSessionPlans;
   sideChat: UseSideChat;
   modelProvider: UseModelProviderState;
   pushOperationFailure: (
@@ -250,10 +259,11 @@ export interface UseWorkspaceStateDeps {
   savePermissionToStorage: (mode: PermissionMode) => void;
   /** Persist the current per-session mode maps (read off rawState). */
   savePlanModeToStorage: () => void;
+  savePlanArmedToStorage: () => void;
   saveSwarmModeToStorage: () => void;
   saveGoalModeToStorage: () => void;
   /** Staged mode toggles for the not-yet-created draft session. */
-  draftModes: { planMode: boolean; swarmMode: boolean; goalMode: boolean };
+  draftModes: { planMode: boolean; planArmed: boolean; swarmMode: boolean; goalMode: boolean };
   saveUnread: (changes: Record<string, boolean>) => void;
   saveActiveWorkspaceToStorage: (id: string) => void;
   saveHiddenWorkspacesToStorage: (roots: string[]) => void;
@@ -299,6 +309,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     workspaceIdForSession,
     savePermissionToStorage,
     savePlanModeToStorage,
+    savePlanArmedToStorage,
     saveSwarmModeToStorage,
     saveGoalModeToStorage,
     draftModes,
@@ -312,8 +323,16 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     selectedDiffPath,
     fileDiffLines,
     fileDiffLoading,
+    sessionPlans,
   } = deps;
   let exportInFlight = false;
+  /** Export lifecycle for the top-center confirmation toast: 'running' while
+   *  the ZIP is generated, 'done' after the download starts. The shell resets
+   *  it via resetExportState (i.e. after the toast auto-dismisses). */
+  const exportState = ref<'idle' | 'running' | 'done'>('idle');
+  function resetExportState(): void {
+    exportState.value = 'idle';
+  }
 
   async function loadOlderMessages(sessionId: string): Promise<void> {
     if (rawState.messagesLoadingMoreBySession[sessionId]) return;
@@ -359,6 +378,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
 
   function refreshSessionSidecars(sessionId: string): void {
     void taskPoller.loadTasksForSession(sessionId);
+    void sessionPlans.loadSessionPlans(sessionId);
     void loadGitStatus(sessionId);
     void refreshSessionStatus(sessionId);
     void refreshSessionGoal(sessionId);
@@ -399,7 +419,9 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     fileDiffLoading.value = false;
   }
 
-  /** Load git status for a session — defensive, never throws */
+  /** Load git status for a session — defensive, never throws. The pullRequest
+   *  fact is projected onto the cached session (the WS stream carries no git
+   *  event), so the sidebar PR tag refreshes after every re-poll. */
   async function loadGitStatus(sessionId: string): Promise<void> {
     try {
       const api = getKimiWebApi();
@@ -408,6 +430,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         ...rawState.gitStatusBySession,
         [sessionId]: result,
       };
+      const pullRequest = result.pullRequest ?? null;
+      updateSession(sessionId, (s) => ({ ...s, pullRequest }));
     } catch {
       // Stale/old sessions may 404 — leave undefined, no crash
     }
@@ -1131,6 +1155,10 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       rawState.planModeBySession = { ...rawState.planModeBySession, [sid]: true };
       savePlanModeToStorage();
     }
+    if (draftModes.planArmed) {
+      rawState.planArmedBySession = { ...rawState.planArmedBySession, [sid]: true };
+      savePlanArmedToStorage();
+    }
     if (draftModes.swarmMode) {
       rawState.swarmModeBySession = { ...rawState.swarmModeBySession, [sid]: true };
       saveSwarmModeToStorage();
@@ -1140,6 +1168,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       saveGoalModeToStorage();
     }
     draftModes.planMode = false;
+    draftModes.planArmed = false;
     draftModes.swarmMode = false;
     draftModes.goalMode = false;
     return sid;
@@ -1518,9 +1547,20 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       // Modes are per-session: read this session's own toggles (not the global
       // active-session value), so a prompt enqueued for a background session uses
       // that session's settings.
-      const planMode = rawState.planModeBySession[sid] ?? false;
+      let planMode = rawState.planModeBySession[sid] ?? false;
       const swarmMode = rawState.swarmModeBySession[sid] ?? false;
       const goalMode = rawState.goalModeBySession[sid] ?? false;
+      const planArmed = rawState.planArmedBySession[sid] ?? false;
+
+      // Plan mode, when armed, is deferred like goal mode: the + menu / `/plan`
+      // only stage the flag, and THIS send activates plan mode (the payload
+      // carries it) while consuming the flag. An already-active plan is left on.
+      if (planArmed && !planMode) {
+        planMode = true;
+        rawState.planModeBySession = { ...rawState.planModeBySession, [sid]: true };
+        savePlanModeToStorage();
+        void persistSessionProfile({ planMode: true }, sid);
+      }
 
       if (goalMode && text) {
         try {
@@ -1554,6 +1594,12 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       if (goalMode) {
         rawState.goalModeBySession = { ...rawState.goalModeBySession, [sid]: false };
         saveGoalModeToStorage();
+      }
+      // Plan-armed is a one-shot staging flag too: consumed by this send, then
+      // cleared (plan activation above already applied planMode).
+      if (planArmed) {
+        rawState.planArmedBySession = { ...rawState.planArmedBySession, [sid]: false };
+        savePlanArmedToStorage();
       }
 
       // Authoritative prompt_id for :abort — race-free (the projector binding can
@@ -2014,6 +2060,9 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       await api.respondApproval(sid, approvalId, fullResponse);
       // Remove from local approvals immediately (WS event will confirm)
       removePendingApproval(sid, approvalId);
+      // Best-effort refresh of the plan history — the authoritative review
+      // state is re-fetched again on the approvalResolved WS event.
+      void sessionPlans.loadSessionPlans(sid);
     } catch (err) {
       if (isAlreadyResolvedError(err)) {
         // Already resolved (another client or a raced event) — that is the
@@ -2130,6 +2179,33 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     setPlanMode(!current);
   }
 
+  /** ARM plan mode for the active session (or the draft) WITHOUT activating it.
+   *  The flag is local (not pushed to the session profile) and consumed by the
+   *  next send, which flips plan mode on — like goal mode's one-shot arming.
+   *  Plan and goal armings are mutually exclusive: arming plan clears a staged
+   *  goal. */
+  function setPlanArmed(on: boolean): void {
+    const sid = rawState.activeSessionId;
+    if (sid) {
+      rawState.planArmedBySession = { ...rawState.planArmedBySession, [sid]: on };
+      savePlanArmedToStorage();
+      if (on && rawState.goalModeBySession[sid]) {
+        rawState.goalModeBySession = { ...rawState.goalModeBySession, [sid]: false };
+        saveGoalModeToStorage();
+      }
+    } else {
+      draftModes.planArmed = on;
+      if (on) draftModes.goalMode = false;
+    }
+  }
+
+  /** Flip the plan-armed staging flag for the active session (or the draft). */
+  function togglePlanArmed(): void {
+    const sid = rawState.activeSessionId;
+    const current = sid ? (rawState.planArmedBySession[sid] ?? false) : draftModes.planArmed;
+    setPlanArmed(!current);
+  }
+
   /** Persist and apply swarm mode for the active session (pushed to its profile
    *  + sent per-prompt). With no active session the toggle is staged on the draft. */
   function setSwarmMode(on: boolean): void {
@@ -2159,13 +2235,26 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   }
 
   /** Persist goal mode for the active session. Unlike plan/swarm, this is a
-   *  one-shot flag consumed on send (not pushed to the session profile). */
+   *  one-shot flag consumed on send (not pushed to the session profile).
+   *  Goal and plan armings are mutually exclusive: arming a goal clears a
+   *  staged plan, and turns plan mode OFF when it is currently active. */
   function setGoalMode(on: boolean): void {
     const sid = rawState.activeSessionId;
     if (sid) {
+      if (on) {
+        if (rawState.planArmedBySession[sid]) {
+          rawState.planArmedBySession = { ...rawState.planArmedBySession, [sid]: false };
+          savePlanArmedToStorage();
+        }
+        if (rawState.planModeBySession[sid]) setPlanMode(false);
+      }
       rawState.goalModeBySession = { ...rawState.goalModeBySession, [sid]: on };
       saveGoalModeToStorage();
     } else {
+      if (on) {
+        draftModes.planArmed = false;
+        draftModes.planMode = false;
+      }
       draftModes.goalMode = on;
     }
   }
@@ -2403,7 +2492,10 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
 
   /** Export the given session (default: the active one). The id is captured
    * synchronously so a later session switch cannot redirect the in-flight
-   * request, and a lock prevents duplicate ZIP generation. */
+   * request, and a lock prevents duplicate ZIP generation. Success flips
+   * exportState to 'done' so the shell can show the confirmation toast;
+   * a server "session too large" rejection (envelope code 41301 = protocol
+   * FILE_TOO_LARGE) gets an actionable message pointing at the CLI export. */
   async function exportSession(targetSessionId?: string): Promise<void> {
     if (exportInFlight) return;
     const sessionId = targetSessionId ?? rawState.activeSessionId;
@@ -2414,6 +2506,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       return;
     }
     exportInFlight = true;
+    exportState.value = 'running';
     const startedAt = Date.now();
     traceKeyEvent('export:start', { sessionId });
     try {
@@ -2438,6 +2531,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
           }
         }, 0);
       }
+      exportState.value = 'done';
       traceKeyEvent('export:accepted', {
         sessionId,
         status: 'accepted',
@@ -2445,6 +2539,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         durationMs: Date.now() - startedAt,
       });
     } catch (error) {
+      exportState.value = 'idle';
       const failure =
         typeof error === 'object' && error !== null
           ? (error as {
@@ -2466,10 +2561,24 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         phase: typeof failure?.phase === 'string' ? failure.phase : undefined,
         httpStatus: typeof failure?.status === 'number' ? failure.status : undefined,
       });
-      pushOperationFailure('exportSession', error, { sessionId });
+      const opts =
+        isDaemonApiError(error) && error.code === EXPORT_TOO_LARGE_CODE
+          ? { message: t('commands.export.tooLarge', { sessionId }) }
+          : undefined;
+      pushOperationFailure('exportSession', error, opts ? { sessionId, ...opts } : { sessionId });
     } finally {
       exportInFlight = false;
     }
+  }
+
+  /** Generate/regenerate the session title via the daemon (title/generate),
+   *  or null when unavailable. The server publishes session.meta.updated on
+   *  success, so the list title refreshes on its own. */
+  async function generateSessionTitle(
+    sessionId: string,
+    opts?: { force?: boolean; source?: 'user_prompts' | 'first_turn' | 'digest' },
+  ): Promise<string | null> {
+    return getKimiWebApi().generateSessionTitle(sessionId, opts);
   }
 
   /** Restore an archived session — calls API, then puts the returned session
@@ -2846,6 +2955,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     cancelTask,
     setPlanMode,
     togglePlanMode,
+    setPlanArmed,
+    togglePlanArmed,
     setSwarmMode,
     toggleSwarmMode,
     setGoalMode,
@@ -2859,6 +2970,9 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     deleteWorkspace,
     archiveSession,
     exportSession,
+    exportState,
+    resetExportState,
+    generateSessionTitle,
     restoreSession,
     loadArchivedSessions,
     logout,

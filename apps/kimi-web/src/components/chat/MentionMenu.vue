@@ -1,8 +1,12 @@
 <!-- apps/kimi-web/src/components/chat/MentionMenu.vue -->
-<!-- Popup list of file paths shown when user types @ in the Composer textarea. -->
+<!-- Popup list of file paths shown when user types @ in the Composer textarea.
+     Long lists get a scroll fade plus a draggable floating scrollbar (see
+     useMenuScrollbar). -->
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { iconSvg } from '../../lib/icons';
+import { useMenuScrollbar } from '../../composables/useMenuScrollbar';
 import type { FileItem } from '../../types';
 
 // Re-exported for the .vue consumers (Composer / ChatDock / ConversationPane)
@@ -21,6 +25,9 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+const scrollEl = ref<HTMLElement | null>(null);
+const { maskStyle, thumbStyle, onScroll, onThumbPointerDown } = useMenuScrollbar(scrollEl);
 
 // ---------------------------------------------------------------------------
 // File-type glyphs: small line-SVG icons (viewBox 0 0 16 16) keyed off the
@@ -67,23 +74,30 @@ function fileIcon(item: FileItem): string {
     <div v-else-if="props.items.length === 0" class="mention-state dim">{{ t('mention.noMatch') }}</div>
 
     <!-- File items -->
-    <div
-      v-for="(item, i) in props.items"
-      v-else
-      :key="item.path"
-      class="mention-item"
-      :class="{ active: i === props.activeIndex }"
-      role="option"
-      :aria-selected="i === props.activeIndex"
-      @mouseenter="emit('hover', i)"
-      @mousedown.prevent="emit('select', item)"
-    >
-      <!-- file-type glyph (line-SVG) -->
-      <!-- eslint-disable-next-line vue/no-v-html -->
-      <span class="mention-icon" v-html="fileIcon(item)" aria-hidden="true" />
-      <span class="mention-name">{{ item.name }}</span>
-      <span class="mention-path">{{ item.path }}</span>
+    <div v-else ref="scrollEl" class="menu-scroll" :style="maskStyle" @scroll="onScroll">
+      <div
+        v-for="(item, i) in props.items"
+        :key="item.path"
+        class="mention-item"
+        :class="{ active: i === props.activeIndex }"
+        role="option"
+        :aria-selected="i === props.activeIndex"
+        @mouseenter="emit('hover', i)"
+        @mousedown.prevent="emit('select', item)"
+      >
+        <!-- file-type glyph (line-SVG) -->
+        <!-- eslint-disable-next-line vue/no-v-html -->
+        <span class="mention-icon" v-html="fileIcon(item)" aria-hidden="true" />
+        <span class="mention-name">{{ item.name }}</span>
+        <span class="mention-path">{{ item.path }}</span>
+      </div>
     </div>
+    <div
+      v-if="thumbStyle"
+      class="menu-thumb"
+      :style="thumbStyle"
+      @pointerdown="onThumbPointerDown"
+    />
   </div>
 </template>
 
@@ -101,8 +115,41 @@ function fileIcon(item: FileItem): string {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   z-index: var(--z-dropdown);
+}
+
+/* Scroll container: owns the max-height + scrolling; hides the native
+   scrollbar in favor of the floating thumb. */
+.menu-scroll {
   max-height: 220px;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+.menu-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Floating draggable scrollbar — sibling of the scroll container, anchored to
+   the menu frame. Interactive hit area widened by the ::before overlay. */
+.menu-thumb {
+  position: absolute;
+  right: 4px;
+  width: var(--menu-scrollbar-width);
+  border-radius: var(--radius-full);
+  background: var(--menu-scrollbar-color);
+  cursor: default;
+  touch-action: none;
+  transition: background var(--duration-base) var(--ease-out);
+}
+.menu-thumb::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--space-2));
+  right: 0;
+}
+.mention-menu:hover .menu-thumb {
+  background: var(--menu-scrollbar-color-hover);
 }
 
 .mention-state {

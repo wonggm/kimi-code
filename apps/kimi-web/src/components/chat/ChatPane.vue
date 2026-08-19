@@ -15,13 +15,11 @@ import AttachmentChip from './AttachmentChip.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
 import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
-import Tooltip from '../ui/Tooltip.vue';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import {
   assistantRenderBlocks,
-  formatDuration,
   formatTokens,
   renderBlockKey,
   turnBlocks,
@@ -988,10 +986,8 @@ function forwardOpenFile(target: FilePreviewRequest): void {
           </template>
         </template>
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />
-        <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && (assistantRunFinalText(ti).trim().length > 0 || turn.durationMs !== undefined)" class="a-msg-ft">
-          <Tooltip :text="`${turn.durationMs} ms`">
-            <span v-if="turn.durationMs !== undefined" class="a-duration">{{ formatDuration(turn.durationMs) }}</span>
-          </Tooltip>
+        <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && (assistantRunFinalText(ti).trim().length > 0 || turn.createdAt !== undefined)" class="a-msg-ft">
+          <MessageTime v-if="turn.createdAt" :time="turn.createdAt" />
           <button
             v-if="assistantRunFinalText(ti).trim().length > 0"
             class="a-cpbtn"
@@ -1337,13 +1333,6 @@ function forwardOpenFile(target: FilePreviewRequest): void {
   height: auto;
   margin-top: var(--chat-block-gap);
   overflow: visible;
-}
-.a-duration {
-  display: inline-flex;
-  align-items: center;
-  font-size: var(--text-base);
-  color: var(--muted);
-  line-height: 1;
 }
 
 /* Copy button — icon-only, shares the undo button's muted→hover style so the

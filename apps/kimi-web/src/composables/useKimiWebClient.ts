@@ -41,6 +41,7 @@ import { useAppearance } from './client/useAppearance';
 import { useNotification, shouldNotifyCompletion } from './client/useNotification';
 import { useSoundNotification } from './client/useSoundNotification';
 import { useTaskPoller } from './client/useTaskPoller';
+import { useSessionPlans } from './client/useSessionPlans';
 import { useModelProviderState } from './client/useModelProviderState';
 import { useSideChat } from './client/useSideChat';
 import {
@@ -61,6 +62,7 @@ import type {
   AppNoticeDetail,
   AppMessage,
   AppModel,
+  AppPlanEntry,
   AppProvider,
   AppQuestionRequest,
   AppSession,
@@ -110,6 +112,7 @@ import type {
 const PERMISSION_STORAGE_KEY = STORAGE_KEYS.permission;
 const ACTIVE_WORKSPACE_KEY = STORAGE_KEYS.activeWorkspace;
 const PLAN_MODE_STORAGE_KEY = STORAGE_KEYS.planMode;
+const PLAN_ARMED_STORAGE_KEY = STORAGE_KEYS.planArmed;
 const SWARM_MODE_STORAGE_KEY = STORAGE_KEYS.swarmMode;
 const GOAL_MODE_STORAGE_KEY = STORAGE_KEYS.goalMode;
 const SESSION_NOT_FOUND_CODE = 40401;
@@ -185,6 +188,10 @@ function saveModeMapToStorage(key: string, map: Record<string, boolean>): void {
 
 function savePlanModeToStorage(): void {
   saveModeMapToStorage(PLAN_MODE_STORAGE_KEY, rawState.planModeBySession);
+}
+
+function savePlanArmedToStorage(): void {
+  saveModeMapToStorage(PLAN_ARMED_STORAGE_KEY, rawState.planArmedBySession);
 }
 
 function saveSwarmModeToStorage(): void {
@@ -315,6 +322,10 @@ export interface ExtendedState extends KimiClientState {
   /** Plan-mode toggle per session. Bound to a session (not global) so toggling
    *  it in one session does not affect another. */
   planModeBySession: Record<string, boolean>;
+  /** Plan-armed flag per session: plan mode staged for the NEXT send, which
+   *  activates it (one-shot, like goal mode). Arming is local — nothing is
+   *  persisted to the session profile until the send consumes it. */
+  planArmedBySession: Record<string, boolean>;
   /** Swarm-mode toggle per session. */
   swarmModeBySession: Record<string, boolean>;
   /** Goal-mode (one-shot "next send creates a goal") toggle per session. */
@@ -395,6 +406,7 @@ const rawState: ExtendedState = reactive({
   thinking: undefined,
   thinkingBySession: {},
   planModeBySession: loadModeMapFromStorage(PLAN_MODE_STORAGE_KEY),
+  planArmedBySession: loadModeMapFromStorage(PLAN_ARMED_STORAGE_KEY),
   swarmModeBySession: loadModeMapFromStorage(SWARM_MODE_STORAGE_KEY),
   goalModeBySession: loadModeMapFromStorage(GOAL_MODE_STORAGE_KEY),
   loading: false,
@@ -435,8 +447,9 @@ const rawState: ExtendedState = reactive({
 // first prompt is sent (see startSessionAndSendPrompt), then cleared. Not
 // persisted — the draft is ephemeral.
 // ---------------------------------------------------------------------------
-const draftModes = reactive<{ planMode: boolean; swarmMode: boolean; goalMode: boolean }>({
+const draftModes = reactive<{ planMode: boolean; planArmed: boolean; swarmMode: boolean; goalMode: boolean }>({
   planMode: false,
+  planArmed: false,
   swarmMode: false,
   goalMode: false,
 });
@@ -622,10 +635,12 @@ function forgetSession(sessionId: string): void {
   // Drop per-session mode toggles and re-persist so a deleted session's entry
   // doesn't linger in localStorage.
   delete rawState.planModeBySession[sessionId];
+  delete rawState.planArmedBySession[sessionId];
   delete rawState.swarmModeBySession[sessionId];
   delete rawState.goalModeBySession[sessionId];
   delete rawState.thinkingBySession[sessionId];
   savePlanModeToStorage();
+  savePlanArmedToStorage();
   saveSwarmModeToStorage();
   saveGoalModeToStorage();
 }
@@ -1011,6 +1026,12 @@ function processEvent(appEvent: AppEvent, meta: KimiEventMeta): void {
   if (appEvent.type === 'approvalRequested') {
     onApprovalRequested(appEvent.sessionId, appEvent.approval);
   }
+
+  // A plan review (ExitPlanMode approval) resolved — refresh the session's plan
+  // history so the plan viewer / work-bar pill reflects the outcome.
+  if (appEvent.type === 'approvalResolved') {
+    void sessionPlans.loadSessionPlans(appEvent.sessionId);
+  }
 }
 
 const enqueueEvent = createEventBatcher<PendingAppEvent>(
@@ -1259,14 +1280,18 @@ function operationFailureNotice(
   const title =
     opts.title ??
     (network
-      ? i18n.global.t('warnings.daemonNetworkTitle')
+      ? err.timedOut
+        ? i18n.global.t('warnings.daemonTimeoutTitle')
+        : i18n.global.t('warnings.daemonNetworkTitle')
       : api
         ? i18n.global.t('warnings.daemonApiTitle')
         : i18n.global.t('warnings.operationFailedTitle'));
   const message =
     opts.message ??
     (network
-      ? i18n.global.t('warnings.daemonNetworkMessage')
+      ? err.timedOut
+        ? i18n.global.t('warnings.daemonTimeoutMessage')
+        : i18n.global.t('warnings.daemonNetworkMessage')
       : api
         ? err.message
         : i18n.global.t('warnings.operationFailedMessage'));
@@ -1293,6 +1318,12 @@ function dismissWsError(): void {
   if (next.length !== rawState.warnings.length) {
     rawState.warnings = next;
   }
+}
+
+/** Surface a plain notice (no error details, no console noise) through the
+ *  toast stack — e.g. "title generation unavailable". */
+function pushNotice(title: string): void {
+  pushWarning({ severity: 'warning', title });
 }
 
 function pushOperationFailure(
@@ -1899,6 +1930,10 @@ function toUiTask(task: AppTask): TaskItem {
     output,
     runInBackground: task.runInBackground,
     parentToolCallId: task.parentToolCallId,
+    // Bound model + timestamps ride along to the subagent card grid.
+    model: task.model,
+    createdAt: task.createdAt,
+    completedAt: task.completedAt,
   };
 }
 
@@ -1929,6 +1964,7 @@ const sessions = computed<Session[]>(() => {
       updatedAt: s.updatedAt,
       lastPrompt: s.lastPrompt,
       workspaceId: s.workspaceId,
+      pullRequest: s.pullRequest ?? rawState.gitStatusBySession[s.id]?.pullRequest ?? null,
       emoji: s.emoji,
       pinned: s.pinned,
     }));
@@ -1974,6 +2010,8 @@ const activeAppTasks = computed<AppTask[]>(() => {
 });
 
 const taskPoller = useTaskPoller(rawState, activeAppTasks);
+
+const sessionPlans = useSessionPlans();
 
 // Reconcile cache for `turns`: each recompute reconciles the freshly-built turn
 // list against the previous one so unchanged rows keep their object identity
@@ -2095,6 +2133,14 @@ const tasks = computed<TaskItem[]>(() => {
   return activeAppTasks.value.map(toUiTask);
 });
 
+/** ExitPlanMode plan history of the active session, in timeline order. The
+ *  dock's plan pill shows the latest entry; opening the panel renders it. */
+const activePlans = computed<AppPlanEntry[]>(() => {
+  const sid = rawState.activeSessionId;
+  if (!sid) return [];
+  return sessionPlans.plansBySession.value[sid] ?? [];
+});
+
 const swarms = computed<SwarmGroup[]>(() => buildSwarmGroups(activeAppTasks.value));
 // Foreground/background subagents keyed by their spawning tool call id — used by
 // the inline AgentSwarm tool card to stream each subagent's live progress.
@@ -2159,6 +2205,12 @@ const thinking = computed<ThinkingLevel | undefined>(() => rawState.thinking);
 const planMode = computed<boolean>(() => {
   const sid = rawState.activeSessionId;
   return sid ? (rawState.planModeBySession[sid] ?? false) : draftModes.planMode;
+});
+/** Plan-armed reflects the ACTIVE session (or the draft) like planMode, but it
+    is a one-shot staging flag consumed by the next send, not a profile field. */
+const planArmed = computed<boolean>(() => {
+  const sid = rawState.activeSessionId;
+  return sid ? (rawState.planArmedBySession[sid] ?? false) : draftModes.planArmed;
 });
 const swarmMode = computed<boolean>(() => {
   const sid = rawState.activeSessionId;
@@ -2546,6 +2598,9 @@ const sessionsForView = computed<Session[]>(() => {
         lastPrompt: s.lastPrompt,
         workspaceId,
         workspaceName: nameByWorkspaceId.get(workspaceId),
+        pullRequest: s.pullRequest ?? rawState.gitStatusBySession[s.id]?.pullRequest ?? null,
+        emoji: s.emoji,
+        pinned: s.pinned,
       };
     });
 });
@@ -2567,6 +2622,9 @@ const workspaceGroups = computed<WorkspaceGroup[]>(() => {
       pendingInteraction: s.pendingInteraction,
       lastTurnReason: s.lastTurnReason,
       updatedAt: s.updatedAt,
+      pullRequest: s.pullRequest ?? rawState.gitStatusBySession[s.id]?.pullRequest ?? null,
+      emoji: s.emoji,
+      pinned: s.pinned,
     };
     const list = byId.get(wid) ?? [];
     list.push(view);
@@ -2682,6 +2740,7 @@ const availableOpenInApps = computed<string[]>(() => rawState.availableOpenInApp
 
 const workspaceState = useWorkspaceState(rawState, {
   taskPoller,
+  sessionPlans,
   sideChat,
   modelProvider,
   pushOperationFailure,
@@ -2708,6 +2767,7 @@ const workspaceState = useWorkspaceState(rawState, {
   workspaceIdForSession,
   savePermissionToStorage,
   savePlanModeToStorage,
+  savePlanArmedToStorage,
   saveSwarmModeToStorage,
   saveGoalModeToStorage,
   draftModes,
@@ -2774,13 +2834,26 @@ function onMainTurnEnd(sid: string, status: 'idle' | 'aborted', turnWasActive: b
   if (sid === rawState.activeSessionId) {
     void workspaceState.loadGitStatus(sid);
     void refreshSessionStatus(sid);
-  } else if (status === 'idle') {
-    // A background session finished a turn the user hasn't seen — light up its
-    // unread dot until they open it. Aborted (cancelled/failed) turns are
-    // excluded on purpose: there is no fresh result to read, and counting them
-    // is what made the sidebar fill with stale unreads after a refresh.
-    rawState.unreadBySession = { ...rawState.unreadBySession, [sid]: true };
-    saveUnread({ [sid]: true });
+  } else {
+    // The session just ran a turn off-screen — reload its git status too so a
+    // PR created from within it appears on the sidebar badge without a reload
+    // (the WS stream carries no git events; turn end is the poll point).
+    void workspaceState.loadGitStatus(sid);
+    if (status === 'idle') {
+      // A background session finished a turn the user hasn't seen — light up its
+      // unread dot until they open it. Aborted (cancelled/failed) turns are
+      // excluded on purpose: there is no fresh result to read, and counting them
+      // is what made the sidebar fill with stale unreads after a refresh.
+      rawState.unreadBySession = { ...rawState.unreadBySession, [sid]: true };
+      saveUnread({ [sid]: true });
+    }
+  }
+
+  // Experimental auto session titles: on the first completed turn(s), ask the
+  // daemon to generate a title for this session (flag-gated, throttled to 3
+  // attempts per session — see maybeGenerateSessionTitle).
+  if (rawState.config?.experimental?.auto_session_title === true) {
+    maybeGenerateSessionTitle(sid);
   }
 
   // Browser notification when the user isn't watching this session.
@@ -2804,6 +2877,24 @@ function onMainTurnEnd(sid: string, status: 'idle' | 'aborted', turnWasActive: b
   if (status === 'idle') {
     sound.maybePlayCompletionSound();
   }
+}
+
+// Experimental auto-title guard per session: attempt once for the first turn,
+// then stop permanently once either the daemon produced a title or 3 attempts
+// failed (generation can legitimately fail while the first turn's assistant
+// text is still settling). Mirrors the daemon-side `auto_session_title` flag.
+const AUTO_TITLE_MAX_ATTEMPTS = 3;
+const autoTitleAttempts = new Map<string, { attempts: number; done: boolean }>();
+function maybeGenerateSessionTitle(sid: string): void {
+  const tracked = autoTitleAttempts.get(sid);
+  if (tracked !== undefined && (tracked.done || tracked.attempts >= AUTO_TITLE_MAX_ATTEMPTS)) return;
+  autoTitleAttempts.set(sid, { attempts: (tracked?.attempts ?? 0) + 1, done: false });
+  getKimiWebApi()
+    .generateSessionTitle(sid, { source: 'first_turn' })
+    .then((title) => {
+      if (title !== null) autoTitleAttempts.set(sid, { attempts: 0, done: true });
+    })
+    .catch(() => {});
 }
 
 function onQuestionRequested(sid: string, question: AppQuestionRequest): void {
@@ -2877,6 +2968,8 @@ export function useKimiWebClient() {
 
     turns,
     tasks,
+    /** Live ExitPlanMode plan history of the active session (timeline order). */
+    activePlans,
     /** Live `AppTask[]` for the active session — the subagent detail panel
      *  sources a subagent's streaming `outputLines` from here. */
     activeAppTasks,
@@ -2917,6 +3010,7 @@ export function useKimiWebClient() {
     permission,
     thinking,
     planMode,
+    planArmed,
     swarmMode,
     goalMode,
     queued,
@@ -3012,6 +3106,8 @@ export function useKimiWebClient() {
     setThinking: modelProvider.setThinking,
     setPlanMode: workspaceState.setPlanMode,
     togglePlanMode: workspaceState.togglePlanMode,
+    setPlanArmed: workspaceState.setPlanArmed,
+    togglePlanArmed: workspaceState.togglePlanArmed,
     setSwarmMode: workspaceState.setSwarmMode,
     toggleSwarmMode: workspaceState.toggleSwarmMode,
     setGoalMode: workspaceState.setGoalMode,
@@ -3020,6 +3116,7 @@ export function useKimiWebClient() {
     controlGoal: workspaceState.controlGoal,
     enqueue: workspaceState.enqueue,
     dismissWarning: workspaceState.dismissWarning,
+    pushNotice,
     renameSession: workspaceState.renameSession,
     renameWorkspace: workspaceState.renameWorkspace,
     deleteWorkspace: workspaceState.deleteWorkspace,
@@ -3027,6 +3124,9 @@ export function useKimiWebClient() {
     setWorkspaceSortMode,
     archiveSession: workspaceState.archiveSession,
     exportSession: workspaceState.exportSession,
+    exportState: workspaceState.exportState,
+    resetExportState: workspaceState.resetExportState,
+    generateSessionTitle: workspaceState.generateSessionTitle,
     restoreSession: workspaceState.restoreSession,
     loadArchivedSessions: workspaceState.loadArchivedSessions,
     compact: workspaceState.compact,

@@ -41,6 +41,10 @@ export interface Session {
   workspaceId?: string;
   /** Workspace display name, joined from workspacesView. */
   workspaceName?: string;
+  /** GitHub pull request for the session's current branch — projected by the
+   *  client from the daemon's git status (fs:git_status). Null when unknown,
+   *  not a GitHub repo, or the branch has no PR. Drives the sidebar tag. */
+  pullRequest?: { number: number; state: string; url: string } | null;
   emoji?: string;
   pinned?: boolean;
 }
@@ -311,6 +315,14 @@ export interface TaskItem {
    *  to its inline tool card, so the card's "Open detail" button can be hidden
    *  when the task is no longer available. */
   parentToolCallId?: string;
+  /** Bound model alias the subagent is actually running on (resolved at spawn,
+   *  NOT re-read from `[subagent_models]`). Surfaced from AppTask.model so the
+   *  subagent card grid keeps showing the bound model next to each agent. */
+  model?: string;
+  /** ISO timestamps for ordering "recently finished" cards in the subagent
+   *  grid (falls back to createdAt for rows without a completion time). */
+  createdAt?: string;
+  completedAt?: string;
 }
 
 export interface ConversationStatus {

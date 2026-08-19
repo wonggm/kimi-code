@@ -934,10 +934,13 @@ html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-ic
 /* Dock work chips (Bash / Sub Agent / Todos) — they carry .lg-glass in the
    template, so the base glass stack (tint, 8px backdrop blur, rim, hover
    lift) applies. These rules only adapt the Pill component to it: capsule
-   shape, and keep the glass background on hover / active where the
-   component's own scoped rules would otherwise paint an opaque fill. */
+   shape and a hairline-free edge (the refraction rim stays via the glass
+   box-shadow insets, so the chips read as borderless rounded glass), plus
+   keep the glass background on hover / active where the component's own
+   scoped rules would otherwise paint an opaque fill. */
 html[data-liquid-glass="on"] .dock-workbar button.ui-pill {
   border-radius: 999px;
+  border-color: transparent;
 }
 html[data-liquid-glass="on"] .dock-workbar button.ui-pill:hover:not(:disabled),
 html[data-liquid-glass="on"] .dock-workbar button.ui-pill.is-active {
@@ -1305,4 +1308,37 @@ html[data-liquid-glass="on"] .ui-dialog.ui-dialog:not(.step-2),
 html[data-liquid-glass="on"] .sheet-root:not(.step-2) .sheet-panel.sheet-panel {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* ---- autocomplete menus: scroll fade + floating scrollbar ---- */
+/* The slash and @-mention menus fade their top/bottom edges and draw a
+   draggable floating scrollbar thumb. The fade gradients are token-defined
+   so the app's no-gradient-text rule (tokens exempt) and the shared
+   --menu-scroll-fade length stay in one place; components swap between the
+   three forms (top / bottom / both) depending on scroll position. */
+:root {
+  --menu-scroll-fade: 14px;
+  --menu-scrollbar-track-inset: 2px;
+  --menu-scrollbar-thumb-min: 24px;
+  --menu-scrollbar-width: 4px;
+  --menu-scrollbar-edge: 2px;
+  --menu-scrollbar-color: var(--color-text-faint);
+  --menu-scrollbar-color-hover: var(--color-text-muted);
+  --menu-scroll-fade-mask-top: linear-gradient(
+    to bottom,
+    transparent 0,
+    black var(--menu-scroll-fade)
+  );
+  --menu-scroll-fade-mask-bottom: linear-gradient(
+    to top,
+    transparent 0,
+    black var(--menu-scroll-fade)
+  );
+  --menu-scroll-fade-mask-both: linear-gradient(
+    to bottom,
+    transparent 0,
+    black var(--menu-scroll-fade),
+    black calc(100% - var(--menu-scroll-fade)),
+    transparent 100%
+  );
 }

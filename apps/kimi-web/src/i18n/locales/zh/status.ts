@@ -13,9 +13,13 @@ export default {
   // 计划模式
   planLabel: '计划',
   planDesc: '先让智能体梳理计划，再修改文件',
+  workModeDismiss: '退出模式',
   planOn: '开',
   planOff: '关',
   planTooltip: '切换计划模式（先调研再修改）',
+  // 计划查看面板空状态
+  planEmptyIdle: '计划模式未开启，暂无计划可查看',
+  planEmptyArmed: '计划模式已开启，下一条消息将生成计划',
   // 模式选择器（计划 / 目标 / Swarm）
   modesLabel: '模式',
   goalLabel: '目标',
@@ -63,4 +67,6 @@ export default {
   activityAwaitingQuestion: '等待回答',
   interrupt: '中断',
   runningShort: '进行中',
+  goalDoneWhen: '完成条件',
+  goalElapsedLabel: '已运行时长',
 };

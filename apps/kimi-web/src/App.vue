@@ -49,6 +49,7 @@ import { stripSkillPrefix } from './lib/slashCommands';
 import Button from './components/ui/Button.vue';
 import IconButton from './components/ui/IconButton.vue';
 import Icon from './components/ui/Icon.vue';
+import Spinner from './components/ui/Spinner.vue';
 import InternalBuildBanner from './components/InternalBuildBanner.vue';
 import { isMacosDesktop } from './lib/desktopFlag';
 
@@ -641,7 +642,7 @@ function handleCommand(cmd: string, attachments?: PromptAttachment[]): void {
       void client.reload();
       break;
     case '/plan':
-      client.togglePlanMode();
+      client.togglePlanArmed();
       break;
     case '/auto':
       client.setPermission('auto');
@@ -729,6 +730,60 @@ async function handleSessionUpdate(id: string, patch: { emoji?: string; pinned?:
   await getKimiWebApi().updateSession(id, patch);
   await client.load();
 }
+
+/** Experimental `auto_session_title` — the daemon config flag (KIMI_CODE_
+   *  EXPERIMENTAL_AUTO_SESSION_TITLE / `experimental.auto_session_title`).
+   *  Gates both the automatic first-turn title and the in-rename regenerate
+   *  button (SessionRow). */
+const autoSessionTitle = computed(
+  () => client.config.value?.experimental?.auto_session_title === true,
+);
+
+/** On-demand session title regeneration from a row's rename field. Runs the
+   *  daemon call, reports the title back to the row (so its field settles),
+   *  and surfaces an info toast when generation is unavailable. The server
+   *  publishes session.meta.updated on success, so the list/header titles
+   *  refresh by themselves. */
+async function handleGenerateSessionTitle(
+  id: string,
+  done: (title: string | null) => void,
+): Promise<void> {
+  const title = await client.generateSessionTitle(id, { force: true, source: 'digest' });
+  if (title === null) client.pushNotice(t('sidebar.genTitleUnavailable'));
+  done(title);
+}
+
+// Top-center export confirmation toast: 'running' while the ZIP is generated,
+// 'done' once the download starts (auto-dismisses). Failures route through the
+// regular warning stack from client.exportSession.
+const exportToastVisible = ref(false);
+const exportToastDone = ref(false);
+let exportToastTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => client.exportState.value,
+  (state, previous) => {
+    if (exportToastTimer !== null) {
+      clearTimeout(exportToastTimer);
+      exportToastTimer = null;
+    }
+    if (state === 'running') {
+      exportToastDone.value = false;
+      exportToastVisible.value = true;
+    } else if (state === 'done') {
+      exportToastDone.value = true;
+      exportToastVisible.value = true;
+      exportToastTimer = setTimeout(() => {
+        exportToastVisible.value = false;
+        client.resetExportState();
+      }, 3000);
+    } else if (state === 'idle' && (previous === 'running' || previous === 'done')) {
+      exportToastVisible.value = false;
+    }
+  },
+);
+onUnmounted(() => {
+  if (exportToastTimer !== null) clearTimeout(exportToastTimer);
+});
 
 async function handleAddWorkspace(root: string): Promise<void> {
   addWorkspaceError.value = null;
@@ -842,6 +897,7 @@ function openPr(url: string): void {
         :unread-by-session="client.unreadBySession.value"
         :workspace-sort-mode="client.workspaceSortMode.value"
         :backend="client.backend.value"
+        :auto-session-title="autoSessionTitle"
         @select="client.selectSession($event)"
         @create="handleCreateSession"
         @create-in-workspace="handleCreateSessionInWorkspace($event)"
@@ -850,6 +906,7 @@ function openPr(url: string): void {
         @rename="(id, title) => client.renameSession(id, title)"
         @set-emoji="(id, emoji) => handleSessionUpdate(id, { emoji })"
         @toggle-pinned="(id, pinned) => handleSessionUpdate(id, { pinned })"
+        @generate-title="handleGenerateSessionTitle"
         @archive="confirmArchiveSession($event)"
         @fork="(id) => client.forkSession(id)"
         @export="(id) => client.exportSession(id)"
@@ -895,12 +952,14 @@ function openPr(url: string): void {
       :changes="client.changes.value"
       :git-info="client.gitInfo.value"
       :tasks="client.tasks.value"
+      :plans="client.activePlans.value"
       :todos="client.todos.value"
       :goal="client.goal.value"
       :activation-badges="client.activationBadges.value"
       :status="client.status.value"
       :thinking="client.thinking.value"
       :plan-mode="client.planMode.value"
+      :plan-armed="client.planArmed.value"
       :swarm-mode="client.swarmMode.value"
       :goal-mode="client.goalMode.value"
       :models="client.models.value"
@@ -952,6 +1011,7 @@ function openPr(url: string): void {
       @set-permission="client.setPermission($event)"
       @set-thinking="client.setThinking($event)"
       @toggle-plan="client.togglePlanMode()"
+      @toggle-plan-armed="client.togglePlanArmed()"
       @toggle-swarm="client.toggleSwarmMode()"
       @toggle-goal="client.toggleGoalMode()"
       @create-goal="client.createGoal($event)"
@@ -1188,6 +1248,23 @@ function openPr(url: string): void {
 
     <!-- Floating warnings / agent errors (e.g. a 403 from the model provider) -->
     <WarningToasts :warnings="client.warnings.value" @dismiss="client.dismissWarning" />
+
+    <!-- Top-center export confirmation: "Exporting session…" while the ZIP is
+         generated, "Session exported." once the download starts. -->
+    <Transition name="export-toast">
+      <div
+        v-if="exportToastVisible"
+        class="export-toast lg-glass"
+        role="status"
+        aria-live="polite"
+      >
+        <Spinner v-if="!exportToastDone" size="sm" />
+        <Icon v-else name="check" size="sm" />
+        <span class="export-toast-text">
+          {{ exportToastDone ? t('commands.export.done') : t('commands.export.started') }}
+        </span>
+      </div>
+    </Transition>
 
     <!-- KAP/daemon debug panel (opt-in, ?debug=1) -->
     <DebugPanel v-if="debugEnabled" />
@@ -1472,6 +1549,38 @@ function openPr(url: string): void {
   .auth-page-btn {
     width: 100%;
   }
+}
+
+/* Top-center export toast (success / in-flight). Fixed so it floats above the
+   whole app; lg-glass treatment keeps it on the design-system float language. */
+.export-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+.export-toast-text { white-space: nowrap; }
+.export-toast-enter-active,
+.export-toast-leave-active {
+  transition: opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+.export-toast-enter-from,
+.export-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
 }
 </style>
 

@@ -22,6 +22,10 @@ export default {
   copySessionId: '复制 Session ID',
   copied: '已复制 ✓',
   copyFailed: '复制失败',
+  /** Experimental `auto_session_title` — regenerate button in the rename field. */
+  genTitle: '生成标题',
+  genTitleUnavailable: '无法生成标题：需要先登录 Kimi Code',
+  pullRequest: '拉取请求',
   archive: '归档',
   fork: '分叉会话',
   export: '导出会话',
