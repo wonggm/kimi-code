@@ -22,6 +22,7 @@ const apiMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   exportSession: vi.fn(),
   updateSession: vi.fn(),
+  getGitStatus: vi.fn(),
   submitPrompt: vi.fn(),
   respondQuestion: vi.fn(),
   respondApproval: vi.fn(),
@@ -81,6 +82,7 @@ function createState(): ExtendedState {
     thinking: 'high',
     thinkingBySession: {},
     planModeBySession: {},
+    planArmedBySession: {},
     swarmModeBySession: {},
     goalModeBySession: {},
     loading: false,
@@ -117,6 +119,7 @@ function createState(): ExtendedState {
 function createDeps(): UseWorkspaceStateDeps {
   return {
     taskPoller: {},
+    sessionPlans: { plansBySession: { value: {} }, loadSessionPlans: vi.fn() },
     sideChat: {},
     modelProvider: { resolveThinkingForPrompt: async () => undefined },
     pushOperationFailure: vi.fn(),
@@ -143,9 +146,10 @@ function createDeps(): UseWorkspaceStateDeps {
     workspaceIdForSession: vi.fn(),
     savePermissionToStorage: vi.fn(),
     savePlanModeToStorage: vi.fn(),
+    savePlanArmedToStorage: vi.fn(),
     saveSwarmModeToStorage: vi.fn(),
     saveGoalModeToStorage: vi.fn(),
-    draftModes: { planMode: false, swarmMode: false, goalMode: false },
+    draftModes: { planMode: false, planArmed: false, swarmMode: false, goalMode: false },
     saveUnread: vi.fn(),
     saveActiveWorkspaceToStorage: vi.fn(),
     saveHiddenWorkspacesToStorage: vi.fn(),
@@ -408,6 +412,90 @@ describe('useWorkspaceState — exportSession', () => {
       expect.any(Error),
       expect.objectContaining({ message: expect.any(String) }),
     );
+  });
+
+  it('flips exportState running → done for the top-center confirmation toast', async () => {
+    apiMock.exportSession.mockResolvedValue({ blob: new Blob(['zip']), fileName: 'sess_1.zip' });
+    const workspace = useWorkspaceState(createState(), createDeps());
+
+    const running = workspace.exportSession();
+    expect(workspace.exportState.value).toBe('running');
+    await running;
+    expect(workspace.exportState.value).toBe('done');
+    workspace.resetExportState();
+    expect(workspace.exportState.value).toBe('idle');
+  });
+
+  it('resets exportState and maps a "session too large" rejection to the CLI hint', async () => {
+    apiMock.exportSession.mockRejectedValue(
+      new DaemonApiError({ code: 41301, msg: 'payload too large', requestId: 'req_1' }),
+    );
+    const deps = createDeps();
+    const workspace = useWorkspaceState(createState(), deps);
+
+    await workspace.exportSession();
+
+    expect(workspace.exportState.value).toBe('idle');
+    expect(deps.pushOperationFailure).toHaveBeenCalledWith(
+      'exportSession',
+      expect.any(DaemonApiError),
+      expect.objectContaining({
+        sessionId: 'sess_1',
+        message: expect.stringContaining('kimi export sess_1'),
+      }),
+    );
+  });
+});
+
+describe('useWorkspaceState — loadGitStatus', () => {
+  it('projects the fetched pull request onto the session so the sidebar badge refreshes', async () => {
+    apiMock.getGitStatus.mockResolvedValue({
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 0,
+      deletions: 0,
+      pullRequest: { number: 7, state: 'open', url: 'https://example.test/pulls/7' },
+    });
+    const state = createState();
+    const deps = createDeps();
+    deps.updateSession = (id, update) => {
+      state.sessions = state.sessions.map((s) => (s.id === id ? update(s) : s));
+    };
+    const workspace = useWorkspaceState(state, deps);
+
+    await workspace.loadGitStatus('sess_1');
+
+    expect(state.sessions[0]?.pullRequest).toEqual({
+      number: 7,
+      state: 'open',
+      url: 'https://example.test/pulls/7',
+    });
+    expect(state.gitStatusBySession['sess_1']?.pullRequest?.number).toBe(7);
+  });
+
+  it('clears the projected pull request when a re-poll reports none', async () => {
+    apiMock.getGitStatus.mockResolvedValue({
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      entries: {},
+      additions: 0,
+      deletions: 0,
+      pullRequest: null,
+    });
+    const state = createState();
+    state.sessions[0]!.pullRequest = { number: 3, state: 'merged', url: 'https://example.test/pulls/3' };
+    const deps = createDeps();
+    deps.updateSession = (id, update) => {
+      state.sessions = state.sessions.map((s) => (s.id === id ? update(s) : s));
+    };
+    const workspace = useWorkspaceState(state, deps);
+
+    await workspace.loadGitStatus('sess_1');
+
+    expect(state.sessions[0]?.pullRequest).toBeNull();
   });
 });
 

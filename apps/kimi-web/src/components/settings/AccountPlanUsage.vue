@@ -50,7 +50,9 @@ function formatReset(value: string | undefined): string {
 
 function formatRow(row: AccountPlanUsageRow): string {
   const remaining = Math.max(0, row.limit - row.used).toLocaleString();
-  return `${row.used.toLocaleString()} / ${row.limit.toLocaleString()} · ${t('settings.planUsageRemaining', { remaining })}`;
+  const pct = row.limit > 0 ? Math.round((row.used / row.limit) * 100) : 0;
+  const usedPct = pct > 0 ? `${t('settings.planUsageUsedPct', { pct })} · ` : '';
+  return `${usedPct}${row.used.toLocaleString()} / ${row.limit.toLocaleString()} · ${t('settings.planUsageRemaining', { remaining })}`;
 }
 
 const rows = computed(() => {
@@ -86,8 +88,11 @@ const rows = computed(() => {
 .usage-title { margin: 0 0 var(--space-2); font-size: var(--text-xs); font-weight: var(--weight-medium); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); }
 .account-line { margin-bottom: var(--space-2); color: var(--color-text); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .usage-state { color: var(--color-text-muted); font-size: var(--text-sm); }
-.usage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--color-line); }
-.usage-label { color: var(--color-text); font-size: var(--text-sm); }
-.usage-value { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); }
+/* Density: rows sized to the settings baseline (labels at text-base, values at
+   text-sm, taller padding) so the usage panel reads at the same weight as the
+   surrounding account rows. */
+.usage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding: var(--space-3) 0; border-top: 1px solid var(--color-line); }
+.usage-label { color: var(--color-text); font-size: var(--text-base); }
+.usage-value { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-sm); }
 .usage-reset { grid-column: 1 / -1; color: var(--color-text-faint); font-size: var(--text-xs); }
 </style>

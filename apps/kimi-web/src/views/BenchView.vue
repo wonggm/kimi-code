@@ -68,6 +68,9 @@ const settingsOpen = ref(false);
 const serverAuthOpen = ref(false);
 const dockPanel = ref<DockPanel>(null);
 const warnings = ref<AppWarning[]>([]);
+// Work-mode arming for the composer's + menu: the dock's toggle-plan-armed
+// emit flips this so the armed-plan pill pose is reachable in bench scenes.
+const planArmed = ref(false);
 
 // --- scroller handle (BenchView owns the scroller ConversationPane would) ---
 const scrollerEl = ref<HTMLElement | null>(null);
@@ -259,9 +262,11 @@ onMounted(async () => {
         :has-dock-work="true"
         :dock-panel="dockPanel"
         :mobile="false"
+        :plan-armed="planArmed"
         session-id="bench-session"
         @toggle-dock-panel="(p) => (dockPanel = dockPanel === p ? null : p)"
         @close-dock-panel="dockPanel = null"
+        @toggle-plan-armed="planArmed = !planArmed"
       />
     </div>
 

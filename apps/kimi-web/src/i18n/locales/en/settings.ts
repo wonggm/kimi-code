@@ -30,6 +30,7 @@ export default {
   planUsageRemaining: 'remaining: {remaining}',
   planUsageResets: 'Resets: {time}',
   planUsageNoReset: 'No reset time',
+  planUsageUsedPct: '{pct}% used',
   uiFontSize: 'Font size',
   agentDefaults: 'Agent defaults',
   providers: 'Providers',

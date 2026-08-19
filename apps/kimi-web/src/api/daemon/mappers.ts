@@ -8,6 +8,7 @@ import type {
   AppEvent,
   AppGoal,
   AppModel,
+  AppPlanEntry,
   AppProvider,
   FsEntry,
   AppMessage,
@@ -49,6 +50,7 @@ import type {
   WireWorkspace,
   WireEvent,
   WireConfig,
+  WirePlanEntry,
 } from './wire';
 
 // ---------------------------------------------------------------------------
@@ -389,6 +391,29 @@ export function toAppTask(wire: WireTask): AppTask {
     // persist there) — hence the `?? true` fallback for that path.
     runInBackground: wire.run_in_background ?? (wire.kind === 'subagent' ? true : undefined),
     // outputLines starts undefined; populated by eventReducer via task.progress events
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Plan entry mapper (`GET /sessions/{id}/transcript/plan`)
+// ---------------------------------------------------------------------------
+
+export function toAppPlanEntry(wire: WirePlanEntry): AppPlanEntry {
+  return {
+    toolCallId: wire.tool_call_id,
+    turnId: wire.turn_id,
+    source: wire.source,
+    plan: wire.plan,
+    path: wire.path,
+    options: wire.options,
+    review:
+      wire.review === undefined
+        ? undefined
+        : {
+            state: wire.review.state,
+            selectedOption: wire.review.selected_option,
+            feedback: wire.review.feedback,
+          },
   };
 }
 

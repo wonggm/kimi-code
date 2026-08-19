@@ -43,6 +43,37 @@ export const SCENES = [
     },
   },
   {
+    // The "+" add menu (Files / Goal / Plan / Swarm rows) opened over the composer.
+    name: 'add-menu',
+    query: 'scene=composer&theme=dark&glass=on',
+    settleMs: 500,
+    interact: async (cdp) => {
+      const btn = await cdp.elementCenter('.add-btn');
+      if (!btn) throw new Error('add button not found (is `status` passed to the dock?)');
+      await cdp.click(btn.x, btn.y);
+    },
+  },
+  {
+    // Picking Plan in the add menu arms it: the menu closes and the work-mode
+    // pill floats over the textarea's top-left (BenchView flips its planArmed
+    // ref on the dock's toggle-plan-armed emit).
+    name: 'work-mode-pill-plan',
+    query: 'scene=composer&theme=dark&glass=on',
+    settleMs: 500,
+    interact: async (cdp) => {
+      const btn = await cdp.elementCenter('.add-btn');
+      if (!btn) throw new Error('add button not found (is `status` passed to the dock?)');
+      await cdp.click(btn.x, btn.y);
+      await sleep(300);
+      await cdp.evaluate(`(() => {
+        const rows = [...document.querySelectorAll('.add-menu .am-row')];
+        const plan = rows.find((r) => r.textContent.includes('Plan'));
+        if (!plan) throw new Error('plan row not found in the add menu');
+        plan.click();
+      })()`);
+    },
+  },
+  {
     name: 'toast-tooltip',
     query: 'scene=toast-tooltip&theme=dark&glass=on',
     settleMs: 500,
