@@ -68,6 +68,10 @@ export interface AppSession {
   pendingInteraction?: 'none' | 'approval' | 'question';
   emoji?: string;
   pinned?: boolean;
+  /** GitHub pull request for the session's current branch — projected by the
+   *  client from the daemon's git status (see loadGitStatus); the WS stream
+   *  carries no git events. Null when unknown or the branch has no PR. */
+  pullRequest?: { number: number; state: string; url: string } | null;
   /** Outcome of the main agent's most recent turn (when the server reports
    *  one). Presentation rule for the "aborted" tag:
    *  `!busy && (cancelled | failed)`. */
@@ -351,6 +355,29 @@ export interface AppTask {
    *  this links the two so the REST copy can be folded into this row and so
    *  cancel can target the id REST actually knows. */
   backgroundTaskId?: string;
+}
+
+/** Projected review outcome of one ExitPlanMode plan: the state plus the
+ *  selected option / feedback the user left on the review card. */
+export interface AppPlanReview {
+  state: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  selectedOption?: string;
+  feedback?: string;
+}
+
+/** One ExitPlanMode tool call's plan information, projected server-side from
+ *  the linked approval interaction (interactive review), the live tool frame
+ *  display (auto mode), or the tool result output (cold rebuilds). `source`
+ *  records which of those facts the content was projected from; `review` is
+ *  present once the approval resolved. */
+export interface AppPlanEntry {
+  toolCallId: string;
+  turnId: string;
+  source: 'interaction' | 'display' | 'output';
+  plan: string;
+  path?: string;
+  options?: { label: string; description?: string }[];
+  review?: AppPlanReview;
 }
 
 // ---------------------------------------------------------------------------
@@ -786,6 +813,9 @@ export interface KimiWebApi {
   listMessages(sessionId: string, input?: PageRequest & { role?: AppMessageRole }): Promise<Page<AppMessage>>;
   /** v2 initial sync: atomic session state + `asOfSeq` watermark + epoch. */
   getSessionSnapshot(sessionId: string): Promise<AppSessionSnapshot>;
+  /** Plan history of an agent's ExitPlanMode calls — `GET /sessions/{id}/transcript/plan`.
+   *  Timeline order; omit `toolCallId` to list every recoverable plan. */
+  getSessionPlans(sessionId: string, input?: { agentId?: string; toolCallId?: string }): Promise<{ agentId: string; plans: AppPlanEntry[] }>;
   /** Export the session archive, optionally including the bounded Web JSONL log. */
   exportSession(sessionId: string, webLog?: string): Promise<{ blob: Blob; fileName: string }>;
   submitPrompt(sessionId: string, input: PromptSubmission): Promise<PromptSubmitResult>;
@@ -815,6 +845,13 @@ export interface KimiWebApi {
   listSkills(sessionId: string): Promise<AppSkill[]>;
   /** List skills for a workspace (no session required) — GET /workspaces/{id}/skills. */
   listSkillsForWorkspace(workspaceId: string): Promise<AppSkill[]>;
+  /** Generate/regenerate the session title — POST /sessions/{id}/title/generate.
+   *  Null when unavailable (experimental flag off, no managed login, no
+   *  prompts, or the backend request failed). */
+  generateSessionTitle(
+    sessionId: string,
+    opts?: { force?: boolean; source?: 'user_prompts' | 'first_turn' | 'digest' },
+  ): Promise<string | null>;
   /** `attachments` (media/file content parts, same shape as prompt content)
    *  join the skill turn's user message after the rendered skill prompt. */
   activateSkill(sessionId: string, skillName: string, args?: string, attachments?: AppSkillAttachment[]): Promise<{ activated: true; skillName: string }>;

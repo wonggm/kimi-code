@@ -22,6 +22,10 @@ export default {
   copySessionId: 'Copy session ID',
   copied: 'Copied ✓',
   copyFailed: 'Copy failed',
+  /** Experimental `auto_session_title` — regenerate button in the rename field. */
+  genTitle: 'Gen Title',
+  genTitleUnavailable: 'Title generation unavailable — sign in to Kimi Code first',
+  pullRequest: 'Pull request',
   archive: 'Archive',
   fork: 'Fork session',
   export: 'Export session',

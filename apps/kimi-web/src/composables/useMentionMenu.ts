@@ -37,6 +37,9 @@ export function useMentionMenu(deps: MentionMenuDeps) {
 
   // Debounce timer for the search.
   let timer: ReturnType<typeof setTimeout> | null = null;
+  // Bumped on every update/close; an in-flight search checks it before touching
+  // state, so a stale resolve can never reopen a closed (or superseded) menu.
+  let searchGeneration = 0;
 
   /** Find the @token under the cursor in the current text value. Returns null if none. */
   function getMentionToken(): MentionToken | null {
@@ -58,23 +61,47 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     const mt = getMentionToken();
     const search = searchFiles();
     if (!mt || !search) {
+      // No @token anymore: cancel any pending search so it cannot reopen us.
+      searchGeneration++;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
       open.value = false;
       return;
     }
     const query = mt.token;
     if (timer !== null) clearTimeout(timer);
+    const generation = ++searchGeneration;
     timer = setTimeout(async () => {
+      if (generation !== searchGeneration) return;
       loading.value = true;
       open.value = true;
       active.value = 0;
+      let result: FileItem[];
       try {
-        items.value = await search(query);
+        result = await search(query);
       } catch {
-        items.value = [];
-      } finally {
-        loading.value = false;
+        result = [];
       }
+      // A newer update() or close() may have superseded this search while it
+      // was in flight — do not touch the menu state then.
+      if (generation !== searchGeneration) return;
+      items.value = result;
+      loading.value = false;
     }, 200);
+  }
+
+  /** Close the menu and cancel any pending or in-flight search. */
+  function close(): void {
+    searchGeneration++;
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    open.value = false;
+    loading.value = false;
+    items.value = [];
   }
 
   function select(item: FileItem): void {
@@ -83,7 +110,7 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     const val = text.value;
     // Replace the @query token with the file path.
     text.value = val.slice(0, mt.start) + item.path + val.slice(mt.end);
-    open.value = false;
+    close();
     void nextTick(() => {
       const el = textareaRef.value;
       if (!el) return;
@@ -94,5 +121,5 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     });
   }
 
-  return { open, items, active, loading, update, select };
+  return { open, items, active, loading, update, select, close };
 }

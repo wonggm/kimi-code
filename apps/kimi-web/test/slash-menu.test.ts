@@ -3,7 +3,8 @@ import { nextTick, ref, type Ref } from 'vue';
 import type { AppSkill } from '../src/api/types';
 import { useSlashMenu } from '../src/composables/useSlashMenu';
 
-// Public slash-menu contract: matching built-ins and dispatching selected
+// Public slash-menu contract: matching built-ins (by name, description text,
+// pinyin, pinyin initials), highlight ranges, and dispatching selected
 // commands without coupling tests to component internals.
 
 interface MockTextarea {
@@ -13,7 +14,7 @@ interface MockTextarea {
   focus: () => void;
 }
 
-function setup(initialText = '', skills: AppSkill[] = []) {
+function setup(initialText = '', skills: AppSkill[] = [], resolveDesc?: (name: string) => string) {
   const textarea: MockTextarea = {
     value: initialText,
     selectionStart: 0,
@@ -33,6 +34,7 @@ function setup(initialText = '', skills: AppSkill[] = []) {
     skills: () => skills,
     emitCommand: (cmd) => emitted.push(cmd),
     historyPush: (entry) => pushed.push(entry),
+    resolveDesc: resolveDesc ? (item) => resolveDesc(item.name) : undefined,
   });
   return { text, textarea, emitted, pushed, slash };
 }
@@ -84,9 +86,20 @@ describe('useSlashMenu — update', () => {
     expect(slash.items.value.map((item) => item.name)).toContain('/export');
   });
 
-  it('closes when nothing matches', () => {
+  it('stays open with an empty list when nothing matches', () => {
     const { slash } = setup('/zzzznotacommand');
     slash.update();
+    // A bare slash token keeps the menu up so it can show the "no commands"
+    // empty state; only a non-slash token or an explicit close dismisses it.
+    expect(slash.open.value).toBe(true);
+    expect(slash.items.value).toEqual([]);
+  });
+
+  it('close() dismisses the menu', () => {
+    const { slash } = setup('/com');
+    slash.update();
+    expect(slash.open.value).toBe(true);
+    slash.close();
     expect(slash.open.value).toBe(false);
   });
 
@@ -121,6 +134,58 @@ describe('useSlashMenu — update', () => {
     const { slash } = setup('/depl', [{ name: 'deploy', description: 'deploy stuff', source: 'project' } as AppSkill]);
     slash.update();
     expect(slash.items.value.map((i) => i.name)).toContain('/skill:deploy');
+  });
+});
+
+const ZH_DESC: Record<string, string> = {
+  '/new': '创建新会话',
+  '/clear': '清空并新建会话',
+  '/plan': '切换计划模式 开/关',
+  '/export': '将当前会话和排障日志下载为 ZIP 压缩包',
+};
+const zhDesc = (name: string): string => ZH_DESC[name] ?? '';
+
+describe('useSlashMenu — fuzzy description / pinyin search', () => {
+  it('finds a command by a substring of its localized description text', () => {
+    const { slash } = setup('/会话', [], zhDesc);
+    slash.update();
+    expect(slash.items.value.map((i) => i.name)).toContain('/new');
+    expect(slash.items.value.map((i) => i.name)).toContain('/clear');
+  });
+
+  it('finds a command by full pinyin of its description', () => {
+    const { slash } = setup('/chuangjianxinhuihua', [], zhDesc);
+    slash.update();
+    expect(slash.items.value.map((i) => i.name)).toEqual(['/new']);
+  });
+
+  it('finds a command by pinyin initials of its description', () => {
+    const { slash } = setup('/qhjhmskg', [], zhDesc);
+    slash.update();
+    expect(slash.items.value.map((i) => i.name)).toEqual(['/plan']);
+  });
+
+  it('a pinyin query outranks a same-length description match', () => {
+    const { slash } = setup('/plan', [], zhDesc);
+    slash.update();
+    const names = slash.items.value.map((i) => i.name);
+    expect(names[0]).toBe('/plan'); // exact name match first
+  });
+
+  it('carries highlight ranges for name and description matches', () => {
+    const { slash } = setup('/com', [], zhDesc);
+    slash.update();
+    const index = slash.items.value.findIndex((i) => i.name === '/compact');
+    expect(index).toBeGreaterThanOrEqual(0);
+    const range = slash.ranges.value[index]!;
+    // Name "/compact" → stripped "compact", "com" matched at offset 0.
+    expect(range.name?.[0]).toEqual([0, 3]);
+  });
+
+  it('carries highlighted hanzi ranges for a pinyin match', () => {
+    const { slash } = setup('/chuangjian', [], zhDesc);
+    slash.update();
+    expect(slash.ranges.value[0]?.desc?.[0]).toEqual([0, 2]); // 创建
   });
 });
 

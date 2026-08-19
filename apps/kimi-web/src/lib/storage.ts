@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
   permission: 'kimi-web.permission',
   activeWorkspace: 'kimi-active-workspace',
   planMode: 'kimi-web.plan-mode',
+  planArmed: 'kimi-web.plan-armed',
   swarmMode: 'kimi-web.swarm-mode',
   goalMode: 'kimi-web.goal-mode',
   uiFontSize: 'kimi-web.ui-font-size',

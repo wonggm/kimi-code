@@ -13,9 +13,13 @@ export default {
   // Plan mode pill
   planLabel: 'Plan',
   planDesc: 'Have the agent make a plan before changing files',
+  workModeDismiss: 'Exit mode',
   planOn: 'on',
   planOff: 'off',
   planTooltip: 'Toggle plan mode (research before editing)',
+  // Plan viewer panel empty states
+  planEmptyIdle: 'Plan mode is off — no plan to show yet',
+  planEmptyArmed: 'Plan mode is on — the next message will produce a plan',
   // Mode selector (Plan / Goal / Swarm)
   modesLabel: 'Mode',
   goalLabel: 'Goal',
@@ -64,4 +68,6 @@ export default {
   activityAwaitingQuestion: 'Awaiting answer',
   interrupt: 'Interrupt',
   runningShort: 'in progress',
+  goalDoneWhen: 'Done when',
+  goalElapsedLabel: 'Elapsed time',
 } as const;

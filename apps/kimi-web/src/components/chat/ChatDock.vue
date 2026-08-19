@@ -3,10 +3,10 @@
 <!-- pending question/approval cards, and the composer. Only rendered inside a -->
 <!-- chat-pane group so it never leaks into files/tasks/preview/btw panes. -->
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ActivationBadges, ApprovalBlock, ConversationStatus, PermissionMode, QueuedPromptView, TaskItem, TodoView, UIQuestion } from '../../types';
-import type { AppGoal, AppModel, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
+import type { ActivationBadges, ApprovalBlock, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, UIQuestion } from '../../types';
+import type { AppGoal, AppModel, AppPlanEntry, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import Composer from './Composer.vue';
@@ -14,6 +14,8 @@ import GoalStrip from './GoalStrip.vue';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import TasksPane from './TasksPane.vue';
+import SubagentGrid from './SubagentGrid.vue';
+import PlanPanel from './PlanPanel.vue';
 import TodoCard from './TodoCard.vue';
 import ChangedFilesCard from './ChangedFilesCard.vue';
 import Icon from '../ui/Icon.vue';
@@ -32,6 +34,7 @@ const props = defineProps<{
   status: ConversationStatus;
   thinking?: ThinkingLevel;
   planMode?: boolean;
+  planArmed?: boolean;
   swarmMode?: boolean;
   goalMode?: boolean;
   activationBadges?: ActivationBadges;
@@ -40,9 +43,14 @@ const props = defineProps<{
   skills?: AppSkill[];
   goal?: AppGoal | null;
   goalExpandSignal?: number;
-  dockPanel: 'bash' | 'subagent' | 'todos' | 'changed-files' | null;
+  dockPanel: 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan' | null;
   bashTasks: TaskItem[];
   subagentTasks: TaskItem[];
+  /** Latest ExitPlanMode plan entry of the active session — the plan viewer
+   *  panel renders it; the work-bar plan pill appears while plan mode is on or
+   *  a plan exists. */
+  planEntry?: AppPlanEntry | null;
+  openFile?: (target: FilePreviewRequest) => void;
   bashRunning: number;
   subagentRunning: number;
   todoDoneCount: number;
@@ -66,6 +74,7 @@ const emit = defineEmits<{
   setPermission: [mode: PermissionMode];
   setThinking: [level: ThinkingLevel];
   togglePlan: [];
+  togglePlanArmed: [];
   toggleSwarm: [];
   toggleGoal: [];
   openBtw: [];
@@ -80,13 +89,20 @@ const emit = defineEmits<{
   dismiss: [questionId: string];
   approval: [approvalId: string, response: { decision: 'approved' | 'rejected' | 'cancelled'; scope?: 'session'; feedback?: string; selectedLabel?: string }];
   cancelTask: [taskId: string];
-  'toggle-dock-panel': [panel: 'bash' | 'subagent' | 'todos' | 'changed-files'];
+  'toggle-dock-panel': [panel: 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan'];
   'close-dock-panel': [];
   /** A background subagent chip was clicked — open its live detail panel. */
   openAgent: [taskId: string];
 }>();
 
 const { t } = useI18n();
+
+/** Work-bar plan pill meta: the latest plan's review outcome label, e.g.
+ *  "Approved" — empty while the review is still pending. */
+const planReviewLabel = computed<string>(() => {
+  const state = props.planEntry?.review?.state;
+  return state ? t(`tools.plan.review.${state}`) : '';
+});
 const composerRef = ref<{
   loadForEdit: (value: string) => boolean;
   loadAttachmentsForEdit: (atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string }[]) => void;
@@ -194,6 +210,12 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
           >
             {{ t('conversation.changedFiles.title') }} · {{ changedFiles.length }}
           </span>
+          <span
+            v-else-if="dockPanel === 'plan'"
+            class="dock-work-tab static"
+          >
+            {{ t('tasks.dockPlan') }}<template v-if="planReviewLabel"> · {{ planReviewLabel }}</template>
+          </span>
         </div>
         <div class="dock-work-body">
           <TasksPane
@@ -201,11 +223,17 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
             :tasks="bashTasks"
             @cancel="emit('cancelTask', $event)"
           />
-          <TasksPane
+          <SubagentGrid
             v-else-if="dockPanel === 'subagent'"
             :tasks="subagentTasks"
             @cancel="emit('cancelTask', $event)"
             @open="emit('openAgent', $event)"
+          />
+          <PlanPanel
+            v-else-if="dockPanel === 'plan'"
+            :plan="planEntry ?? null"
+            :plan-mode="planMode"
+            :open-file="openFile"
           />
           <TodoCard
             v-else-if="dockPanel === 'todos'"
@@ -260,6 +288,17 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
         <span class="dw-count">(<b>{{ todoDoneCount }}/{{ todos?.length ?? 0 }}</b>)</span>
       </Pill>
       <Pill
+        v-if="planMode || planEntry"
+        class="lg-glass"
+        :active="dockPanel === 'plan'"
+        :aria-pressed="dockPanel === 'plan'"
+        @click="emit('toggle-dock-panel', 'plan')"
+      >
+        <Icon name="file-edit" size="md" />
+        <span>{{ t('tasks.dockPlan') }}</span>
+        <span v-if="planReviewLabel" class="dw-count">· {{ planReviewLabel }}</span>
+      </Pill>
+      <Pill
         v-if="changedFiles.length > 0"
         class="lg-glass"
         :active="dockPanel === 'changed-files'"
@@ -301,6 +340,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       :status="status"
       :thinking="thinking"
       :plan-mode="planMode"
+      :plan-armed="planArmed"
       :swarm-mode="swarmMode"
       :goal-mode="goalMode"
       :goal="goal"
@@ -316,6 +356,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       @set-permission="emit('setPermission', $event)"
       @set-thinking="emit('setThinking', $event)"
       @toggle-plan="emit('togglePlan')"
+      @toggle-plan-armed="emit('togglePlanArmed')"
       @toggle-swarm="emit('toggleSwarm')"
       @toggle-goal="emit('toggleGoal')"
       @open-btw="emit('openBtw')"
@@ -399,9 +440,6 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
   border: none;
   background: transparent;
   padding: 0;
-}
-.dock-work-body :deep(.taskspane .tp-head) {
-  display: none;
 }
 
 .dock-workbar {

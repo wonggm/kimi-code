@@ -23,6 +23,7 @@ import type {
   AppTaskStatus,
   AppTerminal,
   AppWorkspace,
+  AppPlanEntry,
   ApprovalResponse,
   FsBrowseResult,
   FsEntry,
@@ -38,7 +39,7 @@ import type {
   QuestionResponse,
 } from '../types';
 import { createAgentProjector } from './agentEventProjector';
-import { DaemonHttpClient } from './http';
+import { DaemonHttpClient, FORK_TIMEOUT_MS } from './http';
 import {
   toAppApprovalRequest,
   toAppConfig,
@@ -51,6 +52,7 @@ import {
   toAppQuestionRequest,
   toAppSession,
   toAppTask,
+  toAppPlanEntry,
   toWireApprovalResponse,
   toWireMessageContent,
   toWirePromptSubmission,
@@ -89,6 +91,7 @@ import type {
   WireSessionSnapshot,
   WireWorkspace,
   WireLogoutResult,
+  WirePlanResponse,
 } from './wire';
 import { DaemonEventSocket } from './ws';
 
@@ -592,6 +595,23 @@ export class DaemonKimiWebApi implements KimiWebApi {
     }
   }
 
+  // GET /sessions/{id}/transcript/plan — the ExitPlanMode plan history of one
+  // agent, in timeline order. `toolCallId` narrows to one call; omitted, the
+  // server lists every call with recoverable plan content.
+  async getSessionPlans(
+    sessionId: string,
+    input?: { agentId?: string; toolCallId?: string },
+  ): Promise<{ agentId: string; plans: AppPlanEntry[] }> {
+    const data = await this.http.get<WirePlanResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/transcript/plan`,
+      {
+        agent_id: input?.agentId,
+        tool_call_id: input?.toolCallId,
+      },
+    );
+    return { agentId: data.agent_id, plans: data.plans.map(toAppPlanEntry) };
+  }
+
   async exportSession(
     sessionId: string,
     webLog?: string,
@@ -730,26 +750,31 @@ export class DaemonKimiWebApi implements KimiWebApi {
     );
   }
 
-  // POST /sessions/{id}:fork — fork the session into a new child session.
+  // POST /sessions/{id}:fork — fork the session into a new child session. The
+  // daemon copies the whole transcript server-side, so very long histories get
+  // a longer client timeout than the default REST call.
   async forkSession(sessionId: string, input?: { title?: string }): Promise<AppSession> {
     const body: Record<string, unknown> = {};
     if (input?.title !== undefined) body['title'] = input.title;
     const data = await this.http.post<WireSession>(
       `/sessions/${encodeURIComponent(sessionId)}:fork`,
       body,
+      { timeoutMs: FORK_TIMEOUT_MS },
     );
     return toAppSession(data);
   }
 
   // POST /sessions/{id}/children — create a child ("side chat") session. The
   // daemon forks the parent (so the child inherits its context) and tags it with
-  // parent_session_id + child_session_kind.
+  // parent_session_id + child_session_kind. Same transcript copy as :fork, so it
+  // shares the longer timeout.
   async createChildSession(sessionId: string, input?: { title?: string }): Promise<AppSession> {
     const body: Record<string, unknown> = {};
     if (input?.title !== undefined) body['title'] = input.title;
     const data = await this.http.post<WireSession>(
       `/sessions/${encodeURIComponent(sessionId)}/children`,
       body,
+      { timeoutMs: FORK_TIMEOUT_MS },
     );
     return toAppSession(data);
   }
@@ -1088,6 +1113,29 @@ export class DaemonKimiWebApi implements KimiWebApi {
       deletions: data.deletions,
       pullRequest: data.pullRequest ?? null,
     };
+  }
+
+  /** Generate (or regenerate, with force) the session title via the daemon's
+   *  managed chat_title tool — POST /sessions/{id}/title/generate. Null when
+   *  generation is unavailable (flag off, no OAuth, no prompts, backend
+   *  failure); the server publishes the new title via session.meta.updated on
+   *  success, so no local session patch is needed. */
+  async generateSessionTitle(
+    sessionId: string,
+    opts?: { force?: boolean; source?: 'user_prompts' | 'first_turn' | 'digest' },
+  ): Promise<string | null> {
+    try {
+      const body: Record<string, unknown> = {};
+      if (opts?.force === true) body['force'] = true;
+      if (opts?.source !== undefined) body['source'] = opts.source;
+      const data = await this.http.post<{ title?: string }>(
+        `/sessions/${encodeURIComponent(sessionId)}/title/generate`,
+        body,
+      );
+      return typeof data?.title === 'string' && data.title.length > 0 ? data.title : null;
+    } catch {
+      return null;
+    }
   }
 
   async getFileDiff(

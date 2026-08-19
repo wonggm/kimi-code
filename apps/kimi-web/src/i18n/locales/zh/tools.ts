@@ -60,4 +60,15 @@ export default {
     answered: '已回答',
     more: '（还有 {count} 个）',
   },
+  plan: {
+    review: {
+      pending: '待审阅',
+      approved: '已通过',
+      rejected: '已驳回',
+      cancelled: '已取消',
+    },
+    selectedOption: '所选选项',
+    feedback: '反馈',
+    pathOnlyHint: '计划文件',
+  },
 } as const;
