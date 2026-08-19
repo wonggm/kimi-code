@@ -36,6 +36,10 @@ export class DaemonNetworkError extends Error {
   readonly requestId: string;
   readonly phase: 'fetch' | 'parse';
   readonly timeoutMs: number;
+  /** True when the fetch was aborted by this request's own timeout signal
+   *  (AbortSignal.timeout) rather than the service being unreachable. Lets the
+   *  UI tell "the server did not answer in time" apart from "cannot connect". */
+  readonly timedOut?: boolean;
   readonly status?: number;
   readonly statusText?: string;
   readonly contentType?: string;
@@ -54,6 +58,7 @@ export class DaemonNetworkError extends Error {
     requestId: string;
     phase: 'fetch' | 'parse';
     timeoutMs: number;
+    timedOut?: boolean;
     status?: number;
     statusText?: string;
     contentType?: string;
@@ -70,6 +75,7 @@ export class DaemonNetworkError extends Error {
     this.requestId = input.requestId;
     this.phase = input.phase;
     this.timeoutMs = input.timeoutMs;
+    this.timedOut = input.timedOut;
     this.status = input.status;
     this.statusText = input.statusText;
     this.contentType = input.contentType;

@@ -11,8 +11,11 @@ import type { WireEnvelope } from './wire';
     network change, stuck daemon) leaves promises pending for minutes — and the
     composer's in-flight flag with them. Generous enough for slow endpoints;
     streaming runs over the WS, not these REST calls. */
-const REQUEST_TIMEOUT_MS = 30_000;
+export const REQUEST_TIMEOUT_MS = 30_000;
 const EXPORT_TIMEOUT_MS = 5 * 60_000;
+/** Fork / child-session creation copies the whole transcript server-side, so a
+    very long history needs more than the default REST timeout. */
+export const FORK_TIMEOUT_MS = 5 * 60_000;
 const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const BODY_PREVIEW_LIMIT = 500;
 
@@ -34,6 +37,22 @@ function timeoutSignal(timeoutMs = REQUEST_TIMEOUT_MS): AbortSignal | undefined 
   } catch {
     return undefined;
   }
+}
+
+/**
+ * True when a fetch rejection is the request timeout firing rather than the
+ * service being unreachable. AbortSignal.timeout aborts with a TimeoutError as
+ * the abort reason, which fetch surfaces as an AbortError whose `cause` is that
+ * TimeoutError; a plain network failure rejects with a TypeError. Nothing here
+ * aborts through any other path, so an AbortError without a cause (older
+ * engines that do not propagate the abort reason) can only be our timeout too.
+ */
+function isTimeoutAbort(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const err = error as { name?: unknown; cause?: unknown };
+  if (err.name !== 'AbortError') return false;
+  if (typeof err.cause !== 'object' || err.cause === null) return true;
+  return (err.cause as { name?: unknown }).name === 'TimeoutError';
 }
 
 function encodeBase32(value: number, length: number): string {
@@ -125,6 +144,7 @@ export class DaemonHttpClient {
       throw new DaemonNetworkError({
         message: `Network error calling GET ${path}`,
         cause: err,
+        timedOut: isTimeoutAbort(err),
         method: 'GET',
         path,
         url,
@@ -175,8 +195,12 @@ export class DaemonHttpClient {
     });
   }
 
-  async post<T>(path: string, body?: unknown, opts?: { allowCodes?: number[] }): Promise<T> {
-    return this.request<T>('POST', path, body, undefined, opts?.allowCodes);
+  async post<T>(
+    path: string,
+    body?: unknown,
+    opts?: { allowCodes?: number[]; timeoutMs?: number },
+  ): Promise<T> {
+    return this.request<T>('POST', path, body, undefined, opts?.allowCodes, opts?.timeoutMs);
   }
 
   /** POST JSON and receive a raw ZIP. The request trace accepts a separate
@@ -217,6 +241,7 @@ export class DaemonHttpClient {
       throw new DaemonNetworkError({
         message: `Network error calling ${method} ${path}`,
         cause: error,
+        timedOut: isTimeoutAbort(error),
         method,
         path,
         url,
@@ -352,6 +377,7 @@ export class DaemonHttpClient {
       throw new DaemonNetworkError({
         message: `Network error calling POST ${path}`,
         cause: err,
+        timedOut: isTimeoutAbort(err),
         method: 'POST',
         path,
         url,
@@ -424,6 +450,7 @@ export class DaemonHttpClient {
     body?: unknown,
     query?: Record<string, string | number | boolean | undefined>,
     allowCodes: number[] = [],
+    timeoutMs?: number,
   ): Promise<T> {
     // Build URL, appending query string (omit undefined values)
     let url = buildRestUrl(this.origin, path);
@@ -451,6 +478,10 @@ export class DaemonHttpClient {
     const startedAt = Date.now();
     traceRestRequest({ method, path, url, requestId, body });
 
+    // Per-call timeout override (fork / child creation copies the whole
+    // transcript and can exceed the default for very long histories).
+    const effectiveTimeoutMs = timeoutMs ?? REQUEST_TIMEOUT_MS;
+
     // Execute fetch
     let response: Response;
     try {
@@ -458,19 +489,20 @@ export class DaemonHttpClient {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: timeoutSignal(),
+        signal: timeoutSignal(effectiveTimeoutMs),
       });
     } catch (err) {
       traceRestFailure({ method, path, requestId, phase: 'fetch', durationMs: Date.now() - startedAt, error: err });
       throw new DaemonNetworkError({
         message: `Network error calling ${method} ${path}`,
         cause: err,
+        timedOut: isTimeoutAbort(err),
         method,
         path,
         url,
         requestId,
         phase: 'fetch',
-        timeoutMs: REQUEST_TIMEOUT_MS,
+        timeoutMs: effectiveTimeoutMs,
         timestamp: Date.now(),
         durationMs: Date.now() - startedAt,
       });
@@ -504,7 +536,7 @@ export class DaemonHttpClient {
         url,
         requestId,
         phase: 'parse',
-        timeoutMs: REQUEST_TIMEOUT_MS,
+        timeoutMs: effectiveTimeoutMs,
         status: response.status,
         statusText: response.statusText,
         contentType: response.headers.get('content-type') ?? undefined,

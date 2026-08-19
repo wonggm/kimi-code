@@ -89,6 +89,9 @@ const props = withDefaults(
     /** True while the resize handle is dragged — disables the width transition
      *  so the sidebar follows the pointer 1:1. */
     dragging?: boolean;
+    /** Experimental `auto_session_title` flag — enables the in-rename title
+     *  generation button on session rows. */
+    autoSessionTitle?: boolean;
   }>(),
   {
     activeWorkspace: null,
@@ -100,6 +103,7 @@ const props = withDefaults(
     colWidth: 220,
     collapsed: false,
     dragging: false,
+    autoSessionTitle: false,
   },
 );
 
@@ -115,6 +119,9 @@ const emit = defineEmits<{
   export: [id: string];
   setEmoji: [id: string, emoji: string | undefined];
   togglePinned: [id: string, pinned: boolean];
+  /** Title regeneration request (experimental auto_session_title) — passed
+   *  through from a row's rename field; the App handler reports back. */
+  generateTitle: [id: string, done: (title: string | null) => void];
   renameWorkspace: [id: string, name: string];
   deleteWorkspace: [id: string];
   reorderWorkspaces: [ids: string[]];
@@ -760,6 +767,7 @@ onBeforeUnmount(() => {
               :approval-count="pendingBySession[session.id]?.approvals ?? 0"
               :question-count="pendingBySession[session.id]?.questions ?? 0"
               :unread="unreadBySession[session.id] ?? false"
+              :auto-session-title="autoSessionTitle"
               @select="onSelectSession"
               @rename="(id, title) => emit('rename', id, title)"
               @archive="(id) => emit('archive', id)"
@@ -767,6 +775,7 @@ onBeforeUnmount(() => {
               @export="(id) => emit('export', id)"
               @set-emoji="onSetEmoji"
               @toggle-pinned="onTogglePinned"
+              @generate-title="(id, done) => emit('generateTitle', id, done)"
             />
           </div>
           <div class="side-section-label">
@@ -816,6 +825,7 @@ onBeforeUnmount(() => {
               :approval-count="pendingBySession[session.id]?.approvals ?? 0"
               :question-count="pendingBySession[session.id]?.questions ?? 0"
               :unread="unreadBySession[session.id] ?? false"
+              :auto-session-title="autoSessionTitle"
               @select="onSelectSession"
               @rename="(id, title) => emit('rename', id, title)"
               @archive="(id) => emit('archive', id)"
@@ -823,6 +833,7 @@ onBeforeUnmount(() => {
               @export="(id) => emit('export', id)"
               @set-emoji="onSetEmoji"
               @toggle-pinned="onTogglePinned"
+              @generate-title="(id, done) => emit('generateTitle', id, done)"
             />
           </template>
           <template v-else>
@@ -850,6 +861,7 @@ onBeforeUnmount(() => {
               :dragging="draggingWsId === g.workspace.id"
               :is-collapsed="isCollapsed"
               :is-expanded="isExpanded"
+              :auto-session-title="autoSessionTitle"
               @group-click="handleGhClick"
               @group-contextmenu="openGhMenu"
               @toggle-ws-menu="toggleWsMenu"
@@ -861,6 +873,7 @@ onBeforeUnmount(() => {
               @export-session="(id) => emit('export', id)"
               @set-emoji-session="onSetEmoji"
               @toggle-pinned-session="onTogglePinned"
+              @generate-title-session="(id, done) => emit('generateTitle', id, done)"
               @load-more="onLoadMore"
               @toggle-expand="toggleExpand"
               @confirm-rename="confirmRenameWorkspace"

@@ -16,6 +16,8 @@ import type { FilePreviewRequest } from '../../types';
 import { collectFilePathAliases, findFilePathLinks } from '../../lib/filePathLinks';
 import { markdownRenderPlan } from '../../lib/markdownPerformance';
 import { copyCodeBlockFallback, copyTextToClipboard } from '../../lib/clipboard';
+import { protectInlineCodeDollars, restoreInlineCodeDollars } from '../../lib/inlineCodeMath';
+import { fixLinkifyCjkBoundary } from '../../lib/linkifyCjkBoundary';
 import * as katexWorkerModule from 'markstream-vue/workers/katexRenderer.worker?worker&type=module';
 import * as mermaidWorkerModule from 'markstream-vue/workers/mermaidParser.worker?worker&type=module';
 import Tooltip from '../ui/Tooltip.vue';
@@ -281,6 +283,12 @@ function processMarkdownLinks(): void {
 
 function scheduleFileLinkProcessing(): void {
   void nextTick().then(() => {
+    if (!mdRef.value) return;
+    // Swap the protected inline-code dollar sentinel back (always; idempotent).
+    restoreInlineCodeDollars(mdRef.value);
+    if (props.streaming) return;
+    // Repair auto-linked URLs that swallowed trailing CJK text.
+    fixLinkifyCjkBoundary(mdRef.value);
     processFileLinks();
     processMarkdownLinks();
   });
@@ -383,20 +391,26 @@ const DIFF_FENCE_RE = /(^|\n)(?:```|~~~)diff\b[^\n]*\n([\s\S]*?)(?:\n)?(?:```|~~
 
 const segments = computed<Segment[]>(() => {
   const text = rewriteImageSrcs(props.text ?? '');
+  // Protect `$` inside inline code spans from the parser's inline-math rule
+  // (see inlineCodeMath.ts). Only applied to SETTLED turns: during streaming
+  // the code spans are mid-state and the protection could render another
+  // frame of PUA placeholders; at stream end markstream re-parses the final
+  // text with protection on, and restoreInlineCodeDollars swaps them back.
+  const safe = props.streaming ? text : protectInlineCodeDollars(text);
   const out: Segment[] = [];
   let lastIndex = 0;
   DIFF_FENCE_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = DIFF_FENCE_RE.exec(text)) !== null) {
+  while ((m = DIFF_FENCE_RE.exec(safe)) !== null) {
     // Text before this diff fence (keep the leading newline the regex consumed
     // as a boundary out of the markdown segment).
     const lead = m[1] ?? '';
-    const before = text.slice(lastIndex, m.index) + (lead ? lead : '');
+    const before = safe.slice(lastIndex, m.index) + (lead ? lead : '');
     if (before.trim()) out.push({ kind: 'md', text: before });
     out.push({ kind: 'diff', code: m[2] ?? '' });
     lastIndex = DIFF_FENCE_RE.lastIndex;
   }
-  const tail = text.slice(lastIndex);
+  const tail = safe.slice(lastIndex);
   if (tail.trim() || out.length === 0) out.push({ kind: 'md', text: tail });
   return out;
 });

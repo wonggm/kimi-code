@@ -31,8 +31,11 @@ const props = withDefaults(
     questionCount?: number;
     /** A background turn finished here that the user hasn't opened — blue dot. */
     unread?: boolean;
+    /** Experimental `auto_session_title` flag — shows the in-rename "generate
+     *  title" button and emits `generateTitle` on click. */
+    autoSessionTitle?: boolean;
   }>(),
-  { approvalCount: 0, questionCount: 0, unread: false },
+  { approvalCount: 0, questionCount: 0, unread: false, autoSessionTitle: false },
 );
 
 const emit = defineEmits<{
@@ -43,6 +46,9 @@ const emit = defineEmits<{
   export: [id: string];
   setEmoji: [id: string, emoji: string | undefined];
   togglePinned: [id: string, pinned: boolean];
+  /** On-demand title regeneration: the parent runs the daemon call and reports
+   *  back the title (null when unavailable) so the rename field can settle. */
+  generateTitle: [id: string, done: (title: string | null) => void];
 }>();
 
 // Full, absolute timestamp shown on hover (the row's `time` is a short relative
@@ -126,6 +132,9 @@ const renaming = ref(false);
 const renameValue = ref('');
 const renameInputRef = ref<HTMLInputElement | null>(null);
 const renameComposing = ref(false);
+// True while a title regeneration is in flight (input read-only, gen button
+// disabled, three-dot feedback beside the button).
+const generating = ref(false);
 async function startRename(): Promise<void> {
   closeMenu();
   renaming.value = true;
@@ -139,12 +148,41 @@ async function startRename(): Promise<void> {
   }
 }
 function commitRename(): void {
+  if (generating.value) return; // the result callback owns the field meanwhile
   const newTitle = renameValue.value.trim();
   if (newTitle) emit('rename', props.session.id, newTitle);
   renaming.value = false;
 }
 function cancelRename(): void {
+  if (generating.value) return;
   renaming.value = false;
+}
+// On-demand regeneration (experimental auto_session_title): clear the field,
+// ask the parent for a fresh title, then restore focus once it reports back.
+function onGenerateTitle(): void {
+  if (generating.value) return;
+  generating.value = true;
+  const previous = renameValue.value;
+  renameValue.value = '';
+  emit('generateTitle', props.session.id, (title: string | null) => {
+    generating.value = false;
+    if (!renaming.value) return;
+    renameValue.value = title ?? previous;
+    void nextTick().then(() => {
+      try {
+        renameInputRef.value?.focus();
+        renameInputRef.value?.select();
+      } catch {
+        // jsdom may not implement focus/select
+      }
+    });
+  });
+}
+
+// Open the session's pull request in a new tab (the PR tag's only action).
+function openPullRequest(): void {
+  const url = props.session.pullRequest?.url;
+  if (url) window.open(url, '_blank', 'noopener');
 }
 
 // Copy session ID
@@ -209,20 +247,33 @@ defineExpose({ closeMenu });
       </span>
 
       <div class="left">
-        <!-- Inline rename input -->
-        <input
-          v-if="renaming"
-          ref="renameInputRef"
-          v-model="renameValue"
-          class="rename-input"
-          :draggable="false"
-          @click.stop
-          @compositionstart="renameComposing = true"
-          @compositionend="renameComposing = false"
-          @keydown.enter.stop="!renameComposing && !$event.isComposing && commitRename()"
-          @keydown.esc.stop="!renameComposing && !$event.isComposing && cancelRename()"
-          @blur="commitRename"
-        />
+        <!-- Inline rename input (+ experimental "generate title" affordance) -->
+        <span v-if="renaming" class="rename-row">
+          <input
+            ref="renameInputRef"
+            v-model="renameValue"
+            class="rename-input"
+            :readonly="generating"
+            :draggable="false"
+            @click.stop
+            @compositionstart="renameComposing = true"
+            @compositionend="renameComposing = false"
+            @keydown.enter.stop="!renameComposing && !$event.isComposing && !generating && commitRename()"
+            @keydown.esc.stop="!renameComposing && !$event.isComposing && !generating && cancelRename()"
+            @blur="commitRename"
+          />
+          <Tooltip v-if="autoSessionTitle" :text="t('sidebar.genTitle')">
+            <IconButton
+              class="gen-title-btn"
+              size="sm"
+              :label="t('sidebar.genTitle')"
+              :disabled="generating"
+              @click.stop="onGenerateTitle"
+            >
+              <Icon name="sparkles" />
+            </IconButton>
+          </Tooltip>
+        </span>
         <span v-else class="t" @dblclick.stop="startRename">
           <span v-if="session.emoji" class="emoji" aria-hidden="true">{{ session.emoji }}</span>
           {{ session.title }}
@@ -264,6 +315,22 @@ defineExpose({ closeMenu });
         >
           {{ t('workspace.aborted') }}
         </Badge>
+      </Tooltip>
+
+      <!-- Pull request tag — a small pill linking to the session's PR; sits
+           between the status badges and the trailing time/kebab. Colored by
+           state (open / merged / closed). -->
+      <Tooltip v-if="!renaming && session.pullRequest" :text="t('sidebar.pullRequest')">
+        <button
+          class="pr"
+          :class="`pr--${session.pullRequest.state}`"
+          type="button"
+          :aria-label="t('sidebar.pullRequest')"
+          @click.stop="openPullRequest"
+        >
+          <Icon name="git-pull-request" size="sm" />
+          <span>#{{ session.pullRequest.number }}</span>
+        </button>
       </Tooltip>
 
       <!-- Trailing action slot: the relative time and the kebab share one grid
@@ -468,6 +535,43 @@ defineExpose({ closeMenu });
   outline: none;
   min-width: 0;
 }
+
+/* Inline rename row hosts the input and the experimental gen-title button. */
+.rename-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+.rename-row .rename-input { flex: 1; min-width: 0; }
+.gen-title-btn { flex: none; }
+
+/* Pull request tag — a small pill with a background, state-tinted (open =
+   accent, merged = success, closed = neutral). Clicking opens the PR. */
+.pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--color-accent-bd);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  cursor: pointer;
+}
+.pr:hover { background: color-mix(in srgb, var(--color-accent-soft) 75%, var(--color-accent) 25%); }
+.pr svg { width: 12px; height: 12px; }
+.pr--merged { background: var(--color-success-soft); color: var(--color-success); border-color: var(--color-success-bd); }
+.pr--merged:hover { background: color-mix(in srgb, var(--color-success-soft) 75%, var(--color-success) 25%); }
+.pr--closed { background: var(--color-surface-sunken); color: var(--color-text-muted); border-color: var(--color-line); }
+.pr--closed:hover { background: var(--color-surface-sunken); }
 
 .sessions .se {
   margin: 0;

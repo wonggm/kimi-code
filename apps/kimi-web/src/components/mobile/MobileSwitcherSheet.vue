@@ -24,6 +24,12 @@ type SidebarGroup = Omit<WorkspaceGroup, 'sessions'> & { sessions: SidebarSessio
 
 const { t } = useI18n();
 
+/** Open a session's pull request in a new tab (the PR tag's only action). */
+function openPullRequest(s: SidebarSession): void {
+  const url = s.pullRequest?.url;
+  if (url) window.open(url, '_blank', 'noopener');
+}
+
 const props = withDefaults(
   defineProps<{
     modelValue: boolean;
@@ -301,6 +307,17 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
                 <span v-if="s.emoji" class="emoji" aria-hidden="true">{{ s.emoji }}</span>{{ s.title }}
               </div>
               <div class="s">{{ s.time }}</div>
+              <button
+                v-if="s.pullRequest"
+                class="pr"
+                :class="`pr--${s.pullRequest.state}`"
+                type="button"
+                :aria-label="t('sidebar.pullRequest')"
+                @click.stop="openPullRequest(s)"
+              >
+                <Icon name="git-pull-request" size="sm" />
+                <span>#{{ s.pullRequest.number }}</span>
+              </button>
             </div>
             <span v-if="(attentionBySession[s.id] ?? 0) > 0" class="att">{{ attentionBySession[s.id] }}</span>
             <IconButton
@@ -522,6 +539,29 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* PR tag — small state-tinted pill linking to the session's pull request. */
+.srow .pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--color-accent-bd);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  cursor: pointer;
+}
+.srow .pr svg { width: 14px; height: 14px; }
+.srow .pr--merged { background: var(--color-success-soft); color: var(--color-success); border-color: var(--color-success-bd); }
+.srow .pr--closed { background: var(--color-surface-sunken); color: var(--color-text-muted); border-color: var(--color-line); }
+.srow .pr:active { filter: brightness(0.92); }
 .att {
   flex: none;
   font-family: var(--font-mono);

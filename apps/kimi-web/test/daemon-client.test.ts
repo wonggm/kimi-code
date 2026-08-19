@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DaemonKimiWebApi } from '../src/api/daemon/client';
+import { FORK_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from '../src/api/daemon/http';
 import { DaemonApiError, DaemonNetworkError } from '../src/api/errors';
 import { clearTrace, traceToJsonl } from '../src/debug/trace';
 import type { AppEvent, KimiEventConnection, KimiEventMeta } from '../src/api/types';
@@ -226,6 +227,73 @@ describe('DaemonKimiWebApi.getSessionGoal', () => {
   });
 });
 
+describe('DaemonKimiWebApi.getSessionPlans', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps the plan history wire shape (snake_case → camelCase)', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        agent_id: 'main',
+        plans: [
+          {
+            tool_call_id: 'call_1',
+            turn_id: 't1',
+            source: 'interaction',
+            plan: '# Refactor\n\n- step 1',
+            path: '/work/plan.md',
+            options: [{ label: 'Proceed' }],
+            review: {
+              state: 'rejected',
+              selected_option: 'Proceed',
+              feedback: 'Too broad',
+            },
+          },
+          {
+            tool_call_id: 'call_2',
+            turn_id: 't2',
+            source: 'output',
+            plan: 'Auto-approved plan',
+          },
+        ],
+      }),
+    );
+
+    const result = await createApi().getSessionPlans('sess_1', { agentId: 'main' });
+    expect(result.agentId).toBe('main');
+    expect(result.plans).toHaveLength(2);
+    const first = result.plans[0]!;
+    expect(first).toMatchObject({
+      toolCallId: 'call_1',
+      turnId: 't1',
+      source: 'interaction',
+      plan: '# Refactor\n\n- step 1',
+      path: '/work/plan.md',
+    });
+    expect(first.options?.[0]?.label).toBe('Proceed');
+    expect(first.review).toEqual({
+      state: 'rejected',
+      selectedOption: 'Proceed',
+      feedback: 'Too broad',
+    });
+    expect(result.plans[1]!.review).toBeUndefined();
+  });
+
+  it('requests the transcript plan endpoint with the query params', async () => {
+    vi.mocked(fetch).mockResolvedValue(envelope({ agent_id: 'main', plans: [] }));
+    await createApi().getSessionPlans('sess_9', { agentId: 'main', toolCallId: 'call_7' });
+    const url = vi.mocked(fetch).mock.calls[0]?.[0];
+    expect(String(url)).toBe(
+      'http://daemon.test/api/v1/sessions/sess_9/transcript/plan?agent_id=main&tool_call_id=call_7',
+    );
+  });
+});
+
 describe('DaemonKimiWebApi.connectEvents', () => {
   let connection: KimiEventConnection | undefined;
 
@@ -350,5 +418,73 @@ describe('DaemonKimiWebApi.connectEvents', () => {
       pendingInteraction: 'question',
       lastTurnReason: undefined,
     });
+  });
+});
+
+describe('DaemonKimiWebApi request timeouts', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+    clearTrace();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('runs fork and child-session requests with the extended fork timeout', async () => {
+    const abortTimeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed'));
+
+    await createApi().forkSession('sess_1').catch(() => undefined);
+    await createApi().createChildSession('sess_1').catch(() => undefined);
+    await createApi().compactSession('sess_1').catch(() => undefined);
+    await createApi().compactSession('sess_1').catch(() => undefined);
+
+    expect(abortTimeoutSpy).toHaveBeenCalledWith(FORK_TIMEOUT_MS);
+    expect(abortTimeoutSpy).toHaveBeenCalledWith(REQUEST_TIMEOUT_MS);
+    const forkCalls = abortTimeoutSpy.mock.calls.filter(([ms]) => ms === FORK_TIMEOUT_MS);
+    expect(forkCalls).toHaveLength(2);
+  });
+
+  it('records the effective timeout on a fork request failure', async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed'));
+
+    const caught = await createApi().forkSession('sess_1').catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(DaemonNetworkError);
+    expect(caught).toMatchObject({ phase: 'fetch', timeoutMs: FORK_TIMEOUT_MS });
+  });
+
+  it('marks a timeout abort as timedOut instead of unreachable', async () => {
+    const timeoutAbort = Object.assign(new Error('The operation was aborted due to timeout'), {
+      name: 'AbortError',
+      cause: Object.assign(new Error('signal timed out'), { name: 'TimeoutError' }),
+    });
+    vi.mocked(fetch).mockRejectedValue(timeoutAbort);
+
+    const caught = await createApi().compactSession('sess_1').catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(DaemonNetworkError);
+    expect(caught).toMatchObject({ phase: 'fetch', timeoutMs: REQUEST_TIMEOUT_MS, timedOut: true });
+  });
+
+  it('treats an AbortError without a cause as our own timeout', async () => {
+    const bareAbort = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    vi.mocked(fetch).mockRejectedValue(bareAbort);
+
+    const caught = await createApi().compactSession('sess_1').catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(DaemonNetworkError);
+    expect(caught).toMatchObject({ phase: 'fetch', timedOut: true });
+  });
+
+  it('leaves timedOut unset for a plain network failure', async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed'));
+
+    const caught = await createApi().compactSession('sess_1').catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(DaemonNetworkError);
+    expect(caught).toMatchObject({ phase: 'fetch', timedOut: false });
   });
 });

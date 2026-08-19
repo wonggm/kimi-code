@@ -20,6 +20,11 @@ export default {
   uploading: '上传中',
   uploadFailed: '上传失败',
   attachFile: '添加附件',
+  addMenu: '添加',
+  addFiles: '文件',
+  addGoalDesc: '设定目标并持续推进',
+  addPlanDesc: '启用计划模式',
+  addSwarmDesc: '启用 swarm 模式',
   previewAttachment: '预览 {name}',
   interrupt: '中断',
   interruptTitle: '中断当前操作',
@@ -30,5 +35,6 @@ export default {
   quickStartPlaceholder: '输入消息开始新对话…',
   thinkingSuffix: ' · 思考',
   thinkingSuffixEffort: ' · {level}',
+  noCommands: '没有匹配的命令',
 
 } as const;

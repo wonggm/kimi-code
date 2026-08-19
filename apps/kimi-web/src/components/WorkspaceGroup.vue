@@ -31,6 +31,9 @@ const props = defineProps<{
   /** When true, render all loaded sessions; otherwise only the first page
    *  (`group.initialCount`). Drives the in-group show-more / show-less toggle. */
   isExpanded: (id: string) => boolean;
+  /** Experimental `auto_session_title` flag — row rename shows the gen-title
+   *  button. */
+  autoSessionTitle?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -45,6 +48,7 @@ const emit = defineEmits<{
   exportSession: [id: string];
   setEmojiSession: [id: string, emoji: string | undefined];
   togglePinnedSession: [id: string, pinned: boolean];
+  generateTitleSession: [id: string, done: (title: string | null) => void];
   loadMore: [workspaceId: string];
   toggleExpand: [workspaceId: string];
   confirmRename: [];
@@ -191,6 +195,7 @@ function onHeaderDragStart(event: DragEvent): void {
         :approval-count="pendingBySession[s.id]?.approvals ?? 0"
         :question-count="pendingBySession[s.id]?.questions ?? 0"
         :unread="unreadBySession[s.id] ?? false"
+        :auto-session-title="autoSessionTitle"
         @select="emit('selectSession', $event)"
         @rename="(id, title) => emit('renameSession', id, title)"
         @archive="emit('archiveSession', $event)"
@@ -198,6 +203,7 @@ function onHeaderDragStart(event: DragEvent): void {
         @export="emit('exportSession', $event)"
         @set-emoji="(id, emoji) => emit('setEmojiSession', id, emoji)"
         @toggle-pinned="(id, pinned) => emit('togglePinnedSession', id, pinned)"
+        @generate-title="(id, done) => emit('generateTitleSession', id, done)"
       />
       <button
         v-if="group.hasMore || group.loadingMore"

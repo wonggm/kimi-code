@@ -3,7 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ChatTurn, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WorkspaceView } from '../../types';
-import type { AppGoal, AppModel, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppPlanEntry, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import ChatPane from './ChatPane.vue';
@@ -26,6 +26,9 @@ const props = defineProps<{
   approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
   gitInfo?: { branch: string; ahead: number; behind: number } | null;
   tasks: TaskItem[];
+  /** ExitPlanMode plan history of the active session, timeline order — the
+   *  dock's plan pill shows the latest entry; the plan panel renders it. */
+  plans?: AppPlanEntry[];
   /** Model-maintained todo list (TodoList tool) — shown as a floating card. */
   todos?: TodoView[];
   goal?: AppGoal | null;
@@ -33,6 +36,8 @@ const props = defineProps<{
   status: ConversationStatus;
   thinking?: ThinkingLevel;
   planMode?: boolean;
+  /** Plan mode staged for the next send (+ menu / `/plan`) — local only. */
+  planArmed?: boolean;
   swarmMode?: boolean;
   goalMode?: boolean;
   questions?: UIQuestion[];
@@ -117,6 +122,7 @@ const emit = defineEmits<{
   setPermission: [mode: PermissionMode];
   setThinking: [level: ThinkingLevel];
   togglePlan: [];
+  togglePlanArmed: [];
   toggleSwarm: [];
   toggleGoal: [];
   createGoal: [objective: string];
@@ -291,9 +297,17 @@ const hasDockWork = computed(() =>
   subagentTasks.value.length > 0 ||
   (props.todos?.length ?? 0) > 0 ||
   changedFiles.value.length > 0 ||
-  (props.queued?.length ?? 0) > 0,
+  (props.queued?.length ?? 0) > 0 ||
+  props.planMode === true ||
+  (props.plans?.length ?? 0) > 0,
 );
-type DockPanel = 'bash' | 'subagent' | 'todos' | 'changed-files';
+/** Latest plan entry — the dock's plan viewer panel shows it. */
+const latestPlan = computed<AppPlanEntry | null>(() => {
+  const plans = props.plans;
+  if (!plans || plans.length === 0) return null;
+  return plans[plans.length - 1]!;
+});
+type DockPanel = 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan';
 const dockPanel = ref<DockPanel | null>(null);
 const changesCount = computed(() => (props.gitInfo ? props.changes?.length ?? 0 : 0));
 
@@ -1643,6 +1657,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :status="status"
               :thinking="thinking"
               :plan-mode="planMode"
+              :plan-armed="planArmed"
               :swarm-mode="swarmMode"
               :goal-mode="goalMode"
               :goal="goal"
@@ -1660,6 +1675,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               @set-permission="emit('setPermission', $event)"
               @set-thinking="emit('setThinking', $event)"
               @toggle-plan="emit('togglePlan')"
+              @toggle-plan-armed="emit('togglePlanArmed')"
               @toggle-swarm="emit('toggleSwarm')"
               @toggle-goal="emit('toggleGoal')"
               @open-btw="emit('command', '/btw')"
@@ -1721,6 +1737,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :status="status"
         :thinking="thinking"
         :plan-mode="planMode"
+        :plan-armed="planArmed"
         :swarm-mode="swarmMode"
         :goal-mode="goalMode"
         :activation-badges="activationBadges"
@@ -1732,6 +1749,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :dock-panel="dockPanel"
         :bash-tasks="bashTasks"
         :subagent-tasks="subagentTasks"
+        :plan-entry="latestPlan"
+        :open-file="(target) => emit('openFile', target)"
         :bash-running="bashRunning"
         :subagent-running="subagentRunning"
         :todo-done-count="todoDoneCount"
@@ -1758,6 +1777,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         @set-permission="emit('setPermission', $event)"
         @set-thinking="emit('setThinking', $event)"
         @toggle-plan="emit('togglePlan')"
+        @toggle-plan-armed="emit('togglePlanArmed')"
         @toggle-swarm="emit('toggleSwarm')"
         @toggle-goal="emit('toggleGoal')"
           @open-btw="emit('command', '/btw')"

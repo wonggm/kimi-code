@@ -6,7 +6,8 @@ import { useConfirmDialog } from '../../composables/useConfirmDialog';
 import { formatTokens } from '../../lib/formatTokens';
 import Card from '../ui/Card.vue';
 import Badge from '../ui/Badge.vue';
-import Button from '../ui/Button.vue';
+import IconButton from '../ui/IconButton.vue';
+import Tooltip from '../ui/Tooltip.vue';
 import Icon from '../ui/Icon.vue';
 
 const props = defineProps<{ goal: AppGoal; forceExpanded?: number }>();
@@ -76,6 +77,7 @@ async function onCancel(): Promise<void> {
         <span v-if="goal.budget.tokenBudget !== null" class="goal-progress" aria-hidden="true">
           <span class="goal-progress-fill" :style="{ width: `${tokenPct}%` }"></span>
         </span>
+        <span class="goal-elapsed" :title="t('status.goalElapsedLabel')">{{ formatMs(goal.wallClockMs) }}</span>
         <Icon class="goal-chevron" :class="{ open: expanded }" name="chevron-right" size="md" />
       </button>
     </template>
@@ -83,7 +85,7 @@ async function onCancel(): Promise<void> {
     <template #default>
       <div class="goal-full">{{ goal.objective }}</div>
       <div v-if="goal.completionCriterion" class="goal-criterion">
-        <span>Done when</span>
+        <span>{{ t('status.goalDoneWhen') }}</span>
         <p>{{ goal.completionCriterion }}</p>
       </div>
     </template>
@@ -97,39 +99,39 @@ async function onCancel(): Promise<void> {
         <div class="goal-meta">
           <span>{{ goal.turnsUsed }} turns</span>
           <span>{{ formatTokens(goal.tokensUsed) }} tokens</span>
-          <span>{{ formatMs(goal.wallClockMs) }}</span>
           <span v-if="goal.budget.tokenBudget !== null">{{ tokenPct }}% token budget</span>
         </div>
         <div class="goal-actions">
-          <Button
-            v-if="goal.status === 'active'"
-            size="sm"
-            variant="secondary"
-            class="goal-action"
-            @click.stop="emit('controlGoal', 'pause')"
-          >
-            <Icon name="pause" size="md" />
-            <span>{{ t('status.goalPause') }}</span>
-          </Button>
-          <Button
-            v-if="goal.status === 'paused' || goal.status === 'blocked'"
-            size="sm"
-            variant="primary"
-            class="goal-action"
-            @click.stop="emit('controlGoal', 'resume')"
-          >
-            <Icon name="play" size="md" />
-            <span>{{ t('status.goalResume') }}</span>
-          </Button>
-          <Button
-            size="sm"
-            variant="danger-soft"
-            class="goal-action"
-            @click.stop="onCancel"
-          >
-            <Icon name="close" size="md" />
-            <span>{{ t('status.goalCancel') }}</span>
-          </Button>
+          <Tooltip v-if="goal.status === 'active'" :text="t('status.goalPause')">
+            <IconButton
+              size="sm"
+              class="goal-action"
+              :label="t('status.goalPause')"
+              @click.stop="emit('controlGoal', 'pause')"
+            >
+              <Icon name="pause" size="md" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip v-if="goal.status === 'paused' || goal.status === 'blocked'" :text="t('status.goalResume')">
+            <IconButton
+              size="sm"
+              class="goal-action goal-action--accent"
+              :label="t('status.goalResume')"
+              @click.stop="emit('controlGoal', 'resume')"
+            >
+              <Icon name="play" size="md" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip :text="t('status.goalCancel')">
+            <IconButton
+              size="sm"
+              class="goal-action goal-action--danger"
+              :label="t('status.goalCancel')"
+              @click.stop="onCancel"
+            >
+              <Icon name="close" size="md" />
+            </IconButton>
+          </Tooltip>
         </div>
       </div>
     </template>
@@ -251,6 +253,13 @@ async function onCancel(): Promise<void> {
 .goal-chevron.open {
   transform: rotate(90deg);
 }
+.goal-elapsed {
+  flex: none;
+  color: var(--color-text-muted);
+  font: var(--text-xs)/var(--leading-normal) var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .goal-full {
   color: var(--color-text);
   font-size: var(--text-base);
@@ -307,26 +316,24 @@ async function onCancel(): Promise<void> {
 }
 .goal-actions {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
   justify-content: flex-end;
   flex: none;
 }
-.goal-action {
-  flex: none;
-  min-width: 0;
-  height: var(--composer-send-size);
-  border-radius: calc(var(--composer-send-size) / 2);
-  padding-inline: var(--space-4);
+/* Icon-button variant colors: resume leans accent, cancel leans danger. */
+.goal-action--accent {
+  color: var(--color-accent);
 }
-.goal-action :deep(.ui-button__content) {
-  gap: var(--space-1);
+.goal-action--danger {
+  color: var(--color-danger);
 }
 @media (max-width: 640px) {
   .goal-strip {
     --composer-send-size: 36px;
     margin: var(--space-2) var(--space-3) 0;
   }
-  .goal-progress {
+  .goal-progress,
+  .goal-elapsed {
     display: none;
   }
 }
