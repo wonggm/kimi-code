@@ -1,19 +1,88 @@
 // apps/kimi-web/src/composables/usePageTitle.ts
-// Static page title (app name only). The session title and workspace name are
-// intentionally excluded so the tab title stays stable.
-// Prefix an animated spinner when the agent is running so users can see activity
-// at a glance.
+// Browser tab title. The base title is composed from the server's --web-title
+// override (surfaced as web_title in GET /api/v1/meta), else the workspace
+// directory name plus the active session title, so instances opened on
+// different machines / worktrees are easy to tell apart.
+// Prefixes an animated spinner when the agent is running so users can see
+// activity at a glance.
 
 import { computed, onUnmounted, ref, watch, watchEffect, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { DaemonHttpClient } from '../api/daemon/http';
+import { readKimiApiConfig } from '../api/config';
+import { useKimiWebClient } from './useKimiWebClient';
+
+/** Pure page-title composition — exported for unit tests. */
+export function composePageTitle(parts: {
+  /** Value of the server's --web-title flag (web_title in /meta); falsy = unset. */
+  webTitle?: string | null;
+  /** Workspace directory name (the active workspace's display name). */
+  workspaceName?: string | null;
+  /** Title of the active session. */
+  sessionTitle?: string | null;
+}): string {
+  const { webTitle, workspaceName, sessionTitle } = parts;
+  if (webTitle) return webTitle;
+  if (workspaceName && sessionTitle) return `${workspaceName} · ${sessionTitle}`;
+  if (workspaceName) return workspaceName;
+  return 'Kimi Code Web';
+}
 
 export interface UsePageTitleOptions {
   running: Ref<boolean>;
   showAuthGate: Ref<boolean>;
+  /** Pre-composed base title from the caller (e.g. the client's computed
+   *  document base title). When provided it replaces the internal composition. */
+  title?: Ref<string>;
+  /** Server --web-title override; when omitted usePageTitle fetches /meta. */
+  webTitle?: Ref<string | null | undefined>;
+  /** Workspace directory name; when omitted it is read from the client state. */
+  workspaceName?: Ref<string | null | undefined>;
+  /** Active session title; when omitted it is read from the client state. */
+  sessionTitle?: Ref<string | null | undefined>;
 }
 
-export function usePageTitle({ running, showAuthGate }: UsePageTitleOptions): void {
+export function usePageTitle({ running, showAuthGate, title, webTitle, workspaceName, sessionTitle }: UsePageTitleOptions): void {
   const { t } = useI18n();
+
+  // The daemon client's getMeta() doesn't expose web_title, so when the caller
+  // didn't hand in the --web-title override fetch /meta once ourselves.
+  const fetchedWebTitle = ref<string | null>(null);
+  if (webTitle === undefined) {
+    void (async () => {
+      try {
+        const cfg = readKimiApiConfig();
+        const meta = await new DaemonHttpClient(cfg.serverHttpUrl, {
+          clientId: cfg.clientId,
+          clientName: cfg.clientName,
+          clientVersion: cfg.clientVersion,
+          clientUiMode: cfg.clientUiMode,
+        }).get<{ web_title?: string }>('/meta');
+        fetchedWebTitle.value = meta.web_title ?? null;
+      } catch {
+        // Non-fatal: the title falls back to the workspace/session composition.
+      }
+    })();
+  }
+
+  // The client's state is module-scoped, so reading it again here is cheap and
+  // stays reactive (workspaces/sessions update the title as they change).
+  const client = useKimiWebClient();
+  const clientWorkspaceName = computed<string | null>(() => client.visibleWorkspace.value?.name ?? null);
+  const clientSessionTitle = computed<string | null>(() => {
+    const sid = client.activeSessionId.value;
+    if (!sid) return null;
+    return client.sessions.value.find((s) => s.id === sid)?.title ?? null;
+  });
+
+  const baseTitle = computed<string>(() => {
+    if (title !== undefined) return title.value;
+    return composePageTitle({
+      webTitle: webTitle !== undefined ? webTitle.value : fetchedWebTitle.value,
+      workspaceName: workspaceName !== undefined ? workspaceName.value : clientWorkspaceName.value,
+      sessionTitle: sessionTitle !== undefined ? sessionTitle.value : clientSessionTitle.value,
+    });
+  });
 
   const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
   const spinnerFrame = ref(0);
@@ -43,7 +112,7 @@ export function usePageTitle({ running, showAuthGate }: UsePageTitleOptions): vo
   const pageTitle = computed<string>(() => {
     const prefix = running.value ? `${SPINNER_FRAMES[spinnerFrame.value]} ` : '';
     if (showAuthGate.value) return `${prefix}${t('app.authPageTitle')} - Kimi Code Web`;
-    return `${prefix}Kimi Code Web`;
+    return `${prefix}${baseTitle.value}`;
   });
   watchEffect(() => {
     if (typeof document !== 'undefined') document.title = pageTitle.value;

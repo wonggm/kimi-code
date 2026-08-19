@@ -7,6 +7,8 @@
 // Usage:
 //   node bench/capture.mjs          → bench/pixel/current/<scene>.png
 //   node bench/capture.mjs --ref    → bench/pixel/reference/<scene>.png
+//   BENCH_SCENES=a,b node bench/capture.mjs [--ref]   → only the named scenes
+//     (useful when the flaky __benchReady timeout kills one scene of a run)
 //
 // The reference set (captured BEFORE any perf change) is the pixel gate's
 // baseline; diff.mjs compares a fresh `current` capture against it.
@@ -49,6 +51,8 @@ process.on('SIGTERM', () => {
 
 async function main() {
   const useRef = process.argv.includes('--ref');
+  const filter = process.env.BENCH_SCENES?.split(',').filter(Boolean);
+  const scenes = filter ? SCENES.filter((s) => filter.includes(s.name)) : SCENES;
   const outDir = path.join(APP_DIR, 'bench', 'pixel', useRef ? 'reference' : 'current');
 
   const server = await ensureDevServer();
@@ -64,7 +68,7 @@ async function main() {
     await cdp.emulateMedia([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
     fs.mkdirSync(outDir, { recursive: true });
 
-    for (const scene of SCENES) {
+    for (const scene of scenes) {
       process.stdout.write(`[capture] ${scene.name} … `);
       try {
         // Wipe per-origin storage (notably the composer draft, which persists
@@ -92,7 +96,7 @@ async function main() {
         console.log(`FAILED: ${err.message}`);
       }
     }
-    console.log(`[capture] wrote ${SCENES.length} scenes → ${path.relative(APP_DIR, outDir)}/`);
+    console.log(`[capture] wrote ${scenes.length} scenes → ${path.relative(APP_DIR, outDir)}/`);
   } finally {
     cdp?.close();
     killChrome(chrome);

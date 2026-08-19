@@ -51,6 +51,8 @@ const props = defineProps<{
   liquidGlass?: boolean;
   /** Widen the conversation column on large screens. */
   wideMode?: boolean;
+  /** Experimental Lab: multi-tab sidebar (Open / Done / Workspaces). */
+  labSidebarTabs?: boolean;
   /** Global daemon config from GET /api/v1/config. Secrets are redacted server-side. */
   config?: AppConfig | null;
   /** Models from the daemon catalog, used to label default-model choices. */
@@ -74,6 +76,7 @@ const emit = defineEmits<{
   setConversationToc: [on: boolean];
   setLiquidGlass: [on: boolean];
   setWideMode: [on: boolean];
+  setLabSidebarTabs: [on: boolean];
   login: [];
   logout: [];
   openOnboarding: [];
@@ -82,7 +85,7 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-type SettingsTab = 'general' | 'agent' | 'account' | 'advanced' | 'archived';
+type SettingsTab = 'general' | 'agent' | 'account' | 'advanced' | 'archived' | 'lab';
 
 const activeTab = ref<SettingsTab>('general');
 
@@ -92,6 +95,7 @@ const tabs: { id: SettingsTab; labelKey: string }[] = [
   { id: 'account', labelKey: 'settings.tabs.account' },
   { id: 'advanced', labelKey: 'settings.tabs.advanced' },
   { id: 'archived', labelKey: 'settings.tabs.archived' },
+  { id: 'lab', labelKey: 'settings.tabs.lab' },
 ];
 
 const daemonEndpoint = serverEndpointLabel();
@@ -718,6 +722,24 @@ function archiveTime(iso: string): string {
               {{ archivedItems.length === 0 ? t('settings.archivedEmpty') : t('settings.archivedNoMatch') }}
             </div>
           </template>
+        </section>
+
+        <!-- Lab (experimental flags, default off) -->
+        <section v-show="activeTab === 'lab'" class="panel">
+          <section class="sec">
+            <h3 class="sec-title">{{ t('settings.tabs.lab') }}</h3>
+            <div class="row">
+              <span class="rlabel">
+                {{ t('settings.lab.sidebarTabs') }}
+                <span class="hint">{{ t('settings.lab.sidebarTabsHint') }}</span>
+              </span>
+              <Switch
+                :model-value="labSidebarTabs ?? false"
+                :label="t('settings.lab.sidebarTabs')"
+                @update:model-value="emit('setLabSidebarTabs', $event)"
+              />
+            </div>
+          </section>
         </section>
 
       </div>

@@ -27,8 +27,10 @@ import type {
   QuestionResponse,
 } from '../../api/types';
 import {
+  loadLabSidebarTabs,
   loadWorkspaceNameOverrides,
   safeRemove,
+  saveLabSidebarTabs,
   saveWorkspaceNameOverrides,
   STORAGE_KEYS,
 } from '../../lib/storage';
@@ -77,6 +79,42 @@ const TASK_ALREADY_FINISHED_CODE = 40904;
 
 function isTaskAlreadyFinishedError(err: unknown): boolean {
   return isDaemonApiError(err) && err.code === TASK_ALREADY_FINISHED_CODE;
+}
+
+// ---------------------------------------------------------------------------
+// Experimental Lab flags (default off, persisted in localStorage).
+// ---------------------------------------------------------------------------
+
+/** Experimental multi-tab sidebar (Open / Done / Workspaces). Module-level
+ *  singleton, like the other persisted UI favorites (accent, wide mode). */
+export const labSidebarTabs = ref<boolean>(loadLabSidebarTabs());
+
+export function setLabSidebarTabs(on: boolean): void {
+  labSidebarTabs.value = on;
+  saveLabSidebarTabs(on);
+}
+
+export interface ArchivedSplit<T> {
+  open: T[];
+  done: T[];
+}
+
+/**
+ * Split a session list by its archived flag — the Open/Done tab boundary.
+ * The sidebar applies it defensively so a stray archived session in the active
+ * list can never surface as an "Open" row (mirror of the Settings archived
+ * panel's client-side invariant).
+ */
+export function splitByArchived<T extends { archived: boolean }>(
+  sessions: readonly T[],
+): ArchivedSplit<T> {
+  const open: T[] = [];
+  const done: T[] = [];
+  for (const session of sessions) {
+    if (session.archived) done.push(session);
+    else open.push(session);
+  }
+  return { open, done };
 }
 
 /**
@@ -2468,6 +2506,12 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     try {
       const api = getKimiWebApi();
       await api.archiveSession(id);
+      // The archived session becomes a Done-tab row: mirror the server state in
+      // the local done list so the Done tab reflects it without a refetch.
+      const archived = rawState.sessions.find((s) => s.id === id);
+      if (archived) {
+        doneSessions.value = [archived, ...doneSessions.value.filter((s) => s.id !== id)];
+      }
       forgetSession(id);
       sideChat.clearSideChatForSession(id);
       const { [id]: _removedIds, ...restIds } = rawState.sideChatUserMessageIdsBySession;
@@ -2587,6 +2631,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     try {
       const restored = await getKimiWebApi().restoreSession(id);
       upsertSessionFront(restored);
+      // Now an Open row — drop it from the Done-tab list.
+      doneSessions.value = doneSessions.value.filter((s) => s.id !== id);
       return true;
     } catch (err) {
       pushOperationFailure('restoreSession', err, { sessionId: id });
@@ -2603,6 +2649,55 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       beforeId: input?.beforeId,
       pageSize: input?.pageSize ?? 50,
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Done-tab session list (sidebar). The Done tab reads this list; the
+  // composable owns the accumulation + pagination so the tab can stay a thin
+  // renderer and the logic stays unit-testable.
+  // -------------------------------------------------------------------------
+  const doneSessions = ref<AppSession[]>([]);
+  const doneSessionsLoading = ref(false);
+  const doneSessionsHasMore = ref(false);
+  /** True once the first page has been fetched for the current filter window;
+   *  archive/restore and force-refetches reset it. */
+  const doneSessionsLoaded = ref(false);
+  const DONE_SESSIONS_PAGE_SIZE = 50;
+  let doneSessionsBeforeId: string | undefined;
+
+  /** Fetch the Done (archived) list. The first call loads the first page; a
+   *  follow-up call with `force` clears the cache and reloads from the newest
+   *  page (used when the Done tab reopens — archived state may have changed
+   *  elsewhere, e.g. admin page batches). Any further call paginates: appends
+   *  the next page when more exists, and no-ops once the list is drained. */
+  async function ensureDoneSessions(force = false): Promise<void> {
+    if (doneSessionsLoading.value) return;
+    if (!force && doneSessionsLoaded.value && !doneSessionsHasMore.value) return;
+    if (force) {
+      doneSessions.value = [];
+      doneSessionsBeforeId = undefined;
+      doneSessionsLoaded.value = false;
+      doneSessionsHasMore.value = false;
+    }
+    doneSessionsLoading.value = true;
+    try {
+      const page = await getKimiWebApi().listSessions({
+        archivedOnly: true,
+        pageSize: DONE_SESSIONS_PAGE_SIZE,
+        beforeId: doneSessionsBeforeId,
+      });
+      const existing = new Set(doneSessions.value.map((s) => s.id));
+      const fresh = page.items.filter((s) => !existing.has(s.id));
+      doneSessions.value = [...doneSessions.value, ...fresh];
+      const last = page.items.at(-1);
+      if (last !== undefined) doneSessionsBeforeId = last.id;
+      doneSessionsHasMore.value = page.hasMore;
+      doneSessionsLoaded.value = true;
+    } catch (err) {
+      pushOperationFailure('ensureDoneSessions', err);
+    } finally {
+      doneSessionsLoading.value = false;
+    }
   }
 
   /** Logout from the managed Kimi provider. Re-checks auth and reloads sessions. */
@@ -2975,6 +3070,14 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     generateSessionTitle,
     restoreSession,
     loadArchivedSessions,
+    // Experimental Lab flags
+    labSidebarTabs,
+    setLabSidebarTabs,
+    // Done-tab (archived) session list
+    doneSessions,
+    doneSessionsLoading,
+    doneSessionsHasMore,
+    ensureDoneSessions,
     logout,
     compact,
     forkSession,

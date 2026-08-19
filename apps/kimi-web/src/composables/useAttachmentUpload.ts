@@ -46,10 +46,85 @@ export interface AttachmentUploadDeps {
   uploadImage: () => UploadImage | undefined;
   /** Active session id — scopes pending attachments (getter for reactivity). */
   sessionId: () => string | undefined;
+  /** A pasted folder (Chromium paste): its name is inserted into the composer
+      text as a folder mention instead of being uploaded. */
+  onFolderPath?: (name: string) => void;
+}
+
+/** One paste/drop payload bucketed into uploadable files and pasted folders. */
+export interface PasteBucket {
+  files: File[];
+  /** Folder names, in paste order (web has no path info for a pasted directory). */
+  folderNames: string[];
+  /** True when any directory entry was present in the paste. */
+  hasFolders: boolean;
+}
+
+interface BucketItemSource {
+  kind: string;
+  getAsFile(): File | null;
+  webkitGetAsEntry?: () => { isDirectory: boolean } | null;
+}
+
+interface BucketSource {
+  items: ArrayLike<BucketItemSource>;
+  files: ArrayLike<File>;
+}
+
+function bucketKey(blob: { size: number; type: string; name: string }): string {
+  return `${blob.size}:${blob.type}:${blob.name}`;
+}
+
+/**
+ * Split a paste's contents into files to upload and folders to mention. Folder
+ * detection relies on the Chromium-only `webkitGetAsEntry` API (cast
+ * defensively); other browsers report directories as plain files and upstream
+ * the old behavior. An entry's FileList twin is dropped so a pasted folder is
+ * never uploaded twice.
+ */
+export function bucketPastedData(source: BucketSource): PasteBucket {
+  const files: File[] = [];
+  const seenFileKeys = new Set<string>();
+  const folderKeys = new Set<string>();
+  const folderNames: string[] = [];
+  const seenFolderNames = new Set<string>();
+  let hasFolders = false;
+
+  for (const item of Array.from(source.items)) {
+    if (item.kind !== 'file') continue;
+    const file = item.getAsFile();
+    if (item.webkitGetAsEntry?.()?.isDirectory === true) {
+      hasFolders = true;
+      if (file) {
+        folderKeys.add(bucketKey(file));
+        if (file.name !== '' && !seenFolderNames.has(file.name)) {
+          seenFolderNames.add(file.name);
+          folderNames.push(file.name);
+        }
+      }
+      continue;
+    }
+    if (!file) continue;
+    const key = bucketKey(file);
+    if (seenFileKeys.has(key)) continue;
+    seenFileKeys.add(key);
+    files.push(file);
+  }
+
+  // Some browsers/OS put screenshots here directly; skip duplicates of
+  // item-sourced entries (including directory twins of pasted folders).
+  for (const file of Array.from(source.files)) {
+    const key = bucketKey(file);
+    if (folderKeys.has(key) || seenFileKeys.has(key)) continue;
+    seenFileKeys.add(key);
+    files.push(file);
+  }
+
+  return { files, folderNames, hasFolders };
 }
 
 export function useAttachmentUpload(deps: AttachmentUploadDeps) {
-  const { uploadImage, sessionId } = deps;
+  const { uploadImage, sessionId, onFolderPath } = deps;
 
   const attachmentsBySession = ref<Record<string, Attachment[]>>({});
   const attachments = computed(() => attachmentsBySession.value[sessionId() ?? ''] ?? []);
@@ -169,36 +244,33 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
     const cd = e.clipboardData;
     if (!cd) return;
 
-    // Collect attached files from both .items and .files to cover all browsers/OS.
-    const files: File[] = [];
-    const seenKeys = new Set<string>();
+    // Collect the paste into uploadable files and pasted folders (directories
+    // detected via the Chromium-only webkitGetAsEntry API).
+    const { files, folderNames, hasFolders } = bucketPastedData(cd);
 
-    const addBlob = (blob: File | Blob, name: string): void => {
-      const key = `${blob.size}:${blob.type}:${name}`;
-      if (seenKeys.has(key)) return;
-      seenKeys.add(key);
-      const ext = blob.type.split('/')[1] ?? 'png';
-      const safeName = name.includes('.') ? name : `paste-${Date.now()}.${ext}`;
-      files.push(blob instanceof File ? blob : new File([blob], safeName, { type: blob.type }));
-    };
-
-    // From DataTransferItemList.
-    for (const item of Array.from(cd.items)) {
-      if (item.kind === 'file') {
-        const blob = item.getAsFile();
-        if (blob) addBlob(blob, blob.name || `paste-${Date.now()}.${item.type.split('/')[1] ?? 'png'}`);
-      }
-    }
-
-    // From FileList (some browsers/OS put screenshots here directly).
-    for (const file of Array.from(cd.files)) {
-      addBlob(file, file.name);
+    // Folders are NEVER uploaded: each becomes a folder mention in the
+    // composer text via onFolderPath, and the paste's upload path is
+    // prevented. A folder whose name could not be read still blocks the
+    // upload path (hasFolders) so it is not uploaded as a file.
+    if (folderNames.length > 0) {
+      for (const name of folderNames) onFolderPath?.(name);
+      e.preventDefault();
+    } else if (hasFolders) {
+      e.preventDefault();
     }
 
     if (files.length === 0) return; // No files — let normal text paste proceed unmodified.
 
+    // Extensionless/unknown files report an empty MIME — normalize now so the
+    // wire file part's required non-empty media_type never sees ''.
+    const uploads = files.map((file) =>
+      file.name.includes('.')
+        ? file
+        : new File([file], `paste-${Date.now()}.${file.type.split('/')[1] ?? 'png'}`, { type: file.type }),
+    );
+
     e.preventDefault();
-    void addFiles(files);
+    void addFiles(uploads);
   }
 
   // Drag-drop handlers. WindowDragDepth tracks nested dragenter/dragleave pairs

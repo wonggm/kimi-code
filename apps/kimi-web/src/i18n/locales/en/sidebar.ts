@@ -46,8 +46,19 @@ export default {
   loadingMore: 'Loading…',
   collapseSidebar: 'Collapse sidebar',
   expandSidebar: 'Expand sidebar',
-  searchPlaceholder: 'Search sessions',
+  /** Experimental multi-tab sidebar (Lab flag `labSidebarTabs`): the session
+   *  area gets an Open / Done / Workspaces tab strip. */
+  tabOpen: 'Open',
+  tabDone: 'Done',
+  tabWorkspaces: 'Workspaces',
+  markDone: 'Mark as done',
+  reopen: 'Mark as open',
+  noOpenSessions: 'No open sessions yet',
+  noDoneSessions: 'No completed sessions yet',
+  /** Lab entry point to the cross-workspace session admin page. */
+  sessionAdmin: 'Manage Sessions',
+  searchPlaceholder: 'Search sessions and workspaces',
   search: 'Search',
   searchHint: '↑↓ navigate · ↵ open · Esc close',
-  searchNoResults: 'No matching sessions',
+  searchNoResults: 'No matching sessions or workspaces',
 } as const;
