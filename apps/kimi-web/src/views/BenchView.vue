@@ -93,12 +93,12 @@ const models: AppModel[] = [
   { id: 'gpt-example', provider: 'openai', model: 'gpt-example', displayName: 'GPT Example', maxContextSize: 128_000 },
 ];
 const skills: AppSkill[] = [
-  { name: 'root-analysis', description: 'Run ROOT macros and fit histograms', source: 'user' },
-  { name: 'musr-sim', description: 'Build and run musrSim Geant4 simulations', source: 'user' },
-  { name: 'mpl-pub', description: 'Publication-quality matplotlib figures', source: 'user' },
-  { name: 'pdf', description: 'Read, merge and create PDF files', source: 'user' },
-  { name: 'hpc-pipeline', description: 'Sync, submit and monitor HPC jobs', source: 'user' },
-  { name: 'llm-wiki', description: 'Build an Obsidian knowledge base', source: 'user' },
+  { name: 'root-analysis', description: 'Run ROOT macros and fit histograms', source: 'user', path: '~/.kimi-code/skills/root-analysis/SKILL.md' },
+  { name: 'musr-sim', description: 'Build and run musrSim Geant4 simulations', source: 'user', path: '~/.kimi-code/skills/musr-sim/SKILL.md' },
+  { name: 'mpl-pub', description: 'Publication-quality matplotlib figures', source: 'user', path: '~/.kimi-code/skills/mpl-pub/SKILL.md' },
+  { name: 'pdf', description: 'Read, merge and create PDF files', source: 'user', path: '~/.kimi-code/skills/pdf/SKILL.md' },
+  { name: 'hpc-pipeline', description: 'Sync, submit and monitor HPC jobs', source: 'user', path: '~/.kimi-code/skills/hpc-pipeline/SKILL.md' },
+  { name: 'llm-wiki', description: 'Build an Obsidian knowledge base', source: 'user', path: '~/.kimi-code/skills/llm-wiki/SKILL.md' },
 ];
 const bashTasks: TaskItem[] = [
   { id: 'bench-bash-1', name: 'root -b -q fit.C', kind: 'task', state: 'run', timing: '12s' },
