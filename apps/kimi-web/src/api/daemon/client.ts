@@ -24,6 +24,7 @@ import type {
   AppTerminal,
   AppWorkspace,
   AppPlanEntry,
+  TranscriptPage,
   ApprovalResponse,
   FsBrowseResult,
   FsEntry,
@@ -92,6 +93,7 @@ import type {
   WireWorkspace,
   WireLogoutResult,
   WirePlanResponse,
+  WireTranscriptPage,
 } from './wire';
 import { DaemonEventSocket } from './ws';
 
@@ -641,6 +643,23 @@ export class DaemonKimiWebApi implements KimiWebApi {
       },
     );
     return { agentId: data.agent_id, plans: data.plans.map(toAppPlanEntry) };
+  }
+
+  // GET /sessions/{id}/transcript — the turn-granular transcript of a single
+  // agent (the main agent or a subagent) in timeline order. Used to seed a
+  // subagent detail panel whose live progress frames were missed (page reload
+  // / resync) even though the server holds the full transcript.
+  async getAgentTranscript(sessionId: string, agentId: string): Promise<TranscriptPage> {
+    const data = await this.http.get<WireTranscriptPage>(
+      `/sessions/${encodeURIComponent(sessionId)}/transcript`,
+      { agent_id: agentId, page_size: 100 },
+    );
+    return {
+      agentId: data.agent_id,
+      items: data.items,
+      hasMore: data.has_more,
+      seq: data.seq,
+    };
   }
 
   async exportSession(
