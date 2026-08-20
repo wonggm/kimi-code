@@ -700,6 +700,65 @@ describe('reduceAppEvent unknown agent error', () => {
   });
 });
 
+describe('reduceAppEvent taskSeeded', () => {
+  it('seeds an empty subagent body from the transcript projection', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: { s1: [makeSubagentTask('t1', 's1')] },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskSeeded',
+        sessionId: 's1',
+        taskId: 't1',
+        text: 'Assembled.\nDone.',
+        outputLines: ['Calling Read: a.ts', 'Calling Bash: make'],
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.tasksBySession['s1']?.[0]).toMatchObject({
+      text: 'Assembled.\nDone.',
+      outputLines: ['Calling Read: a.ts', 'Calling Bash: make'],
+    });
+  });
+
+  it('leaves a body that already has live content untouched (no clobber / no duplicate)', () => {
+    const state = {
+      ...createInitialState(),
+      tasksBySession: {
+        s1: [{ ...makeSubagentTask('t1', 's1'), text: 'live', outputLines: ['Calling Read: a.ts'] }],
+      },
+    };
+    const next = reduceAppEvent(
+      state,
+      {
+        type: 'taskSeeded',
+        sessionId: 's1',
+        taskId: 't1',
+        text: 'seeded-text',
+        outputLines: ['Calling Write: b.ts'],
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.tasksBySession['s1']?.[0]).toMatchObject({
+      text: 'live',
+      outputLines: ['Calling Read: a.ts'],
+    });
+  });
+
+  it('ignores an unknown task id', () => {
+    const state = { ...createInitialState(), tasksBySession: {} };
+    const next = reduceAppEvent(
+      state,
+      { type: 'taskSeeded', sessionId: 's1', taskId: 'nope' },
+      { sessionId: 's1', seq: 1 },
+    );
+    // No task row exists; the slice stays empty and nothing else changes.
+    expect(next.tasksBySession['s1']).toEqual([]);
+  });
+});
+
 describe('reduceAppEvent map reference stability', () => {
   const msgId = 'msg_2026-01-01T00:00:00.000Z';
   const seededState = () => ({

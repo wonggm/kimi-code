@@ -227,6 +227,37 @@ describe('DaemonKimiWebApi.getSessionGoal', () => {
   });
 });
 
+describe('DaemonKimiWebApi.getAgentTranscript', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('requests the per-agent transcript endpoint and maps wire → app fields', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        agent_id: 'agent-1',
+        items: [{ kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', steps: [] }],
+        has_more: false,
+        seq: 12,
+      }),
+    );
+    const page = await createApi().getAgentTranscript('sess_1', 'agent-1');
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      'http://daemon.test/api/v1/sessions/sess_1/transcript?agent_id=agent-1&page_size=100',
+    );
+    expect(page).toEqual({
+      agentId: 'agent-1',
+      items: [{ kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', steps: [] }],
+      hasMore: false,
+      seq: 12,
+    });
+  });
+});
+
 describe('DaemonKimiWebApi.getMeta', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());

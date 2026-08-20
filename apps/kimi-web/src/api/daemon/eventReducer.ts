@@ -767,6 +767,7 @@ export function reduceAppEvent(
           model: event.task.model ?? previous.model,
           runInBackground: event.task.runInBackground ?? previous.runInBackground,
           backgroundTaskId: event.task.backgroundTaskId ?? previous.backgroundTaskId,
+          agentId: event.task.agentId ?? previous.agentId,
         };
         next.tasksBySession[sid] = patched;
       }
@@ -795,6 +796,21 @@ export function reduceAppEvent(
           // which can grow without bound.
           outputLines: t.kind === 'subagent' ? lines : lines.slice(-MAX_BACKGROUND_OUTPUT_LINES),
         };
+      });
+      break;
+    }
+
+    // -------------------------------------------------------------------------
+    case 'taskSeeded': {
+      const sid = event.sessionId;
+      const list = next.tasksBySession[sid] ?? [];
+      next.tasksBySession[sid] = list.map((t) => {
+        if (t.id !== event.taskId) return t;
+        // Only seed a body that is still empty. A seed that races live frames
+        // (the transcript fetch landed after live taskProgress events already
+        // populated the body) must not clobber or duplicate what is streaming.
+        if ((t.text?.length ?? 0) > 0 || (t.outputLines?.length ?? 0) > 0) return t;
+        return { ...t, text: event.text, outputLines: event.outputLines };
       });
       break;
     }

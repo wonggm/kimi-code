@@ -32,6 +32,16 @@ describe('toAppTask model threading', () => {
       expect(toAppTask(baseWire({ status })).status).toBe(status);
     }
   });
+
+  it('threads the wire agent_id (distinct from id) onto AppTask.agentId', () => {
+    const app = toAppTask(baseWire({ id: 'agent-abc123', agent_id: 'agent-0' }));
+    expect(app.id).toBe('agent-abc123');
+    expect(app.agentId).toBe('agent-0');
+  });
+
+  it('leaves AppTask.agentId undefined when the wire omits it', () => {
+    expect(toAppTask(baseWire()).agentId).toBeUndefined();
+  });
 });
 
 function baseConfig(overrides: Partial<WireConfig> = {}): WireConfig {

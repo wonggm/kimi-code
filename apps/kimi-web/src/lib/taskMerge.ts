@@ -55,6 +55,9 @@ export function keepLiveSubagents(restBased: AppTask[], existing: AppTask[]): Ap
       // freeze the detail panel's Result.
       outputPreview: rest.outputPreview ?? live.outputPreview,
       outputBytes: rest.outputBytes ?? live.outputBytes,
+      // REST carries the wire agent id; prefer it so the transcript seed keys
+      // the store's row by the id the transcript endpoint understands.
+      agentId: rest.agentId ?? live.agentId,
     };
   });
   const rest = restBased.filter((t) => !foldedRestIds.has(t.id));
@@ -99,7 +102,8 @@ export function taskListsEqual(a: readonly AppTask[], b: readonly AppTask[]): bo
       x.suspendedReason !== y.suspendedReason ||
       x.swarmIndex !== y.swarmIndex ||
       x.runInBackground !== y.runInBackground ||
-      x.backgroundTaskId !== y.backgroundTaskId
+      x.backgroundTaskId !== y.backgroundTaskId ||
+      x.agentId !== y.agentId
     ) {
       return false;
     }

@@ -5,6 +5,49 @@
 
 import { describe, expect, it } from 'vitest';
 import { classifyFrame, createAgentProjector, subagentProgressText } from '../src/api/daemon/agentEventProjector';
+import { createInitialState, reduceAppEvent } from '../src/api/daemon/eventReducer';
+import { projectSubagentTranscript } from '../src/composables/messagesToTurns';
+import type { AppSession } from '../src/api/types';
+
+function makeSession(id: string): AppSession {
+  return {
+    id,
+    title: id,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    busy: false,
+    archived: false,
+    cwd: '/workspace',
+    model: 'kimi-code',
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      totalCostUsd: 0,
+      contextTokens: 0,
+      contextLimit: 0,
+      turnCount: 0,
+    },
+    messageCount: 0,
+    lastSeq: 0,
+  };
+}
+
+function projectThroughReducer(frames: Array<{ type: string; payload: Record<string, unknown> }>) {
+  const projector = createAgentProjector();
+  let state = {
+    ...createInitialState(),
+    sessions: [makeSession('s1')],
+  };
+  let seq = 0;
+  for (const { type, payload } of frames) {
+    for (const appEvent of projector.project(type, payload, 's1')) {
+      state = reduceAppEvent(state, appEvent, { sessionId: 's1', seq: ++seq });
+    }
+  }
+  return state;
+}
 
 describe('subagentProgressText', () => {
   it('drops turn.step.started as noise', () => {
@@ -63,6 +106,147 @@ describe('subagent streaming text', () => {
     const projector = createAgentProjector();
     const events = projector.project('assistant.delta', { agentId: 'sub-1', delta: '' }, 's1');
     expect(events).toEqual([]);
+  });
+});
+
+describe('subagent preview end-to-end (projector + reducer)', () => {
+  it('populates the task body from a realistic server frame sequence', () => {
+    // Mirrors the server flow: subagent.spawned rides the main bus (agentId
+    // 'main'); the subagent's own transcript frames ride its bus (agentId =
+    // subagentId). This is exactly what sessionEventBroadcaster delivers.
+    const state = projectThroughReducer([
+      {
+        type: 'subagent.spawned',
+        payload: {
+          agentId: 'main',
+          sessionId: 's1',
+          subagentId: 'agent-1',
+          subagentName: 'explore',
+          parentToolCallId: 'tc_1',
+          model: 'provider/model',
+          runInBackground: false,
+        },
+      },
+      { type: 'subagent.started', payload: { agentId: 'main', sessionId: 's1', subagentId: 'agent-1' } },
+      { type: 'assistant.delta', payload: { agentId: 'agent-1', sessionId: 's1', delta: 'Hello ' } },
+      { type: 'assistant.delta', payload: { agentId: 'agent-1', sessionId: 's1', delta: 'world' } },
+      { type: 'tool.use', payload: { agentId: 'agent-1', sessionId: 's1', name: 'read', args: { path: 'a.ts' } } },
+    ]);
+
+    const task = state.tasksBySession['s1']?.find((t) => t.id === 'agent-1');
+    expect(task).toBeDefined();
+    expect(task!.description).toBe('explore');
+    expect(task!.subagentType).toBe('explore');
+    expect(task!.model).toBe('provider/model');
+    expect(task!.text).toBe('Hello world');
+    expect(task!.outputLines).toEqual(['Calling Read: a.ts']);
+  });
+
+  it('stays empty when subagent frames never reach the client (no live frames)', () => {
+    // No non-main frames arrive — the preview body has nothing to draw from.
+    const state = projectThroughReducer([
+      {
+        type: 'subagent.spawned',
+        payload: {
+          agentId: 'main',
+          sessionId: 's1',
+          subagentId: 'agent-1',
+          subagentName: 'explore',
+          parentToolCallId: 'tc_1',
+          runInBackground: false,
+        },
+      },
+    ]);
+    const task = state.tasksBySession['s1']?.find((t) => t.id === 'agent-1');
+    expect(task!.text).toBeUndefined();
+    expect(task!.outputLines ?? []).toEqual([]);
+  });
+});
+
+describe('subagent detail seeded from transcript history', () => {
+  it('projects a transcript page into the panel body fields', () => {
+    const items = [
+      {
+        kind: 'turn',
+        turnId: 't1',
+        ordinal: 0,
+        state: 'completed',
+        steps: [
+          {
+            kind: 'step',
+            stepId: 'st1',
+            frames: [
+              { kind: 'text', role: 'assistant', text: 'Let me check.' },
+              { kind: 'tool', toolCallId: 'tc1', name: 'read', input: { path: 'a.ts' } },
+              { kind: 'tool', toolCallId: 'tc2', name: 'bash', input: 'make build' },
+            ],
+          },
+        ],
+      },
+      {
+        kind: 'turn',
+        turnId: 't2',
+        ordinal: 1,
+        state: 'completed',
+        steps: [
+          {
+            kind: 'step',
+            stepId: 'st2',
+            frames: [{ kind: 'text', role: 'assistant', text: 'Done.' }],
+          },
+        ],
+      },
+    ];
+    expect(projectSubagentTranscript(items)).toEqual({
+      text: 'Let me check.Done.',
+      outputLines: ['Calling Read: a.ts', 'Calling Run: "make build"'],
+    });
+  });
+
+  it('returns empty fields for a transcript with no assistant text or tool calls', () => {
+    const items = [
+      {
+        kind: 'turn',
+        turnId: 't',
+        ordinal: 0,
+        state: 'running',
+        steps: [{ kind: 'step', stepId: 's', frames: [{ kind: 'thinking', text: '…' }] }],
+      },
+    ];
+    expect(projectSubagentTranscript(items)).toEqual({ text: undefined, outputLines: undefined });
+  });
+
+  it('seeds an empty preview body via taskSeeded and appends — never duplicates — later live frames', () => {
+    const state = {
+      ...createInitialState(),
+      sessions: [makeSession('s1')],
+      tasksBySession: {
+        s1: [{ id: 'agent-1', sessionId: 's1', kind: 'subagent', description: 'explore', createdAt: '2026-01-01T00:00:00.000Z' }],
+      },
+    };
+    // The seed lands on an empty body (missed live frames after a reload).
+    const seeded = reduceAppEvent(
+      state,
+      {
+        type: 'taskSeeded',
+        sessionId: 's1',
+        taskId: 'agent-1',
+        text: 'Let me check.Done.',
+        outputLines: ['Calling Read: a.ts'],
+      },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(seeded.tasksBySession['s1']?.[0]).toMatchObject({
+      text: 'Let me check.Done.',
+      outputLines: ['Calling Read: a.ts'],
+    });
+    // A live delta that continues the seeded text appends instead of replacing.
+    const next = reduceAppEvent(
+      seeded,
+      { type: 'taskProgress', sessionId: 's1', taskId: 'agent-1', kind: 'text', outputChunk: ' More.' },
+      { sessionId: 's1', seq: 2 },
+    );
+    expect(next.tasksBySession['s1']?.[0]?.text).toBe('Let me check.Done. More.');
   });
 });
 

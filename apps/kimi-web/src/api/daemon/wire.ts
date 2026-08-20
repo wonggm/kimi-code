@@ -344,6 +344,12 @@ export interface WireTask {
   suspended_reason?: string;
   swarm_index?: number;
   run_in_background?: boolean;
+  /** The id this same subagent has on the server's transcript store / wire
+   *  event stream (the per-agent id, e.g. `agent-0`). Distinct from `id` —
+   *  REST `/tasks` keys the row by the background-task id while the transcript
+   *  endpoint keys on this agent id. Present on REST `/tasks` rows; the
+   *  snapshot roster may omit it (then the row id IS the agent id). */
+  agent_id?: string;
 }
 
 /** Projected review outcome of one ExitPlanMode plan (`transcriptPlanReviewSchema`). */
@@ -368,6 +374,43 @@ export interface WirePlanEntry {
 export interface WirePlanResponse {
   agent_id: string;
   plans: WirePlanEntry[];
+}
+
+/** One step of a transcript turn — the subset of `transcriptStepSchema` the
+ *  web detail panel reads to seed a subagent's accumulated output. */
+export interface WireTranscriptStep {
+  kind: 'step';
+  stepId: string;
+  frames: WireTranscriptFrame[];
+}
+
+/** A transcript frame — the subset of `transcriptFrameSchema` the web detail
+ *  panel reads. Text frames carry the subagent's assistant output, tool frames
+ *  its tool calls. */
+export type WireTranscriptFrame =
+  | { kind: 'text'; role: 'assistant' | 'user'; text: string }
+  | { kind: 'thinking'; text: string }
+  | { kind: 'tool'; toolCallId: string; name: string; input?: unknown; inputText?: string }
+  | { kind: 'notice'; text?: string };
+
+/** One transcript turn for an agent (`transcriptItemSchema`, turn variant). */
+export interface WireTranscriptTurn {
+  kind: 'turn';
+  turnId: string;
+  ordinal: number;
+  state: string;
+  prompt?: string;
+  steps: WireTranscriptStep[];
+  startedAt?: string;
+  endedAt?: string;
+}
+
+/** `GET /sessions/{id}/transcript` response — turn-granular, per-agent. */
+export interface WireTranscriptPage {
+  agent_id: string;
+  items: WireTranscriptTurn[];
+  has_more: boolean;
+  seq?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -385,6 +385,11 @@ export function toAppTask(wire: WireTask): AppTask {
     parentToolCallId: wire.parent_tool_call_id,
     suspendedReason: wire.suspended_reason,
     swarmIndex: wire.swarm_index,
+    // The wire agent id (e.g. `agent-0`) that the transcript endpoint keys on,
+    // distinct from this task's `id` when REST /tasks keyed the row by its
+    // background-task id. Falls back per-use to `id` when absent (live-spawn /
+    // snapshot-roster rows carry it as their id).
+    agentId: wire.agent_id,
     // The snapshot's subagent roster carries the explicit flag. REST `/tasks`
     // does not, but its background-task store only holds detached tasks, so any
     // subagent it returns is a background subagent (foreground ones never
