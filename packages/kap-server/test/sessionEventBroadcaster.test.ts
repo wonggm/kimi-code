@@ -1124,6 +1124,46 @@ describe('SessionEventBroadcaster', () => {
     expect(next.subagents).toEqual([]);
   });
 
+  it('streams a late-spawned subagent live transcript frames to the subscribed client', async () => {
+    const lc = new FakeLifecycle();
+    const main = lc.addAgent('main');
+    sessions.set('s1', lc);
+    const { target, envelopes } = collectingTarget();
+    await bc.subscribe('s1', target);
+
+    // Parent spawns a subagent: the lifecycle frame rides the main bus.
+    main.bus.emit(
+      agentEvent('subagent.spawned', {
+        subagentId: 'agent-1',
+        subagentName: 'explore',
+        parentToolCallId: 'tc_1',
+        model: 'provider/model',
+        runInBackground: false,
+      }),
+    );
+
+    // The subagent is created after the connection/subscription (fires
+    // onDidCreate → attachAgent) and streams on its own bus.
+    const sub = lc.addAgent('agent-1');
+    sub.bus.emit(agentEvent('assistant.delta', { turnId: 1, delta: 'Hello' }));
+    sub.bus.emit(agentEvent('tool.use', { turnId: 1, name: 'read', args: { path: 'a.ts' } }));
+    await bc.getCursor('s1');
+
+    const spawn = envelopes.find((e) => e.type === 'subagent.spawned');
+    expect(spawn).toBeDefined();
+    expect((spawn!.payload as { agentId: string }).agentId).toBe('main');
+    expect((spawn!.payload as { subagentId: string }).subagentId).toBe('agent-1');
+
+    const deltas = envelopes.filter((e) => e.type === 'assistant.delta');
+    expect(deltas).toHaveLength(1);
+    expect((deltas[0]!.payload as { agentId: string }).agentId).toBe('agent-1');
+    expect((deltas[0]!.payload as { delta: string }).delta).toBe('Hello');
+
+    const tool = envelopes.filter((e) => e.type === 'tool.use');
+    expect(tool).toHaveLength(1);
+    expect((tool[0]!.payload as { agentId: string }).agentId).toBe('agent-1');
+  });
+
   it('subscribe returns false for an unknown session', async () => {
     const { target } = collectingTarget();
     expect(await bc.subscribe('nope', target)).toBe(false);
