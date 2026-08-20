@@ -12,6 +12,7 @@
 import type { AppMessage, AppMessageContent, AppApprovalRequest, AppTask, CompactionMarkerMetadata } from '../api/types';
 import { COMPACTION_MARKER_METADATA_KEY } from '../api/types';
 import type { AgentMember, ApprovalBlock, ChatTurn, CronTurnData, DiffLine, ToolCall, ToolMedia, TurnAttachment, TurnBlock } from '../types';
+import { toolLabel, toolSummary } from '../lib/toolMeta';
 
 const READ_MEDIA_TOOL_RE = /^read[_-]?media(?:file)?$/i;
 const DATA_URL_RE = /^data:([^;]+);base64,(.*)$/s;
@@ -241,6 +242,67 @@ export function toAgentMember(task: AppTask): AgentMember {
     suspendedReason: task.suspendedReason,
     swarmIndex: task.swarmIndex,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Subagent transcript → detail-panel body seed
+// ---------------------------------------------------------------------------
+// A subagent detail panel normally fills its body ONLY from live WS progress
+// frames (taskProgress events). After a page reload or resync those frames are
+// missed, so the panel opens with an empty body even though the server holds
+// the subagent's full transcript. These helpers project a transcript page into
+// the same two fields the panel renders — the subagent's concatenated assistant
+// output (`text`) and its tool-call progress lines (`outputLines`, in the same
+// "Calling …" format the live projector emits) — so the empty body can be
+// seeded from history.
+
+interface SubagentTranscriptTurn {
+  kind: 'turn';
+  steps: SubagentTranscriptStep[];
+}
+interface SubagentTranscriptStep {
+  kind: 'step';
+  frames: SubagentTranscriptFrame[];
+}
+type SubagentTranscriptFrame =
+  | { kind: 'text'; role: 'assistant' | 'user'; text: string }
+  | { kind: 'thinking'; text: string }
+  | { kind: 'tool'; name: string; input?: unknown; inputText?: string }
+  | { kind: 'notice'; text?: string };
+
+/** Project a subagent's transcript turns into the detail panel's body fields.
+ *  Returns `undefined` fields when there is nothing to show, so an empty seed
+ *  is a no-op for the reducer. */
+export function projectSubagentTranscript(
+  items: readonly SubagentTranscriptTurn[],
+): { text?: string; outputLines?: string[] } {
+  let text = '';
+  const outputLines: string[] = [];
+  for (const turn of items) {
+    if (turn.kind !== 'turn') continue;
+    for (const step of turn.steps) {
+      for (const frame of step.frames) {
+        if (frame.kind === 'text') {
+          if (frame.role === 'assistant' && frame.text.length > 0) text += frame.text;
+        } else if (frame.kind === 'tool' && frame.name.length > 0) {
+          const summary = toolInputSummary(frame);
+          outputLines.push(summary ? `Calling ${toolLabel(frame.name)}: ${summary}` : `Calling ${toolLabel(frame.name)}`);
+        }
+      }
+    }
+  }
+  return {
+    text: text.length > 0 ? text : undefined,
+    outputLines: outputLines.length > 0 ? outputLines : undefined,
+  };
+}
+
+/** Concise summary of a tool frame's input for the seeded "Calling …" line,
+ *  mirroring the live projector's `toolArgSummary` format. */
+function toolInputSummary(frame: SubagentTranscriptFrame & { kind: 'tool' }): string {
+  const raw = frame.inputText ?? (frame.input !== undefined ? JSON.stringify(frame.input) : '');
+  if (raw.length === 0) return '';
+  return toolSummary(frame.name, raw);
 }
 
 // ---------------------------------------------------------------------------

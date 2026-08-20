@@ -75,11 +75,12 @@ import type {
   KimiEventConnection,
   KimiEventMeta,
   ThinkingLevel,
+  TranscriptPage,
 } from '../api/types';
 import { createInitialState, reduceAppEvent, type CompactionStatus, type KimiClientState } from '../api/daemon/eventReducer';
 import { isPlaceholderSessionUsage, toAppEvent } from '../api/daemon/mappers';
 
-import { messagesToTurns } from './messagesToTurns';
+import { messagesToTurns, projectSubagentTranscript } from './messagesToTurns';
 import { reconcileTurns } from './reconcileTurns';
 import { latestTodos } from './latestTodos';
 import { buildSwarmGroups, countSwarmMembers, swarmMembersByToolCall } from './swarmGroups';
@@ -2942,6 +2943,36 @@ function onApprovalRequested(sid: string, approval: AppApprovalRequest): void {
   sound.maybePlayApprovalSound();
 }
 
+/**
+ * Seed an empty subagent detail-panel body from the subagent's server
+ * transcript. Called when a panel opens for a task whose live progress frames
+ * were missed (page reload / resync). Fetches the transcript for the task's
+ * wire agent id — `task.agentId`, falling back to `task.id` (live-spawn /
+ * roster rows carry the agent id as their id) — projects it into the panel's
+ * two body fields (`text` + tool `outputLines`), and dispatches a `taskSeeded`
+ * event keyed on the web `task.id` the reducer matches. The reducer only
+ * applies the seed when the body is still empty, so late live frames are never
+ * clobbered or duplicated. Best-effort: a failed transcript read leaves the
+ * body alone and is surfaced as a dev-console warning, never a UI error.
+ */
+async function seedTaskBody(sessionId: string, task: AppTask): Promise<void> {
+  const agentId = task.agentId ?? task.id;
+  let page: TranscriptPage;
+  try {
+    page = await getKimiWebApi().getAgentTranscript(sessionId, agentId);
+  } catch (err) {
+    console.warn(`[kimi-web] subagent transcript seed failed for ${agentId}`, err);
+    return;
+  }
+  const body = projectSubagentTranscript(page.items);
+  if (body.text === undefined && (body.outputLines?.length ?? 0) === 0) return;
+  applyEvent(
+    { type: 'taskSeeded', sessionId, taskId: task.id, text: body.text, outputLines: body.outputLines },
+    sessionId,
+    rawState.lastSeqBySession[sessionId] ?? 0,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Composable return
 // ---------------------------------------------------------------------------
@@ -3102,6 +3133,7 @@ export function useKimiWebClient() {
     pendingQuestionActions: workspaceState.pendingQuestionActions,
     pendingApprovalActions: workspaceState.pendingApprovalActions,
     cancelTask: workspaceState.cancelTask,
+    seedTaskBody,
 
     // New Phase 1 actions
     setPermission: workspaceState.setPermission,

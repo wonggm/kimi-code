@@ -345,6 +345,12 @@ export interface AppTask {
   parentToolCallId?: string;
   suspendedReason?: string;
   swarmIndex?: number;
+  /** The wire agent id this subagent is keyed by on the server's transcript
+   *  store / wire event stream (e.g. `agent-0`). Distinct from `id` when REST
+   *  `/tasks` keyed the row by its background-task id; absent on live-spawn /
+   *  snapshot-roster rows, where the row `id` IS the agent id. The detail-panel
+   *  transcript seed reads this to fetch the right agent. */
+  agentId?: string;
   /** True only for subagents detached into the background task store. Drives
    *  the dock: the dock lists background subagents, while foreground subagents
    *  render inline in the message flow as the `Agent` tool card. */
@@ -378,6 +384,41 @@ export interface AppPlanEntry {
   path?: string;
   options?: { label: string; description?: string }[];
   review?: AppPlanReview;
+}
+
+// ---------------------------------------------------------------------------
+// Transcript (per-agent, turn-granular; the web reads it only to seed a
+// subagent detail panel whose live progress frames were missed)
+// ---------------------------------------------------------------------------
+
+export type TranscriptFrame =
+  | { kind: 'text'; role: 'assistant' | 'user'; text: string }
+  | { kind: 'thinking'; text: string }
+  | { kind: 'tool'; toolCallId: string; name: string; input?: unknown; inputText?: string }
+  | { kind: 'notice'; text?: string };
+
+export interface TranscriptStep {
+  kind: 'step';
+  stepId: string;
+  frames: TranscriptFrame[];
+}
+
+export interface TranscriptTurn {
+  kind: 'turn';
+  turnId: string;
+  ordinal: number;
+  state: string;
+  prompt?: string;
+  steps: TranscriptStep[];
+  startedAt?: string;
+  endedAt?: string;
+}
+
+export interface TranscriptPage {
+  agentId: string;
+  items: TranscriptTurn[];
+  hasMore: boolean;
+  seq?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -501,6 +542,11 @@ export type AppEvent =
       kind?: 'line' | 'text';
     }
   | { type: 'taskCompleted'; sessionId: string; taskId: string; status: AppTaskStatus; outputPreview?: string; outputBytes?: number }
+  /** Seed an empty subagent task body from its server transcript (used when the
+   *  live progress frames that normally fill it were missed — page reload,
+   *  resync). The reducer only applies the seed when the body is still empty,
+   *  so it never clobbers or duplicates content already streaming live. */
+  | { type: 'taskSeeded'; sessionId: string; taskId: string; text?: string; outputLines?: string[] }
   | { type: 'retryProgressUpdated'; sessionId: string; attempt: number; maxAttempts: number }
   | { type: 'conversationFailureUpdated'; sessionId: string; message?: string; promptId?: string }
   // Prompt-level lifecycle (distinct from turn-level): a prompt that never
@@ -821,6 +867,10 @@ export interface KimiWebApi {
   /** Plan history of an agent's ExitPlanMode calls — `GET /sessions/{id}/transcript/plan`.
    *  Timeline order; omit `toolCallId` to list every recoverable plan. */
   getSessionPlans(sessionId: string, input?: { agentId?: string; toolCallId?: string }): Promise<{ agentId: string; plans: AppPlanEntry[] }>;
+  /** Turn-granular transcript of one agent (main or subagent) in timeline order —
+   *  `GET /sessions/{id}/transcript`. Used to seed a subagent detail panel whose
+   *  live progress was missed. */
+  getAgentTranscript(sessionId: string, agentId: string): Promise<TranscriptPage>;
   /** Export the session archive, optionally including the bounded Web JSONL log. */
   exportSession(sessionId: string, webLog?: string): Promise<{ blob: Blob; fileName: string }>;
   submitPrompt(sessionId: string, input: PromptSubmission): Promise<PromptSubmitResult>;

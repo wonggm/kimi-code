@@ -170,6 +170,30 @@ export function useDetailPanel({
     if (detailTarget.value === 'agent') detailTarget.value = null;
   }
 
+  // Seed an empty-bodied subagent panel from its server transcript. A
+  // subagent's body is normally filled ONLY by live progress frames; after a
+  // page reload / resync those were missed, so the panel would open with an
+  // empty body even though the server holds the full transcript. On open, fetch
+  // + seed once per panel when the body is still empty (the reducer no-ops a
+  // seed that races live frames that already populated it).
+  const seededSubagentIds = new Set<string>();
+  watch(agentTarget, (target) => {
+    if (!target) {
+      seededSubagentIds.clear();
+      return;
+    }
+    const id = target.subagentId;
+    if (seededSubagentIds.has(id)) return;
+    seededSubagentIds.add(id);
+    const task = client.activeAppTasks.value.find((t) => t.id === id);
+    const hasBody =
+      task !== undefined && ((task.text?.length ?? 0) > 0 || (task.outputLines?.length ?? 0) > 0);
+    if (hasBody) return;
+    if (!task) return;
+    const sid = client.activeSessionId.value;
+    if (sid) void client.seedTaskBody(sid, task);
+  }, { immediate: true });
+
   // ---------------------------------------------------------------------------
   // Edit/Write tool-call diff preview
   // ---------------------------------------------------------------------------
