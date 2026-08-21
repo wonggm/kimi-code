@@ -576,3 +576,112 @@ describe('ConfigState.provider applies global KIMI_MODEL_* request config', () =
     expect(capturedOptions?.thinking?.effort).toBe('max');
   });
 });
+
+describe('ConfigState per-profile subagent compaction overrides', () => {
+  let ctx: TestAgentContext | undefined;
+  let profile: IAgentProfileService;
+  let kimiConfig: TestKimiConfig;
+
+  beforeEach(() => {
+    kimiConfig = {
+      providers: { kimi: { type: 'kimi', apiKey: 'test-key', baseUrl: 'https://api.example.test/v1' } },
+      models: {
+        'kimi-code': {
+          provider: 'kimi',
+          model: 'kimi-code',
+          maxContextSize: 128_000,
+          capabilities: ['thinking'],
+        },
+      },
+      loopControl: { compactionTriggerRatio: 0.6, reservedContextSize: 5000 },
+      subagentCompaction: {
+        explore: { triggerRatio: 0.7 },
+        code_review_bot: { reservedContextSize: 12000 },
+      },
+    };
+  });
+
+  afterEach(async () => {
+    try {
+      await ctx?.expectResumeMatches();
+    } finally {
+      await ctx?.dispose();
+      ctx = undefined;
+    }
+  });
+
+  function createAgent(): void {
+    ctx = createTestAgent(
+      configServices(() => kimiConfig),
+      llmGenerateServices(() =>
+        Promise.resolve({
+          id: 'response-1',
+          message: { role: 'assistant', content: [], toolCalls: [] },
+          usage: emptyUsage(),
+          finishReason: 'completed',
+          rawFinishReason: 'stop',
+        }),
+      ),
+    );
+    profile = ctx.get(IAgentProfileService);
+  }
+
+  it('prefers the per-profile entry per field and falls back to loop_control field-wise', () => {
+    createAgent();
+    profile.update({ modelAlias: 'kimi-code', profileName: 'explore' });
+
+    const explore = profile.resolveModelContext();
+    expect(explore.compactionTriggerRatio).toBe(0.7);
+    expect(explore.reservedContextSize).toBe(5000);
+
+    profile.update({ modelAlias: 'kimi-code', profileName: 'code_review_bot' });
+
+    const coder = profile.resolveModelContext();
+    expect(coder.compactionTriggerRatio).toBe(0.6);
+    expect(coder.reservedContextSize).toBe(12000);
+  });
+
+  it('falls back to loop_control entirely when the profile has no entry', () => {
+    createAgent();
+    profile.update({ modelAlias: 'kimi-code', profileName: 'unlisted' });
+
+    expect(profile.resolveModelContext()).toMatchObject({
+      compactionTriggerRatio: 0.6,
+      reservedContextSize: 5000,
+    });
+  });
+
+  it('falls back to loop_control when no profile is bound', () => {
+    createAgent();
+    profile.update({ modelAlias: 'kimi-code' });
+
+    expect(profile.resolveModelContext()).toMatchObject({
+      compactionTriggerRatio: 0.6,
+      reservedContextSize: 5000,
+    });
+  });
+
+  it('applies the entry when loop_control is absent and leaves missing fields undefined', () => {
+    kimiConfig = {
+      providers: { kimi: { type: 'kimi', apiKey: 'test-key', baseUrl: 'https://api.example.test/v1' } },
+      models: {
+        'kimi-code': {
+          provider: 'kimi',
+          model: 'kimi-code',
+          maxContextSize: 128_000,
+          capabilities: ['thinking'],
+        },
+      },
+      subagentCompaction: {
+        explore: { triggerRatio: 0.55 },
+      },
+    };
+    createAgent();
+    profile.update({ modelAlias: 'kimi-code', profileName: 'explore' });
+
+    expect(profile.resolveModelContext()).toMatchObject({
+      compactionTriggerRatio: 0.55,
+      reservedContextSize: undefined,
+    });
+  });
+});

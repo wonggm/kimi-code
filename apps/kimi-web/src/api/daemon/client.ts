@@ -1416,6 +1416,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
       secondaryModel: 'secondary_model',
       subagentModels: 'subagent_models',
       subagentEfforts: 'subagent_efforts',
+      subagentCompaction: 'subagent_compaction',
       thinking: 'thinking',
       planMode: 'plan_mode',
       yolo: 'yolo',

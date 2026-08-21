@@ -25,7 +25,12 @@ import { ErrorCodes, Error2 } from "#/errors";
 import { IAgentIdentity } from '#/app/agentIdentity/agentIdentity';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { IConfigService } from '#/app/config/config';
-import type { LoopControl } from '#/agent/loop/configSection';
+import {
+  LOOP_CONTROL_SECTION,
+  SUBAGENT_COMPACTION_SECTION,
+  type LoopControl,
+  type SubagentCompactionConfig,
+} from '#/agent/loop/configSection';
 import { IAgentRuntimeService } from '#/agent/runtimeBinding/agentRuntime';
 import { RuntimeWorkspaceView } from '#/runtime/runtimeWorkspaceView';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
@@ -441,15 +446,22 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
   resolveModelContext(): ProfileModelContext {
     const modelAlias = this.model;
     const model = this.modelCatalog.get(modelAlias);
-    const loopControl = this.config.get<LoopControl>('loopControl');
+    const loopControl = this.config.get<LoopControl>(LOOP_CONTROL_SECTION);
+    const profileName = this.profileName;
+    const profileEntry =
+      profileName === undefined
+        ? undefined
+        : this.config.get<SubagentCompactionConfig | undefined>(SUBAGENT_COMPACTION_SECTION)?.[
+            profileName
+          ];
     return {
       modelAlias,
       modelCapabilities: model.capabilities,
       maxOutputSize: model.maxOutputSize,
       alwaysThinking: model.alwaysThinking || undefined,
       thinkingLevel: this.resolveThinkingState(model).effective,
-      reservedContextSize: loopControl?.reservedContextSize,
-      compactionTriggerRatio: loopControl?.compactionTriggerRatio,
+      reservedContextSize: profileEntry?.reservedContextSize ?? loopControl?.reservedContextSize,
+      compactionTriggerRatio: profileEntry?.triggerRatio ?? loopControl?.compactionTriggerRatio,
     };
   }
 

@@ -58,7 +58,9 @@ import {
   LOOP_MAX_ATTEMPTS_PER_STEP_ENV,
   LOOP_MAX_RETRIES_PER_STEP_ENV,
   LOOP_MAX_STEPS_PER_TURN_ENV,
+  SUBAGENT_COMPACTION_SECTION,
   type LoopControl,
+  type SubagentCompactionConfig,
 } from '#/agent/loop/configSection';
 import {
   DEFAULT_MODEL_SECTION,
@@ -2405,6 +2407,122 @@ describe('subagent_models config section', () => {
       bound: 'provider/main',
     });
     expect(detectSubagentModelTableMismatch(config, 'coder', 'provider/main')).toBeUndefined();
+
+    disposables.dispose();
+  });
+});
+
+describe('subagent_compaction config section', () => {
+  async function createConfig(env: Record<string, string>, toml?: string) {
+    const disposables = new DisposableStore();
+    const ix = disposables.add(new TestInstantiationService());
+    const storage = new InMemoryStorageService();
+    if (toml !== undefined) {
+      await storage.write('', 'config.toml', new TextEncoder().encode(toml));
+    }
+    ix.stub(ILogService, stubLog());
+    ix.stub(IBootstrapService, stubBootstrap('/tmp/kimi-cfg', env));
+    ix.stub(IFileSystemStorageService, storage);
+    ix.set(IAtomicTomlDocumentStore, new SyncDescriptor(TomlAtomicDocumentStore));
+    ix.set(IConfigRegistry, new SyncDescriptor(ConfigRegistry));
+    ix.set(IConfigService, new SyncDescriptor(ConfigService));
+    const config = ix.get(IConfigService);
+    await config.ready;
+    return { config, disposables, storage };
+  }
+
+  it('reads on-disk [subagent_compaction.explore] with profile keys verbatim and camelCase fields', async () => {
+    const { config, disposables } = await createConfig(
+      {},
+      '[subagent_compaction.explore]\ntrigger_ratio = 0.7\nreserved_context_size = 30000\n\n[subagent_compaction.code_review_bot]\ntrigger_ratio = 0.9\n',
+    );
+
+    expect(config.get<SubagentCompactionConfig>(SUBAGENT_COMPACTION_SECTION)).toEqual({
+      explore: { triggerRatio: 0.7, reservedContextSize: 30000 },
+      code_review_bot: { triggerRatio: 0.9 },
+    });
+
+    disposables.dispose();
+  });
+
+  it('set() round-trips camelCase entries into snake_case TOML under [subagent_compaction.<profile>]', async () => {
+    const { config, disposables, storage } = await createConfig({});
+
+    await config.set(SUBAGENT_COMPACTION_SECTION, {
+      explore: { triggerRatio: 0.7, reservedContextSize: 30000 },
+    });
+
+    expect(config.get<SubagentCompactionConfig>(SUBAGENT_COMPACTION_SECTION)).toEqual({
+      explore: { triggerRatio: 0.7, reservedContextSize: 30000 },
+    });
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('[subagent_compaction.explore]');
+    expect(onDisk).toContain('trigger_ratio = 0.7');
+    expect(onDisk).toContain('reserved_context_size = 30000');
+
+    disposables.dispose();
+  });
+
+  it('set() keeps underscore-containing profile names verbatim and merges per-profile entries', async () => {
+    const { config, disposables, storage } = await createConfig({});
+
+    await config.set(SUBAGENT_COMPACTION_SECTION, {
+      code_review_bot: { triggerRatio: 0.8 },
+    });
+    await config.set(SUBAGENT_COMPACTION_SECTION, {
+      code_review_bot: { reservedContextSize: 12000 },
+      explore: { triggerRatio: 0.6 },
+    });
+
+    expect(config.get<SubagentCompactionConfig>(SUBAGENT_COMPACTION_SECTION)).toEqual({
+      code_review_bot: { triggerRatio: 0.8, reservedContextSize: 12000 },
+      explore: { triggerRatio: 0.6 },
+    });
+    const onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('[subagent_compaction.code_review_bot]');
+    expect(onDisk).not.toContain('codeReviewBot');
+    expect(onDisk).toContain('reserved_context_size = 12000');
+
+    disposables.dispose();
+  });
+
+  it('replace() drops unlisted profiles and an empty table clears the section', async () => {
+    const { config, disposables, storage } = await createConfig({});
+
+    await config.set(SUBAGENT_COMPACTION_SECTION, {
+      explore: { triggerRatio: 0.7 },
+      code_review_bot: { triggerRatio: 0.9 },
+    });
+    await config.replace(SUBAGENT_COMPACTION_SECTION, {
+      explore: { triggerRatio: 0.5, reservedContextSize: 4000 },
+    });
+
+    let onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).toContain('trigger_ratio = 0.5');
+    expect(onDisk).toContain('reserved_context_size = 4000');
+    expect(onDisk).not.toContain('code_review_bot');
+
+    await config.replace(SUBAGENT_COMPACTION_SECTION, {});
+    onDisk = new TextDecoder().decode(await storage.read('', 'config.toml'));
+    expect(onDisk).not.toContain('subagent_compaction');
+    expect(onDisk).not.toContain('trigger_ratio');
+
+    disposables.dispose();
+  });
+
+  it('matches the LoopControlSchema bounds per entry field', async () => {
+    const { config, disposables } = await createConfig({});
+
+    await expect(
+      config.set(SUBAGENT_COMPACTION_SECTION, {
+        explore: { triggerRatio: 0.4 },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      config.set(SUBAGENT_COMPACTION_SECTION, {
+        explore: { reservedContextSize: -1 },
+      }),
+    ).rejects.toThrow();
 
     disposables.dispose();
   });
