@@ -83,6 +83,19 @@ describe('subagentProgressText', () => {
     expect(text!.endsWith('…')).toBe(true);
   });
 
+  it('summarizes a tool.call.delta into a Calling line from its argument prefix', () => {
+    const text = subagentProgressText('tool.call.delta', {
+      name: 'Run',
+      argumentsPart: '{"command":"ls -la /home/m"}',
+    });
+    expect(text).toContain('Calling Run');
+    expect(text).toContain('ls -la');
+  });
+
+  it('falls back to a bare Calling line when tool.call.delta has no arguments yet', () => {
+    expect(subagentProgressText('tool.call.delta', { name: 'Run' })).toBe('Calling Run');
+  });
+
   it('returns null for unknown event types', () => {
     expect(subagentProgressText('turn.delta', {})).toBeNull();
   });
@@ -160,6 +173,61 @@ describe('subagent preview end-to-end (projector + reducer)', () => {
     const task = state.tasksBySession['s1']?.find((t) => t.id === 'agent-1');
     expect(task!.text).toBeUndefined();
     expect(task!.outputLines ?? []).toEqual([]);
+  });
+
+  it('coalesces tool.call.delta: one Calling line per tool call id despite many delta frames', () => {
+    const state = projectThroughReducer([
+      {
+        type: 'subagent.spawned',
+        payload: {
+          agentId: 'main', sessionId: 's1', subagentId: 'agent-1', subagentName: 'explore',
+          parentToolCallId: 'tc_1', runInBackground: false,
+        },
+      },
+      { type: 'tool.call.delta', payload: { agentId: 'agent-1', sessionId: 's1', toolCallId: 'call_1', name: 'Run', argumentsPart: '{"command":"ls' } },
+      { type: 'tool.call.delta', payload: { agentId: 'agent-1', sessionId: 's1', toolCallId: 'call_1', name: 'Run', argumentsPart: ' -la"}' } },
+      { type: 'tool.call.delta', payload: { agentId: 'agent-1', sessionId: 's1', toolCallId: 'call_1', name: 'Run', argumentsPart: '{"ignored":true}' } },
+      { type: 'tool.call.delta', payload: { agentId: 'agent-1', sessionId: 's1', toolCallId: 'call_2', name: 'Search', argumentsPart: '{"query":"TODO"}' } },
+    ]);
+
+    const task = state.tasksBySession['s1']?.find((t) => t.id === 'agent-1');
+    expect(task!.outputLines ?? []).toHaveLength(2);
+    expect(task!.outputLines![0]).toContain('Calling Run');
+    expect(task!.outputLines![1]).toContain('Calling Search');
+  });
+
+  it('streams a subagent thinking.delta as text-kind progress so a thinking-only subagent shows live output', () => {
+    const state = projectThroughReducer([
+      {
+        type: 'subagent.spawned',
+        payload: {
+          agentId: 'main', sessionId: 's1', subagentId: 'agent-1', subagentName: 'explore',
+          parentToolCallId: 'tc_1', runInBackground: false,
+        },
+      },
+      { type: 'thinking.delta', payload: { agentId: 'agent-1', sessionId: 's1', delta: 'I will ' } },
+      { type: 'thinking.delta', payload: { agentId: 'agent-1', sessionId: 's1', delta: 'list first.' } },
+    ]);
+
+    const task = state.tasksBySession['s1']?.find((t) => t.id === 'agent-1');
+    expect(task!.text).toBe('I will list first.');
+  });
+
+  it('appends both thinking and assistant deltas into the live text without duplication', () => {
+    const state = projectThroughReducer([
+      {
+        type: 'subagent.spawned',
+        payload: {
+          agentId: 'main', sessionId: 's1', subagentId: 'agent-1', subagentName: 'explore',
+          parentToolCallId: 'tc_1', runInBackground: false,
+        },
+      },
+      { type: 'thinking.delta', payload: { agentId: 'agent-1', sessionId: 's1', delta: 'Think.' } },
+      { type: 'assistant.delta', payload: { agentId: 'agent-1', sessionId: 's1', delta: 'Out.' } },
+    ]);
+
+    const task = state.tasksBySession['s1']?.find((t) => t.id === 'agent-1');
+    expect(task!.text).toBe('Think.Out.');
   });
 });
 
