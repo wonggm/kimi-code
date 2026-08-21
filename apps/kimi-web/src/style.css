@@ -472,9 +472,9 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --z-base: 0;
   --z-sticky: 100;
   --z-dropdown: 200;
-  --z-tooltip: 250;
   --z-overlay: 300;
   --z-modal: 400;
+  --z-tooltip: 500;
   --z-toast: 600;
   --z-max: 9999;
 
@@ -937,10 +937,17 @@ html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-ic
    shape and a hairline-free edge (the refraction rim stays via the glass
    box-shadow insets, so the chips read as borderless rounded glass), plus
    keep the glass background on hover / active where the component's own
-   scoped rules would otherwise paint an opaque fill. */
+   scoped rules would otherwise paint an opaque fill. The external drop
+   shadow is dropped: the chips sit embedded in the shared frost slab, and
+   their shadow-sm paints onto it as a dark underline under each chip. */
 html[data-liquid-glass="on"] .dock-workbar button.ui-pill {
   border-radius: 999px;
   border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent),
+    inset 1px 0 0 color-mix(in srgb, #fff 14%, transparent),
+    inset -1px 0 0 color-mix(in srgb, #000 5%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 10%, transparent);
 }
 html[data-liquid-glass="on"] .dock-workbar button.ui-pill:hover:not(:disabled),
 html[data-liquid-glass="on"] .dock-workbar button.ui-pill.is-active {
