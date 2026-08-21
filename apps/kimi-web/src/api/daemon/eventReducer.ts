@@ -820,12 +820,35 @@ export function reduceAppEvent(
       const sid = event.sessionId;
       const list = next.tasksBySession[sid] ?? [];
       next.tasksBySession[sid] = list.map((t) => {
-        if (t.id !== event.taskId) return t;
+        // Match the row by its web id OR its wire agent id OR its background
+        // task id: the completion may be keyed by any of the three depending
+        // on which stream emitted it (live subagent frames key the wire agent
+        // id, task-store terminations key the background-task id) while the
+        // row was created under a different one. An unmatched row would stay
+        // 'running' in the dock forever.
+        if (
+          t.id !== event.taskId &&
+          t.agentId !== event.taskId &&
+          t.backgroundTaskId !== event.taskId
+        ) {
+          return t;
+        }
         return {
           ...t,
           status: event.status,
-          outputPreview: event.outputPreview,
-          outputBytes: event.outputBytes,
+          // Sync the phase too — the detail panel prefers it over status
+          // (toAgentMember), so a stale Working phase kept the opened panel
+          // showing a running agent after completion. The phase enum has no
+          // 'cancelled'; cancelled rows map to 'failed' like keepLiveSubagents.
+          subagentPhase:
+            t.kind === 'subagent'
+              ? event.status === 'completed'
+                ? 'completed'
+                : 'failed'
+              : t.subagentPhase,
+          completedAt: t.completedAt ?? new Date().toISOString(),
+          outputPreview: event.outputPreview ?? t.outputPreview,
+          outputBytes: event.outputBytes ?? t.outputBytes,
         };
       });
       break;
