@@ -779,10 +779,16 @@ export function reduceAppEvent(
       const sid = event.sessionId;
       const list = next.tasksBySession[sid] ?? [];
       next.tasksBySession[sid] = list.map((t) => {
-        if (t.id !== event.taskId) return t;
-        // Subagent streamed output (assistant.delta) concatenates into a single
-        // growing text block rather than fragmenting each delta into its own
-        // line — the detail panel renders it like a thinking block.
+        // Match the row by its web id OR its wire agent id: the live projector
+        // writes taskProgress keyed on the wire agent id (e.g. `agent-1`), while
+        // a REST-task row for the same subagent can carry a different id but the
+        // same agentId. Without the agentId match, live text lands only on the
+        // wire-id row and the panel (which can resolve to the REST row) stays
+        // empty until a reload re-seeds it.
+        if (t.id !== event.taskId && t.agentId !== event.taskId) return t;
+        // Subagent streamed output (assistant.delta / thinking.delta) concatenates
+        // into a single growing text block rather than fragmenting each delta into
+        // its own line — the detail panel renders it like a thinking block.
         if (t.kind === 'subagent' && event.kind === 'text') {
           return { ...t, text: (t.text ?? '') + event.outputChunk };
         }

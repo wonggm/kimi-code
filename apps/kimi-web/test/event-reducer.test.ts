@@ -429,6 +429,28 @@ describe('reduceAppEvent taskProgress', () => {
     expect(task?.outputLines ?? []).toHaveLength(0);
   });
 
+  it('applies live taskProgress to a REST-task row keyed by a different id via its wire agentId', () => {
+    // The live projector writes taskProgress under the wire agent id (`agent-1`),
+    // while the 1s task poller holds the same subagent under a separate REST task
+    // id (`rest-9`) whose `agentId` equals the wire id. Live text must land on the
+    // row the panel reads (resolveSubagentId can return either), so match by
+    // `id` OR `agentId`.
+    const restRow: AppTask = {
+      ...makeSubagentTask('rest-9', 's1'),
+      agentId: 'agent-1',
+      status: 'running',
+      subagentPhase: 'working',
+    };
+    const state = { ...createInitialState(), tasksBySession: { 's1': [restRow] } };
+    const next = reduceAppEvent(
+      state,
+      { type: 'taskProgress', sessionId: 's1', taskId: 'agent-1', outputChunk: 'Hi', stream: 'stdout', kind: 'text' },
+      { sessionId: 's1', seq: 1 },
+    );
+    const row = next.tasksBySession['s1']?.find((t) => t.id === 'rest-9');
+    expect(row?.text).toBe('Hi');
+  });
+
   it('preserves accumulated text across a taskCreated replacement', () => {
     const state = {
       ...createInitialState(),
@@ -631,7 +653,6 @@ describe('reduceAppEvent taskCompleted', () => {
     expect(next.tasksBySession['s1']?.[0]?.status).toBe('running');
   });
 });
-
 
 describe('reduceAppEvent sessions reference stability', () => {
   // The sidebar computeds (sessionsForView / workspaceGroups / mergedWorkspaces)
