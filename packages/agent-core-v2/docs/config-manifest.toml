@@ -33,6 +33,7 @@
 #   services                 src/app/auth/configSection.ts
 #   subagent                 src/session/subagent/configSection.ts
 #   swarm                    src/features/swarm/configSection.ts
+#   subagentCompaction       src/agent/loop/configSection.ts
 #   subagentEfforts          src/session/subagent/configSection.ts
 #   subagentModels           src/session/subagent/configSection.ts
 #   task                     src/agent/task/configSection.ts
@@ -435,6 +436,20 @@ timeout_ms = 7200000
 
 [swarm]
 timeout_ms = 7200000
+
+# ##########################################################################
+# subagentCompaction (config.toml: subagent_compaction)
+#   owner: src/agent/loop/configSection.ts
+#   scope: core
+#   hooks: custom fromToml · custom toToml
+# ##########################################################################
+
+[subagent_compaction]
+
+# one [subagent_compaction."<name>"] table per entry:
+# [subagent_compaction."<name>"]
+  # trigger_ratio: number
+  # reserved_context_size: integer
 
 # ##########################################################################
 # subagentEfforts (config.toml: subagent_efforts)

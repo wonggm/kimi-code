@@ -194,6 +194,68 @@ describe('server-v2 /api/v1/config', () => {
     expect(toml).not.toContain('explore = "high"');
   });
 
+  it('POST subagent_compaction persists per-profile overrides and echoes them on GET', async () => {
+    await boot();
+    const cfg = await patchConfig({
+      subagent_compaction: {
+        explore: { trigger_ratio: 0.7, reserved_context_size: 30000 },
+      },
+    });
+    expect(cfg.subagent_compaction).toEqual({
+      explore: { triggerRatio: 0.7, reservedContextSize: 30000 },
+    });
+    const after = await getConfig();
+    expect(after.subagent_compaction).toEqual({
+      explore: { triggerRatio: 0.7, reservedContextSize: 30000 },
+    });
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).toContain('[subagent_compaction.explore]');
+    expect(toml).toContain('trigger_ratio = 0.7');
+    expect(toml).toContain('reserved_context_size = 30000');
+  });
+
+  it('POST subagent_compaction preserves profile keys containing underscores verbatim', async () => {
+    await boot();
+    await patchConfig({
+      subagent_compaction: { code_review_bot: { trigger_ratio: 0.8 } },
+    });
+
+    const after = await getConfig();
+    expect(after.subagent_compaction).toEqual({ code_review_bot: { triggerRatio: 0.8 } });
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).not.toContain('codeReviewBot');
+  });
+
+  it('POST subagent_compaction with a profile removed un-overrides it (replace semantics)', async () => {
+    await boot();
+    await patchConfig({
+      subagent_compaction: {
+        explore: { trigger_ratio: 0.7 },
+        code_review_bot: { reserved_context_size: 12000 },
+      },
+    });
+    const after = await patchConfig({
+      subagent_compaction: { explore: { trigger_ratio: 0.5 } },
+    });
+    expect(after.subagent_compaction).toEqual({ explore: { triggerRatio: 0.5 } });
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).toContain('trigger_ratio = 0.5');
+    expect(toml).not.toContain('code_review_bot');
+    expect(toml).not.toContain('reserved_context_size = 12000');
+  });
+
+  it('POST subagent_compaction with an empty table clears all per-profile overrides', async () => {
+    await boot();
+    await patchConfig({ subagent_compaction: { explore: { trigger_ratio: 0.7 } } });
+
+    const after = await patchConfig({ subagent_compaction: {} });
+    expect(after.subagent_compaction).toEqual({});
+
+    const toml = await readFile(join(home as string, 'config.toml'), 'utf-8');
+    expect(toml).not.toContain('subagent_compaction');
+    expect(toml).not.toContain('trigger_ratio');
+  });
+
   it('GET hides the synthesized __secondary__ derived entry from models', async () => {
     await boot('[models.k2-test]\nprovider = "example"\nmodel = "example-model"\n');
     const cfg = await patchConfig({ secondary_model: { model: 'k2-test', default_effort: 'high' } });
