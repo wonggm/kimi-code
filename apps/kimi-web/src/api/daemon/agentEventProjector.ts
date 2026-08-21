@@ -129,6 +129,12 @@ interface SessionState {
   // spawned metadata here so later updates can replace the full AppTask.
   subagentMeta: Map<string, AppTask>;
 
+  // Tool call ids already surfaced as a "Calling …" progress line for each
+  // subagent. The engine streams a subagent's tool call as many `tool.call.delta`
+  // frames (arguments arrive in chunks), so we must emit the line once per call
+  // rather than per delta — otherwise one call floods outputLines.
+  subagentToolLines: Set<string>;
+
   // Bubble cleared by turn.step.retrying, to be reused by the retried
   // step.started (same turn) instead of stacking a new bubble.
   retryReuseMsgId: string | undefined;
@@ -153,6 +159,7 @@ function createSessionState(): SessionState {
     model: '',
     messages: [],
     subagentMeta: new Map(),
+    subagentToolLines: new Set(),
     retryReuseMsgId: undefined,
   };
 }
@@ -231,6 +238,16 @@ export function subagentProgressText(rawType: string, payload: Record<string, un
     const name = stringField(payload, 'name') ?? stringField(payload, 'toolName') ?? 'tool';
     const label = toolLabel(cleanToolName(name));
     const summary = toolArgSummary(name, payload['args'] ?? payload['input']);
+    return summary ? `Calling ${label}: ${summary}` : `Calling ${label}`;
+  }
+  // The current engine streams a subagent's tool call as `tool.call.delta`
+  // frames (the main-agent path sees `tool.call.started` instead). Surface one
+  // "Calling …" line per call — `projectSubagentProgress` coalesces repeats for
+  // the same toolCallId — using the call name and the streamed argument prefix.
+  if (rawType === 'tool.call.delta') {
+    const name = stringField(payload, 'name') ?? stringField(payload, 'toolName') ?? 'tool';
+    const label = toolLabel(cleanToolName(name));
+    const summary = toolArgSummary(name, stringField(payload, 'argumentsPart') ?? '');
     return summary ? `Calling ${label}: ${summary}` : `Calling ${label}`;
   }
   if (rawType === 'tool.progress') {
@@ -315,8 +332,43 @@ function projectSubagentProgress(
     return out;
   }
 
+  // The subagent's thinking output: forward each delta as `text`-kind progress
+  // so a thinking-heavy (or thinking-only) subagent still shows live output in
+  // the detail panel, mirroring how assistant deltas grow `AppTask.text`.
+  if (rawType === 'thinking.delta') {
+    const delta = stringField(payload, 'delta');
+    if (!delta) return [];
+    const previous = state.subagentMeta.get(subagentId);
+    const task = patchSubagent(state, sessionId, subagentId, {
+      status: 'running',
+      subagentPhase: 'working',
+      startedAt: previous?.startedAt ?? new Date().toISOString(),
+    });
+    const out: AppEvent[] = [];
+    if (task) out.push({ type: 'taskCreated', sessionId, task });
+    out.push({
+      type: 'taskProgress',
+      sessionId,
+      taskId: subagentId,
+      outputChunk: delta,
+      stream: 'stdout',
+      kind: 'text',
+    });
+    return out;
+  }
+
   const text = subagentProgressText(rawType, payload);
   if (text === null || text.length === 0) return [];
+  // Coalesce `tool.call.delta`: the engine streams one call as many deltas
+  // (arguments arrive in chunks), so surface a single "Calling …" line per
+  // tool call id instead of one per delta.
+  if (rawType === 'tool.call.delta') {
+    const toolCallId = stringField(payload, 'toolCallId');
+    if (!toolCallId) return [];
+    const key = `${subagentId}::${toolCallId}`;
+    if (state.subagentToolLines.has(key)) return [];
+    state.subagentToolLines.add(key);
+  }
   const previous = state.subagentMeta.get(subagentId);
   const task = patchSubagent(state, sessionId, subagentId, {
     status: 'running',
