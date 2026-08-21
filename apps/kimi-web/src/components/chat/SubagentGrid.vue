@@ -96,7 +96,11 @@ function displayModel(task: TaskItem): string | undefined {
             class="sg-stop"
             @click.stop="emit('cancel', task.id)"
           >{{ t('tasks.stop') }}</button>
-          <span class="sg-open">{{ t('tasks.openDetail') }}</span>
+          <button
+            type="button"
+            class="sg-open"
+            @click.stop="emit('open', task.id)"
+          >{{ t('tasks.openDetail') }}</button>
         </div>
       </div>
     </div>
@@ -198,9 +202,15 @@ function displayModel(task: TaskItem): string | undefined {
   gap: var(--space-2);
 }
 .sg-open {
+  background: none;
+  border: none;
+  padding: 0;
   font-size: var(--text-sm);
   color: var(--color-accent);
+  cursor: pointer;
+  font-family: var(--font-ui);
 }
+.sg-open:hover { text-decoration: underline; }
 .sg-stop {
   background: none;
   border: 1px solid color-mix(in srgb, var(--color-danger) 22%, var(--color-line));
