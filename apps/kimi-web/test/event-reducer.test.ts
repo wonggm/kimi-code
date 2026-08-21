@@ -539,6 +539,100 @@ describe('reduceAppEvent taskProgress', () => {
   });
 });
 
+describe('reduceAppEvent taskCompleted', () => {
+  it('completes a live row keyed by its wire agentId when the event carries the agent id', () => {
+    // subagent.completed frames key the wire agent id, while a row created by
+    // the task poller (or snapshot roster) can sit under a different id. The
+    // row must still go terminal — otherwise it sticks as Running in the dock.
+    const restRow: AppTask = {
+      ...makeSubagentTask('rest-9', 's1'),
+      agentId: 'agent-1',
+      status: 'running',
+      subagentPhase: 'working',
+      runInBackground: true,
+    };
+    const state = { ...createInitialState(), tasksBySession: { 's1': [restRow] } };
+    const next = reduceAppEvent(
+      state,
+      { type: 'taskCompleted', sessionId: 's1', taskId: 'agent-1', status: 'completed' },
+      { sessionId: 's1', seq: 1 },
+    );
+    const row = next.tasksBySession['s1']?.find((t) => t.id === 'rest-9');
+    expect(row?.status).toBe('completed');
+  });
+
+  it('completes a live row via its backgroundTaskId when the event keys the background task', () => {
+    const liveRow: AppTask = {
+      ...makeSubagentTask('agent-1', 's1'),
+      status: 'running',
+      subagentPhase: 'working',
+      runInBackground: true,
+      backgroundTaskId: 'task-9',
+    };
+    const state = { ...createInitialState(), tasksBySession: { 's1': [liveRow] } };
+    const next = reduceAppEvent(
+      state,
+      { type: 'taskCompleted', sessionId: 's1', taskId: 'task-9', status: 'completed' },
+      { sessionId: 's1', seq: 1 },
+    );
+    const row = next.tasksBySession['s1']?.find((t) => t.id === 'agent-1');
+    expect(row?.status).toBe('completed');
+  });
+
+  it('syncs subagentPhase to the terminal status so the detail panel stops showing Working', () => {
+    // toAgentMember prefers subagentPhase over status — a stale Working phase
+    // keeps the opened panel showing a running agent after completion.
+    const liveRow: AppTask = {
+      ...makeSubagentTask('agent-1', 's1'),
+      status: 'running',
+      subagentPhase: 'working',
+    };
+    const state = { ...createInitialState(), tasksBySession: { 's1': [liveRow] } };
+    const done = reduceAppEvent(
+      state,
+      { type: 'taskCompleted', sessionId: 's1', taskId: 'agent-1', status: 'completed' },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(done.tasksBySession['s1']?.[0]?.subagentPhase).toBe('completed');
+    const failed = reduceAppEvent(
+      state,
+      { type: 'taskCompleted', sessionId: 's1', taskId: 'agent-1', status: 'cancelled' },
+      { sessionId: 's1', seq: 2 },
+    );
+    // The phase enum has no 'cancelled'; non-completed terminals map to 'failed'.
+    expect(failed.tasksBySession['s1']?.[0]?.subagentPhase).toBe('failed');
+  });
+
+  it('stamps completedAt when absent and preserves an existing output preview', () => {
+    const liveRow: AppTask = {
+      ...makeSubagentTask('t1', 's1'),
+      status: 'running',
+      outputPreview: 'polled tail',
+    };
+    const state = { ...createInitialState(), tasksBySession: { 's1': [liveRow] } };
+    const next = reduceAppEvent(
+      state,
+      { type: 'taskCompleted', sessionId: 's1', taskId: 't1', status: 'completed' },
+      { sessionId: 's1', seq: 1 },
+    );
+    const row = next.tasksBySession['s1']?.[0];
+    expect(row?.completedAt).toBeDefined();
+    expect(row?.outputPreview).toBe('polled tail');
+  });
+
+  it('leaves unrelated rows untouched', () => {
+    const other: AppTask = { ...makeSubagentTask('t2', 's1'), status: 'running' };
+    const state = { ...createInitialState(), tasksBySession: { 's1': [other] } };
+    const next = reduceAppEvent(
+      state,
+      { type: 'taskCompleted', sessionId: 's1', taskId: 't1', status: 'completed' },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(next.tasksBySession['s1']?.[0]?.status).toBe('running');
+  });
+});
+
+
 describe('reduceAppEvent sessions reference stability', () => {
   // The sidebar computeds (sessionsForView / workspaceGroups / mergedWorkspaces)
   // depend on `rawState.sessions`. Events that do not change sessions must keep
