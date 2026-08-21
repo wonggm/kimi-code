@@ -2,7 +2,14 @@ import { z } from 'zod';
 
 import { type EnvBindings, envBindings, stripEnvBoundFields } from '#/app/config/config';
 import { registerConfigSection } from '#/app/config/configSectionContributions';
-import { plainObjectToToml } from '#/app/config/toml';
+import {
+  camelToSnake,
+  cloneRecord,
+  isPlainObject,
+  plainObjectToToml,
+  setDefined,
+  transformPlainObject,
+} from '#/app/config/toml';
 
 export const LOOP_CONTROL_SECTION = 'loopControl';
 
@@ -52,4 +59,60 @@ registerConfigSection(LOOP_CONTROL_SECTION, LoopControlSchema, {
     { key: 'max_retries_per_step', replacement: 'max_attempts_per_step' },
     { key: 'max_steps_per_run', replacement: 'max_steps_per_turn' },
   ],
+});
+
+export const SUBAGENT_COMPACTION_SECTION = 'subagentCompaction';
+
+/**
+ * `[subagent_compaction]` on disk: agent profile name → per-profile compaction
+ * overrides, e.g. `[subagent_compaction.explore]` with `trigger_ratio` and
+ * `reserved_context_size` fields. Profile-name keys are matched verbatim, so
+ * the custom fromToml/toToml hooks below keep them intact while the entry
+ * fields camelCase/snakeCase one level down.
+ */
+export const SubagentCompactionEntrySchema = z.object({
+  triggerRatio: z.number().min(0.5).max(0.99).optional(),
+  reservedContextSize: z.number().int().min(0).optional(),
+});
+
+export type SubagentCompactionEntry = z.infer<typeof SubagentCompactionEntrySchema>;
+
+export const SubagentCompactionConfigSchema = z.record(z.string(), SubagentCompactionEntrySchema);
+
+export type SubagentCompactionConfig = z.infer<typeof SubagentCompactionConfigSchema>;
+
+export const subagentCompactionFromToml = (rawSnake: unknown): unknown => {
+  if (!isPlainObject(rawSnake)) return rawSnake;
+  const out: Record<string, unknown> = {};
+  for (const [profileName, entry] of Object.entries(rawSnake)) {
+    if (!isPlainObject(entry)) {
+      out[profileName] = entry;
+      continue;
+    }
+    out[profileName] = transformPlainObject(entry);
+  }
+  return out;
+};
+
+export const subagentCompactionToToml = (value: unknown, rawSnake: unknown): unknown => {
+  if (!isPlainObject(value)) return value;
+  const rawSub = cloneRecord(rawSnake);
+  const out: Record<string, unknown> = {};
+  for (const [profileName, entry] of Object.entries(value)) {
+    if (!isPlainObject(entry)) {
+      out[profileName] = entry;
+      continue;
+    }
+    const merged = cloneRecord(rawSub[profileName]);
+    for (const [key, field] of Object.entries(entry)) {
+      setDefined(merged, camelToSnake(key), field);
+    }
+    out[profileName] = merged;
+  }
+  return out;
+};
+
+registerConfigSection(SUBAGENT_COMPACTION_SECTION, SubagentCompactionConfigSchema, {
+  fromToml: subagentCompactionFromToml,
+  toToml: subagentCompactionToToml,
 });

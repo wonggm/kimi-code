@@ -766,6 +766,12 @@ export interface AppLoopControl {
   compactionTriggerRatio?: number;
 }
 
+/** A `[subagent_compaction]` entry: per-profile compaction overrides. */
+export interface AppSubagentCompactionEntry {
+  triggerRatio?: number;
+  reservedContextSize?: number;
+}
+
 export interface AppConfig {
   providers: Record<string, AppConfigProvider>;
   defaultProvider?: string;
@@ -774,6 +780,7 @@ export interface AppConfig {
   secondaryModel?: AppSecondaryModel;
   subagentModels?: Record<string, string>;
   subagentEfforts?: Record<string, string>;
+  subagentCompaction?: Record<string, AppSubagentCompactionEntry>;
   thinking?: { enabled?: boolean; effort?: string };
   planMode?: boolean;
   yolo?: boolean;

@@ -117,6 +117,10 @@ const {
   setDefaultModel,
   setSubagentModel,
   setSubagentEffort,
+  subagentTriggerRatioPercent,
+  subagentReservedSize,
+  setSubagentTriggerRatio,
+  setSubagentReservedSize,
   setDefaultPermissionMode,
   toggleConfigBoolean,
   compactionThresholdPercent,
@@ -482,10 +486,17 @@ function archiveTime(iso: string): string {
               <template v-if="backend === 'v2' && agentProfiles && agentProfiles.length > 0">
                 <h4 class="sec-title subagent-title">{{ t('settings.subagentModels') }}</h4>
                 <p class="hint subagent-hint">{{ t('settings.subagentModelsHint') }}</p>
-                <div v-for="profile in agentProfiles" :key="profile.name" class="row">
+                <div v-for="profile in agentProfiles" :key="profile.name" class="row subagent-row">
                   <span class="rlabel">
                     {{ profile.name }}
-                    <span v-if="profile.whenToUse" class="hint">{{ profile.whenToUse }}</span>
+                    <Tooltip
+                      v-if="profile.whenToUse"
+                      :text="profile.whenToUse"
+                      placement="top"
+                      :max-width="360"
+                    >
+                      <span class="hint subagent-desc">{{ profile.whenToUse }}</span>
+                    </Tooltip>
                   </span>
                   <div class="profile-selects">
                     <div class="select-wrap">
@@ -500,6 +511,40 @@ function archiveTime(iso: string): string {
                         @update:effort-value="setSubagentEffort(profile.name, $event)"
                       />
                     </div>
+                  </div>
+                  <div class="subagent-compaction">
+                    <Tooltip :text="t('settings.subagentCompactionHint')" placement="top">
+                      <span class="hint">{{ t('settings.subagentCompaction') }}</span>
+                    </Tooltip>
+                    <label class="num-field">
+                      <input
+                        class="num-input"
+                        type="number"
+                        min="50"
+                        max="99"
+                        step="1"
+                        :value="subagentTriggerRatioPercent(profile.name)"
+                        placeholder="—"
+                        :disabled="configSaving"
+                        :aria-label="t('settings.subagentCompactionTrigger')"
+                        @change="setSubagentTriggerRatio(profile.name, ($event.target as HTMLInputElement).value)"
+                      />
+                      <span class="num-unit">%</span>
+                    </label>
+                    <label class="num-field">
+                      <input
+                        class="num-input num-input-tokens"
+                        type="number"
+                        min="0"
+                        step="1"
+                        :value="subagentReservedSize(profile.name)"
+                        placeholder="—"
+                        :disabled="configSaving"
+                        :aria-label="t('settings.subagentCompactionReserved')"
+                        @change="setSubagentReservedSize(profile.name, ($event.target as HTMLInputElement).value)"
+                      />
+                      <span class="num-unit">{{ t('settings.subagentCompactionReservedUnit') }}</span>
+                    </label>
                   </div>
                 </div>
               </template>
@@ -859,9 +904,31 @@ function archiveTime(iso: string): string {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
+.num-input-tokens { width: 72px; }
 
 .select-wrap { min-width: 220px; max-width: min(320px, 50vw); flex: none; }
 .profile-selects { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+
+/* Subagent profile rows: the compaction group wraps to its own full-width line
+   below the name/description + model picker, and the description clamps to two
+   lines (full text on hover via its Tooltip wrapper). */
+.subagent-row { flex-wrap: wrap; }
+.subagent-desc {
+  max-width: 480px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.subagent-compaction {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 0 100%;
+}
+.subagent-compaction .hint { white-space: nowrap; }
+.subagent-compaction .num-field { height: 34px; padding: 0 var(--space-2); }
 
 .subagent-title { margin: var(--space-3) 0 var(--space-1); }
 .subagent-hint { margin: 0 0 var(--space-2); }
@@ -905,6 +972,10 @@ function archiveTime(iso: string): string {
     width: 100%;
     align-items: stretch;
     flex-direction: column;
+  }
+  .subagent-compaction {
+    width: 100%;
+    flex-wrap: wrap;
   }
   .select-wrap {
     width: 100%;

@@ -271,6 +271,10 @@ const {
   setDefaultModel,
   setSubagentModel,
   setSubagentEffort,
+  setSubagentTriggerRatio,
+  setSubagentReservedSize,
+  subagentTriggerRatioPercent,
+  subagentReservedSize,
   setDefaultPermissionMode,
   toggleConfigBoolean,
   compactionThresholdPercent,
@@ -528,7 +532,7 @@ function openProviders(): void {
           <div v-for="profile in agentProfiles" :key="profile.name" class="srow pref agent">
             <span class="srow-main">
               <span class="srow-label">{{ profile.name }}</span>
-              <span v-if="profile.whenToUse" class="srow-sub">{{ profile.whenToUse }}</span>
+              <span v-if="profile.whenToUse" class="srow-sub srow-sub-clamp">{{ profile.whenToUse }}</span>
             </span>
             <ModelEffortSelect
               class="agent-select"
@@ -541,6 +545,40 @@ function openProviders(): void {
               @update:model-value="setSubagentModel(profile.name, $event)"
               @update:effort-value="setSubagentEffort(profile.name, $event)"
             />
+            <div class="subagent-compaction">
+              <span class="srow-sub">{{ t('settings.subagentCompaction') }}</span>
+              <div class="scomp-fields">
+                <label class="num-field">
+                  <input
+                    class="num-input"
+                    type="number"
+                    min="50"
+                    max="99"
+                    step="1"
+                    :value="subagentTriggerRatioPercent(profile.name)"
+                    placeholder="—"
+                    :disabled="configSaving"
+                    :aria-label="t('settings.subagentCompactionTrigger')"
+                    @change="setSubagentTriggerRatio(profile.name, ($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="num-unit">%</span>
+                </label>
+                <label class="num-field">
+                  <input
+                    class="num-input num-input-tokens"
+                    type="number"
+                    min="0"
+                    step="1"
+                    :value="subagentReservedSize(profile.name)"
+                    placeholder="—"
+                    :disabled="configSaving"
+                    :aria-label="t('settings.subagentCompactionReserved')"
+                    @change="setSubagentReservedSize(profile.name, ($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="num-unit">{{ t('settings.subagentCompactionReservedUnit') }}</span>
+                </label>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -830,6 +868,17 @@ function openProviders(): void {
   font-family: var(--font-mono);
   font-size: var(--ui-font-size-xs);
 }
+.num-input-tokens { width: 68px; }
+
+.subagent-compaction {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding-top: 4px;
+}
+.scomp-fields { display: flex; align-items: center; gap: 6px; flex: none; flex-wrap: wrap; }
 
 /* Account rows */
 .srow.acct.in .srow-label { color: var(--color-accent-hover); font-weight: 500; }
@@ -893,6 +942,18 @@ function openProviders(): void {
 .srow-sub,
 .srow-val,
 .cache-note { font-family: var(--sans); }
+
+/* Subagent profile descriptions: clamp to two lines even where .srow-sub lets
+   text wrap (the ≤640px rule), so long descriptions never become one-word
+   towers. */
+.srow-sub-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* Archived sessions sub-view */
 .arch-subhead {

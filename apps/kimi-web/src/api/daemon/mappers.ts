@@ -811,6 +811,7 @@ export function toAppConfig(wire: WireConfig): AppConfig {
       : undefined,
     subagentModels: wire.subagent_models,
     subagentEfforts: wire.subagent_efforts,
+    subagentCompaction: wire.subagent_compaction as AppConfig['subagentCompaction'],
     thinking: wire.thinking as { enabled?: boolean; effort?: string } | undefined,
     planMode: wire.plan_mode,
     yolo: wire.yolo,
