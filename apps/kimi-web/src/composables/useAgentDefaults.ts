@@ -7,7 +7,7 @@
 // the caller to POST.
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { AgentProfileInfo, AppConfig, AppModel } from '../api/types';
+import type { AgentProfileInfo, AppConfig, AppModel, AppSubagentCompactionEntry } from '../api/types';
 import { getKimiWebApi } from '../api';
 import {
   effortLabel,
@@ -194,6 +194,70 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
     opts.updateConfig({ subagentEfforts: table });
   }
 
+  // Per-profile compaction overrides (`[subagent_compaction]` on disk). A null
+  // value deletes the profile's whole entry (inherit the global `[loop_control]`
+  // values); a partial entry merges onto the existing one so setting one field
+  // never drops the other, and undefined fields remove themselves.
+  function setSubagentCompaction(
+    profileName: string,
+    value: Partial<AppSubagentCompactionEntry> | null,
+  ): void {
+    const table = { ...(config.value?.subagentCompaction ?? {}) };
+    if (value === null) {
+      delete table[profileName];
+    } else {
+      const merged: AppSubagentCompactionEntry = { ...(table[profileName] ?? {}) };
+      if (value.triggerRatio === undefined) delete merged.triggerRatio;
+      else merged.triggerRatio = value.triggerRatio;
+      if (value.reservedContextSize === undefined) delete merged.reservedContextSize;
+      else merged.reservedContextSize = value.reservedContextSize;
+      if (Object.keys(merged).length === 0) delete table[profileName];
+      else table[profileName] = merged;
+    }
+    opts.updateConfig({ subagentCompaction: table });
+  }
+
+  function subagentCompactionFor(profileName: string): AppSubagentCompactionEntry | undefined {
+    return config.value?.subagentCompaction?.[profileName];
+  }
+
+  function subagentTriggerRatioPercent(profileName: string): string {
+    const ratio = subagentCompactionFor(profileName)?.triggerRatio;
+    return ratio === undefined ? '' : String(Math.round(ratio * 100));
+  }
+
+  function subagentReservedSize(profileName: string): string {
+    const size = subagentCompactionFor(profileName)?.reservedContextSize;
+    return size === undefined ? '' : String(size);
+  }
+
+  // Per-profile trigger-ratio input, whole percent, clamped to the schema range
+  // 50–99 like the global threshold; empty clears the field (inherit global).
+  function setSubagentTriggerRatio(profileName: string, raw: string): void {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      setSubagentCompaction(profileName, { triggerRatio: undefined });
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return;
+    const clamped = Math.min(99, Math.max(50, Math.round(parsed)));
+    setSubagentCompaction(profileName, { triggerRatio: clamped / 100 });
+  }
+
+  // Per-profile reserved-size input, non-negative integer tokens; empty clears
+  // the field (inherit global).
+  function setSubagentReservedSize(profileName: string, raw: string): void {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      setSubagentCompaction(profileName, { reservedContextSize: undefined });
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    setSubagentCompaction(profileName, { reservedContextSize: Math.round(parsed) });
+  }
+
   function setDefaultPermissionMode(mode: DefaultPermissionMode): void {
     if (mode === defaultPermissionMode.value) return;
     opts.updateConfig({ defaultPermissionMode: mode });
@@ -268,6 +332,12 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
     setDefaultModel,
     setSubagentModel,
     setSubagentEffort,
+    setSubagentCompaction,
+    subagentCompactionFor,
+    subagentTriggerRatioPercent,
+    subagentReservedSize,
+    setSubagentTriggerRatio,
+    setSubagentReservedSize,
     setDefaultPermissionMode,
     toggleConfigBoolean,
     compactionThresholdPercent,

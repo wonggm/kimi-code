@@ -67,7 +67,11 @@ export function registerConfigRoutes(app: ConfigRouteHost, core: Scope): void {
         }
         delete camelPatch['yolo'];
         for (const domain of Object.keys(camelPatch)) {
-          if (domain === 'subagentModels' || domain === 'subagentEfforts') {
+          if (
+            domain === 'subagentModels' ||
+            domain === 'subagentEfforts' ||
+            domain === 'subagentCompaction'
+          ) {
             await config.replace(domain, camelPatch[domain]);
           } else {
             await config.set(domain, camelPatch[domain]);
@@ -193,7 +197,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const MAP_VALUED_CONFIG_KEYS = new Set(['providers', 'models', 'experimental', 'raw']);
+const MAP_VALUED_CONFIG_KEYS = new Set([
+  'providers',
+  'models',
+  'experimental',
+  'raw',
+  'subagent_compaction',
+]);
 
 function convertKeysSnakeToCamel(obj: unknown, preserveKeys = false): unknown {
   if (Array.isArray(obj)) {

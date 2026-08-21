@@ -497,6 +497,7 @@ export interface WireConfig {
   secondary_model?: WireSecondaryModel;
   subagent_models?: Record<string, string>;
   subagent_efforts?: Record<string, string>;
+  subagent_compaction?: unknown;
   thinking?: unknown;
   plan_mode?: boolean;
   yolo?: boolean;

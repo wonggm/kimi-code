@@ -2296,6 +2296,37 @@ describe('FullCompaction', () => {
     await ctx.expectResumeMatches();
   });
 
+  it('auto compacts a bound profile at its per-profile trigger ratio, below the global threshold', async () => {
+    const ctx = testAgent({
+      initialConfig: {
+        providers: {},
+        loopControl: { compactionTriggerRatio: 0.9 },
+        subagentCompaction: {
+          'exact-compaction-refresh': { triggerRatio: 0.4 },
+        },
+      },
+    });
+    ctx.configure({
+      provider: CATALOGUED_PROVIDER,
+      modelCapabilities: CATALOGUED_MODEL_CAPABILITIES,
+    });
+    await ctx.get(IAgentProfileService).applyProfile(EXACT_COMPACTION_REFRESH_PROFILE);
+    ctx.appendExchange(1, 'old user one', 'old assistant one', 120_000);
+
+    ctx.mockNextResponse({ type: 'text', text: 'Per-profile threshold summary.' });
+    ctx.mockNextResponse({ type: 'text', text: 'I can answer after per-profile compaction.' });
+    await ctx.rpc.prompt({ input: [{ type: 'text', text: 'small follow-up' }] });
+    await ctx.untilTurnEnd();
+
+    expect(ctx.llmCalls).toHaveLength(2);
+    const [compactionCall, answerCall] = ctx.llmCalls;
+    expect(messageText(compactionCall?.history.at(-1))).toContain('first-person handoff note');
+    expect(
+      answerCall?.history.map(messageText).some((text) => text.includes('Per-profile threshold summary.')),
+    ).toBe(true);
+    await ctx.expectResumeMatches();
+  });
+
   it('includes an oversized pending user prompt in auto compaction', async () => {
     const ctx = testAgent();
     ctx.configure({
