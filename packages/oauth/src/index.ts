@@ -210,5 +210,32 @@ export type {
   RefreshResult,
 } from './refreshProviderModels';
 
+export {
+  adaptBaseUrlForWire,
+  applyModelsDevProvider,
+  fetchModelsDevCatalog,
+  MODELS_DEV_URL,
+  modelsDevBaseUrl,
+  modelsDevEntry,
+  modelsDevModelToCapability,
+  modelsDevProviderModels,
+  readModelsDevSource,
+  resolveModelsDevImport,
+} from './models-dev';
+export type {
+  FetchModelsDevCatalogOptions,
+  ModelsDevCapability,
+  ModelsDevCatalog,
+  ModelsDevImportInvalidReason,
+  ModelsDevImportResolution,
+  ModelsDevModel,
+  ModelsDevModelEntry,
+  ModelsDevModelProviderOverride,
+  ModelsDevProviderEntry,
+  ModelsDevReasoningOption,
+  ModelsDevSource,
+  ModelsDevWireType,
+} from './models-dev';
+
 export type { OAuthTokenTransactionOptions } from './oauth-token-transaction';
 export { OAuthTokenTransaction } from './oauth-token-transaction';

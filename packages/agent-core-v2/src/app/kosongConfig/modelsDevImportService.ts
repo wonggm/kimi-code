@@ -155,6 +155,10 @@ export class ModelsDevImportService implements IModelsDevImportService {
     const provider: ProviderConfig = { type: resolution.wire };
     provider.baseUrl = resolution.baseUrl;
     provider.apiKey = options.apiKey ?? existing?.apiKey;
+    provider.source =
+      options.baseUrl !== undefined
+        ? { kind: 'modelsDev', catalogId, baseUrl: options.baseUrl }
+        : { kind: 'modelsDev', catalogId };
     await config.replace(PROVIDERS_SECTION, { ...providers, [targetId]: provider });
 
     const records = config.inspect<ModelsSection>(MODELS_SECTION).userValue ?? {};
