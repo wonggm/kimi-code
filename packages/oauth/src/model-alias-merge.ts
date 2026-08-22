@@ -24,6 +24,20 @@ export const CUSTOM_REGISTRY_MODEL_FIELDS: ReadonlySet<string> = new Set([
   'defaultEffort',
 ]);
 
+export const MODELS_DEV_MODEL_FIELDS: ReadonlySet<string> = new Set([
+  'provider',
+  'model',
+  'maxContextSize',
+  'maxInputSize',
+  'capabilities',
+  'displayName',
+  'reasoningKey',
+  'supportEfforts',
+  'offEffort',
+  'protocol',
+  'baseUrl',
+]);
+
 function cloneOverrides(
   overrides: ManagedKimiModelAliasOverrides | undefined,
 ): ManagedKimiModelAliasOverrides | undefined {

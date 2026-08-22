@@ -173,6 +173,10 @@ export class ModelsDevImportService implements IModelsDevImportService {
     }
     provider.apiKey = credential.apiKey;
     provider.apiKeyEnv = credential.apiKeyEnv;
+    provider.source =
+      options.baseUrl !== undefined
+        ? { kind: 'modelsDev', catalogId, baseUrl: options.baseUrl }
+        : { kind: 'modelsDev', catalogId };
     await config.replace(PROVIDERS_SECTION, { ...providers, [targetId]: provider });
 
     const records = config.inspect<ModelsSection>(MODELS_SECTION).userValue ?? {};

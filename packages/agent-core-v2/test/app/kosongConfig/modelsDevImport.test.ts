@@ -227,6 +227,7 @@ describe('IModelsDevImportService', () => {
       type: 'openai',
       baseUrl: 'https://api.openai.com/v1',
       apiKey: 'sk-test',
+      source: { kind: 'modelsDev', catalogId: 'openai' },
     });
     const models = config.inspect<ModelsSection>(MODELS_SECTION).userValue ?? {};
     expect(models['openai/gpt-4.1']).toMatchObject({
@@ -238,7 +239,25 @@ describe('IModelsDevImportService', () => {
     expect(config.get('defaultModel')).toBe('k2');
   });
 
-  it('leaves the pool untouched when a catalog import drops an entry', async () => {
+  it('records a user-supplied base URL in the modelsDev source blob', async () => {
+    setModelsDevUpstreamForTest({ fetchImpl: fetchJson(CATALOG) });
+    const { config, imports } = createHost({ providers: {}, models: {} });
+
+    await imports.importModelsDevProvider({
+      catalogId: 'openai',
+      apiKey: 'sk-test',
+      baseUrl: 'https://proxy.example.test/v1',
+    });
+
+    const providers = config.inspect<ProvidersSection>(PROVIDERS_SECTION).userValue ?? {};
+    expect(providers['openai']?.source).toEqual({
+      kind: 'modelsDev',
+      catalogId: 'openai',
+      baseUrl: 'https://proxy.example.test/v1',
+    });
+  });
+
+  it('filters pool entries a catalog import drops, keeping a surviving default', async () => {
     setModelsDevUpstreamForTest({ fetchImpl: fetchJson(CATALOG) });
     const { config, imports } = createHost({
       providers: { openai: { type: 'openai', apiKey: 'sk-old' } },

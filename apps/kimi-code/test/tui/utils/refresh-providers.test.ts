@@ -1250,4 +1250,136 @@ describe('refreshAllProviderModels', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(host.setConfig).not.toHaveBeenCalled();
   });
+
+  it('re-syncs models.dev catalog providers, adding and removing aliases', async () => {
+    const catalogId = 'opencode';
+    const providerId = 'opencode';
+    const host = makeRefreshHost({
+      providers: {
+        [providerId]: {
+          type: 'openai',
+          baseUrl: 'https://old.example.test/v1',
+          apiKey: 'sk-test-token',
+          source: { kind: 'modelsDev', catalogId },
+        },
+      },
+      models: {
+        'opencode/old-model': {
+          provider: providerId,
+          model: 'old-model',
+          maxContextSize: 131072,
+          capabilities: ['tool_use'],
+          displayName: 'Old Model',
+        },
+        myManualAlias: {
+          provider: providerId,
+          model: 'new-model',
+          maxContextSize: 131072,
+          displayName: 'My Manual Alias',
+        },
+      },
+      defaultModel: 'myManualAlias',
+      telemetry: true,
+    } as unknown as KimiConfig);
+
+    const fetchMock = vi.fn<FetchMock>(async (input) => {
+      expect(fetchInputUrl(input)).toBe('https://models.dev/api.json');
+      return new Response(
+        JSON.stringify({
+          [catalogId]: {
+            id: catalogId,
+            name: 'OpenCode',
+            api: 'https://api.opencode.example.test/v1',
+            models: {
+              'new-model': {
+                id: 'new-model',
+                name: 'New Model',
+                limit: { context: 262144 },
+                tool_call: true,
+                reasoning: true,
+              },
+              'kept-model': { id: 'kept-model', limit: { context: 131072 } },
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await refreshAllProviderModels({
+      getConfig: async () => host.current(),
+      removeProvider: host.removeProvider,
+      setConfig: host.setConfig,
+      resolveOAuthToken: vi.fn(),
+    });
+
+    expect(result.failed).toEqual([]);
+    expect(result.unchanged).toEqual([]);
+    expect(result.changed).toEqual([
+      { providerId, providerName: 'OpenCode', added: 2, removed: 1 },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.removeProvider).toHaveBeenCalledWith(providerId);
+    const persisted = host.current();
+    expect(persisted.providers[providerId]).toEqual({
+      type: 'openai',
+      baseUrl: 'https://api.opencode.example.test/v1',
+      apiKey: 'sk-test-token',
+      source: { kind: 'modelsDev', catalogId },
+    });
+    expect(persisted.models?.['opencode/old-model']).toBeUndefined();
+    expect(persisted.models?.['opencode/new-model']).toMatchObject({
+      provider: providerId,
+      model: 'new-model',
+      maxContextSize: 262144,
+      capabilities: ['thinking', 'tool_use'],
+      displayName: 'New Model',
+    });
+    expect(persisted.models?.['opencode/kept-model']).toMatchObject({
+      provider: providerId,
+      model: 'kept-model',
+      maxContextSize: 131072,
+    });
+    expect(persisted.models?.['myManualAlias']).toBeDefined();
+    expect(persisted.defaultModel).toBe('myManualAlias');
+  });
+
+  it('reports failure without writes when a models.dev entry disappears from the catalog', async () => {
+    const host = makeRefreshHost({
+      providers: {
+        opencode: {
+          type: 'openai',
+          baseUrl: 'https://api.opencode.example.test/v1',
+          apiKey: 'sk-test-token',
+          source: { kind: 'modelsDev', catalogId: 'opencode' },
+        },
+      },
+      models: {},
+      telemetry: true,
+    } as unknown as KimiConfig);
+
+    const fetchMock = vi.fn<FetchMock>(
+      async () =>
+        new Response(JSON.stringify({ unrelated: { id: 'unrelated', models: {} } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await refreshAllProviderModels({
+      getConfig: async () => host.current(),
+      removeProvider: host.removeProvider,
+      setConfig: host.setConfig,
+      resolveOAuthToken: vi.fn(),
+    });
+
+    expect(result.changed).toEqual([]);
+    expect(result.failed).toEqual([
+      { provider: 'opencode', reason: 'models.dev entry opencode no longer exists' },
+    ]);
+    expect(host.removeProvider).not.toHaveBeenCalled();
+    expect(host.setConfig).not.toHaveBeenCalled();
+  });
 });
