@@ -60,4 +60,6 @@ export default {
   search: '搜索',
   searchHint: '↑↓ 选择 · ↵ 打开 · Esc 关闭',
   searchNoResults: '没有匹配的会话或工作空间',
+  /** 会话行的 kebab 底部：该行绝对的最后活跃时间戳。 */
+  lastActive: '最后更新：{time}',
 };

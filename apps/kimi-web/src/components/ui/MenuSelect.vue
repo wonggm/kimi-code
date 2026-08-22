@@ -32,6 +32,25 @@ const menuRef = ref<InstanceType<typeof Menu> | null>(null);
 const menuStyle = ref<Record<string, string>>({});
 const highlightIndex = ref(0);
 
+// While the dropdown is open, freeze the dialog content behind it with `inert`
+// so pointer events can't reach interactive controls under the panel (the dialog
+// root is found by walking up from the trigger; the teleported menu panel lives
+// outside it and is never trapped). No-op for use sites that are not inside a
+// dialog (sidebar, session admin view, …).
+let inertDialog: HTMLElement | null = null;
+
+function setDialogInert(on: boolean): void {
+  if (on) {
+    const dialog = triggerRef.value?.closest<HTMLElement>('.ui-dialog');
+    if (!dialog) return;
+    inertDialog = dialog;
+    dialog.inert = true;
+  } else if (inertDialog) {
+    inertDialog.inert = false;
+    inertDialog = null;
+  }
+}
+
 const flatOptions = computed<Option[]>(() => {
   const out: Option[] = [];
   for (const group of props.groups) {
@@ -50,6 +69,7 @@ const selectedLabel = computed(() => {
 const hasSelection = computed(() => flatOptions.value.some((opt) => opt.value === props.modelValue));
 
 function close(): void {
+  setDialogInert(false);
   open.value = false;
   document.removeEventListener('mousedown', onDocClick);
   window.removeEventListener('resize', onScrollOrResize);
@@ -139,6 +159,7 @@ async function toggle(): Promise<void> {
     return;
   }
   open.value = true;
+  setDialogInert(true);
   // Seed the highlight on the current selection, else the first enabled row.
   const idx = flatOptions.value.findIndex((o) => o.value === props.modelValue);
   if (idx >= 0) highlightIndex.value = idx;

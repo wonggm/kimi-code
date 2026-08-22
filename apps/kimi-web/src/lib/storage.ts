@@ -27,6 +27,8 @@ export const STORAGE_KEYS = {
   workspaceOrder: 'kimi-web.workspace-order',
   workspaceNameOverrides: 'kimi-web.workspace-name-overrides',
   workspaceSort: 'kimi-web.workspace-sort',
+  // Mobile session switcher view mode: grouped workspace groups vs flat recency.
+  switcherView: 'kimi-web.switcher-view',
   // Conversation outline (TOC). The value keeps the legacy `beta-toc` name so
   // users who explicitly turned it off while it was experimental keep their
   // preference after it became on-by-default.
@@ -44,6 +46,8 @@ export const STORAGE_KEYS = {
   sidebarCollapsed: 'kimi-web.sidebar-collapsed',
   sidebarWidth: 'kimi-web.sidebar-width',
   sidebarViewMode: 'kimi-web.sidebar-view-mode',
+  /** Pinned-section height (px) in the sidebar, owned by its resize handle. */
+  pinnedHeight: 'kimi-web.pinned-height',
   // Experimental Lab settings (default off): multi-tab sidebar (Open / Done /
   // Workspaces). The admin page shares this flag's Lab gate.
   labSidebarTabs: 'kimi-web.lab.sidebar-tabs',
@@ -57,6 +61,13 @@ export const STORAGE_KEYS = {
 /** Per-session composer draft key. */
 export function draftStorageKey(sid: string | undefined): string {
   return `kimi-web.draft.${sid && sid.length > 0 ? sid : '__new__'}`;
+}
+
+/** Per-session composer attachment-draft key (mirrors draftStorageKey). Stores
+ *  upload-ready attachment metadata only (see useAttachmentUpload) so unsent
+ *  chips survive a session switch / page refresh just like the text draft. */
+export function attachmentDraftStorageKey(sid: string | undefined): string {
+  return `kimi-web.attachment-draft.${sid && sid.length > 0 ? sid : '__new__'}`;
 }
 
 export function safeGetString(key: string): string | null {
@@ -205,6 +216,19 @@ export function loadWorkspaceSort(): string | null {
 
 export function saveWorkspaceSort(mode: string): void {
   safeSetString(STORAGE_KEYS.workspaceSort, mode);
+}
+
+/**
+ * Mobile session-switcher view preference (`'grouped'` or `'flat'`). Stored as
+ * a raw string with no enum check here — the call site narrows it. Returns
+ * null when unset or storage is unavailable.
+ */
+export function loadSwitcherView(): string | null {
+  return safeGetString(STORAGE_KEYS.switcherView);
+}
+
+export function saveSwitcherView(view: string): void {
+  safeSetString(STORAGE_KEYS.switcherView, view);
 }
 
 // ---------------------------------------------------------------------------
