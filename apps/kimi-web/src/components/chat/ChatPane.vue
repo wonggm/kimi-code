@@ -10,6 +10,7 @@ import Markdown from './Markdown.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import ActivityNotice from './ActivityNotice.vue';
 import CronNotice from './CronNotice.vue';
+import TaskNotice from './TaskNotice.vue';
 import MessageTime from './MessageTime.vue';
 import AuthMedia from './AuthMedia.vue';
 import AttachmentChip from './AttachmentChip.vue';
@@ -17,6 +18,7 @@ import MentionText from './MentionText.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
 import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
+import Tooltip from '../ui/Tooltip.vue';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { openFileAttachment } from '../../lib/openFileAttachment';
@@ -53,6 +55,10 @@ onUnmounted(() => {
   if (unsupportedOpenTimer !== null) {
     clearTimeout(unsupportedOpenTimer);
     unsupportedOpenTimer = null;
+  }
+  if (justUndoneTimer !== null) {
+    clearTimeout(justUndoneTimer);
+    justUndoneTimer = null;
   }
 });
 
@@ -510,6 +516,10 @@ const emit = defineEmits<{
   editQueued: [index: number];
   /** Drag-to-reorder a queued message within the active session's queue. */
   reorderQueue: [payload: { from: number; to: number }];
+  /** Steer one queued message into the running turn (per-row Ctrl+S parity). */
+  steerQueued: [index: number];
+  /** Send one queued message immediately as its own prompt (per-row flush). */
+  sendQueued: [index: number];
   /** Resume the failed prompt through the parent client's normal retry path. */
   resumeFailure: [];
 }>();
@@ -580,13 +590,14 @@ const lastUserTurnId = computed<string | null>(() => {
 });
 
 /** Whether to offer "edit & resend" on this turn: the latest user message, only
-    while the conversation has nothing unfinished and it isn't a slash activation. */
+    while the conversation has nothing unfinished and it isn't a plugin command.
+    Skill activations are undoable too (the engine treats a user-slash skill turn
+    as an undo anchor). */
 function canEditTurn(turn: ChatTurn): boolean {
   return (
     turn.role === 'user' &&
     turn.id === lastUserTurnId.value &&
     !props.working &&
-    !turn.skillActivation &&
     !turn.pluginCommand
   );
 }
@@ -645,7 +656,12 @@ function confirmEditMessage(turn: ChatTurn): void {
 }
 
 // Release the undoing guard once the server undo has actually removed the turn
-// from the list (post-render, so the element is already gone).
+// from the list (post-render, so the element is already gone). That removal is
+// the success signal, so it also shows the transient "Undone" toast.
+const justUndone = ref(false);
+let justUndoneTimer: ReturnType<typeof setTimeout> | null = null;
+const UNDONE_TOAST_MS = 2500;
+
 watch(
   () => props.turns,
   (turns) => {
@@ -656,6 +672,12 @@ watch(
       clearTimeout(undoFallbackTimer);
       undoFallbackTimer = null;
     }
+    justUndone.value = true;
+    if (justUndoneTimer !== null) clearTimeout(justUndoneTimer);
+    justUndoneTimer = setTimeout(() => {
+      justUndoneTimer = null;
+      justUndone.value = false;
+    }, UNDONE_TOAST_MS);
   },
   { flush: 'post' },
 );
@@ -669,7 +691,7 @@ function copyConversation(): void {
   if (props.turns.length === 0) return;
   const lines: string[] = [];
   for (const turn of props.turns) {
-    if (turn.role === 'compaction' || turn.role === 'cron') continue; // dividers / cron notices don't copy
+    if (turn.role === 'compaction' || turn.role === 'cron' || turn.role === 'task') continue; // dividers / notices don't copy
     const roleLabel = turn.role === 'user' ? 'User' : 'Assistant';
     const content = turnToMarkdown(turn);
     if (content.trim()) {
@@ -924,14 +946,6 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
                 @activate="onAttachmentClick(att)"
               />
             </div>
-            <!-- Skill activation card (replaces raw XML) -->
-            <div v-if="turn.skillActivation" class="skill-act">
-              <div class="skill-act-head">
-                <span class="skill-act-arrow">▶</span>
-                <span>{{ t('conversation.activatedSkill', { name: turn.skillActivation.name }) }}</span>
-              </div>
-              <div v-if="turn.skillActivation.args" class="skill-act-args">{{ turn.skillActivation.args }}</div>
-            </div>
             <!-- Plugin command card (replaces expanded body) -->
             <div v-else-if="turn.pluginCommand" class="skill-act">
               <div class="skill-act-head">
@@ -998,6 +1012,10 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
            a lightweight in-transcript notice rather than a user bubble. -->
       <CronNotice v-else-if="turn.role === 'cron'" :text="turn.text" :cron="turn.cron" :turn-id="turn.id" :created-at="turn.createdAt" />
 
+      <!-- Task notice — a background task completion, rendered as a light
+           notice (summary + output file/preview) rather than a user bubble. -->
+      <TaskNotice v-else-if="turn.role === 'task'" :text="turn.text" :turn-id="turn.id" :created-at="turn.createdAt" />
+
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div
         v-else
@@ -1039,6 +1057,14 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         </div>
       </div>
     </template>
+
+    <!-- Transient "Undone" toast after a successful undo of the last message
+         (incl. skill-activation turns): solid pill, auto-dismisses. -->
+    <Transition name="undo-toast">
+      <div v-if="justUndone" class="undo-toast" role="status" aria-live="polite">
+        <span class="undo-toast-text">{{ t('conversation.undone') }}</span>
+      </div>
+    </Transition>
 
     <!-- Pending approvals are rendered in the bottom dock (ConversationPane),
          alongside questions, so both blocking prompts share one position. -->
@@ -1127,6 +1153,30 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
           </div>
           <span v-if="qi === 0" class="q-tag q-tag-next">{{ t('composer.queueNext') }}</span>
           <span v-else class="q-tag q-tag-idx">#{{ qi + 1 }}</span>
+          <span class="q-actions">
+            <Tooltip :text="t('composer.queueSteerTitle')">
+              <button
+                type="button"
+                class="q-act"
+                :aria-label="t('composer.queueSteer')"
+                @click.stop="emit('steerQueued', qi)"
+              >
+                <Icon name="bolt" size="sm" />
+                <span>{{ t('composer.queueSteer') }}</span>
+              </button>
+            </Tooltip>
+            <Tooltip :text="t('composer.queueSendNowTitle')">
+              <button
+                type="button"
+                class="q-act"
+                :aria-label="t('composer.queueSendNow')"
+                @click.stop="emit('sendQueued', qi)"
+              >
+                <Icon name="send" size="sm" />
+                <span>{{ t('composer.queueSendNow') }}</span>
+              </button>
+            </Tooltip>
+          </span>
           <button
             type="button"
             class="q-rm"
@@ -1213,6 +1263,39 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .chat > .sending-placeholder,
 .chat > :deep(.activity-notice) {
   margin-top: var(--chat-turn-gap);
+}
+
+/* Transient "Undone" toast: top-center solid pill, inverse of the surface so
+   it reads as a status flash; auto-dismisses (see justUndone). */
+.undo-toast {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-sm);
+  z-index: var(--z-sticky);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.undo-toast-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.undo-toast-enter-active,
+.undo-toast-leave-active {
+  transition: opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+.undo-toast-enter-from,
+.undo-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-6px);
 }
 .chat > .a-msg {
   margin-top: 10px;
@@ -1531,7 +1614,8 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 }
 .retry-progress { color: var(--color-text-muted); font-size: var(--text-sm); }
 
-/* Skill activation card (replaces raw <kimi-skill-loaded> XML) */
+/* Plugin command card (replaces expanded body; the shared style is reused by
+   the plugin-command branch of the user bubble). */
 .skill-act {
   display: flex;
   flex-direction: column;
@@ -1833,6 +1917,41 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .q-rm:hover {
   background: var(--color-danger-soft);
   color: var(--color-danger);
+}
+/* Per-row actions (Steer / Send now) — compact text+icon buttons revealed on
+   hover/focus, same reveal rhythm as the remove (×) button. */
+.q-actions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.q-bub:hover .q-actions,
+.q-bub:focus-within .q-actions,
+.q-actions:focus-within {
+  opacity: 1;
+}
+.q-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--ui-font-size-xs);
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.q-act:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
 }
 /* Drag reorder: dim the row being dragged, show an insertion line on the target. */
 .q-turn.q-dragging .q-bub {

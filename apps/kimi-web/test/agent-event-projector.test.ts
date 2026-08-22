@@ -896,3 +896,49 @@ describe('background subagent task registration', () => {
     ]);
   });
 });
+
+describe('session.meta.updated archive/pin propagation', () => {
+  it('threads an external archive flip through the reducer (remote-session-archive-sync)', () => {
+    const state = projectThroughReducer([
+      {
+        type: 'session.meta.updated',
+        payload: { patch: { archived: true } },
+      },
+    ]);
+    expect(state.sessions[0]).toMatchObject({ id: 's1', archived: true });
+  });
+
+  it('threads a remote restore (archived:false) and pin/unpin flips', () => {
+    const state = projectThroughReducer([
+      {
+        type: 'session.meta.updated',
+        payload: { patch: { archived: false, pinned: true } },
+      },
+      {
+        type: 'session.meta.updated',
+        payload: { patch: { pinned: false, title: 'Renamed elsewhere' } },
+      },
+    ]);
+    const session = state.sessions[0];
+    expect(session).toMatchObject({ id: 's1', archived: false, pinned: false, title: 'Renamed elsewhere' });
+  });
+
+  it('keeps prior meta values when the patch does not carry a field', () => {
+    const state = projectThroughReducer([
+      {
+        type: 'session.meta.updated',
+        payload: { patch: { archived: true, pinned: true } },
+      },
+      {
+        type: 'session.meta.updated',
+        payload: { patch: { title: 'Only the title changed' } },
+      },
+    ]);
+    expect(state.sessions[0]).toMatchObject({
+      id: 's1',
+      archived: true,
+      pinned: true,
+      title: 'Only the title changed',
+    });
+  });
+});

@@ -220,4 +220,16 @@ function onHeadClick(): void {
 .box.mob {
   margin: 0;
 }
+
+/* Mobile: unify every tool-call row to the compact 30px head height. The head
+   content is single-line by construction (name/arg truncate, status + time are
+   fixed-size), so any row that outgrew 30px did so through font/metrics drift
+   — pinning the height stops standalone and stacked cards from alternating
+   between 30px and a taller content-driven row on phones. */
+@media (max-width: 640px) {
+  .bh {
+    min-height: 30px;
+    height: 30px;
+  }
+}
 </style>

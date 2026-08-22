@@ -21,4 +21,6 @@ export default {
   forkSession: 'Fork session',
   archiveSession: 'Archive',
   exportSession: 'Export session',
+  pinSession: 'Pin',
+  unpinSession: 'Unpin',
 };

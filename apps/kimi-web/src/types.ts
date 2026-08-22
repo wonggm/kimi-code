@@ -194,7 +194,7 @@ export type ApprovalBlock =
     }
   | { kind: 'generic'; summary: string };
 
-export type TurnRole = 'user' | 'assistant' | 'compaction' | 'cron';
+export type TurnRole = 'user' | 'assistant' | 'compaction' | 'cron' | 'task';
 
 export interface FilePreviewRequest {
   path: string;

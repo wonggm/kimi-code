@@ -22,6 +22,9 @@ import SegmentedControl from '../ui/SegmentedControl.vue';
 import MenuSelect from '../ui/MenuSelect.vue';
 import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import IconButton from '../ui/IconButton.vue';
+import Icon from '../ui/Icon.vue';
+import { copyTextToClipboard } from '../../lib/clipboard';
 import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from './AccountPlanUsage.vue';
 
 const { t } = useI18n();
@@ -149,10 +152,29 @@ function handleKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape') emit('close');
 }
 onMounted(() => document.addEventListener('keydown', handleKeydown));
-onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown);
+  if (copyResetTimer !== null) clearTimeout(copyResetTimer);
+});
 
 function exportLog(): void {
   downloadTraceLog();
+}
+
+// Per-row copy feedback: clicking a copy control flips its icon to a check for
+// ~1.5s (matching the upstream web UI), then reverts. Mirrors the copied-state
+// pattern used by the conversation copy button.
+const copiedField = ref<string | null>(null);
+let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+function copyValue(field: string, value: string): void {
+  void copyTextToClipboard(value);
+  copiedField.value = field;
+  if (copyResetTimer !== null) clearTimeout(copyResetTimer);
+  copyResetTimer = setTimeout(() => {
+    copyResetTimer = null;
+    copiedField.value = null;
+  }, 1500);
 }
 
 // Telemetry is opt-out: undefined and `true` both mean enabled, only explicit
@@ -674,16 +696,40 @@ function archiveTime(iso: string): string {
           <section class="sec">
             <h3 class="sec-title">{{ t('settings.advanced') }}</h3>
             <div class="row">
-              <span class="rlabel">{{ t('sidebar.daemon') }}</span>
-              <span class="rvalue mono">{{ daemonEndpoint }}</span>
+              <span class="rlabel">
+                {{ t('sidebar.daemon') }}
+                <span class="hint">{{ t('settings.serverAddressHint') }}</span>
+              </span>
+              <span class="rcopy">
+                <span class="rvalue mono">{{ daemonEndpoint }}</span>
+                <IconButton
+                  size="sm"
+                  :label="copiedField === 'address' ? t('settings.copied') : t('settings.copyServerAddress')"
+                  @click="copyValue('address', daemonEndpoint)"
+                >
+                  <Icon :name="copiedField === 'address' ? 'check' : 'copy'" size="sm" />
+                </IconButton>
+              </span>
             </div>
             <div class="row">
               <span class="rlabel">{{ t('settings.backend') }}</span>
               <span class="rvalue mono">{{ backendLabel }}</span>
             </div>
             <div class="row">
-              <span class="rlabel">{{ t('settings.serverVersion') }}</span>
-              <span class="rvalue mono">{{ serverVersion || '-' }}</span>
+              <span class="rlabel">
+                {{ t('settings.serverVersion') }}
+                <span class="hint">{{ t('settings.serverVersionHint') }}</span>
+              </span>
+              <span class="rcopy">
+                <span class="rvalue mono">{{ serverVersion || '-' }}</span>
+                <IconButton
+                  size="sm"
+                  :label="copiedField === 'version' ? t('settings.copied') : t('settings.copyServerVersion')"
+                  @click="copyValue('version', serverVersion || '')"
+                >
+                  <Icon :name="copiedField === 'version' ? 'check' : 'copy'" size="sm" />
+                </IconButton>
+              </span>
             </div>
             <div v-if="config" class="row">
               <span class="rlabel">
@@ -873,6 +919,9 @@ function archiveTime(iso: string): string {
   white-space: nowrap;
 }
 .rvalue.mono { font-family: var(--font-mono); font-size: var(--text-xs); }
+/* Value + copy button group for the copyable info rows (daemon address,
+   server version). */
+.rcopy { display: flex; align-items: center; gap: var(--space-2); flex: none; min-width: 0; }
 .hint { font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-faint); }
 
 .num-field {

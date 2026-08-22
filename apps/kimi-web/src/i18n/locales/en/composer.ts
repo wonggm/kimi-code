@@ -8,6 +8,11 @@ export default {
   queueNext: 'Up next',
   queueDragTitle: 'Drag to reorder',
   editQueued: 'Edit (load back into the input)',
+  /** Per-row queue actions (the inline queue at the transcript tail). */
+  queueSteer: 'Steer',
+  queueSteerTitle: 'Inject this prompt into the running turn now',
+  queueSendNow: 'Send now',
+  queueSendNowTitle: 'Send this prompt immediately, ahead of the queue',
   queuedAttachments: 'attachment ×{n}',
   queuedHasImage: 'Contains {n} image(s) — remove only, not editable',
   attachmentImage: 'Image',
@@ -36,5 +41,6 @@ export default {
   thinkingSuffix: ' · thinking',
   thinkingSuffixEffort: ' · {level}',
   noCommands: 'No matching commands',
-
+  slashSheetTitle: 'Commands',
+  mentionSheetTitle: 'Files',
 } as const;

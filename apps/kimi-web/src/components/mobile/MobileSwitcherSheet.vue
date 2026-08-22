@@ -5,15 +5,17 @@
      Tapping a session selects it AND closes the sheet; tapping a group header
      folds it, same as the desktop sidebar. -->
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { Session, WorkspaceGroup, WorkspaceView } from '../../types';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { loadSwitcherView, saveSwitcherView } from '../../lib/storage';
 import BottomSheet from '../dialogs/BottomSheet.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 import Menu from '../ui/Menu.vue';
 import MenuItem from '../ui/MenuItem.vue';
+import SegmentedControl from '../ui/SegmentedControl.vue';
 import Tooltip from '../ui/Tooltip.vue';
 
 type SidebarSession = Session & {
@@ -84,6 +86,53 @@ function onCreate(): void {
 function onAddWorkspace(): void {
   emit('addWorkspace');
   close();
+}
+
+// ---------------------------------------------------------------------------
+// View mode — grouped (collapsible workspace groups, current behavior) versus
+// flat (all sessions in pure recency order). The choice persists across
+// refreshes (see lib/storage.ts).
+// ---------------------------------------------------------------------------
+type SwitchView = 'grouped' | 'flat';
+
+const storedView = loadSwitcherView();
+const view = ref<SwitchView>(storedView === 'flat' ? 'flat' : 'grouped');
+watch(view, (v) => saveSwitcherView(v));
+
+// Bare recency sort across ALL loaded sessions — the flat view's order
+// (mirrors the desktop sidebar's pinned/recent ordering exactly).
+const flatSessions = computed(() =>
+  props.groups
+    .flatMap((group) => group.sessions)
+    .toSorted((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()),
+);
+
+// A single flattened list drives one shared row template: workspace headers
+// and show-more footers are inserted only in grouped mode; the flat view is
+// just the sorted sessions.
+type SheetEntry =
+  | { kind: 'ws-head'; group: SidebarGroup }
+  | { kind: 'ws-foot'; group: SidebarGroup }
+  | { kind: 'session'; session: SidebarSession; groupId: string };
+
+const entries = computed<SheetEntry[]>(() => {
+  if (view.value === 'flat') {
+    return flatSessions.value.map((session) => ({ kind: 'session', session, groupId: '' }));
+  }
+  const out: SheetEntry[] = [];
+  for (const group of props.groups) {
+    out.push({ kind: 'ws-head', group });
+    for (const session of visibleSessions(group)) {
+      out.push({ kind: 'session', session, groupId: group.workspace.id });
+    }
+    out.push({ kind: 'ws-foot', group });
+  }
+  return out;
+});
+
+function entryKey(entry: SheetEntry): string {
+  if (entry.kind === 'session') return `session:${entry.session.id}`;
+  return `${entry.kind}:${entry.group.workspace.id}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,144 +275,169 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
       {{ t('sidebar.newWorkspace') }}
     </button>
 
-    <!-- Workspace groups with their sessions -->
+    <!-- View toggle: grouped workspace groups (current behavior) or a flat
+         recency-sorted session list; the choice persists locally. -->
+    <div class="mview">
+      <SegmentedControl
+        :model-value="view"
+        :options="[
+          { value: 'grouped', label: t('mobile.switcherGrouped') },
+          { value: 'flat', label: t('mobile.switcherFlat') },
+        ]"
+        @update:model-value="view = $event as SwitchView"
+      />
+    </div>
+
+    <!-- Workspace groups with their sessions; the same session row renders in
+         both views — grouped mode inserts group headers + show-more footers,
+         flat mode is just the sessions sorted by recency. -->
     <div class="mlist">
       <div v-if="groups.length === 0" class="mempty">
         {{ t('workspace.noWorkspace') }}
       </div>
 
-      <div v-for="g in groups" :key="g.workspace.id" class="mgroup">
-        <div
-          class="mgh"
-          :class="{ on: g.workspace.id === activeWorkspaceId }"
-          @click="toggleCollapse(g.workspace.id)"
-        >
-          <!-- Folder icon: open/closed mirrors the desktop sidebar -->
-          <Icon v-if="isCollapsed(g.workspace.id)" class="mgh-folder" name="folder-closed" size="sm" />
-          <Icon v-else class="mgh-folder" name="folder" size="sm" />
-
-          <div class="mgh-main">
-            <span class="mgh-name">{{ g.workspace.name }}</span>
-            <Tooltip :text="g.workspace.root">
-              <span class="mgh-path">{{ g.workspace.shortPath }}</span>
-            </Tooltip>
-          </div>
-
-          <span
-            v-if="isCollapsed(g.workspace.id) && wsAttention(g.workspace.id) > 0"
-            class="att"
-          >{{ wsAttention(g.workspace.id) }}</span>
-
-          <IconButton
-            size="lg"
-            class="mgh-more"
-            :label="t('sidebar.options')"
-            @click.stop="toggleWsMenu(g.workspace.id)"
-          >
-            <Icon name="dots-horizontal" size="md" />
-          </IconButton>
-
-          <IconButton
-            size="lg"
-            class="mgh-add"
-            :label="t('workspace.newInGroup')"
-            @click.stop="onCreateInWorkspace(g.workspace.id)"
-          >
-            <Icon name="plus" size="md" />
-          </IconButton>
-
-          <!-- Workspace menu: copy path / delete (two-step confirm) -->
-          <Menu v-if="wsMenuFor === g.workspace.id" class="kmenu wsmenu" @click.stop>
-            <MenuItem size="lg" @click="onCopyWsPath(g.workspace)">
-              {{ t('sidebar.copyPath') }}
-            </MenuItem>
-            <MenuItem size="lg" danger @click="onDeleteWorkspace(g.workspace)">{{ t('sidebar.delete') }}</MenuItem>
-          </Menu>
-        </div>
-
-        <div v-show="!isCollapsed(g.workspace.id)">
-          <div v-if="g.sessions.length === 0" class="mempty small">{{ t('sidebar.noSessions') }}</div>
+      <template v-for="entry in entries" :key="entryKey(entry)">
+        <!-- Workspace group header -->
+        <div v-if="entry.kind === 'ws-head'" class="mgroup">
           <div
-            v-for="s in visibleSessions(g)"
-            :key="s.id"
-            class="srow"
-            :class="{ cur: s.id === activeId }"
-            @click="onSelectSession(s.id)"
+            class="mgh"
+            :class="{ on: entry.group.workspace.id === activeWorkspaceId }"
+            @click="toggleCollapse(entry.group.workspace.id)"
           >
-            <div class="m">
-              <input
-                v-if="renamingId === s.id"
-                v-model="renameValue"
-                class="rename-input"
-                :draggable="false"
-                @click.stop
-                @compositionstart="renameComposing = true"
-                @compositionend="renameComposing = false"
-                @keydown.enter.stop="!renameComposing && !$event.isComposing && commitRename(s)"
-                @keydown.esc.stop="!renameComposing && !$event.isComposing && cancelRename()"
-                @blur="commitRename(s)"
-              />
-              <div v-else class="t" :class="{ run: s.busy, aborted: !s.busy && (attentionBySession[s.id] ?? 0) === 0 && s.lastTurnReason === 'failed' }">
-                <span v-if="s.emoji" class="emoji" aria-hidden="true">{{ s.emoji }}</span>{{ s.title }}
-              </div>
-              <div class="s">{{ s.time }}</div>
-              <button
-                v-if="s.pullRequest"
-                class="pr"
-                :class="`pr--${s.pullRequest.state}`"
-                type="button"
-                :aria-label="t('sidebar.pullRequest')"
-                @click.stop="openPullRequest(s)"
-              >
-                <Icon name="git-pull-request" size="sm" />
-                <span>#{{ s.pullRequest.number }}</span>
-              </button>
+            <!-- Folder icon: open/closed mirrors the desktop sidebar -->
+            <Icon v-if="isCollapsed(entry.group.workspace.id)" class="mgh-folder" name="folder-closed" size="sm" />
+            <Icon v-else class="mgh-folder" name="folder" size="sm" />
+
+            <div class="mgh-main">
+              <span class="mgh-name">{{ entry.group.workspace.name }}</span>
+              <Tooltip :text="entry.group.workspace.root">
+                <span class="mgh-path">{{ entry.group.workspace.shortPath }}</span>
+              </Tooltip>
             </div>
-            <span v-if="(attentionBySession[s.id] ?? 0) > 0" class="att">{{ attentionBySession[s.id] }}</span>
+
+            <span
+              v-if="isCollapsed(entry.group.workspace.id) && wsAttention(entry.group.workspace.id) > 0"
+              class="att"
+            >{{ wsAttention(entry.group.workspace.id) }}</span>
+
             <IconButton
               size="lg"
-              class="kb"
+              class="mgh-more"
               :label="t('sidebar.options')"
-              @click.stop="toggleMenu(s.id)"
+              @click.stop="toggleWsMenu(entry.group.workspace.id)"
             >
               <Icon name="dots-horizontal" size="md" />
             </IconButton>
 
-            <!-- Kebab menu -->
-            <Menu v-if="menuFor === s.id" class="kmenu" @click.stop>
-              <MenuItem size="lg" @click="onRename(s)">{{ t('sidebar.rename') }}</MenuItem>
-              <MenuItem size="lg" @click="setEmoji(s)">{{ t('sidebar.setEmoji') }}</MenuItem>
-              <MenuItem size="lg" @click="togglePinned(s)">{{ s.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}</MenuItem>
-              <MenuItem size="lg" danger @click="onArchive(s.id)">{{ t('sidebar.archive') }}</MenuItem>
+            <IconButton
+              size="lg"
+              class="mgh-add"
+              :label="t('workspace.newInGroup')"
+              @click.stop="onCreateInWorkspace(entry.group.workspace.id)"
+            >
+              <Icon name="plus" size="md" />
+            </IconButton>
+
+            <!-- Workspace menu: copy path / delete (two-step confirm) -->
+            <Menu v-if="wsMenuFor === entry.group.workspace.id" class="kmenu wsmenu" @click.stop>
+              <MenuItem size="lg" @click="onCopyWsPath(entry.group.workspace)">
+                {{ t('sidebar.copyPath') }}
+              </MenuItem>
+              <MenuItem size="lg" danger @click="onDeleteWorkspace(entry.group.workspace)">{{ t('sidebar.delete') }}</MenuItem>
             </Menu>
           </div>
+        </div>
+
+        <!-- Session row (shared by both views) -->
+        <div
+          v-else-if="entry.kind === 'session'"
+          v-show="!isCollapsed(entry.groupId)"
+          class="srow"
+          :class="{ cur: entry.session.id === activeId }"
+          @click="onSelectSession(entry.session.id)"
+        >
+          <div class="m">
+            <input
+              v-if="renamingId === entry.session.id"
+              v-model="renameValue"
+              class="rename-input"
+              :draggable="false"
+              @click.stop
+              @compositionstart="renameComposing = true"
+              @compositionend="renameComposing = false"
+              @keydown.enter.stop="!renameComposing && !$event.isComposing && commitRename(entry.session)"
+              @keydown.esc.stop="!renameComposing && !$event.isComposing && cancelRename()"
+              @blur="commitRename(entry.session)"
+            />
+            <div
+              v-else
+              class="t"
+              :class="{ run: entry.session.busy, aborted: !entry.session.busy && (attentionBySession[entry.session.id] ?? 0) === 0 && entry.session.lastTurnReason === 'failed' }"
+            >
+              <span v-if="entry.session.emoji" class="emoji" aria-hidden="true">{{ entry.session.emoji }}</span>{{ entry.session.title }}
+            </div>
+            <div class="s">{{ entry.session.time }}</div>
+            <button
+              v-if="entry.session.pullRequest"
+              class="pr"
+              :class="`pr--${entry.session.pullRequest.state}`"
+              type="button"
+              :aria-label="t('sidebar.pullRequest')"
+              @click.stop="openPullRequest(entry.session)"
+            >
+              <Icon name="git-pull-request" size="sm" />
+              <span>#{{ entry.session.pullRequest.number }}</span>
+            </button>
+          </div>
+          <span v-if="(attentionBySession[entry.session.id] ?? 0) > 0" class="att">{{ attentionBySession[entry.session.id] }}</span>
+          <IconButton
+            size="lg"
+            class="kb"
+            :label="t('sidebar.options')"
+            @click.stop="toggleMenu(entry.session.id)"
+          >
+            <Icon name="dots-horizontal" size="md" />
+          </IconButton>
+
+          <!-- Kebab menu -->
+          <Menu v-if="menuFor === entry.session.id" class="kmenu" @click.stop>
+            <MenuItem size="lg" @click="onRename(entry.session)">{{ t('sidebar.rename') }}</MenuItem>
+            <MenuItem size="lg" @click="setEmoji(entry.session)">{{ t('sidebar.setEmoji') }}</MenuItem>
+            <MenuItem size="lg" @click="togglePinned(entry.session)">{{ entry.session.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}</MenuItem>
+            <MenuItem size="lg" danger @click="onArchive(entry.session.id)">{{ t('sidebar.archive') }}</MenuItem>
+          </Menu>
+        </div>
+
+        <!-- Group foot: empty state + show-more buttons (grouped view only) -->
+        <div v-else v-show="!isCollapsed(entry.group.workspace.id)">
+          <div v-if="entry.group.sessions.length === 0" class="mempty small">{{ t('sidebar.noSessions') }}</div>
           <button
-            v-if="g.hasMore || g.loadingMore"
+            v-if="entry.group.hasMore || entry.group.loadingMore"
             type="button"
             class="mshow-more"
-            :disabled="g.loadingMore"
-            @click.stop="onLoadMore(g.workspace.id)"
+            :disabled="entry.group.loadingMore"
+            @click.stop="onLoadMore(entry.group.workspace.id)"
           >
             {{
-              g.loadingMore
+              entry.group.loadingMore
                 ? t('sidebar.loadingMore')
-                : t('sidebar.showMore', { count: Math.max(0, g.workspace.sessionCount - g.sessions.length) })
+                : t('sidebar.showMore', { count: Math.max(0, entry.group.workspace.sessionCount - entry.group.sessions.length) })
             }}
           </button>
           <button
-            v-if="g.sessions.length > g.initialCount"
+            v-if="entry.group.sessions.length > entry.group.initialCount"
             type="button"
             class="mshow-more"
-            @click.stop="toggleExpand(g.workspace.id)"
+            @click.stop="toggleExpand(entry.group.workspace.id)"
           >
             {{
-              isExpanded(g.workspace.id)
+              isExpanded(entry.group.workspace.id)
                 ? t('sidebar.showLess')
-                : t('sidebar.showAll', { count: g.sessions.length - g.initialCount })
+                : t('sidebar.showAll', { count: entry.group.sessions.length - entry.group.initialCount })
             }}
           </button>
         </div>
-      </div>
+      </template>
     </div>
   </BottomSheet>
 </template>
@@ -607,6 +681,13 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
 .mshow-more:active { color: var(--color-accent-hover); background: var(--color-surface-sunken); }
 
 .newrow { font-family: var(--sans); }
+
+/* View-mode toggle (grouped workspace groups / flat recency) */
+.mview {
+  display: flex;
+  justify-content: center;
+  padding: 2px var(--space-4) var(--space-2);
+}
 .mlist .srow {
   margin: 1px 8px;
   border-radius: var(--radius-md);

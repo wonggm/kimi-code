@@ -3,7 +3,7 @@
      It keeps the parent's context without creating a sidebar session. Reuses
      ChatPane for the transcript; its panel-open emits are no-ops here. -->
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ChatPane from './ChatPane.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
@@ -41,6 +41,14 @@ const panelSubtitle = computed(() => {
 const draft = ref('');
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const bodyRef = ref<HTMLDivElement | null>(null);
+
+// Panel mounts fresh on every open (v-else-if in App.vue), so land focus in
+// the input immediately — /btw or the shortcut both land the user typing.
+onMounted(() => {
+  void nextTick(() => {
+    inputRef.value?.focus();
+  });
+});
 
 function submit(): void {
   const text = draft.value.trim();

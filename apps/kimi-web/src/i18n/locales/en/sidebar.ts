@@ -61,4 +61,6 @@ export default {
   search: 'Search',
   searchHint: '↑↓ navigate · ↵ open · Esc close',
   searchNoResults: 'No matching sessions or workspaces',
+  /** Session-row kebab footer: the row's absolute last-active timestamp. */
+  lastActive: 'Last updated: {time}',
 } as const;

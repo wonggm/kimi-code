@@ -54,6 +54,7 @@ import { copyTextToClipboard } from '../lib/clipboard';
 import {
   loadCollapsedWorkspaces,
   saveCollapsedWorkspaces,
+  STORAGE_KEYS,
 } from '../lib/storage';
 import { moveInOrder, type DropPosition, type WorkspaceSortMode } from '../lib/workspaceOrder';
 import { splitByArchived } from '../composables/client/useWorkspaceState';
@@ -61,6 +62,7 @@ import type { Session, WorkspaceGroup as WorkspaceGroupType, WorkspaceView } fro
 import SearchSessionsDialog from './dialogs/SearchSessionsDialog.vue';
 import WorkspaceGroup from './WorkspaceGroup.vue';
 import SessionRow from './SessionRow.vue';
+import ResizeHandle from './ResizeHandle.vue';
 import { isMacosDesktop } from '../lib/desktopFlag';
 import { useSidebarLayout } from '../composables/useSidebarLayout';
 import IconButton from './ui/IconButton.vue';
@@ -196,6 +198,34 @@ const unpinnedGroups = computed(() =>
 );
 const flatSessions = computed(() => props.sessions.filter((session) => !session.pinned));
 
+// ---------------------------------------------------------------------------
+// Pinned section: resizable height (the divider below the rows, persisted) so
+// both the pinned area and the session list share the space; the pinned rows
+// scroll inside their own area with top/bottom edge fades when overflowed.
+// ---------------------------------------------------------------------------
+const PINNED_DEFAULT_HEIGHT = 180;
+const PINNED_MIN_HEIGHT = 72;
+const PINNED_MAX_HEIGHT = 380;
+/** Chrome above the pinned section (brand + New chat + search + section labels
+ *  + footer); the cap keeps at least this much room for the session list. */
+const PINNED_RESERVE = 300;
+const pinnedHeight = ref(PINNED_DEFAULT_HEIGHT);
+const pinnedMax = ref(
+  Math.max(PINNED_MIN_HEIGHT, (typeof window === 'undefined' ? 800 : window.innerHeight) - PINNED_RESERVE),
+);
+function updatePinnedMax(): void {
+  pinnedMax.value = Math.max(PINNED_MIN_HEIGHT, window.innerHeight - PINNED_RESERVE);
+}
+/** True once the pinned rows scrolled down from the top — draws the top fade. */
+const pinnedScrolled = ref(false);
+/** True while the pinned rows sit at their bottom edge — draws no bottom fade. */
+const pinnedAtBottom = ref(true);
+function onPinnedScroll(e: Event): void {
+  const el = e.target as HTMLElement;
+  pinnedScrolled.value = el.scrollTop > 0;
+  pinnedAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+}
+
 function onSetEmoji(id: string, emoji: string | undefined): void {
   emit('setEmoji', id, emoji);
 }
@@ -228,8 +258,13 @@ function onSearchKeydown(e: KeyboardEvent): void {
 onMounted(() => {
   loadSidebarViewMode();
   window.addEventListener('keydown', onSearchKeydown);
+  updatePinnedMax();
+  window.addEventListener('resize', updatePinnedMax);
 });
-onBeforeUnmount(() => window.removeEventListener('keydown', onSearchKeydown));
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onSearchKeydown);
+  window.removeEventListener('resize', updatePinnedMax);
+});
 
 // Scroll-linked header seam: the .search-wrap bottom border/shadow only appears
 // once the session list has actually scrolled, so an unscrolled list shows no
@@ -929,7 +964,8 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Session search — opens the Spotlight-style search dialog. Last fixed
-           row above the list, so it carries the scroll-linked seam. -->
+           row above the list (below the pinned block), so it carries the
+           scroll-linked seam. -->
       <div class="search-wrap" :class="{ 'search-wrap--scrolled': sessionsScrolled }">
         <button class="search" type="button" @click="openSearch">
           <Icon class="search-icon" name="search" />
@@ -938,18 +974,17 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <!-- Session list — grouped by workspace -->
-      <div class="sessions" ref="sessionsRef" @scroll="onSessionsScroll">
-        <!-- Empty state — only when no workspace is registered at all; empty
-             workspaces still render their group header (with the + button). -->
-        <div v-if="groups.length === 0" class="empty">
-          {{ t('workspace.noWorkspace') }}
-        </div>
-
-        <template v-else>
-          <!-- Pinned section stays above the tabs (Lab mode) / above the list
-               (today's mode) — it is not owned by any single tab. -->
-          <div v-if="pinnedSessions.length > 0" class="pinned-section">
+      <!-- Pinned section — stays above the tabs (Lab mode) / above the list
+           (today's mode); not owned by any single tab. Fixed height shared with
+           the session list via the divider below (both areas resize); the rows
+           scroll inside with top/bottom edge fades when they overflow. -->
+      <template v-if="pinnedSessions.length > 0">
+        <div class="pinned-wrap" :style="{ height: `${pinnedHeight}px` }">
+          <div
+            class="pinned-scroll"
+            :class="{ 'fade-top': pinnedScrolled, 'fade-bot': !pinnedAtBottom }"
+            @scroll.passive="onPinnedScroll"
+          >
             <div class="side-section-label"><span class="side-section-title">{{ $t('sidebar.pinned') }}</span></div>
             <SessionRow
               v-for="session in pinnedSessions"
@@ -970,7 +1005,28 @@ onBeforeUnmount(() => {
               @generate-title="(id, done) => emit('generateTitle', id, done)"
             />
           </div>
+        </div>
+        <ResizeHandle
+          class="pinned-resize"
+          orientation="horizontal"
+          :storage-key="STORAGE_KEYS.pinnedHeight"
+          :default-width="PINNED_DEFAULT_HEIGHT"
+          :min="PINNED_MIN_HEIGHT"
+          :max="Math.min(PINNED_MAX_HEIGHT, pinnedMax)"
+          :aria-label="t('layout.pinnedResizeAria')"
+          @update:width="pinnedHeight = $event"
+        />
+      </template>
 
+      <!-- Session list — grouped by workspace -->
+      <div class="sessions" ref="sessionsRef" @scroll="onSessionsScroll">
+        <!-- Empty state — only when no workspace is registered at all; empty
+             workspaces still render their group header (with the + button). -->
+        <div v-if="groups.length === 0" class="empty">
+          {{ t('workspace.noWorkspace') }}
+        </div>
+
+        <template v-else>
           <!-- ══ Experimental Lab: multi-tab sidebar (Open / Done / Workspaces) ══ -->
           <template v-if="labSidebarTabs">
             <div class="sb-tabs-wrap">
@@ -1649,12 +1705,100 @@ onBeforeUnmount(() => {
 
 /* Sessions — owns the vertical padding around the list (the 12px gap to the
    search row above and the bottom breathing room). Scrolled content passes
-   through the top padding and clips at the .search-wrap seam. */
+   through the top padding and clips at the .search-wrap seam. The list keeps
+   the app's native-scrollbar choice, but the thumb only paints while the
+   pointer is over the list (or it is focused): an idle list reads edge-to-edge
+   clean. scrollbar-gutter: stable both-edges reserves the same track space on
+   BOTH sides so the left/right content insets stay equal whether or not the
+   thumb is showing — without it the right-side scrollbar eats into the right
+   --sb-inset and the rows look off-center (sidebar-overlay-scrollbar). */
 .sessions {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-3) var(--sb-inset);
   min-height: 0;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sessions:hover,
+.sessions:focus-within {
+  scrollbar-color: var(--color-text-faint) transparent;
+}
+.sessions::-webkit-scrollbar {
+  width: 10px;
+}
+.sessions::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--radius-full);
+}
+.sessions:hover::-webkit-scrollbar-thumb,
+.sessions:focus-within::-webkit-scrollbar-thumb {
+  background: var(--color-text-faint);
+}
+
+/* Pinned section — a fixed row block above the tabs/list, not owned by any
+   single tab. Height comes from the pinned resize handle (inline style); only
+   this area and the session list below scroll. */
+.pinned-wrap {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.pinned-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--sb-inset) var(--space-2);
+  /* Same native hover-reveal scrollbar as the session list. */
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  /* Edge-fade hints while the pinned rows overflow. The fade gradients are
+     token-defined so the app's no-gradient-text rule (custom-property
+     definitions exempt) stays satisfied; they are applied as a mask-image only
+     while the corresponding edge is scrolled away. 10px sits inside the 12px
+     container padding, so the label/row text itself never fades. */
+  --pinned-fade-top: linear-gradient(to bottom, transparent 0, black 10px);
+  --pinned-fade-bot: linear-gradient(to top, transparent 0, black 10px);
+  --pinned-fade-both: linear-gradient(to bottom, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
+}
+.pinned-scroll:hover,
+.pinned-scroll:focus-within {
+  scrollbar-color: var(--color-text-faint) transparent;
+}
+.pinned-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.pinned-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--radius-full);
+}
+.pinned-scroll:hover::-webkit-scrollbar-thumb,
+.pinned-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: var(--color-text-faint);
+}
+.pinned-scroll.fade-top {
+  -webkit-mask-image: var(--pinned-fade-top);
+  mask-image: var(--pinned-fade-top);
+}
+.pinned-scroll.fade-bot {
+  -webkit-mask-image: var(--pinned-fade-bot);
+  mask-image: var(--pinned-fade-bot);
+}
+.pinned-scroll.fade-top.fade-bot {
+  -webkit-mask-image: var(--pinned-fade-both);
+  mask-image: var(--pinned-fade-both);
+}
+
+/* The pinned resize divider — ResizeHandle supplies the strip + pointer
+   behaviour; this only trims it to the column (the child's own horizontal
+   variant handles size/cursor). */
+.pinned-resize {
+  flex: none;
+  align-self: stretch;
 }
 
 /* Footer — settings entry pinned under the session list. Same list-style
@@ -1723,10 +1867,6 @@ onBeforeUnmount(() => {
 }
 .side-section-toggle:hover {
   color: var(--dim);
-}
-.side-section-toggle svg {
-  width: 13px;
-  height: 13px;
 }
 .side-section-actions {
   display: flex;

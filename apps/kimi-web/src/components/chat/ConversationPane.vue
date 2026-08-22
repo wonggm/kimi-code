@@ -101,6 +101,9 @@ const props = defineProps<{
   activeWorkspaceId?: string | null;
   /** Active session title, shown in the chat header. */
   sessionTitle?: string;
+  /** Whether the active session is pinned in the sidebar — drives the ⋮ menu's
+   *  Pin/Unpin entry. */
+  sessionPinned?: boolean;
   /** GitHub PR for the current branch, when known (shown in the chat header). */
   pr?: { number: number; state: string; url: string } | null;
   /** Conversation outline: proportional bubbles, viewport indicator, hover tooltip. */
@@ -157,6 +160,12 @@ const emit = defineEmits<{
   archiveSession: [id: string];
   /** Chat header: export current session. */
   exportSession: [id: string];
+  /** Chat header: flip the current session's pinned state. */
+  togglePinSession: [id: string, pinned: boolean];
+  /** Inline queue: steer one queued message into the running turn. */
+  steerQueued: [index: number];
+  /** Inline queue: send one queued message immediately. */
+  sendQueued: [index: number];
 }>();
 
 // Empty-composer workspace picker.
@@ -248,19 +257,26 @@ const subagentRunning = computed(() => subagentTasks.value.filter((t) => t.state
 // or background subagent task, so the "Open detail" button can be hidden when
 // the task is gone (e.g. a completed foreground subagent after a page refresh).
 function resolveAgentTaskId(toolCallId: string): string | undefined {
+  return resolveAgentTask(toolCallId)?.id;
+}
+
+// Full task lookup for the Agent tool card: the card labels itself with the
+// subagent's foreground/background mode read from this task.
+function resolveAgentTask(toolCallId: string): (typeof props.tasks)[number] | undefined {
   const tasks = props.tasks;
   const task =
     tasks.find((tk) => tk.id === toolCallId) ?? tasks.find((tk) => tk.parentToolCallId === toolCallId);
-  if (task) return task.id;
+  if (task) return task;
   // A subagent task synthesized from a text delta (client subscribed after the
   // spawn, so the lifecycle parentToolCallId was missed) has no parentToolCallId.
   // When exactly one such unmapped subagent task exists, attribute it to this
   // Agent tool call so the Open-detail button stays reachable.
   const unmapped = tasks.filter((tk) => tk.kind === 'subagent' && !tk.parentToolCallId);
-  if (unmapped.length === 1) return unmapped[0]!.id;
+  if (unmapped.length === 1) return unmapped[0]!;
   return undefined;
 }
 provide('resolveAgentTaskId', resolveAgentTaskId);
+provide('resolveAgentTask', resolveAgentTask);
 provide('pinScroll', pinScrollFor);
 
 function changedFilesForTurn(turn: ChatTurn): string[] {
@@ -1539,6 +1555,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
       :workspace-name="workspaceName"
       :workspace-root="workspaceRoot"
       :session-title="sessionTitle"
+      :pinned="sessionPinned"
       :branch="gitInfo?.branch"
       :ahead="gitInfo?.ahead"
       :behind="gitInfo?.behind"
@@ -1555,6 +1572,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
       @fork-session="(id) => emit('forkSession', id)"
       @archive-session="(id) => emit('archiveSession', id)"
       @export-session="(id) => emit('exportSession', id)"
+      @toggle-pin-session="(id, pinned) => emit('togglePinSession', id, pinned)"
     />
 
     <!-- Conversation outline: right edge rail of vertical bars (one per user
@@ -1721,6 +1739,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
               @unqueue="emit('unqueue', $event)"
               @edit-queued="handleEditQueued"
               @reorder-queue="handleReorderQueue"
+              @steer-queued="emit('steerQueued', $event)"
+              @send-queued="emit('sendQueued', $event)"
             />
           </template>
         </div>

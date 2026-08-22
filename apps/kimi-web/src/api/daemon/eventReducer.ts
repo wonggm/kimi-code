@@ -491,10 +491,21 @@ export function reduceAppEvent(
       // session.meta.updated. We keep prior values for any field the event does
       // not carry; the full session object otherwise stays as-is. Keeping
       // lastPrompt fresh lets sidebar search match the most recent prompt
-      // without a full reload.
+      // without a full reload. The archived/pinned flips (archive/restore or
+      // pin/unpin done in another client) are change-only, so they patch the
+      // session in place and the sidebar lists (which split on the archived
+      // flag) move the row between Open and Done immediately.
       next.sessions = next.sessions.map((s) =>
         s.id === event.sessionId
-          ? { ...s, title: event.title ?? s.title, lastPrompt: event.lastPrompt ?? s.lastPrompt }
+          ? {
+              ...s,
+              title: event.title ?? s.title,
+              lastPrompt: event.lastPrompt ?? s.lastPrompt,
+              archived:
+                event.archived !== undefined ? event.archived : s.archived,
+              pinned: event.pinned !== undefined ? event.pinned : s.pinned,
+              emoji: event.emoji ?? s.emoji,
+            }
           : s,
       );
       break;

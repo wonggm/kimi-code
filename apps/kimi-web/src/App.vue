@@ -45,7 +45,7 @@ import ServerAuthDialog from './components/ServerAuthDialog.vue';
 import { initServerAuth, onAuthRequired } from './api/daemon/serverAuth';
 import { getKimiWebApi } from './api';
 import type { AppConfig, ManagedUsageResult, ThinkingLevel } from './api/types';
-import { commitLevel, effectiveThinkingLevel, segmentsFor } from './lib/modelThinking';
+import { effectiveThinkingLevel } from './lib/modelThinking';
 import { stripSkillPrefix } from './lib/slashCommands';
 import Button from './components/ui/Button.vue';
 import IconButton from './components/ui/IconButton.vue';
@@ -103,6 +103,12 @@ const activeSessionTitle = computed<string>(() => {
   return client.sessions.value.find((s) => s.id === id)?.title ?? '';
 });
 
+// Whether the active session is pinned — drives the chat header's Pin/Unpin.
+const activeSessionPinned = computed<boolean>(() => {
+  const id = client.activeSessionId.value;
+  return client.sessions.value.find((s) => s.id === id)?.pinned ?? false;
+});
+
 // Number of sessions in the active workspace (mobile top-bar sub-line).
 const activeWorkspaceSessionCount = computed<number>(
   () => client.visibleWorkspace.value?.sessionCount ?? 0,
@@ -121,21 +127,6 @@ const { showAuthGate, blinkAuthLogo } = useAuthGate({ client, authLogoRef });
 // intentionally excluded so the tab title stays stable. Prefixes an animated
 // spinner while the agent is running so activity is visible at a glance.
 usePageTitle({ running, showAuthGate });
-
-// The /thinking slash command has no popover anchor, so it steps to the next
-// segment for the active model (effort models cycle through their declared
-// levels; boolean models flip on/off; unsupported stays off).
-function nextThinkingLevel(current: ThinkingLevel | undefined): ThinkingLevel {
-  // Identity is the model id — display/model names can collide across providers.
-  const model = client.models.value.find((m) => m.id === client.status.value.modelId);
-  const segs = segmentsFor(model);
-  // No stored preference means the model default is in effect — cycle from
-  // there; a level the model doesn't declare (indexOf → -1) starts the cycle
-  // at the first segment.
-  const idx = segs.indexOf(effectiveThinkingLevel(model, current));
-  const next = segs[(idx + 1) % segs.length] ?? segs[0] ?? 'off';
-  return commitLevel(model, next);
-}
 
 // Status panel (/status) renders current client state only — show the
 // effective thinking level so "no preference" reads as the model default that
@@ -218,6 +209,9 @@ onUnmounted(() => {
 
 function onGlobalKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return;
+  // An active IME composition owns Escape (cancel the candidate window, never
+  // close the side panel behind it).
+  if (e.isComposing || e.keyCode === 229) return;
   // A modal dialog open on top of the side panel owns Escape — leave the event
   // alone so the dialog can close itself instead of the panel behind it.
   if (anyOverlayOpen.value) return;
@@ -671,16 +665,6 @@ function handleCommand(cmd: string, attachments?: PromptAttachment[]): void {
     case '/plan':
       client.togglePlanArmed();
       break;
-    case '/auto':
-      client.setPermission('auto');
-      break;
-    case '/yolo':
-      client.setPermission('yolo');
-      break;
-    case '/thinking':
-      // No popover anchor from a slash command — step to the next level.
-      client.setThinking(nextThinkingLevel(client.thinking.value));
-      break;
     case '/status':
       showStatusPanel.value = true;
       break;
@@ -1024,6 +1008,7 @@ function openPr(url: string): void {
       :workspaces="client.workspacesView.value"
       :active-workspace-id="client.activeWorkspaceId.value"
       :session-title="activeSessionTitle"
+      :session-pinned="activeSessionPinned"
       :pr="client.activePullRequest.value"
       :conversation-toc="client.conversationToc.value"
       @open-changes="openDiffDetail()"
@@ -1041,6 +1026,9 @@ function openPr(url: string): void {
       @unqueue="handleUnqueue"
       @edit-queued="handleEditQueued"
       @reorder-queue="handleReorderQueue"
+      @steer-queued="client.steerQueued($event)"
+      @send-queued="client.sendQueued($event)"
+      @toggle-pin-session="(id, pinned) => handleSessionUpdate(id, { pinned })"
       @set-permission="client.setPermission($event)"
       @set-thinking="client.setThinking($event)"
       @toggle-plan="client.togglePlanMode()"
@@ -1133,7 +1121,12 @@ function openPr(url: string): void {
       <AgentDetailPanel
         v-else-if="detailTarget === 'agent' && agentPanelMember"
         :member="agentPanelMember"
+        :session-id="client.activeSessionId.value ?? undefined"
+        :tasks="client.activeAppTasks.value"
         @close="closeAgentPanel"
+        @open-file="openFilePreview($event)"
+        @open-media="openMediaPreview($event)"
+        @open-agent="openAgentPanel($event)"
       />
       <SideChatPanel
         v-else-if="detailTarget === 'btw' && btwVisible"

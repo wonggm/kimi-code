@@ -4,10 +4,19 @@ import type { FileItem } from '../types';
 import type { AppSkill } from '../api/types';
 import { mentionToText, type MentionInsert } from '../lib/mentionTokens';
 
+/** A file row as returned by the workspace search: the engine also reports the
+ *  entry kind, a 0–1 match score and the per-character match positions (offsets
+ *  into `path`). The optional fields are absent on the legacy fs:search path. */
+export type MentionFileItem = FileItem & {
+  kind?: 'file' | 'directory' | 'symlink';
+  score?: number;
+  matchPositions?: number[];
+};
+
 /** A mention-menu row: a searched file/folder, or a session skill. */
 export type MentionItem =
-  | { kind: 'file' | 'folder'; name: string; path: string }
-  | { kind: 'skill'; name: string; path: '' };
+  | { kind: 'file' | 'folder'; name: string; path: string; score?: number; matchPositions?: number[] }
+  | { kind: 'skill'; name: string; path: ''; score?: number };
 
 export interface MentionMenuDeps {
   /** The live composer text — the @token is read from it and rewritten on select. */
@@ -16,9 +25,10 @@ export interface MentionMenuDeps {
   textareaRef: Ref<HTMLTextAreaElement | null>;
   /** Re-fit the textarea after its text changes. */
   autosize: () => void;
-  /** File search for the @-query (getter; undefined disables the file rows). */
-  searchFiles: () => ((q: string) => Promise<FileItem[]>) | undefined;
-  /** Session skills offered after the file rows (getter; empty disables them). */
+  /** File search for the @-query (getter; undefined disables the file rows).
+   *  Should feed fs:suggest-ranked results (score + match_positions). */
+  searchFiles: () => ((q: string) => Promise<MentionFileItem[]>) | undefined;
+  /** Session skills offered in the mention list (getter; empty disables them). */
   skills?: () => AppSkill[];
 }
 
@@ -28,20 +38,20 @@ interface MentionToken {
   end: number;
 }
 
-/** A searched file row: directories are recognizable only by a trailing slash
- *  (the workspace search drops its kind), everything else is a file. */
-function itemForFile(file: FileItem): MentionItem {
-  return file.path.endsWith('/')
-    ? { kind: 'folder', name: file.name, path: file.path }
-    : { kind: 'file', name: file.name, path: file.path };
+/** A searched file row: directories are recognized by the engine kind, with a
+ *  trailing-slash fallback for search results that drop the kind. */
+function itemForFile(file: MentionFileItem): MentionItem {
+  const folder =
+    file.kind === 'directory' || file.path.endsWith('/');
+  return folder
+    ? { kind: 'folder', name: file.name, path: file.path, score: file.score, matchPositions: file.matchPositions }
+    : { kind: 'file', name: file.name, path: file.path, score: file.score, matchPositions: file.matchPositions };
 }
 
-function itemForSkill(skill: AppSkill): MentionItem {
-  return { kind: 'skill', name: skill.name, path: '' };
-}
-
-/** Rank matches: name-prefix hits first, then substring hits (both case-folded). */
-function rankSkills(skills: AppSkill[], queryLower: string): AppSkill[] {
+/** Rank matches: name-prefix hits first, then substring hits (both case-folded).
+ *  Returns the ranked rows with a synthetic 0–1 score so skills can be merged
+ *  into the file rows by match quality. */
+function rankedSkillRows(skills: AppSkill[], queryLower: string): { item: MentionItem; score: number }[] {
   const prefix: AppSkill[] = [];
   const includes: AppSkill[] = [];
   for (const skill of skills) {
@@ -49,7 +59,14 @@ function rankSkills(skills: AppSkill[], queryLower: string): AppSkill[] {
     if (name.startsWith(queryLower)) prefix.push(skill);
     else if (name.includes(queryLower)) includes.push(skill);
   }
-  return [...prefix, ...includes];
+  return [...prefix, ...includes].map((skill, i) => ({
+    item: itemForSkill(skill),
+    score: Math.max(0.55, 1 - i * 0.15),
+  }));
+}
+
+function itemForSkill(skill: AppSkill): MentionItem {
+  return { kind: 'skill', name: skill.name, path: '' };
 }
 
 /**
@@ -61,6 +78,11 @@ function rankSkills(skills: AppSkill[], queryLower: string): AppSkill[] {
  * owns the menu's open/items/active/loading state, the search/insert logic,
  * and the shared `insertMention` used by both the menu pick and the
  * paste-a-folder flow.
+ *
+ * File rows arrive ranked by the engine's fs:suggest score (fuzzy name +
+ * path-fragment matches); skills get a synthetic score from their prefix /
+ * substring rank, and the two lists merge into one score-ordered list. Rows
+ * without a score (legacy search fallback) sort last, in arrival order.
  */
 export function useMentionMenu(deps: MentionMenuDeps) {
   const { text, textareaRef, autosize } = deps;
@@ -69,6 +91,9 @@ export function useMentionMenu(deps: MentionMenuDeps) {
   const items = ref<MentionItem[]>([]);
   const active = ref(0);
   const loading = ref(false);
+  /** The raw `@token` currently driving the menu — lets the renderer fall back
+   *  to substring highlighting when results carry no match positions. */
+  const query = ref('');
 
   // Debounce timer for the file search.
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -104,10 +129,11 @@ export function useMentionMenu(deps: MentionMenuDeps) {
       open.value = false;
       return;
     }
-    const query = mt.token;
-    const queryLower = query.toLowerCase();
+    const rawToken = mt.token;
+    const queryLower = rawToken.toLowerCase();
+    query.value = rawToken;
     const skills = deps.skills?.() ?? [];
-    const skillRows = query === '' ? [] : rankSkills(skills, queryLower);
+    const skillRows = rawToken === '' ? [] : rankedSkillRows(skills, queryLower);
 
     const search = deps.searchFiles();
     if (!search) {
@@ -115,7 +141,7 @@ export function useMentionMenu(deps: MentionMenuDeps) {
       if (timer !== null) clearTimeout(timer);
       active.value = 0;
       open.value = skillRows.length > 0;
-      items.value = skillRows.map(itemForSkill);
+      items.value = skillRows.map((row) => row.item);
       loading.value = false;
       return;
     }
@@ -126,9 +152,9 @@ export function useMentionMenu(deps: MentionMenuDeps) {
       loading.value = true;
       open.value = true;
       active.value = 0;
-      let result: FileItem[];
+      let result: MentionFileItem[];
       try {
-        result = await search(query);
+        result = await search(rawToken);
       } catch {
         result = [];
       }
@@ -136,7 +162,9 @@ export function useMentionMenu(deps: MentionMenuDeps) {
       // was in flight — do not touch the menu state then.
       if (generation !== searchGeneration) return;
       const fileRows = result.map(itemForFile);
-      items.value = [...fileRows, ...skillRows.map(itemForSkill)];
+      items.value = [...fileRows, ...skillRows.map((row) => row.item)].sort(
+        (a, b) => (b.score ?? 0) - (a.score ?? 0),
+      );
       loading.value = false;
     }, 200);
   }
@@ -151,6 +179,7 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     open.value = false;
     loading.value = false;
     items.value = [];
+    query.value = '';
   }
 
   /**
@@ -198,5 +227,5 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     close();
   }
 
-  return { open, items, active, loading, update, select, close, insertMention };
+  return { open, items, active, loading, query, update, select, close, insertMention };
 }

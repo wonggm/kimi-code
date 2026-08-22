@@ -553,6 +553,18 @@ function isDisplayableUserMessage(msg: AppMessage): boolean {
 }
 
 /**
+ * Whether a USER-role message is a background-task completion notification
+ * (origin kind 'task' — the daemon uses this kind; 'background_task' and
+ * 'task_notification' are accepted for wire-format tolerance). These carry a
+ * `<notification>` XML payload and render as a standalone notice turn.
+ */
+function isTaskNotificationMessage(msg: AppMessage): boolean {
+  const origin = msg.metadata?.['origin'] as { kind?: string } | undefined;
+  const kind = origin?.kind;
+  return kind === 'task' || kind === 'background_task' || kind === 'task_notification';
+}
+
+/**
  * A compaction summary message — either the client-side marker appended on
  * compactionCompleted, or the daemon's synthetic ASSISTANT message that
  * replaces the compacted prefix in a reloaded snapshot. Both render as a
@@ -886,6 +898,23 @@ export function messagesToTurns(
         turns.push(buildCronTurn(msg, no++, cronKind));
         continue;
       }
+      // A background task completion injects a `<notification>` user message
+      // (origin kind 'task' / 'background_task' / 'task_notification'); it
+      // renders as its own lightweight notice turn, not a user bubble. The raw
+      // XML stays as `text` so the notice can be derived from it at render time.
+      if (isTaskNotificationMessage(msg)) {
+        turns.push({
+          id: msg.id,
+          role: 'task',
+          no: no++,
+          text: msg.content
+            .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+            .map((c) => c.text)
+            .join('\n'),
+          createdAt: msg.createdAt,
+        });
+        continue;
+      }
       // Hide system-injected user turns (TUI parity) — they end the previous
       // assistant turn but aren't rendered as a user bubble.
       if (!isDisplayableUserMessage(msg)) continue;
@@ -911,9 +940,12 @@ export function messagesToTurns(
       for (const c of msg.content) {
         if (c.type === 'text') {
           if (isSkillActivation) {
-            // Skill activation messages carry the raw XML block; we strip it and
-            // surface only the user-provided args as the "user input" text.
-            textParts.push(origin.skillArgs ?? '');
+            // Skill activation messages carry the raw XML block; we strip it
+            // and surface the user's invocation (`/skill args`) as the
+            // "user input" text.
+            const skillName = origin.skillName ?? '';
+            const args = origin.skillArgs ?? '';
+            textParts.push(`/${skillName}${args.length > 0 ? ` ${args}` : ''}`);
           } else if (isPluginCommand) {
             // Plugin command turns carry the expanded body; surface only the
             // user-provided args, mirroring skill activations.

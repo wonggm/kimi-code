@@ -13,6 +13,7 @@
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getKimiWebApi } from '../api';
+import { attachmentDraftStorageKey, safeGetJson, safeRemove, safeSetJson } from '../lib/storage';
 
 export interface Attachment {
   /** Unique local id (used as :key) */
@@ -132,6 +133,56 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
   const fileInputRef = ref<HTMLInputElement | null>(null);
   const isDragOver = ref(false);
 
+  // ---------------------------------------------------------------------------
+  // Attachment-draft persistence (mirrors the text draft in useComposerDraft):
+  // a per-session localStorage copy of upload-ready metadata so unsent chips
+  // survive a session switch or page refresh. Only entries with a resolved
+  // daemon fileId are persisted — the live `blob:` previewUrl would go stale,
+  // and a refresh cannot resume an in-flight upload anyway. On restore the
+  // blobs are refetched through loadAttachments' getFileBlob path.
+  // ---------------------------------------------------------------------------
+  interface PersistedAttachment {
+    fileId: string;
+    kind: 'image' | 'video' | 'file';
+    /** Non-blob source URL used by the restorer's thumbnail refetch. */
+    url: string;
+    name?: string;
+    mediaType?: string;
+    size?: number;
+  }
+
+  function persistDraftAttachments(sid: string, atts: Attachment[]): void {
+    const persisted: PersistedAttachment[] = atts
+      .filter((a) => a.fileId !== undefined && !a.error)
+      .map((a) => ({
+        fileId: a.fileId as string,
+        kind: a.kind,
+        // The daemon file URL is browser-unloadable (401 without the Bearer
+        // header) but stable and non-blob — exactly what loadAttachments'
+        // thumbnail refetch branch keys on (not data:/blob:, so it re-fetches).
+        url: getKimiWebApi().getFileUrl(a.fileId as string),
+        name: a.name,
+        mediaType: a.mediaType,
+        size: a.size,
+      }));
+    const key = attachmentDraftStorageKey(sid);
+    if (persisted.length === 0) safeRemove(key);
+    else safeSetJson(key, persisted);
+  }
+
+  function restoreDraftAttachments(sid: string | undefined): void {
+    // Live in-memory chips for this session win: they are the persisted
+    // snapshot plus valid object URLs, so reloading would needlessly refetch
+    // (and re-revoke) every thumbnail.
+    if (attachmentsBySession.value[sid ?? '']) return;
+    const persisted = safeGetJson<PersistedAttachment[]>(attachmentDraftStorageKey(sid));
+    if (!persisted || persisted.length === 0) return;
+    // Every persisted entry carries a fileId, so loadAttachments reuses it
+    // directly — no re-upload by construction (its upload branch is only
+    // reached for fileId-less entries).
+    loadAttachments(persisted);
+  }
+
   let localIdCounter = 0;
   function nextLocalId(): string {
     return `att_${++localIdCounter}`;
@@ -139,6 +190,7 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
 
   function setForSession(sid: string, next: Attachment[]): void {
     attachmentsBySession.value = { ...attachmentsBySession.value, [sid]: next };
+    persistDraftAttachments(sid, next);
   }
 
   function revokeAttachment(att: Attachment): void {
@@ -366,12 +418,13 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
   }
 
   /** Refill the attachment strip from already-uploaded files (used when a queued
-   *  prompt or an undone message is loaded back into the composer). The fileIds
-   *  are reused directly (no re-upload); for a protected getFileUrl preview we
-   *  fetch an authenticated blob URL so the thumbnail doesn't 401. Replaces any
-   *  unsent draft attachments (mirroring loadForEdit(text), which overwrites) so
-   *  a later submit sends exactly the edited message's files, not a mix. */
-  function loadAttachments(atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string }[]): void {
+   *  prompt or an undone message is loaded back into the composer, or a
+   *  persisted attachment draft is restored). The fileIds are reused directly
+   *  (no re-upload); for a protected getFileUrl preview we fetch an
+   *  authenticated blob URL so the thumbnail doesn't 401. Replaces any unsent
+   *  draft attachments (mirroring loadForEdit(text), which overwrites) so a
+   *  later submit sends exactly the edited message's files, not a mix. */
+  function loadAttachments(atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string; mediaType?: string; size?: number }[]): void {
     const sid = sessionId() ?? '';
     for (const existing of attachmentsBySession.value[sid] ?? []) revokeAttachment(existing);
     setForSession(sid, []);
@@ -391,6 +444,8 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
           previewUrl: att.kind === 'file' ? undefined : att.url,
           uploading: false,
           fileId: att.fileId,
+          mediaType: att.mediaType,
+          size: att.size,
         };
         setForSession(sid, [...(attachmentsBySession.value[sid] ?? []), entry]);
         if (att.kind !== 'file' && !isData && !isBlob) {
@@ -448,12 +503,16 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
   }
 
   // Close the preview lightbox when switching sessions — it may reference an
-  // attachment that belongs to the previous session.
-  watch(sessionId, () => {
+  // attachment that belongs to the previous session — and restore the incoming
+  // session's persisted attachment draft (when it has no live in-memory chips).
+  watch(sessionId, (newSid) => {
     previewAttachment.value = null;
+    restoreDraftAttachments(newSid);
   });
 
   onMounted(() => {
+    // Restore the initial session's attachment draft once the composer mounts.
+    restoreDraftAttachments(sessionId());
     document.addEventListener('paste', handleDocumentPaste);
     document.addEventListener('dragenter', handleWindowDragEnter);
     document.addEventListener('dragover', handleWindowDragOver);

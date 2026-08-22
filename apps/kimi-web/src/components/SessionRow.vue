@@ -395,7 +395,7 @@ defineExpose({ closeMenu });
           {{ archived ? t('sidebar.reopen') : t('sidebar.archive') }}
         </MenuItem>
         <MenuItem separator />
-        <div class="menu-time">{{ fullTime }}</div>
+        <div class="menu-time">{{ t('sidebar.lastActive', { time: fullTime }) }}</div>
       </Menu>
     </Teleport>
   </div>
@@ -518,7 +518,7 @@ defineExpose({ closeMenu });
   z-index: var(--z-dropdown);
 }
 .menu-time {
-  padding: 6px 10px;
+  padding: 4px 10px 5px;
   color: var(--color-text-faint);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -576,13 +576,16 @@ defineExpose({ closeMenu });
 .pr--closed { background: var(--color-surface-sunken); color: var(--color-text-muted); border-color: var(--color-line); }
 .pr--closed:hover { background: var(--color-surface-sunken); }
 
-.sessions .se {
+.sessions .se,
+.pinned-scroll .se {
   margin: 0;
   border-radius: var(--radius-sm);
   /* Trim the row padding by the container inset so the title still starts at
      the same x as the workspace name (whose header has no inset). */
   padding: 8px calc(var(--sb-pad-x, 20px) - var(--sb-inset, 12px));
 }
-.sessions .se .rename-input { border-radius: var(--radius-sm); font-family: var(--sans); }
-.sessions .se .kebab { border-radius: var(--radius-sm); }
+.sessions .se .rename-input,
+.pinned-scroll .se .rename-input { border-radius: var(--radius-sm); font-family: var(--sans); }
+.sessions .se .kebab,
+.pinned-scroll .se .kebab { border-radius: var(--radius-sm); }
 </style>

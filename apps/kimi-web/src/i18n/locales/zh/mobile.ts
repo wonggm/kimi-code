@@ -20,4 +20,6 @@ export default {
   archivedSessionsSub: '查看并恢复已归档会话',
   agentDefaultsSub: '默认模型、子代理、权限与思考设置',
   archivedBack: '返回',
+  switcherGrouped: '按工作区',
+  switcherFlat: '最近',
 } as const;

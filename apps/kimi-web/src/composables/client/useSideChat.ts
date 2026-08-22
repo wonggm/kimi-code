@@ -264,13 +264,23 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
     await sendSideChatPromptOn(target.parentId, text);
   }
 
-  // When a session is deleted, drop its side-chat target so it cannot leak into a
-  // later session that happens to reuse the same id.
+  // When a session is deleted, drop its side-chat target so it cannot leak into
+  // a later session that happens to reuse the same id — and drop the orphaned
+  // agent's transcript + sending flag with it: nothing else ever deletes the
+  // agent-keyed entries, so without this every archived side chat would leave
+  // its full message list pinned in memory for the page's lifetime.
   function clearSideChatForSession(sessionId: string): void {
-    if (!sideChatTargetBySession.value[sessionId]) return;
+    const target = sideChatTargetBySession.value[sessionId];
+    if (!target) return;
     const { [sessionId]: _removed, ...rest } = sideChatTargetBySession.value;
     void _removed;
     sideChatTargetBySession.value = rest;
+    const { [target.agentId]: _dropMessages, ...restMessages } = rawState.sideChatMessagesByAgent;
+    void _dropMessages;
+    rawState.sideChatMessagesByAgent = restMessages;
+    const { [target.agentId]: _dropSending, ...restSending } = rawState.sideChatSendingByAgent;
+    void _dropSending;
+    rawState.sideChatSendingByAgent = restSending;
   }
 
   return {

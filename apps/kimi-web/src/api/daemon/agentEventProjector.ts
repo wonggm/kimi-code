@@ -742,15 +742,29 @@ export function createAgentProjector(): AgentProjector {
       case 'session.meta.updated': {
         // The daemon auto-generates a title from the first prompt (and other
         // clients can rename a session); it also reports the latest user prompt
-        // via patch.lastPrompt. It announces all of these via this event. We
-        // don't have the full AppSession here, so emit a lightweight
-        // sessionMetaUpdated that patches only the changed meta fields.
+        // via patch.lastPrompt, and archive/restore or pin/unpin done elsewhere
+        // flip patch.archived / patch.pinned (the emoji likewise). It announces
+        // all of these via this event. We don't have the full AppSession here,
+        // so emit a lightweight sessionMetaUpdated that patches only the
+        // changed meta fields.
         const title: string | undefined = p?.patch?.title ?? p?.title;
         const lastPrompt: string | undefined = p?.patch?.lastPrompt;
-        const patch: { title?: string; lastPrompt?: string } = {};
+        const archived: boolean | undefined = p?.patch?.archived;
+        const pinned: boolean | undefined = p?.patch?.pinned;
+        const emoji: string | undefined = p?.patch?.emoji;
+        const patch: { title?: string; lastPrompt?: string; archived?: boolean; pinned?: boolean; emoji?: string } = {};
         if (typeof title === 'string' && title.length > 0) patch.title = title;
         if (typeof lastPrompt === 'string') patch.lastPrompt = lastPrompt;
-        if (patch.title !== undefined || patch.lastPrompt !== undefined) {
+        if (typeof archived === 'boolean') patch.archived = archived;
+        if (typeof pinned === 'boolean') patch.pinned = pinned;
+        if (typeof emoji === 'string') patch.emoji = emoji;
+        if (
+          patch.title !== undefined ||
+          patch.lastPrompt !== undefined ||
+          patch.archived !== undefined ||
+          patch.pinned !== undefined ||
+          patch.emoji !== undefined
+        ) {
           out.push({ type: 'sessionMetaUpdated', sessionId, ...patch });
         }
         break;
