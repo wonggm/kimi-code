@@ -24,6 +24,16 @@ import {
   isOpenPlatformId,
 } from './open-platform';
 import { isRecord } from './utils';
+import {
+  applyModelsDevProvider,
+  fetchModelsDevCatalog,
+  modelsDevEntry,
+  modelsDevProviderModels,
+  readModelsDevSource,
+  resolveModelsDevImport,
+  type ModelsDevCatalog,
+  type ModelsDevSource,
+} from './models-dev';
 
 /**
  * Host capabilities the refresh orchestrator needs. Intentionally typed against
@@ -377,6 +387,9 @@ function pickDefaultModel(
  *     aliases are merged; the provider record is user-owned and never
  *     rewritten.
  *  3. Custom registries (models.dev-style, keyed by `provider.source`).
+ *  4. models.dev catalog entries (keyed by a `kind: 'modelsDev'` source blob,
+ *     stamped by the `:import_catalog` flow) — the catalog is fetched once per
+ *     run and each provider's aliases are re-synced from its entry.
  *
  * Each branch diffs old vs new and only writes when something actually changed
  * (`removeProvider` then `setConfig`). Failures are collected per-provider and
@@ -767,6 +780,104 @@ export async function refreshProviderModels(
     } catch (error) {
       const reportedIds = targetId !== undefined ? [targetId] : providerIds;
       for (const providerId of reportedIds) {
+        failed.push({
+          provider: providerId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4. models.dev catalog providers (stamped by the `:import_catalog` flow)
+  // ---------------------------------------------------------------------------
+  const modelsDevTargets: Array<{ readonly providerId: string; readonly source: ModelsDevSource }> =
+    [];
+  for (const providerId of Object.keys(config.providers)) {
+    if (providerId === KIMI_CODE_PROVIDER_NAME) continue;
+    if (isOpenPlatformId(providerId)) continue;
+    if (targetId !== undefined && providerId !== targetId) continue;
+    const provider = readProvider(config, providerId);
+    if (provider === undefined) continue;
+    const source = readModelsDevSource(provider.source);
+    if (source === undefined) continue;
+    modelsDevTargets.push({ providerId, source });
+  }
+
+  if (modelsDevTargets.length > 0) {
+    let catalog: ModelsDevCatalog | undefined;
+    const loadCatalog = async (): Promise<ModelsDevCatalog> => {
+      catalog ??= await fetchModelsDevCatalog({ userAgent: host.userAgent });
+      return catalog;
+    };
+    for (const { providerId, source } of modelsDevTargets) {
+      try {
+        const entry = modelsDevEntry(await loadCatalog(), source.catalogId);
+        if (entry === undefined) {
+          failed.push({
+            provider: providerId,
+            reason: `models.dev entry ${source.catalogId} no longer exists`,
+          });
+          continue;
+        }
+        const resolution = resolveModelsDevImport(entry, source.baseUrl);
+        if (resolution.kind === 'invalid') {
+          failed.push({
+            provider: providerId,
+            reason: `models.dev entry ${source.catalogId} cannot be imported: ${resolution.reason}`,
+          });
+          continue;
+        }
+        if (resolution.kind === 'needs-base-url') {
+          failed.push({
+            provider: providerId,
+            reason: `models.dev entry ${source.catalogId} requires a base_url`,
+          });
+          continue;
+        }
+        const models = modelsDevProviderModels(entry);
+        if (models.length === 0) {
+          failed.push({
+            provider: providerId,
+            reason: `models.dev entry ${source.catalogId} has no importable models`,
+          });
+          continue;
+        }
+
+        const next = structuredClone(config);
+        applyModelsDevProvider(next, providerId, resolution.wire, resolution.baseUrl, models, source);
+        const refreshedAliasKeys = providerRefreshAliasKeys(config, next, providerId, `${providerId}/`);
+        restoreProviderAliases(next, preserveUserProviderAliases(config, providerId, refreshedAliasKeys));
+        restoreDefaultSelection(next, config.defaultModel, config.thinking?.enabled);
+        clampDanglingDefault(next);
+        clearDefaultThinkingWhenDefaultRemoved(next, config.defaultModel);
+
+        if (
+          providerModelsEqual(config, next, providerId, refreshedAliasKeys) &&
+          providerConfigEqual(config, next, providerId)
+        ) {
+          unchanged.push(providerId);
+        } else {
+          const { added, removed } = computeChanges(
+            collectModelIdsForAliases(config, refreshedAliasKeys),
+            collectModelIdsForAliases(next, refreshedAliasKeys),
+          );
+          await host.removeProvider(providerId);
+          config = await host.setConfig({
+            providers: next.providers,
+            models: next.models,
+            defaultModel: next.defaultModel,
+            thinking: next.thinking,
+          });
+          changed.push({
+            providerId,
+            providerName:
+              typeof entry.name === 'string' && entry.name.length > 0 ? entry.name : providerId,
+            added,
+            removed,
+          });
+        }
+      } catch (error) {
         failed.push({
           provider: providerId,
           reason: error instanceof Error ? error.message : String(error),
