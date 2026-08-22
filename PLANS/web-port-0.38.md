@@ -10,7 +10,10 @@ pulled by the 2026-08-22 rebase onto upstream `d723cc47e`:
 - `d4e0ad4b2` — "chore: sync web dist from code-app" (#3166) — 1 web changeset.
 
 46 blurbs total, verbatim below — the only written spec that exists.
-No verdicts recorded yet; porting round not started.
+**All 46 verdicts recorded (2026-08-22) — see "Verdicts" at the bottom.**
+User decisions: `/auto` `/yolo` `/thinking` removal ADOPTED; the upstream OAuth
+login flow SKIPPED (fork keeps token-paste auth); subagent detail panel upgraded
+to the FULL transcript shape (not the minimal option).
 
 ## Porting menu
 
@@ -80,6 +83,80 @@ No verdicts recorded yet; porting round not started.
 |---|---|---|
 | `agent-detail-thinking-collapse` | web: fix thinking blocks in the subagent detail panel being stuck expanded and not collapsible. | subagent detail panel |
 
-## Verdicts
+## Verdicts (2026-08-22)
 
-Not started.
+37 PORTED · 2 ALREADY PRESENT · 6 NOT APPLICABLE · 1 NOT APPLICABLE (user decision, OAuth trio counted below as 3) — every blurb accounted.
+
+### Sync `2c5415f93` (#3135)
+
+| Changeset | Verdict | Where / evidence |
+|---|---|---|
+| `agent-card-fgbg-badge` | PORTED | `tool-calls/AgentTool.vue` trailing slot: 前台/后台 Badge via new `resolveAgentTask` provide (`ConversationPane.vue`); dock grid badge intentionally omitted (all dock tasks are background — label would be noise) |
+| `copy-server-info` | PORTED | `SettingsDialog.vue` Advanced rows: copy IconButton + copied/check flip 1.5 s + hints; i18n settings.* en+zh |
+| `fix-empty-workspace-group-legacy-sidebar` | PORTED | `useWorkspaceState.ts` archiveSession re-inserts an archived stub so derived workspace groups keep their header; `.group-empty` state for real workspaces |
+| `fix-menu-tooltip-stuck` | PORTED | new `composables/useMenuOpen.ts` shared open-count; `Tooltip.show()` suppressed while any menu is open; Composer dropdowns tracked via `trackMenuOpen` |
+| `fix-model-menu-viewport` | PORTED | `.model-dropdown` positioned by shared `clampMenuPlacement` (`composables/useViewportClamp.ts`, +7 unit tests); refit on open/resize/font-load |
+| `fix-search-dialog-workspaces-label` | ALREADY PRESENT | our SearchSessionsDialog renders a flat hit list — the untranslated group title never existed here |
+| `fix-settings-select-teleport` | PORTED (half) | teleport half already done by fork's `MenuSelect.vue`; ported the inert lock: dialog body set `inert` while a dropdown is open (`MenuSelect.vue`) |
+| `fix-slash-mention-menu-viewport` | PORTED | SlashMenu/MentionMenu gained `clampStyle` prop; Composer injects flip/clamp inline styles, `{flush:'post'}` refit + per-element ResizeObserver |
+| `fix-user-menu-text-select` | NOT APPLICABLE | fork has no sidebar user menu / plan-usage submenu (upstream-only surface) |
+| `grouped-session-list-load` | PORTED | cwd→id Map replaces per-session `Array.find` scan; one shared `sessionViewsByWorkspace` computed feeds flat + grouped views (`useKimiWebClient.ts`) |
+| `login-wake-and-waiting-page` | NOT APPLICABLE (user decision) | upstream OAuth browser flow skipped — fork keeps token-paste ServerAuthDialog |
+| `mention-menu-fs-suggest` | PORTED | client `suggestFiles` → POST `/workspace/fs:suggest` (route landed with the rebase); score-merged file+skill list, `match_positions` bold highlighting, fs:search fallback |
+| `menu-radius-concentric` | PORTED | first/last menu item corners = frame radius − padding in ui/Menu, Slash/Mention menus, model-dropdown/perm-dropdown/add-menu (tokens only) |
+| `pin-session-from-chat-header` | PORTED | ChatHeader ⋮ Pin/Unpin action → existing daemon pinned path; i18n header.* en+zh |
+| `pinned-section-resize` | PORTED | Sidebar pinned block with fixed persisted height (`kimi-web.pinned-height`), horizontal ResizeHandle (`useResizable` axis:'y'), mask-image edge fades |
+| `queue-interaction` | PORTED | per-row Steer / Send-now on queued prompts (`steerQueued`/`sendQueued` in useWorkspaceState via steerPrompts), hover-revealed row buttons in ChatPane q-stack |
+| `region-login-entries` | NOT APPLICABLE (user decision) | same OAuth skip |
+| `remote-session-archive-sync` | PORTED | projector threads archived/pinned/emoji through session.meta.updated; reducer patch-in-place; splitByArchived applied to Open views (+3 projector tests) |
+| `session-menu-last-active` | PORTED | SessionRow kebab time footer relabeled "Last updated/最后更新" + tightened padding |
+| `sidebar-action-button-alignment` | PORTED | removed 13px svg override so header IconButtons match row kebabs (16px) |
+| `skill-activation-card` | PORTED | card block + activatedSkill keys removed; skill turns render invocation text via MentionText branch (messagesToTurns carries `/skill args`) |
+| `skill-turn-undo` | PORTED | canEditTurn drops the skillActivation gate (engine verified undoable); transient "Undone/已撤销" toast after successful undo |
+| `user-menu-density` | NOT APPLICABLE | no sidebar user menu exists in the fork |
+| `waitfor-tool-card` | PORTED | new `WaitForTool.vue` registered for `waitfor` in toolRegistry; parser `lib/waitForToolParse.ts` (+7 tests) mirrors engine output markers; quiet line + glance expansion; tools.waitfor.* i18n |
+
+### Sync `3090c1c48` (#3152)
+
+| Changeset | Verdict | Where / evidence |
+|---|---|---|
+| `composer-toolbar-crush-fix` | PORTED | toolbar-left flex:none / toolbar-right flex:1 min-width:0; overlap resolved by truncation at ~320px |
+| `fix-question-card-title-clamp` | ALREADY PRESENT | QuestionCard `.qtext` already wraps (no clamp ever added here) |
+| `mobile-shell-ui` | PORTED (minimal) | bundle-justified edges only: 36px control-size alignment at ≤640px + hover:none tap-target insets |
+| `model-pill-icon-collapse` | PORTED | ResizeObserver collapse with ±16px hysteresis → `.model-pill.icon-only` (32×32, lg-glass intact); hover tooltip carries model + effort |
+| `perm-label-flex-shrink` | PORTED | truncation moved to the perm-pill base rule (was ≤980px-only) |
+| `task-notification-cron-style` | PORTED | task-origin messages now reach the transcript (projector no longer drops them); new `TaskNotice.vue` (title/body/output-file copy/preview snippet) + `lib/taskNotification.ts` (+4 tests); CronNotice untouched |
+
+### Sync `491ebd050` (#3157)
+
+| Changeset | Verdict | Where / evidence |
+|---|---|---|
+| `btw-sidechat-esc-ime` | PORTED | App.vue onGlobalKeydown: `e.isComposing || keyCode === 229` guard before panel close (mirrors Composer's helper) |
+| `btw-sidechat-focus-on-open` | PORTED | SideChatPanel onMounted → nextTick focus of inputRef |
+| `fix-desktop-memory-leaks` | PORTED | provable leak fixed: sideChat message/sending maps freed on session teardown (`clearSideChatForSession` wired into forgetSession); full audit table in agent report — observers/listeners verified clean |
+| `fix-draft-attachments` | PORTED | attachment metadata persisted to `kimi-web.attachment-draft.${sid‖__new__}` on mutation, restored on mount/switch, blobs refetched, double-upload impossible by construction |
+| `login-region-card-titles` | NOT APPLICABLE (user decision) | same OAuth skip |
+| `mobile-composer-button-glyphs` | PORTED | mobile send/stop glyphs 17px → 22px inside 36px circles |
+| `mobile-composer-menu-sheets` | PORTED | slash/mention/+ menus render as grab-handle BottomSheets ≤640px (`layout='sheet'` prop; content extracted to `ComposerAddMenu.vue`); desktop paths byte-identical |
+| `mobile-model-picker-sheet` | PORTED | model menu extracted to `ComposerModelMenu.vue`, opens as BottomSheet on mobile |
+| `mobile-onboarding-theme-cards` | PORTED (adapted) | fork uses scheme/accent SegmentedControls, not cards — stretched full-width on ≤640px |
+| `mobile-park-custom-provider` | NOT APPLICABLE | Onboarding has no provider entry at all |
+| `mobile-switcher-flat-grouped-tabs` | PORTED | MobileSwitcherSheet SegmentedControl "Recent"/"By workspace"; flat = recency across all loaded sessions; persisted `kimi-web.switcher-view` |
+| `mobile-tool-row-touch-height` | PORTED | ToolRow ≤640px pins compact 30px row height |
+| `remove-perm-thinking-slash-commands` | PORTED (user decision) | entries/case arms/i18n keys removed; orphaned helpers cleaned; Settings consumers untouched |
+| `sidebar-overlay-scrollbar` | PORTED | scrollbar-color/webkit thumb transparent until hover/focus; `scrollbar-gutter: stable both-edges` equalizes margins |
+| `usage-flyout-viewport-cap` | NOT APPLICABLE | fork has no sidebar usage flyout |
+
+### Sync `d4e0ad4b2` (#3166)
+
+| Changeset | Verdict | Where / evidence |
+|---|---|---|
+| `agent-detail-thinking-collapse` | PORTED (full upgrade, user decision) | AgentDetailPanel rewritten: identity strip + live-progress strip + REST transcript (`getAgentTranscript?agent_id=`) with collapsible thinking blocks (expanded while working, collapsed when settled, aria-expanded toggles); openFile/openMedia/openAgent emits wired in App.vue; no new server endpoints |
+
+## Round notes
+
+- Implemented by 6 coder subagents (renderer / composer+menus / sidebar+queue / mobile / settings+sidechat / detail-panel) plus orchestrator fixes: fg/bg badge relocation from dock grid to the inline AgentTool card, and the esc-ime guard (dropped from a dispatch list).
+- Verification: vue-tsc clean; kimi-web vitest 912/912 (2 new suites: waitfor parse, task-notification parse; +7 viewport-clamp tests; +3 projector tests); check:style 64 baseline findings (4 pre-existing backdrop-filter findings resolved by the mobile package); heap-capped build green; pixel bench all 10 scenes 0 px differ after re-baselining slash-menu/model-dropdown/add-menu (intended: concentric radii, clamp shifts, removed commands).
+- Not visually verified in a browser (no live server capture this round) — recommended manual pass: phone-width viewport for the four composer sheets and the flat switcher view; light/dark for the detail panel.
+- Known gaps (honest): transcript panel is single REST page (no per-agent paging client); task-notification turn prompt may be absent for some subagents; tool-row alternation root cause unconfirmed.
+- Concurrent user work in packages/oauth + kosongConfig was present in the tree throughout — excluded from this round's commit.

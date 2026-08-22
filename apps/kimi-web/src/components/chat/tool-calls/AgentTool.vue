@@ -8,6 +8,7 @@ import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
+import Badge from '../../ui/Badge.vue';
 import ToolRow from '../ToolRow.vue';
 
 const { t } = useI18n();
@@ -78,6 +79,15 @@ const canOpenAgent = computed(() => {
   return resolveAgentTaskId(props.tool.id) !== undefined;
 });
 
+// Foreground/background mode label for this card's subagent (undefined when no
+// matching task exists — same fallback as the Open-detail button).
+const resolveAgentTask = inject<(toolCallId: string) => unknown | undefined>('resolveAgentTask');
+const agentTask = computed(() => {
+  if (!resolveAgentTask) return undefined;
+  const task = resolveAgentTask(props.tool.id) as { runInBackground?: boolean } | undefined;
+  return task ?? undefined;
+});
+
 function toggle(): void {
   if (!canExpand.value) return;
   open.value = !open.value;
@@ -106,6 +116,12 @@ watch(
     @toggle="toggle"
   >
     <template #trailing>
+      <Badge
+        v-if="agentTask"
+        variant="neutral"
+        size="sm"
+        class="at-mode"
+      >{{ agentTask.runInBackground ? t('tools.agent.background') : t('tools.agent.foreground') }}</Badge>
       <button v-if="canOpenAgent" type="button" class="at-open" @click.stop="emit('openAgent', tool.id)">
         {{ t('tasks.openDetail') }}
       </button>
@@ -132,6 +148,9 @@ watch(
 .at-open:hover {
   color: var(--color-text);
   background: var(--color-surface-sunken);
+}
+.at-mode {
+  flex: none;
 }
 .at-type {
   font: var(--text-xs) var(--font-mono);

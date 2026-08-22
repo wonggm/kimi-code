@@ -1266,7 +1266,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       if (!sid) return;
       // Unlike a plain prompt, skill activation carries only `args` (+ attachments),
       // so the daemon never sees the prompt-time controls the user may have changed on
-      // the draft (plan/swarm, plus permission via /auto|/yolo). Persist them
+      // the draft (plan/swarm, plus permission). Persist them
       // onto this new session's profile and await it before activating,
       // otherwise the first skill turn can start before applyAgentState and
       // run at daemon defaults while the UI shows otherwise. Thinking is NOT
@@ -1765,10 +1765,28 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       return;
     }
 
+    await steerPromptPayload(sid, merged, mergedAttachments, restoreQueue);
+  }
+
+  /**
+   * Submit-then-steer a single prompt payload into the RUNNING turn: parks the
+   * prompt behind the active turn, then POSTs /prompts:steer with its id so it
+   * injects immediately (TUI ctrl+s parity). Shared by the composer's Ctrl+S
+   * steer and the queue's per-row Steer. The daemon emits no user-message WS
+   * event for steered prompts, so an optimistic user bubble carries the text;
+   * on a definitive rejection it is removed and `onRejected` (the caller's
+   * queue restore) runs.
+   */
+  async function steerPromptPayload(
+    sid: string,
+    text: string,
+    attachments: PromptAttachment[] | undefined,
+    onRejected: () => void,
+  ): Promise<void> {
     // Optimistic transcript echo (the daemon emits no user-message WS event).
     const content: import('../../api/types').AppMessageContent[] = [];
-    if (merged) content.push({ type: 'text', text: merged });
-    for (const att of mergedAttachments) {
+    if (text) content.push({ type: 'text', text });
+    for (const att of attachments ?? []) {
       if (att.kind === 'video') content.push({ type: 'video', source: { kind: 'file', fileId: att.fileId } });
       else if (att.kind === 'file') {
         content.push({
@@ -1780,6 +1798,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         });
       } else content.push({ type: 'image', source: { kind: 'file', fileId: att.fileId } });
     }
+    if (content.length === 0) return;
     const tempId = nextOptimisticMsgId();
     const optimisticMsg: AppMessage = {
       id: tempId,
@@ -1840,16 +1859,74 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       // Submit failed: drop the optimistic echo so the transcript doesn't show
       // a delivered-looking message the daemon never received.
       updateSessionMessages(sid, (msgs) => msgs.filter((m) => m.id !== tempId));
-      // Restore the merged queue entries ONLY on a definitive daemon rejection
+      // Restore the caller's queue entries ONLY on a definitive daemon rejection
       // (a structured API error means nothing was accepted). On an ambiguous
       // failure — dropped response, network error — the merged prompt may
       // already be queued server-side; re-queueing the originals would
       // duplicate it (the exact ghost-send behavior this change exists to
       // prevent). The failure toast below tells the user what happened.
-      if (isDaemonApiError(err)) restoreQueue();
+      if (isDaemonApiError(err)) onRejected();
       pushOperationFailure('steer', err, { sessionId: sid });
     } finally {
       settleLocalTurn(sid, localTurnToken);
+    }
+  }
+
+  /**
+   * Steer a single queued message into the RUNNING turn (TUI ctrl+s parity for
+   * one row). Removes the row from the queue, then submit-then-steers it — the
+   * daemon injects the prompt into the current turn instead of waiting for it
+   * to finish. Falls back to a normal send when the session is idle (no turn
+   * to steer into). Defensive: no-op on an out-of-range index.
+   */
+  async function steerQueued(index: number): Promise<void> {
+    const sid = rawState.activeSessionId;
+    if (!sid) return;
+    const current = rawState.queuedBySession[sid] ?? [];
+    const entry = current[index];
+    if (entry === undefined) return;
+    const rest = [...current];
+    rest.splice(index, 1);
+    rawState.queuedBySession = { ...rawState.queuedBySession, [sid]: rest };
+    // Put the row back at its original position on a definitive rejection —
+    // entries enqueued while the submit was in flight stay behind it.
+    const restoreQueue = (): void => {
+      const now = rawState.queuedBySession[sid] ?? [];
+      const next = [...now];
+      next.splice(Math.min(index, next.length), 0, entry);
+      rawState.queuedBySession = { ...rawState.queuedBySession, [sid]: next };
+    };
+
+    // Idle and nothing in flight — no turn to steer into; normal send.
+    if (activity.value === 'idle' && !rawState.inFlightBySession[sid]) {
+      const outcome = await submitPromptInternal(sid, entry.text, entry.attachments);
+      if (outcome === 'rejected') restoreQueue();
+      return;
+    }
+    await steerPromptPayload(sid, entry.text, entry.attachments, restoreQueue);
+  }
+
+  /**
+   * Send a single queued message NOW as its own prompt, ahead of the queue's
+   * auto-drain (the daemon starts it once the current turn ends). Removes the
+   * row from the queue; a definitive rejection puts it back so the prompt is
+   * never silently lost. Defensive: no-op on an out-of-range index.
+   */
+  async function sendQueued(index: number): Promise<void> {
+    const sid = rawState.activeSessionId;
+    if (!sid) return;
+    const current = rawState.queuedBySession[sid] ?? [];
+    const entry = current[index];
+    if (entry === undefined) return;
+    const rest = [...current];
+    rest.splice(index, 1);
+    rawState.queuedBySession = { ...rawState.queuedBySession, [sid]: rest };
+    const outcome = await submitPromptInternal(sid, entry.text, entry.attachments);
+    if (outcome === 'rejected') {
+      const now = rawState.queuedBySession[sid] ?? [];
+      const next = [...now];
+      next.splice(Math.min(index, next.length), 0, entry);
+      rawState.queuedBySession = { ...rawState.queuedBySession, [sid]: next };
     }
   }
 
@@ -2501,7 +2578,10 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     }
   }
 
-  /** Archive a session — calls API, persists the archive flag, removes locally, picks another active session or none */
+  /** Archive a session — calls API, marks the row archived locally (so a
+   *  workspace whose last Open session is archived still renders its group
+   *  header — the Open views split on the archived flag), drops the per-session
+   *  state, picks another active session or none */
   async function archiveSession(id: string): Promise<void> {
     try {
       const api = getKimiWebApi();
@@ -2513,15 +2593,19 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         doneSessions.value = [archived, ...doneSessions.value.filter((s) => s.id !== id)];
       }
       forgetSession(id);
-      sideChat.clearSideChatForSession(id);
-      const { [id]: _removedIds, ...restIds } = rawState.sideChatUserMessageIdsBySession;
-      void _removedIds;
-      rawState.sideChatUserMessageIdsBySession = restIds;
+      // Keep a row for the session (marked archived) instead of dropping it:
+      // the group it belonged to stays visible with zero Open sessions, and a
+      // restore done elsewhere (session.meta.updated archived:false) brings it
+      // straight back into the Open list. The sidebar views split on the
+      // archived flag (splitByArchived boundary), so this row never renders as
+      // an Open session.
+      if (archived) upsertSessionFront({ ...archived, archived: true });
 
       // If archived session was active, pick another. 'replace' so the address
       // bar doesn't keep pointing at (and back doesn't return to) a dead session.
+      // Skips the just-archived stub (it sits at the front of the list).
       if (rawState.activeSessionId === id) {
-        const next = rawState.sessions[0];
+        const next = rawState.sessions.find((s) => s.id !== id && !s.archived);
         if (next) {
           await selectSession(next.id, { urlMode: 'replace' });
         } else {
@@ -2979,23 +3063,34 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   }
 
   /**
-   * Search files in the active workspace via the daemon's workspace fs:search
+   * Search files in the active workspace via the daemon's workspace fs:suggest
    * endpoint — no session id involved, so `@` works unchanged before the first
-   * prompt. The workspace ref mirrors what selectSession syncs: the active
-   * session's workspace, else the draft's active workspace (a registered id or
-   * an absolute root — the daemon resolves both). Returns {path, name}[] —
-   * defensive, returns [] on error or when no workspace is active.
+   * prompt. Suggest ranks fuzzy name + path-fragment matches (score + per-char
+   * match positions into the path). Falls back to the older fs:search when the
+   * suggest route errors. The workspace ref mirrors what selectSession syncs:
+   * the active session's workspace, else the draft's active workspace (a
+   * registered id or an absolute root — the daemon resolves both). Defensive:
+   * returns [] on error or when no workspace is active.
    */
-  async function searchFiles(query: string): Promise<Array<{ path: string; name: string }>> {
+  async function searchFiles(
+    query: string,
+  ): Promise<Array<{ path: string; name: string; kind?: 'file' | 'directory' | 'symlink'; score?: number; matchPositions?: number[] }>> {
     const session = rawState.sessions.find((s) => s.id === rawState.activeSessionId);
     const ref = session === undefined ? rawState.activeWorkspaceId : workspaceIdForSession(session);
     if (!ref) return [];
+    const api = getKimiWebApi();
+    const mapItems = (
+      items: Array<{ path: string; name: string; kind: 'file' | 'directory' | 'symlink'; score: number; matchPositions: number[] }>,
+    ) => items.map((item) => ({ path: item.path, name: item.name, kind: item.kind, score: item.score, matchPositions: item.matchPositions }));
     try {
-      const api = getKimiWebApi();
-      const result = await api.searchFiles(ref, { query, limit: 20 });
-      return result.items.map((item) => ({ path: item.path, name: item.name }));
+      return mapItems((await api.suggestFiles(ref, { query, limit: 20 })).items);
     } catch {
-      return [];
+      // fs:suggest unavailable (older server) — keep the mention menu alive via fs:search.
+      try {
+        return mapItems((await api.searchFiles(ref, { query, limit: 20 })).items);
+      } catch {
+        return [];
+      }
     }
   }
 
@@ -3037,6 +3132,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     handleSessionSnapshot,
     sendPrompt,
     steerPrompt,
+    steerQueued,
+    sendQueued,
     uploadImage,
     enqueue,
     unqueue,

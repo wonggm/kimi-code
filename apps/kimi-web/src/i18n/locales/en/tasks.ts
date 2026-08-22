@@ -34,6 +34,7 @@ export default {
   copyCommand: 'Copy command',
   copyOutput: 'Copy output',
   copyAll: 'Copy all',
+  transcriptLoadError: 'Failed to load transcript',
   // Bash dock panel (master-detail view with status filtering)
   bash: {
     filterAll: 'All',

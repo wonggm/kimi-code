@@ -18,6 +18,12 @@ const props = defineProps<{
   query?: string;
   /** Per-item highlight ranges computed by the fuzzy filter. */
   ranges?: SlashMatchRanges[];
+  /** Inline viewport-clamp overrides (flip below / horizontal insets),
+   *  computed by the composer against the anchor wrap's rect. */
+  clampStyle?: Record<string, string>;
+  /** `docked` = anchored floating panel above the textarea (desktop);
+   *  `sheet` = flattened list rendered inside a mobile bottom sheet. */
+  layout?: 'docked' | 'sheet';
 }>();
 
 const emit = defineEmits<{
@@ -85,7 +91,13 @@ watch(
 </script>
 
 <template>
-  <div v-if="rows.length > 0 || items.length === 0" class="slash-menu lg-glass" role="listbox">
+  <div
+    v-if="rows.length > 0 || items.length === 0"
+    class="slash-menu lg-glass"
+    :class="{ 'is-sheet': layout === 'sheet' }"
+    :style="clampStyle"
+    role="listbox"
+  >
     <div v-if="items.length === 0" class="slash-empty" role="status">
       {{ t('composer.noCommands') }}
     </div>
@@ -147,6 +159,18 @@ watch(
 }
 .menu-scroll::-webkit-scrollbar {
   display: none;
+}
+
+/* Concentric corners: the frame is radius-lg with space-1 padding, so the
+   outermost rows pick up radius-md (frame radius minus padding) on their
+   outer corners to stay concentric with the frame. */
+.slash-menu > .menu-scroll > :first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+.slash-menu > .menu-scroll > :last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
 
 .slash-empty {
@@ -237,4 +261,35 @@ watch(
 /* ---- Menu surface defaults ---- */
 .slash-menu { border-radius: var(--radius-lg); box-shadow: var(--sh); }
 .slash-desc { font-family: var(--sans); }
+
+/* ---- Sheet layout (mobile bottom sheet): the composer renders this menu
+   inside a grab-handle sheet instead of an anchored floating panel, so the
+   frame flattens — no absolute anchoring, no raised surface (the sheet's own
+   lg-frost surface owns the blur; the frame drops the lg-glass frost), no
+   floating scrollbar thumb (touch scrolls the list). ---- */
+.slash-menu.is-sheet[role="listbox"] {
+  position: static;
+  padding: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  z-index: auto;
+}
+.slash-menu.is-sheet .menu-scroll {
+  padding: var(--space-1) var(--space-2);
+}
+.slash-menu.is-sheet .menu-thumb {
+  display: none;
+}
+.slash-menu.is-sheet .menu-scroll > :first-child {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.slash-menu.is-sheet .menu-scroll > :last-child {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 </style>

@@ -21,4 +21,6 @@ export default {
   forkSession: '分叉会话',
   archiveSession: '归档',
   exportSession: '导出会话',
+  pinSession: '置顶',
+  unpinSession: '取消置顶',
 };

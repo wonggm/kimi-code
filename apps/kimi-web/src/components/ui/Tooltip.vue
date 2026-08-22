@@ -9,7 +9,8 @@
      line; long text wraps within `maxWidth` and is clamped to `maxLines` lines with
      an ellipsis so the bubble never grows too tall. -->
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { isAnyMenuOpen, menuOpenCount } from '../../composables/useMenuOpen';
 
 type Placement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -86,6 +87,9 @@ function position(): void {
 
 function show(): void {
   if (!props.text) return;
+  // While any menu is open, suppress hover bubbles whose trigger is outside it
+  // (upstream behaviour); the composer's own controls read as one surface then.
+  if (isAnyMenuOpen()) return;
   window.clearTimeout(showTimer);
   showTimer = window.setTimeout(() => {
     mounted.value = true;
@@ -127,6 +131,11 @@ function setTarget(el: HTMLElement | null): void {
 }
 
 onMounted(() => {
+  // A menu opening while a bubble is showing hides it immediately (the menu
+  // panel sits above the bubble layer); the next hover decides afresh.
+  watch(menuOpenCount, () => {
+    if (isAnyMenuOpen()) hide();
+  });
   const root = trigger.value ?? null;
   setTarget((root?.firstElementChild as HTMLElement | null) ?? root);
   // Keep `target` in sync with the live slotted element: if it's removed or

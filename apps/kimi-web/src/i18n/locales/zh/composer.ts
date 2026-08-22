@@ -8,6 +8,11 @@ export default {
   queueNext: '下一条',
   queueDragTitle: '拖拽排序',
   editQueued: '编辑（载入到输入框）',
+  /** 每条队列消息的操作（对话末尾的内联队列）。 */
+  queueSteer: '注入',
+  queueSteerTitle: '立即将此消息注入正在运行的回合',
+  queueSendNow: '立即发送',
+  queueSendNowTitle: '立即发送此消息，不排队等待',
   queuedAttachments: '附件 ×{n}',
   queuedHasImage: '包含 {n} 张图片 — 只能移除，不能编辑',
   attachmentImage: '图片',
@@ -36,5 +41,6 @@ export default {
   thinkingSuffix: ' · 思考',
   thinkingSuffixEffort: ' · {level}',
   noCommands: '没有匹配的命令',
-
+  slashSheetTitle: '命令',
+  mentionSheetTitle: '文件',
 } as const;

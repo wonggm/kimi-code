@@ -113,6 +113,20 @@ function finish(): void {
 /* full-width primary CTA */
 .ob-start { width: 100%; }
 
+/* Mobile: the wizard's dialog is nearly full-width on phones — stretch the
+   scheme / accent / language segmented controls across it so the options
+   never crowd or clip on a narrow screen. */
+@media (max-width: 640px) {
+  .ob-sec :deep(.ui-seg) {
+    width: 100%;
+  }
+  .ob-sec :deep(.ui-seg__item) {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+  }
+}
+
 /* Onboarding logo: faster eye animations than the sidebar (6s look, 4s blink). */
 .ob-eyes {
   animation: ob-eye-look 6s ease-in-out infinite;
