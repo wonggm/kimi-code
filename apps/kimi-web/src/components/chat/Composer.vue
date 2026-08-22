@@ -5,32 +5,33 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SlashMenu from './SlashMenu.vue';
 import MentionMenu from './MentionMenu.vue';
+import ComposerAddMenu from './ComposerAddMenu.vue';
+import ComposerModelMenu from './ComposerModelMenu.vue';
 import { buildSlashItems, parseSlash, SKILL_COMMAND_PREFIX } from '../../lib/slashCommands';
 import { formatTokens } from '../../lib/formatTokens';
 import type { FileItem } from './MentionMenu.vue';
 import type { ActivationBadges, ConversationStatus, PermissionMode, QueuedPromptView } from '../../types';
 import type { AppGoal, AppModel, AppSkill, ThinkingLevel } from '../../api/types';
 import {
-  commitLevel,
   effectiveThinkingLevel,
-  effortLabel,
   isThinkingOn,
-  modelThinkingAvailability,
-  segmentsFor,
 } from '../../lib/modelThinking';
 import { useInputHistory } from '../../composables/useInputHistory';
 import { useSlashMenu } from '../../composables/useSlashMenu';
 import { useMentionMenu } from '../../composables/useMentionMenu';
 import { useComposerDraft } from '../../composables/useComposerDraft';
 import { useAttachmentUpload, type Attachment } from '../../composables/useAttachmentUpload';
+import { useIsMobile } from '../../composables/useIsMobile';
+import { clampMenuPlacement } from '../../composables/useViewportClamp';
+import { trackMenuOpen } from '../../composables/useMenuOpen';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import Spinner from '../ui/Spinner.vue';
-import Button from '../ui/Button.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 import ContextRing from '../ui/ContextRing.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import BottomSheet from '../dialogs/BottomSheet.vue';
 import AttachmentChip from './AttachmentChip.vue';
 
 // ---------------------------------------------------------------------------
@@ -234,6 +235,7 @@ const {
   items: mentionItems,
   active: mentionActive,
   loading: mentionLoading,
+  query: mentionQuery,
   update: updateMentionMenu,
   select: selectMentionItem,
   close: closeMentionMenu,
@@ -254,6 +256,199 @@ function onBarBlur(): void {
   closeSlashMenu();
   closeMentionMenu();
 }
+
+// ---------------------------------------------------------------------------
+// Floating-panel viewport clamping — the model dropdown, slash panel and
+// @-mention panel all open upward from the composer, which sits at the bottom
+// of the dock; the empty-session composer renders mid-pane, so each panel is
+// measured against its anchor and flips below (or clamps into the viewport)
+// when the space above is too small. Slash / Mention keep their wrap-relative
+// absolute positioning (only the flip + edge insets are injected); the model
+// dropdown is clamped through the shared placement helper.
+// ---------------------------------------------------------------------------
+
+const cinWrapRef = ref<HTMLElement | null>(null);
+const slashMenuRef = ref<InstanceType<typeof SlashMenu> | null>(null);
+const mentionMenuRef = ref<InstanceType<typeof MentionMenu> | null>(null);
+const slashClamp = ref<Record<string, string>>({});
+const mentionClamp = ref<Record<string, string>>({});
+
+// Mobile (≤640px): the slash / mention / add / model menus open as grab-handle
+// bottom sheets instead of these anchored floating panels, so the whole
+// measure-and-clamp machinery below is desktop-only. The sheets render the
+// same content (see the template's mobile branches) and the refs here are
+// never measured on mobile.
+const isMobile = useIsMobile();
+
+function positionAutocompletePanel(kind: 'slash' | 'mention'): void {
+  if (isMobile.value) return;
+  const wrap = cinWrapRef.value;
+  const el = kind === 'slash' ? slashMenuRef.value?.$el : mentionMenuRef.value?.$el;
+  if (!wrap || !(el instanceof HTMLElement)) return;
+  const wrapRect = wrap.getBoundingClientRect();
+  const { left, placement } = clampMenuPlacement(
+    wrapRect,
+    el.offsetWidth,
+    el.offsetHeight,
+    'above',
+    { gap: 4, margin: 8 },
+  );
+  const style: Record<string, string> = {};
+  if (placement === 'below') {
+    style.top = 'calc(100% + 4px)';
+    style.bottom = 'auto';
+  }
+  if (left > wrapRect.left + 0.5) {
+    // The panel normally spans the wrap (left:0 / right:0); nudge it in only
+    // when the clamp pushed it away from the left viewport edge.
+    style.left = `${Math.round(left - wrapRect.left)}px`;
+  }
+  (kind === 'slash' ? slashClamp : mentionClamp).value = style;
+}
+
+// Re-fit while open: the list height changes as rows arrive / filter, and the
+// window size can change under a docked composer.
+const menuResizeObservers = new Map<'slash' | 'mention', ResizeObserver>();
+function syncAutocompleteViewport(kind: 'slash' | 'mention'): void {
+  if (isMobile.value) return;
+  const open = kind === 'slash' ? slashOpen.value : mentionOpen.value;
+  const el = kind === 'slash' ? slashMenuRef.value?.$el : mentionMenuRef.value?.$el;
+  const observer = menuResizeObservers.get(kind);
+  if (!open || !(el instanceof HTMLElement)) {
+    observer?.disconnect();
+    menuResizeObservers.delete(kind);
+    return;
+  }
+  if (!observer) {
+    const next = new ResizeObserver(() => positionAutocompletePanel(kind));
+    menuResizeObservers.set(kind, next);
+    next.observe(el);
+  }
+  positionAutocompletePanel(kind);
+}
+
+watch(
+  [slashOpen, mentionOpen, () => slashItems.value.length, () => mentionItems.value.length],
+  () => {
+    syncAutocompleteViewport('slash');
+    syncAutocompleteViewport('mention');
+  },
+  // The popup elements are v-if'd on those flags — measure only after the DOM
+  // has the panel rendered.
+  { flush: 'post' },
+);
+
+// Model dropdown — right-aligned to the toolbar (the historical `right: 10px`
+// placement), clamped into the viewport horizontally and flipped below when the
+// space above the toolbar is too small.
+const modelDropdownRef = ref<HTMLElement | null>(null);
+const modelDropdownStyle = ref<Record<string, string>>({});
+
+function positionModelDropdown(): void {
+  if (isMobile.value) return;
+  const bar = toolbarRef.value;
+  const menu = modelDropdownRef.value;
+  if (!bar || !menu) return;
+  const barRect = bar.getBoundingClientRect();
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  const rightInset = 10;
+  const anchor = new DOMRect(barRect.right - rightInset - width, barRect.top, width, barRect.height);
+  const { top, left, placement } = clampMenuPlacement(anchor, width, height, 'above', { gap: 4, margin: 8 });
+  const style: Record<string, string> = {
+    top: `${Math.round(top - barRect.top)}px`,
+    bottom: 'auto',
+    left: `${Math.round(left - barRect.left)}px`,
+  };
+  if (placement === 'above' && top > barRect.top - 4 - height + 0.5) {
+    // The helper relaxed the top clamp (space above was smaller than the
+    // margin) — keep the panel glued to the toolbar edge instead of drifting.
+    style.top = `${Math.round(-4 - height)}px`;
+  }
+  modelDropdownStyle.value = style;
+}
+
+let modelDropdownObserver: ResizeObserver | null = null;
+function syncModelDropdownViewport(): void {
+  if (isMobile.value) return;
+  const menu = modelDropdownRef.value;
+  if (dropdownOpen.value && menu) {
+    if (!modelDropdownObserver) {
+      modelDropdownObserver = new ResizeObserver(() => positionModelDropdown());
+      modelDropdownObserver.observe(menu);
+    }
+  } else {
+    modelDropdownObserver?.disconnect();
+    modelDropdownObserver = null;
+  }
+  positionModelDropdown();
+}
+
+// ---------------------------------------------------------------------------
+// Model pill icon-only collapse — in very narrow rows the model label gives
+// way to a bare chevron pill (hover tooltip still shows model + effort). The
+// pill's natural widths are measured while expanded; the collapse flips once
+// the row cannot hold them, and re-expands only after the row grows enough to
+// hold them again (with slack, so the two never oscillate).
+// ---------------------------------------------------------------------------
+
+const MODEL_PILL_COLLAPSE_SLACK = 16;
+const modelPillCollapsed = ref(false);
+let toolbarNaturalLeft = 0;
+let toolbarNaturalRight = 0;
+let toolbarAvailable = 0;
+let toolbarObserver: ResizeObserver | null = null;
+
+function measureToolbarWidths(): void {
+  const toolbar = toolbarRef.value;
+  if (!toolbar) return;
+  const left = toolbar.querySelector<HTMLElement>('.toolbar-left');
+  const right = toolbar.querySelector<HTMLElement>('.toolbar-right');
+  toolbarAvailable = toolbar.clientWidth;
+  toolbarNaturalLeft = left?.scrollWidth ?? 0;
+  toolbarNaturalRight = right?.scrollWidth ?? 0;
+}
+
+function updateModelPillCollapse(): void {
+  const toolbar = toolbarRef.value;
+  if (!toolbar) return;
+  toolbarAvailable = toolbar.clientWidth;
+  if (modelPillCollapsed.value) {
+    // Natural widths were captured while the label was visible (last expanded
+    // measurement) — re-expand only once the row can hold them again with
+    // slack, so the two states never chase each other.
+    if (toolbarNaturalLeft + toolbarNaturalRight <= toolbarAvailable - MODEL_PILL_COLLAPSE_SLACK) {
+      modelPillCollapsed.value = false;
+      measureToolbarWidths();
+    }
+    return;
+  }
+  measureToolbarWidths();
+  if (toolbarNaturalLeft + toolbarNaturalRight > toolbarAvailable + MODEL_PILL_COLLAPSE_SLACK) {
+    modelPillCollapsed.value = true;
+  }
+}
+
+/** Label for the collapsed pill's hover tooltip: model + reasoning effort. */
+const modelPillLabel = computed(() => {
+  const model = props.status?.model ?? '';
+  return thinkingSuffix.value ? `${model} ${thinkingSuffix.value}` : model;
+});
+
+function onComposerResize(): void {
+  updateModelPillCollapse();
+  if (slashOpen.value || mentionOpen.value) {
+    syncAutocompleteViewport('slash');
+    syncAutocompleteViewport('mention');
+  }
+  if (dropdownOpen.value) void nextTick(positionModelDropdown);
+}
+
+// Model changes can lengthen/shorten the pill label — re-fit the collapse
+// decision with the next frame.
+watch(() => props.status?.model, () => {
+  void nextTick(updateModelPillCollapse);
+});
 
 // ---------------------------------------------------------------------------
 // Input event handler — updates both menus
@@ -615,6 +810,18 @@ const dropdownOpen = ref(false);
 const permDropdownOpen = ref(false);
 const toolbarRef = ref<HTMLElement | null>(null);
 
+// The model dropdown is clamped (and watched for size) only while it is open;
+// the pill-collapse measurement runs on the toolbar. Both watchers sit here,
+// after their refs exist.
+watch(dropdownOpen, () => {
+  if (dropdownOpen.value) {
+    void nextTick(syncModelDropdownViewport);
+  } else {
+    modelDropdownObserver?.disconnect();
+    modelDropdownObserver = null;
+  }
+});
+
 function toggleDropdown(): void {
   dropdownOpen.value = !dropdownOpen.value;
   if (dropdownOpen.value) {
@@ -686,22 +893,12 @@ const showCompact = computed(() => pct.value >= 80);
 const currentModel = computed(() =>
   props.models?.find((m) => m.id === props.status?.modelId),
 );
-const thinkingAvailability = computed(() => modelThinkingAvailability(currentModel.value));
-const thinkingSegments = computed(() => segmentsFor(currentModel.value));
 // The client resolves the level per model (the model's stored pick when still
 // declared, else the catalog default), so what arrives here is valid for the
-// active model and highlights its segment. An undeclared level can only appear
-// transiently, before the catalog loads, and simply highlights no segment.
+// active model and drives the toolbar suffix (the dropdown's segmented
+// control recomputes the same values in ComposerModelMenu).
 const thinkingLevel = computed(() => effectiveThinkingLevel(currentModel.value, props.thinking));
-const activeThinkingSegment = computed(() => {
-  const segs = thinkingSegments.value;
-  return segs.includes(thinkingLevel.value) ? thinkingLevel.value : '';
-});
 const thinkingOn = computed(() => isThinkingOn(thinkingLevel.value));
-// Single-segment (always-on boolean) or unsupported models can't be changed.
-const thinkingReadonly = computed(
-  () => thinkingAvailability.value === 'unsupported' || thinkingSegments.value.length <= 1,
-);
 // Footer-style suffix: effort models show the concrete level; boolean models
 // keep the plain "thinking" tag; off shows nothing.
 const thinkingSuffix = computed(() => {
@@ -711,15 +908,6 @@ const thinkingSuffix = computed(() => {
   if (hasEfforts && level !== 'on') return t('composer.thinkingSuffixEffort', { level });
   return t('composer.thinkingSuffix');
 });
-function setThinkingSegment(draft: string): void {
-  if (thinkingReadonly.value) return;
-  emit('setThinking', commitLevel(currentModel.value, draft));
-}
-function thinkingSegmentLabel(segment: string): string {
-  if (segment === 'on') return t('status.thinkingOn');
-  if (segment === 'off') return t('status.thinkingOff');
-  return effortLabel(segment);
-}
 
 // Plan toggle
 const planOn = computed(() => props.planMode === true);
@@ -768,6 +956,20 @@ const addMenuRef = ref<HTMLElement | null>(null);
 // The menu is position:fixed (so no composer stacking context can paint over
 // it); these coords anchor it just above the trigger, computed on open.
 const addMenuStyle = ref<Record<string, string>>({});
+
+// Keep the app's "any menu open" flag in step with this composer's dropdowns,
+// so Tooltip hides hover bubbles whose trigger sits outside the open menu.
+trackMenuOpen(
+  computed(
+    () =>
+      slashOpen.value ||
+      mentionOpen.value ||
+      dropdownOpen.value ||
+      permDropdownOpen.value ||
+      addOpen.value,
+  ),
+);
+
 function closeAdd(): void {
   addOpen.value = false;
   document.removeEventListener('mousedown', onAddDocClick);
@@ -785,12 +987,16 @@ function toggleAddMenu(): void {
   // Keep the toolbar menus mutually exclusive so they never overlap.
   closeDropdown();
   closePermDropdown();
-  const r = addRef.value?.getBoundingClientRect();
-  if (r) {
-    addMenuStyle.value = {
-      left: `${Math.round(r.left)}px`,
-      bottom: `${Math.round(window.innerHeight - r.top + 8)}px`,
-    };
+  // On mobile the add menu opens as a bottom sheet, so the fixed-position
+  // anchor coordinates are desktop-only.
+  if (!isMobile.value) {
+    const r = addRef.value?.getBoundingClientRect();
+    if (r) {
+      addMenuStyle.value = {
+        left: `${Math.round(r.left)}px`,
+        bottom: `${Math.round(window.innerHeight - r.top + 8)}px`,
+      };
+    }
   }
   addOpen.value = true;
   setTimeout(() => document.addEventListener('mousedown', onAddDocClick), 0);
@@ -815,7 +1021,13 @@ function onAddKeydown(e: KeyboardEvent): void {
   }
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   e.preventDefault();
-  const rows = Array.from(addMenuRef.value?.querySelectorAll<HTMLElement>(ADD_ROW_SELECTOR) ?? []);
+  // Query the rows from the element the handler is bound to (the desktop
+  // panel or the mobile sheet wrapper) — the desktop addMenuRef does not
+  // exist while the sheet variant is mounted.
+  const host = e.currentTarget;
+  const rows = host instanceof HTMLElement
+    ? Array.from(host.querySelectorAll<HTMLElement>(ADD_ROW_SELECTOR))
+    : [];
   if (rows.length === 0) return;
   const activeEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const idx = activeEl ? rows.indexOf(activeEl) : -1;
@@ -901,6 +1113,20 @@ onMounted(() => {
   scheduleMenuDescriptionMeasure();
   void document.fonts?.ready.then(scheduleMenuDescriptionMeasure);
   void document.fonts?.ready.then(() => measureWmPill());
+  // Toolbar measurement: re-fit the model pill's collapse decision on any
+  // toolbar resize, window resize, model change, or late font load (label
+  // widths are font-dependent).
+  const toolbar = toolbarRef.value;
+  if (toolbar && typeof ResizeObserver !== 'undefined') {
+    toolbarObserver = new ResizeObserver(() => updateModelPillCollapse());
+    toolbarObserver.observe(toolbar);
+  }
+  updateModelPillCollapse();
+  window.addEventListener('resize', onComposerResize);
+  void document.fonts?.ready.then(() => {
+    updateModelPillCollapse();
+    if (dropdownOpen.value) void nextTick(positionModelDropdown);
+  });
 });
 
 onUnmounted(() => {
@@ -908,6 +1134,13 @@ onUnmounted(() => {
     window.cancelAnimationFrame(menuMeasureFrame);
     menuMeasureFrame = null;
   }
+  toolbarObserver?.disconnect();
+  toolbarObserver = null;
+  window.removeEventListener('resize', onComposerResize);
+  menuResizeObservers.forEach((observer) => observer.disconnect());
+  menuResizeObservers.clear();
+  modelDropdownObserver?.disconnect();
+  modelDropdownObserver = null;
 });
 
 function choosePermission(mode: PermissionMode): void {
@@ -917,30 +1150,6 @@ function choosePermission(mode: PermissionMode): void {
 
 const permInfo = computed(() => PERM_MODES.find((p) => p.mode === props.status?.permission));
 const permLabel = computed(() => (permInfo.value ? t(permInfo.value.labelKey) : ''));
-
-// ---------------------------------------------------------------------------
-// Model dropdown — current provider models + thinking + more
-// ---------------------------------------------------------------------------
-
-const currentProvider = computed(() => {
-  return currentModel.value?.provider ?? '';
-});
-
-const providerModels = computed(() => {
-  if (!currentProvider.value || !props.models?.length) return [];
-  return props.models.filter((m) => m.provider === currentProvider.value);
-});
-
-const starredSet = computed(() => new Set(props.starredIds ?? []));
-function isStarred(modelId: string): boolean {
-  return starredSet.value.has(modelId);
-}
-const starredOtherModels = computed(() => {
-  if (!props.models?.length) return [];
-  return props.models.filter(
-    (m) => isStarred(m.id) && m.provider !== currentProvider.value,
-  );
-});
 
 function selectModel(modelId: string): void {
   emit('selectModel', modelId);
@@ -1001,7 +1210,7 @@ function selectModel(modelId: string): void {
     <!-- Main composer card -->
     <div class="composer-card lg-frost">
       <!-- Input row with popup menus -->
-      <div class="cin-wrap">
+      <div ref="cinWrapRef" class="cin-wrap">
         <!-- Work-mode pill — armed/active plan or armed goal, floating over the
              textarea's top-left; × exits (un-arm or turn off). -->
         <div v-if="wmPillKind" ref="wmPillRef" class="wm-pill">
@@ -1017,23 +1226,32 @@ function selectModel(modelId: string): void {
             <Icon name="close" size="sm" />
           </IconButton>
         </div>
-        <!-- Slash menu (above textarea) -->
+        <!-- Slash menu (above textarea) — the clamp style keeps it inside the
+             viewport (flip below when the space above the composer is small).
+             Desktop only: on mobile the same content opens as a bottom sheet
+             (see the sheets below the toolbar). -->
         <SlashMenu
-          v-if="slashOpen"
+          ref="slashMenuRef"
+          v-if="slashOpen && !isMobile"
           :items="slashItems"
           :active-index="slashActive"
           :query="slashQuery"
           :ranges="slashRanges"
+          :clamp-style="slashClamp"
           @select="selectSlashCommand"
           @hover="slashActive = $event"
         />
 
-        <!-- Mention menu (above textarea) -->
+        <!-- Mention menu (above textarea) — same viewport clamping as slash.
+             Desktop only: on mobile it opens as a bottom sheet. -->
         <MentionMenu
-          v-if="mentionOpen"
+          ref="mentionMenuRef"
+          v-if="mentionOpen && !isMobile"
           :items="mentionItems"
           :active-index="mentionActive"
           :loading="mentionLoading"
+          :query="mentionQuery"
+          :clamp-style="mentionClamp"
           @select="selectMentionItem"
           @hover="mentionActive = $event"
         />
@@ -1106,7 +1324,7 @@ function selectModel(modelId: string): void {
                  block, throwing the menu off to the wrong position. -->
             <Teleport to="body">
               <div
-                v-if="addOpen"
+                v-if="addOpen && !isMobile"
                 ref="addMenuRef"
                 class="add-menu lg-glass"
                 :style="addMenuStyle"
@@ -1114,102 +1332,25 @@ function selectModel(modelId: string): void {
                 @click.stop
                 @keydown="onAddKeydown"
               >
-                <!-- Files — opens the attachment picker -->
-                <button
-                  v-if="hasUpload"
-                  type="button"
-                  class="am-row"
-                  role="menuitem"
-                  @mousedown.prevent
-                  @click="runAddRow(openFilePicker)"
-                >
-                  <span class="am-row-icon"><Icon name="attachment" size="sm" /></span>
-                  <span class="am-row-info">
-                    <span class="am-row-name">{{ t('composer.addFiles') }}</span>
-                  </span>
-                </button>
-
-                <!-- Goal — arm for the next send; live controls when active -->
-                <div class="am-row am-row-goal" :class="{ on: goalActive || props.goalMode }">
-                  <button
-                    type="button"
-                    class="am-row-main"
-                    role="menuitem"
-                    @click="goalActive ? runAddRow(() => emit('focusGoal')) : runAddRow(() => emit('toggleGoal'))"
-                  >
-                    <span class="am-row-icon"><Icon name="target" size="sm" /></span>
-                    <span class="am-row-info">
-                      <span class="am-row-name">{{ t('status.goalLabel') }}</span>
-                      <span class="am-row-desc">{{ t('composer.addGoalDesc') }}</span>
-                    </span>
-                    <span v-if="!goalActive" class="am-switch" :class="{ on: props.goalMode }"><span class="am-knob" /></span>
-                  </button>
-                  <div v-if="goalActive" class="am-row-actions">
-                    <Button
-                      v-if="goalCanPause"
-                      size="sm"
-                      variant="secondary"
-                      class="am-row-action"
-                      @click="emit('controlGoal', 'pause')"
-                    >
-                      <Icon name="pause" size="sm" />
-                      <span>{{ t('status.goalPause') }}</span>
-                    </Button>
-                    <Button
-                      v-if="goalCanResume"
-                      size="sm"
-                      variant="primary"
-                      class="am-row-action"
-                      @click="emit('controlGoal', 'resume')"
-                    >
-                      <Icon name="play" size="sm" />
-                      <span>{{ t('status.goalResume') }}</span>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger-soft"
-                      class="am-row-action"
-                      @click="emit('controlGoal', 'cancel')"
-                    >
-                      <Icon name="close" size="sm" />
-                      <span>{{ t('status.goalCancel') }}</span>
-                    </Button>
-                  </div>
-                </div>
-
-                <!-- Plan — arm for the next send (deferred); toggles an active plan off -->
-                <button
-                  type="button"
-                  class="am-row"
-                  :class="{ on: planOn || planArmedOn }"
-                  role="menuitem"
-                  @mousedown.prevent
-                  @click="choosePlanRow"
-                >
-                  <span class="am-row-icon"><Icon name="file-edit" size="sm" /></span>
-                  <span class="am-row-info">
-                    <span class="am-row-name">{{ t('status.planLabel') }}</span>
-                    <span class="am-row-desc">{{ t('composer.addPlanDesc') }}</span>
-                  </span>
-                  <span class="am-switch" :class="{ on: planOn || planArmedOn }"><span class="am-knob" /></span>
-                </button>
-
-                <!-- Swarm — immediate client toggle -->
-                <button
-                  type="button"
-                  class="am-row"
-                  :class="{ on: swarmOn }"
-                  role="menuitem"
-                  @mousedown.prevent
-                  @click="runAddRow(() => emit('toggleSwarm'))"
-                >
-                  <span class="am-row-icon"><Icon name="sparkles" size="sm" /></span>
-                  <span class="am-row-info">
-                    <span class="am-row-name">{{ t('status.swarmLabel') }}</span>
-                    <span class="am-row-desc">{{ t('composer.addSwarmDesc') }}</span>
-                  </span>
-                  <span class="am-switch" :class="{ on: swarmOn }"><span class="am-knob" /></span>
-                </button>
+                <!-- Files / Goal / Plan / Swarm rows — shared with the mobile
+                     bottom-sheet variant below. -->
+                <ComposerAddMenu
+                  :has-upload="hasUpload"
+                  :goal-active="goalActive"
+                  :goal-mode="props.goalMode"
+                  :goal-can-pause="goalCanPause"
+                  :goal-can-resume="goalCanResume"
+                  :plan-on="planOn"
+                  :plan-armed-on="planArmedOn"
+                  :swarm-on="swarmOn"
+                  @files="runAddRow(openFilePicker)"
+                  @goal-main="goalActive ? runAddRow(() => emit('focusGoal')) : runAddRow(() => emit('toggleGoal'))"
+                  @plan="choosePlanRow"
+                  @swarm="runAddRow(() => emit('toggleSwarm'))"
+                  @pause="emit('controlGoal', 'pause')"
+                  @resume="emit('controlGoal', 'resume')"
+                  @cancel="emit('controlGoal', 'cancel')"
+                />
               </div>
             </Teleport>
           </div>
@@ -1276,21 +1417,26 @@ function selectModel(modelId: string): void {
             </span>
           </Tooltip>
 
-          <!-- Model pill — click to open quick-switch dropdown -->
-          <span
-            v-if="status"
-            class="model-pill lg-glass"
-            :class="{ open: dropdownOpen }"
-            role="button"
-            tabindex="0"
-            @click.stop="toggleDropdown"
-            @keydown.enter="toggleDropdown"
-            @keydown.space.prevent="toggleDropdown"
-          >
-            <b>{{ status.model }}</b>
-            <span v-if="thinkingSuffix" class="think-suffix">{{ thinkingSuffix }}</span>
-            <Icon class="cv" name="chevron-down" size="sm" />
-          </span>
+          <!-- Model pill — click to open quick-switch dropdown. In narrow rows
+               the label collapses to the chevron only (icon-only); the hover
+               tooltip still shows model + effort. -->
+          <Tooltip :text="modelPillCollapsed ? modelPillLabel : null">
+            <span
+              v-if="status"
+              class="model-pill lg-glass"
+              :class="{ open: dropdownOpen, 'icon-only': modelPillCollapsed }"
+              role="button"
+              tabindex="0"
+              :aria-label="modelPillLabel"
+              @click.stop="toggleDropdown"
+              @keydown.enter="toggleDropdown"
+              @keydown.space.prevent="toggleDropdown"
+            >
+              <b>{{ status.model }}</b>
+              <span v-if="thinkingSuffix" class="think-suffix">{{ thinkingSuffix }}</span>
+              <Icon class="cv" name="chevron-down" size="sm" />
+            </span>
+          </Tooltip>
           <Tooltip v-if="running" :text="t('composer.interruptTitle')">
             <button
               class="stop"
@@ -1314,78 +1460,28 @@ function selectModel(modelId: string): void {
           </Tooltip>
         </div>
 
-        <!-- Model dropdown — current provider models + controls + more -->
-        <div v-if="dropdownOpen && status" class="model-dropdown lg-glass" role="menu" @click.stop>
-          <!-- Starred models from other providers -->
-          <div v-if="starredOtherModels.length > 0" class="md-section">{{ t('status.starredModels') }}</div>
-          <button
-            v-for="m in starredOtherModels"
-            :key="m.id"
-            class="md-row"
-            :class="{ 'is-current': m.id === status.modelId }"
-            role="menuitem"
-            @click="selectModel(m.id)"
-          >
-            <span class="md-check"><Icon v-if="m.id === status.modelId" name="check" size="sm" /></span>
-            <span class="md-name">{{ m.displayName ?? m.model }}</span>
-            <span class="md-provider">{{ m.provider }}</span>
-            <Icon class="md-star" name="star" size="sm" />
-          </button>
-
-          <div v-if="starredOtherModels.length > 0" class="md-divider" />
-
-          <!-- Current provider models -->
-          <div v-if="providerModels.length > 0" class="md-section">{{ currentProvider }}</div>
-          <button
-            v-for="m in providerModels"
-            :key="m.id"
-            class="md-row"
-            :class="{ 'is-current': m.id === status.modelId }"
-            role="menuitem"
-            @click="selectModel(m.id)"
-          >
-            <span class="md-check"><Icon v-if="m.id === status.modelId" name="check" size="sm" /></span>
-            <span class="md-name">{{ m.displayName ?? m.model }}</span>
-            <Icon v-if="isStarred(m.id)" class="md-star" name="star" size="sm" />
-          </button>
-
-          <div v-if="providerModels.length > 0" class="md-divider" />
-
-          <!-- Thinking level — segmented control. Effort models show every
-               declared level; boolean models show On/Off; unsupported shows a note. -->
-          <div class="md-thinking" :class="{ 'is-readonly': thinkingReadonly }">
-            <span class="md-name">{{ t('status.thinkingLabel') }}</span>
-            <span
-              v-if="thinkingAvailability === 'unsupported'"
-              class="md-note"
-            >{{ t('status.modeNotSupported') }}</span>
-            <div
-              v-else
-              class="effort-segments"
-              role="group"
-              :aria-label="t('status.thinkingLabel')"
-            >
-              <button
-                v-for="seg in thinkingSegments"
-                :key="seg"
-                type="button"
-                class="effort-seg"
-                :class="{ 'is-active': seg === activeThinkingSegment }"
-                :disabled="thinkingReadonly"
-                @click="setThinkingSegment(seg)"
-              >{{ thinkingSegmentLabel(seg) }}</button>
-            </div>
-          </div>
-
-          <div class="md-divider" />
-          <div class="md-cache-note">{{ t('status.cacheNote') }}</div>
-
-          <div class="md-divider" />
-
-          <!-- More models → open full picker -->
-          <button class="md-row md-row-more" role="menuitem" @click="closeDropdown(); emit('pickModel');">
-            <span class="md-name">{{ t('status.moreModels') }}</span>
-          </button>
+        <!-- Model dropdown — current provider models + controls + more. Positioned by
+             inline style (viewport-clamped, flips below when short of space
+             above); measured against the toolbar via modelDropdownRef. -->
+        <div
+          v-if="dropdownOpen && status && !isMobile"
+          ref="modelDropdownRef"
+          class="model-dropdown lg-glass"
+          :style="modelDropdownStyle"
+          role="menu"
+          @click.stop
+        >
+          <!-- Starred / provider models + thinking + more — shared with the
+               mobile bottom-sheet variant below. -->
+          <ComposerModelMenu
+            :models="models"
+            :starred-ids="starredIds"
+            :status="status"
+            :thinking="thinking"
+            @select="selectModel"
+            @more="closeDropdown(); emit('pickModel')"
+            @set-thinking="(level) => emit('setThinking', level)"
+          />
         </div>
       </div>
   </div>
@@ -1399,6 +1495,87 @@ function selectModel(modelId: string): void {
       <span>{{ t('composer.dropToAttach') }}</span>
     </div>
   </div>
+
+  <!-- Mobile menu sheets: on ≤640px the slash / mention / add / model menus
+       open as grab-handle bottom sheets instead of the anchored floating
+       panels above. Teleported to body so the composer card's frost (a
+       backdrop-filter) can't become the fixed-position containing block.
+       Closing a sheet closes its underlying menu state. -->
+  <Teleport to="body">
+    <BottomSheet
+      :model-value="slashOpen && isMobile"
+      :title="t('composer.slashSheetTitle')"
+      @update:model-value="(open) => { if (!open) closeSlashMenu(); }"
+    >
+      <SlashMenu
+        layout="sheet"
+        :items="slashItems"
+        :active-index="slashActive"
+        :query="slashQuery"
+        :ranges="slashRanges"
+        @select="selectSlashCommand"
+        @hover="slashActive = $event"
+      />
+    </BottomSheet>
+
+    <BottomSheet
+      :model-value="mentionOpen && isMobile"
+      :title="t('composer.mentionSheetTitle')"
+      @update:model-value="(open) => { if (!open) closeMentionMenu(); }"
+    >
+      <MentionMenu
+        layout="sheet"
+        :items="mentionItems"
+        :active-index="mentionActive"
+        :loading="mentionLoading"
+        :query="mentionQuery"
+        @select="selectMentionItem"
+        @hover="mentionActive = $event"
+      />
+    </BottomSheet>
+
+    <BottomSheet
+      :model-value="addOpen && isMobile"
+      @update:model-value="(open) => { if (!open) closeAdd(); }"
+    >
+      <div class="menu-sheet" role="menu" @click.stop @keydown="onAddKeydown">
+        <ComposerAddMenu
+          :has-upload="hasUpload"
+          :goal-active="goalActive"
+          :goal-mode="props.goalMode"
+          :goal-can-pause="goalCanPause"
+          :goal-can-resume="goalCanResume"
+          :plan-on="planOn"
+          :plan-armed-on="planArmedOn"
+          :swarm-on="swarmOn"
+          @files="runAddRow(openFilePicker)"
+          @goal-main="goalActive ? runAddRow(() => emit('focusGoal')) : runAddRow(() => emit('toggleGoal'))"
+          @plan="choosePlanRow"
+          @swarm="runAddRow(() => emit('toggleSwarm'))"
+          @pause="emit('controlGoal', 'pause')"
+          @resume="emit('controlGoal', 'resume')"
+          @cancel="emit('controlGoal', 'cancel')"
+        />
+      </div>
+    </BottomSheet>
+
+    <BottomSheet
+      :model-value="dropdownOpen && isMobile && !!status"
+      @update:model-value="(open) => { if (!open) closeDropdown(); }"
+    >
+      <div class="menu-sheet" role="menu" @click.stop>
+        <ComposerModelMenu
+          :models="models"
+          :starred-ids="starredIds"
+          :status="status"
+          :thinking="thinking"
+          @select="selectModel"
+          @more="closeDropdown(); emit('pickModel')"
+          @set-thinking="(level) => emit('setThinking', level)"
+        />
+      </div>
+    </BottomSheet>
+  </Teleport>
 </div>
 </template>
 
@@ -1451,6 +1628,9 @@ function selectModel(modelId: string): void {
 /* Main composer card */
 .composer-card {
   --composer-send-size: 32px;
+  /* Square size for the collapsed-to-icon controls (the model pill's
+     icon-only state). Matches the add-button / send-button footprint. */
+  --composer-control-size: 32px;
   --composer-send-inset: var(--space-2);
   position: relative;
   border: 1px solid var(--line);
@@ -1738,6 +1918,19 @@ function selectModel(modelId: string): void {
   min-width: 0;
   overflow: hidden;
 }
+/* Narrow-window crush fix: the left group never shrinks (it clips its own
+   overflow when the row is truly out of space — the add button is the control
+   users reach for), while the right group flexes to fill the remainder and
+   right-aligns, its items yielding per their own min-width:0 / flex-shrink
+   priorities instead of overlapping. */
+.toolbar-left {
+  flex: none;
+  padding-right: var(--space-2);
+}
+.toolbar-right {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
 
 /* Permission pill */
 .perm-pill {
@@ -1756,6 +1949,14 @@ function selectModel(modelId: string): void {
   transition: background 0.1s, color 0.15s;
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
+  /* The pill label truncates with the ellipsis instead of being clipped (or
+     wrapping) when the toolbar row is tight — never silently vanishes. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Hover background is now handled by the global `.lg-glass.lg-glass:is(button,
    [role="button"], a):hover` rule in style.css (higher specificity) — the
@@ -1844,6 +2045,25 @@ function selectModel(modelId: string): void {
   transition: background 0.1s;
   position: relative;
   overflow: hidden;
+  /* Yields to the row: the label truncates (min-width:0 on <b>) well before
+     the pill ever pushes its neighbours out. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+/* Icon-only collapse — the model label gives way to a bare chevron pill in
+   very narrow rows (see modelPillCollapsed); the interlocking .lg-glass
+   material keeps its tint + rim because the .lg-glass class is never removed. */
+.model-pill.icon-only {
+  width: var(--composer-control-size);
+  height: var(--composer-control-size);
+  padding: 0;
+  justify-content: center;
+  flex: none;
+}
+.model-pill.icon-only b,
+.model-pill.icon-only .think-suffix {
+  display: none;
 }
 .model-pill:hover {
   /* Hover background now lifted to the global `.lg-glass.lg-glass:is(button,
@@ -1879,11 +2099,10 @@ function selectModel(modelId: string): void {
   color: var(--color-accent-hover);
 }
 
-/* Model dropdown — anchored to the toolbar right edge */
+/* Model dropdown — anchored to the toolbar; the flip / horizontal clamp comes
+   from the inline style computed in positionModelDropdown. */
 .model-dropdown {
   position: absolute;
-  bottom: calc(100% + 4px);
-  right: 10px;
   z-index: var(--z-dropdown);
   min-width: 200px;
   max-height: min(70vh, 520px);
@@ -1899,156 +2118,15 @@ function selectModel(modelId: string): void {
   font-family: var(--font-ui);
 }
 
-.md-section {
-  padding: 4px 7px 2px;
-  font-size: var(--text-xs);
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0;
-  font-weight: var(--weight-semibold);
+/* Concentric corners: the frame is radius-lg, so the outermost rows pick up
+   radius-md (≈ frame radius minus padding) on their outer corners. */
+.model-dropdown > :first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
 }
-
-.md-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: var(--ui-font-size);
-  color: var(--color-text);
-  padding: 5px 7px;
-  border-radius: 6px;
-  text-align: left;
-}
-.md-row:hover { background: var(--color-surface-sunken); }
-.md-row:disabled {
-  cursor: default;
-  opacity: 0.58;
-}
-.md-row:disabled:hover { background: none; }
-.md-row.is-current { color: var(--color-text); background: var(--color-accent-soft); }
-.md-row.is-on { color: var(--color-accent); }
-.md-note {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: var(--ui-font-size-xs);
-}
-
-.md-row-more {
-  color: var(--color-accent);
-  font-weight: 500;
-}
-.md-row-more:hover {
-  background: var(--color-accent-soft);
-}
-
-.md-check {
-  width: 14px;
-  flex: none;
-  color: var(--color-accent);
-  font-weight: 500;
-  display: flex;
-  justify-content: center;
-}
-
-.md-name {
-  flex: 1;
-}
-.md-provider {
-  color: var(--muted);
-  font-size: var(--ui-font-size-xs);
-  flex: none;
-}
-.md-star {
-  color: var(--star);
-  flex: none;
-  margin-left: auto;
-}
-
-.md-divider {
-  height: 1px;
-  background: var(--line);
-  margin: 3px 0;
-}
-
-/* Thinking level segmented control — sits inside the model dropdown. */
-.md-thinking {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 7px;
-  border-radius: var(--radius-sm);
-}
-.md-thinking .md-name {
-  font-family: var(--font-ui);
-  font-size: var(--ui-font-size);
-  color: var(--color-text);
-  flex: none;
-}
-.md-thinking .md-note {
-  margin-left: auto;
-}
-.effort-segments {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  padding: 2px;
-  background: var(--color-surface-sunken);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-}
-.effort-seg {
-  appearance: none;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: var(--ui-font-size-xs);
-  line-height: 1;
-  color: var(--color-text-muted);
-  padding: 4px 9px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
-}
-.effort-seg:hover:not(:disabled):not(.is-active) {
-  background: var(--color-surface-raised);
-  color: var(--color-text);
-}
-.effort-seg:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-.effort-seg.is-active {
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
-  box-shadow: var(--shadow-xs);
-  font-weight: 500;
-}
-.effort-seg:disabled {
-  cursor: default;
-}
-.md-thinking.is-readonly .effort-segments {
-  opacity: 0.62;
-}
-.md-cache-note {
-  /* width:0 + min-width:100% — the note never widens the shrink-to-fit
-     dropdown, but always fills its width and wraps there naturally. */
-  width: 0;
-  min-width: 100%;
-  padding: 2px 7px 4px;
-  color: var(--muted);
-  font-size: var(--ui-font-size-xs);
-  line-height: 1.4;
-}
-.md-thinking.is-readonly .effort-seg.is-active {
-  background: var(--color-surface-raised);
-  color: var(--color-text-muted);
-  box-shadow: none;
+.model-dropdown > :last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
 
 /* Permission dropdown — anchored to the toolbar left side */
@@ -2068,6 +2146,15 @@ function selectModel(modelId: string): void {
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+/* Concentric corners (radius-md outer corners for the outermost rows). */
+.perm-dropdown > :first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+.perm-dropdown > :last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
 
 .pd-row {
@@ -2127,8 +2214,9 @@ function selectModel(modelId: string): void {
 
 /* Add menu ("+" next to the input) — Files / Goal / Plan / Swarm.
    z-index lifts the whole control (incl. its upward-opening menu) above the
-   composer input row, which otherwise paints over the menu. */
-.add { position: relative; display: inline-flex; z-index: var(--z-sticky); }
+   composer input row, which otherwise paints over the menu. flex:none keeps
+   the trigger from being crushed when the row is narrow. */
+.add { position: relative; display: inline-flex; z-index: var(--z-sticky); flex: none; }
 .add-btn.open { background: var(--color-accent-soft); }
 
 .add-menu {
@@ -2146,129 +2234,15 @@ function selectModel(modelId: string): void {
   flex-direction: column;
   gap: 1px;
 }
-.am-row {
-  display: grid;
-  grid-template-columns: 14px max-content;
-  column-gap: 7px;
-  row-gap: 2px;
-  align-items: start;
-  width: 100%;
-  padding: 6px 7px;
-  border: none;
-  background: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: var(--font-ui);
-  text-align: left;
+/* Concentric corners (radius-md outer corners for the outermost rows). */
+.add-menu > :first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
 }
-.am-row:hover:not(:disabled) { background: var(--color-surface-sunken); }
-.am-row:disabled { cursor: not-allowed; opacity: 0.45; }
-.am-row-info {
-  display: contents;
+.add-menu > :last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
-.am-row-icon {
-  grid-column: 1;
-  grid-row: 1;
-  width: 14px;
-  min-height: 1lh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  font-size: var(--ui-font-size);
-  line-height: var(--leading-normal);
-}
-.am-row-name {
-  grid-column: 2;
-  grid-row: 1;
-  font-size: var(--ui-font-size);
-  font-weight: var(--weight-medium);
-  color: var(--color-text);
-  line-height: var(--leading-normal);
-}
-.am-row-desc {
-  grid-column: 2;
-  grid-row: 2;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  color: var(--muted);
-  line-height: var(--leading-normal);
-}
-.am-row.on {
-  background: var(--color-accent-soft);
-}
-.am-row.on .am-row-name { color: var(--color-accent-hover); }
-.am-row.on .am-row-icon { color: var(--color-accent-hover); }
-.am-switch {
-  grid-column: 2;
-  grid-row: 1;
-  justify-self: end;
-  width: 34px;
-  height: 19px;
-  border-radius: var(--radius-full);
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  position: relative;
-  transition: background 0.15s;
-}
-.am-switch.on { background: var(--color-accent); border-color: var(--color-accent); }
-.am-knob {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 15px;
-  height: 15px;
-  border-radius: var(--radius-full);
-  background: var(--bg);
-  box-shadow: var(--shadow-xs);
-  transition: transform 0.15s;
-}
-.am-switch.on .am-knob { transform: translateX(15px); }
-
-.am-row-goal {
-  --am-row-icon-col: 14px;
-  --am-row-col-gap: 7px;
-  --am-row-pad-x: 7px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  cursor: default;
-  padding: 0;
-  gap: 0;
-}
-.am-row-goal:hover { background: transparent; }
-.am-row-goal.on {
-  background: var(--color-accent-soft);
-}
-.am-row-main {
-  display: grid;
-  grid-template-columns: var(--am-row-icon-col) max-content;
-  column-gap: var(--am-row-col-gap);
-  row-gap: 2px;
-  align-items: start;
-  width: 100%;
-  padding: 6px var(--am-row-pad-x);
-  border: none;
-  background: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: var(--font-ui);
-  text-align: left;
-}
-.am-row-main:hover { background: var(--color-surface-sunken); }
-.am-row-goal.on .am-row-main .am-row-name { color: var(--color-accent-hover); }
-.am-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  justify-content: flex-start;
-  padding: 0 var(--am-row-pad-x) var(--am-row-pad-x)
-    calc(var(--am-row-pad-x) + var(--am-row-icon-col) + var(--am-row-col-gap));
-}
-.am-row-action {
-  flex: none;
-}
-.am-row-action :deep(.ui-button__content) { gap: var(--space-1); }
 
 /* Work-mode pill — armed/active plan or armed goal, floating over the
    textarea's top-left (`.cin-wrap` provides the positioning context). */
@@ -2318,12 +2292,11 @@ function selectModel(modelId: string): void {
     max-width: 130px;
   }
   /* Permission label is short (manual/yolo/auto); cap it defensively so a
-     longer label can never push the toolbar past its container. */
+     longer label can never push the toolbar past its container. The base
+     .perm-pill rule already truncates with an ellipsis; only the cap lands
+     here. */
   .perm-pill {
     max-width: 104px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 
@@ -2340,6 +2313,10 @@ function selectModel(modelId: string): void {
   }
   .composer-card {
     --composer-send-size: 36px;
+    /* Align the icon-only controls (model pill / add button) with the 36px
+       send/stop so the collapsed toolbar reads as one row of matching
+       circles (mirrors the upstream mobile composer). */
+    --composer-control-size: 36px;
     max-width: 100%;
   }
   .input-row {
@@ -2362,8 +2339,10 @@ function selectModel(modelId: string): void {
   }
   .send::after {
     content: "↑";
-    /* Fixed icon glyph size — not part of the UI font scale. */
-    font-size: 17px;
+    /* Glyph size shared by send and stop; sized to read well inside the 36px
+       circle (the desktop icon box is --p-ic-lg 20px, these are scaled up for
+       the touch-first button). */
+    font-size: 22px;
     line-height: 1;
     color: var(--bg);
   }
@@ -2383,8 +2362,8 @@ function selectModel(modelId: string): void {
   }
   .stop::after {
     content: "■";
-    /* Fixed icon glyph size — not part of the UI font scale. */
-    font-size: 17px;
+    /* Same 22px size as the send glyph so the pair reads as one unit. */
+    font-size: 22px;
     line-height: 1;
   }
 
@@ -2399,10 +2378,9 @@ function selectModel(modelId: string): void {
     display: none;
   }
 
-  /* Model dropdown on mobile → anchored right with padding */
+  /* Model dropdown on mobile — width caps only; the flip / clamp comes from
+     the inline style computed while open. */
   .model-dropdown {
-    right: 10px;
-    left: auto;
     min-width: 180px;
     max-width: calc(100vw - 24px);
   }
@@ -2432,30 +2410,42 @@ function selectModel(modelId: string): void {
   .model-pill b {
     max-width: min(40vw, 170px);
   }
-  .md-row {
-    font-size: var(--ui-font-size);
-  }
-  .md-section {
-    font-size: var(--ui-font-size);
-  }
-  .md-thinking {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-  .md-thinking .effort-segments {
-    margin-left: 0;
-    width: 100%;
-    justify-content: space-between;
-  }
-  .md-thinking .effort-seg {
-    flex: 1;
-    padding: 5px 6px;
-  }
   .pd-name {
     font-size: var(--ui-font-size);
   }
   .pd-desc {
     font-size: var(--text-xs);
+  }
+}
+
+/* Mobile bottom-sheet content wrapper for the add / model menus: the sheet
+   own the surface, this just adds the padding the sheet body doesn't. */
+.menu-sheet {
+  padding: var(--space-1);
+  font-family: var(--font-ui);
+}
+
+/* Touch devices (phones/tablets with no hover): widen the hit area of the
+   mobile composer's round controls — the 36px circles fall short of the 44px
+   touch target, so a transparent ::before extends each one's interaction
+   zone (upstream does the same via an inset overlay). The expand button is
+   smaller still, so it gets a wider halo. The model pill is excluded: it
+   clips overflow (label ellipsis), which would also clip the halo. */
+@media (max-width: 640px) and (hover: none) {
+  .send,
+  .stop,
+  .expand-btn {
+    position: relative;
+  }
+  .send::before,
+  .stop::before,
+  .expand-btn::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+  .expand-btn::before {
+    inset: -11px;
   }
 }
 

@@ -34,6 +34,7 @@ export default {
   copyCommand: '复制命令',
   copyOutput: '复制输出',
   copyAll: '复制全部',
+  transcriptLoadError: '转录内容加载失败',
   // 后台 Bash 面板（带状态筛选的主-从视图）
   bash: {
     filterAll: '全部',

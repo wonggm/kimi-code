@@ -20,4 +20,6 @@ export default {
   archivedSessionsSub: 'Browse and restore archived sessions',
   agentDefaultsSub: 'Default model, subagents, permission, thinking',
   archivedBack: 'Back',
+  switcherGrouped: 'By workspace',
+  switcherFlat: 'Recent',
 } as const;

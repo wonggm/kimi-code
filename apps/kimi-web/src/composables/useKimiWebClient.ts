@@ -640,6 +640,10 @@ function forgetSession(sessionId: string): void {
   delete rawState.swarmModeBySession[sessionId];
   delete rawState.goalModeBySession[sessionId];
   delete rawState.thinkingBySession[sessionId];
+  // Drop the session's side-chat binding and the hidden user-message ids it
+  // contributed — the agent-keyed transcript is freed by clearSideChatForSession.
+  sideChat.clearSideChatForSession(sessionId);
+  delete rawState.sideChatUserMessageIdsBySession[sessionId];
   savePlanModeToStorage();
   savePlanArmedToStorage();
   saveSwarmModeToStorage();
@@ -910,6 +914,13 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
 // backlog into one unbounded rAF drain. Lifecycle / control-flow events remain
 // strict ordering barriers and are never dropped or merged.
 
+// Set by useKimiWebClient() once the workspace-state module exists — lets the
+// synchronous event path fetch a session that was restored in another client
+// but never loaded here. Best-effort and once-per-id: a repeat meta update for
+// the same unknown session must not hammer the daemon.
+let fetchRemoteRestoredSession: (sessionId: string) => void = () => {};
+const remoteRestoreFetchAttempted = new Set<string>();
+
 function processEvent(appEvent: AppEvent, meta: KimiEventMeta): void {
   // Capture BEFORE applyEvent advances lastSeqBySession: turn-end side
   // effects below only run when this event actually moves the durable cursor
@@ -922,6 +933,18 @@ function processEvent(appEvent: AppEvent, meta: KimiEventMeta): void {
   // persistent divider marker in the reducer (TUI parity: the scrollback
   // is kept, only a marker line records the compaction).
   applyEvent(appEvent, meta.sessionId, meta.seq);
+
+  // Remote restore (session.meta.updated archived:false flips the flag for
+  // sessions we already have — the reducer patched those above). A session
+  // restored elsewhere that was never loaded into this client's list (it
+  // lives only in the Done-tab fetch, or on neither) has no row to patch, so
+  // fetch it now to surface it in the Open list immediately.
+  if (appEvent.type === 'sessionMetaUpdated' && appEvent.archived === false) {
+    const sid = appEvent.sessionId;
+    if (!rawState.sessions.some((s) => s.id === sid)) {
+      fetchRemoteRestoredSession(sid);
+    }
+  }
 
   const sideTarget = sideChat.sideChatTargetBySession.value[meta.sessionId];
   if (sideTarget) {
@@ -2445,14 +2468,24 @@ const changesByPath = computed<Record<string, string>>(() => {
  * keeps grouping consistent with `mergeWorkspaces` so a session never falls
  * out of the group the merge rendered); otherwise the daemon-provided
  * session.workspaceId; otherwise the cwd itself (derived/fallback mode).
+ *
+ * The cwd→workspace map is rebuilt only when the workspace list reference
+ * changes, so resolving N sessions stays O(N + M) instead of the O(N·M) of a
+ * per-session scan — the sidebar view computeds call this once per session on
+ * every recompute, and with many workspaces the scan dominated the rebuild
+ * cost of the session list (grouped-session-list-load).
  */
+let workspaceIdMap: Map<string, string> | null = null;
+let workspaceIdMapFor: AppWorkspace[] | null = null;
 function workspaceIdForSession(s: { workspaceId?: string; cwd: string }): string {
+  if (workspaceIdMapFor !== rawState.workspaces) {
+    workspaceIdMapFor = rawState.workspaces;
+    const map = new Map<string, string>();
+    for (const w of rawState.workspaces) map.set(workspaceRootKey(w.root), w.id);
+    workspaceIdMap = map;
+  }
   const cwdKey = workspaceRootKey(s.cwd);
-  return (
-    rawState.workspaces.find((w) => workspaceRootKey(w.root) === cwdKey)?.id ??
-    s.workspaceId ??
-    s.cwd
-  );
+  return workspaceIdMap!.get(cwdKey) ?? s.workspaceId ?? s.cwd;
 }
 
 /**
@@ -2576,48 +2609,34 @@ const visibleWorkspace = computed<WorkspaceView | null>(() => {
 /**
  * All sessions for the sidebar (grouped by workspace via workspaceGroups).
  */
-const sessionsForView = computed<Session[]>(() => {
+/**
+ * One shared session→view pass for the sidebar: built ONCE per recompute and
+ * consumed by both the flat list (sessionsForView) and the grouped list
+ * (workspaceGroups), so those two computeds no longer each walk
+ * rawState.sessions and resolve workspace ids separately (grouped-session-list-
+ * load: the grouping pipeline used to iterate every session twice and scan the
+ * workspace list per session — O(N·M) per recompute).
+ *
+ * Applies the Open boundary here too: archived sessions (archived anywhere,
+ * e.g. by another client via the session.meta.updated patch) never surface as
+ * Open rows — the same splitByArchived boundary the Done tab applies to its
+ * API page. Child ("side chat") sessions and sessions under a removed (hidden)
+ * workspace are excluded, so the flat list matches what the grouped sidebar
+ * renders and sidebar search can't resurrect sessions from a removed workspace.
+ */
+const sessionViewsByWorkspace = computed<Map<string, Session>>(() => {
   void sessionTimeClock.value;
   const visibleWorkspaceIds = new Set(workspacesView.value.map((w) => w.id));
-  // Join each session to its workspace name so the search dialog can show which
-  // workspace a hit belongs to. Built once per recompute (O(n+m)) instead of a
-  // per-session find.
+  // Workspace display name joined once per recompute (O(n+m)), so the search
+  // dialog can show which workspace a hit belongs to without a per-session find.
   const nameByWorkspaceId = new Map(workspacesView.value.map((w) => [w.id, w.name]));
-  // Child ("side chat") sessions never appear in the main list — they live in
-  // the side-chat panel only. Sessions under a removed (hidden) workspace are
-  // excluded too, so this flat list matches what the grouped sidebar renders
-  // and sidebar search can't resurrect sessions from a removed workspace.
-  return rawState.sessions
-    .filter((s) => !s.parentSessionId && visibleWorkspaceIds.has(workspaceIdForSession(s)))
-    .map((s) => {
-      const workspaceId = workspaceIdForSession(s);
-      return {
-        id: s.id,
-        title: s.title,
-        time: formatTime(s.updatedAt),
-        busy: isMainTurnActive(s.id, s.mainTurnActive),
-        pendingInteraction: s.pendingInteraction,
-        lastTurnReason: s.lastTurnReason,
-        lastPrompt: s.lastPrompt,
-        workspaceId,
-        workspaceName: nameByWorkspaceId.get(workspaceId),
-        pullRequest: s.pullRequest ?? rawState.gitStatusBySession[s.id]?.pullRequest ?? null,
-        emoji: s.emoji,
-        pinned: s.pinned,
-      };
-    });
-});
-
-/** Per-workspace groups for the 'all workspaces' scope. */
-const workspaceGroups = computed<WorkspaceGroup[]>(() => {
-  void sessionTimeClock.value;
-  const byId = new Map<string, Session[]>();
-  for (const s of rawState.sessions.toSorted(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  )) {
+  const byWorkspace = new Map<string, Session>();
+  for (const s of rawState.sessions) {
     if (s.parentSessionId) continue; // child sessions stay out of the list
-    const wid = workspaceIdForSession(s);
-    const view: Session = {
+    if (s.archived) continue; // Open boundary — archived rows live on the Done tab
+    const workspaceId = workspaceIdForSession(s);
+    if (!visibleWorkspaceIds.has(workspaceId)) continue;
+    byWorkspace.set(s.id, {
       id: s.id,
       title: s.title,
       time: formatTime(s.updatedAt),
@@ -2625,13 +2644,36 @@ const workspaceGroups = computed<WorkspaceGroup[]>(() => {
       pendingInteraction: s.pendingInteraction,
       lastTurnReason: s.lastTurnReason,
       updatedAt: s.updatedAt,
+      lastPrompt: s.lastPrompt,
+      workspaceId,
+      workspaceName: nameByWorkspaceId.get(workspaceId),
       pullRequest: s.pullRequest ?? rawState.gitStatusBySession[s.id]?.pullRequest ?? null,
       emoji: s.emoji,
       pinned: s.pinned,
-    };
+    });
+  }
+  return byWorkspace;
+});
+
+/** Flat session view for the sidebar (search / flat mode), in load order. */
+const sessionsForView = computed<Session[]>(() =>
+  Array.from(sessionViewsByWorkspace.value.values()),
+);
+
+/** Per-workspace groups for the 'all workspaces' scope. */
+const workspaceGroups = computed<WorkspaceGroup[]>(() => {
+  void sessionTimeClock.value;
+  // Bucket the shared views (newest-first per group, matching the old
+  // workspaceGroups sort).
+  const byId = new Map<string, Session[]>();
+  for (const view of sessionViewsByWorkspace.value.values()) {
+    const wid = view.workspaceId ?? '';
     const list = byId.get(wid) ?? [];
     list.push(view);
     byId.set(wid, list);
+  }
+  for (const list of byId.values()) {
+    list.sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime());
   }
   return workspacesView.value.map((w) => ({
     workspace: w,
@@ -2785,6 +2827,18 @@ const workspaceState = useWorkspaceState(rawState, {
   fileDiffLines,
   fileDiffLoading,
 });
+
+// Wire the event-path hook (see the declaration above the batcher): a session
+// restored in another client that this client never loaded surfaces in the
+// Open list by fetching it once. A failed fetch may just be a transient race,
+// so allow a retry on the next restore event.
+fetchRemoteRestoredSession = (sessionId: string): void => {
+  if (remoteRestoreFetchAttempted.has(sessionId)) return;
+  remoteRestoreFetchAttempted.add(sessionId);
+  void workspaceState.fetchSessionIntoList(sessionId).then((ok) => {
+    if (!ok) remoteRestoreFetchAttempted.delete(sessionId);
+  });
+};
 
 /** True when the user is actually watching this session: it is the active
     session, the page is visible, and the window has focus. Focus matters on
@@ -3116,6 +3170,8 @@ export function useKimiWebClient() {
 
     sendPrompt: workspaceState.sendPrompt,
     steerPrompt: workspaceState.steerPrompt,
+    steerQueued: workspaceState.steerQueued,
+    sendQueued: workspaceState.sendQueued,
     // Side chat (BTW side-channel agent)
     sideChatVisible: sideChat.sideChatVisible,
     sideChatSessionId: sideChat.sideChatSessionId,

@@ -32,6 +32,9 @@ const props = defineProps<{
   pr?: { number: number; state: string; url: string } | null;
   /** True for ~2s after a successful copy-all, to flip the icon to a check. */
   copied?: boolean;
+  /** Whether the current session is pinned in the sidebar — drives the ⋮
+   *  menu's Pin/Unpin label and icon. */
+  pinned?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +46,8 @@ const emit = defineEmits<{
   forkSession: [id: string];
   archiveSession: [id: string];
   exportSession: [id: string];
+  /** Flip the current session's pinned state (parent calls the daemon). */
+  togglePinSession: [id: string, pinned: boolean];
 }>();
 
 const ahead = computed(() => props.ahead ?? 0);
@@ -216,6 +221,15 @@ function startArchive(): void {
   closeMenu();
   emit('archiveSession', props.sessionId);
 }
+
+// ---------------------------------------------------------------------------
+// Pin / Unpin — mirrors the session row's toggle; flips the current state.
+// ---------------------------------------------------------------------------
+function togglePin(): void {
+  if (!props.sessionId) return;
+  closeMenu();
+  emit('togglePinSession', props.sessionId, !props.pinned);
+}
 </script>
 
 <template>
@@ -274,6 +288,10 @@ function startArchive(): void {
         <MenuItem @click="copySessionId">
           <Icon :name="copiedId ? 'check' : 'copy'" size="sm" />
           {{ copiedId ? t('header.copied') : t('header.copySessionId') }}
+        </MenuItem>
+        <MenuItem @click="togglePin">
+          <Icon :name="pinned ? 'star' : 'star-outline'" size="sm" />
+          {{ pinned ? t('header.unpinSession') : t('header.pinSession') }}
         </MenuItem>
         <MenuItem @click="startRename">
           <Icon name="pencil" size="sm" />

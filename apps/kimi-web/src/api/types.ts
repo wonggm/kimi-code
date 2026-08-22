@@ -506,7 +506,19 @@ export type AppEvent =
       pendingInteraction?: 'none' | 'approval' | 'question';
       lastTurnReason?: 'completed' | 'cancelled' | 'failed';
     }
-  | { type: 'sessionMetaUpdated'; sessionId: string; title?: string; lastPrompt?: string }
+  | {
+      type: 'sessionMetaUpdated';
+      sessionId: string;
+      title?: string;
+      lastPrompt?: string;
+      /** Archive/restore done by another client — carries only when the flag
+       *  actually changed, so the sidebar's Open list can react immediately
+       *  instead of waiting for a reload. */
+      archived?: boolean;
+      /** Pin/unpin done by another client (same change-only semantics). */
+      pinned?: boolean;
+      emoji?: string;
+    }
   | { type: 'sessionUsageUpdated'; sessionId: string; usage: AppSessionUsage; model?: string; swarmMode?: boolean; planMode?: boolean; thinking?: string }
   | { type: 'historyCompacted'; sessionId: string; beforeSeq: number; reason: string; summaryMessageId?: string }
   | { type: 'compactionStarted'; sessionId: string; trigger: 'manual' | 'auto'; instruction?: string }
@@ -928,6 +940,11 @@ export interface KimiWebApi {
   readFile(sessionId: string, input: { path: string; offset?: number; length?: number }): Promise<{ path: string; content: string; encoding: 'utf-8' | 'base64'; size: number; truncated: boolean; etag: string; mime: string; languageId?: string; lineCount?: number; isBinary: boolean }>;
   /** Search files in a workspace (no session required) — POST /workspace/fs:search. `workspace` accepts a registered workspace id or an absolute root. */
   searchFiles(workspace: string, input: { query: string; limit?: number }): Promise<{ items: Array<{ path: string; name: string; kind: FsKind; score: number; matchPositions: number[] }>; truncated: boolean }>;
+  /** Suggest file / directory completion candidates in a workspace (no session
+   *  required) — POST /workspace/fs:suggest. Fuzzy name + path-fragment
+   *  ranking; `workspace` accepts a registered workspace id or an absolute
+   *  root. `match_positions` are character offsets into `path`. */
+  suggestFiles(workspace: string, input: { query: string; limit?: number }): Promise<{ items: Array<{ path: string; name: string; kind: FsKind; score: number; matchPositions: number[] }>; truncated: boolean }>;
   grepFiles(sessionId: string, input: { pattern: string; regex?: boolean; caseSensitive?: boolean }): Promise<{ files: Array<{ path: string; matches: Array<{ line: number; col: number; text: string; before: string[]; after: string[] }> }>; filesScanned: number; truncated: boolean; elapsedMs: number }>;
   getGitStatus(sessionId: string, paths?: string[]): Promise<{ branch: string; ahead: number; behind: number; entries: Record<string, string>; additions: number; deletions: number; pullRequest: { number: number; state: string; url: string } | null }>;
   getFileDiff(sessionId: string, path: string): Promise<{ path: string; diff: string }>;
