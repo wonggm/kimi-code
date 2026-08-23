@@ -1,11 +1,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { extname, join } from 'pathe';
+import { dirname, extname, join, resolve } from 'pathe';
 import { parse as parseToml } from 'smol-toml';
 import { load as loadYaml } from 'js-yaml';
 
 import { renderPrompt } from '#/_base/utils/render-prompt';
 
-import { registerAgentProfile } from './contribution';
+import { registerPreloadedAgentProfile } from './contribution';
 import type { AgentProfileInput, AgentProfileContext } from './agentProfileCatalog';
 
 const PROFILE_EXTENSIONS = new Set(['.yaml', '.yml', '.md']);
@@ -40,7 +40,7 @@ export function preloadAgentProfiles(configPath: string): void {
     for (const file of enumerateProfileFiles(p)) {
       try {
         const profile = loadProfileFile(file);
-        if (profile) registerAgentProfile(profile);
+        if (profile) registerPreloadedAgentProfile(profile);
       } catch {}
     }
   }
@@ -76,7 +76,7 @@ function loadProfileFile(filePath: string): AgentProfileInput | undefined {
   const raw = ext === '.md'
     ? parseMarkdownProfile(content, filePath)
     : parseYamlProfile(content, filePath);
-  return raw ? makeAgentProfile(raw) : undefined;
+  return raw ? makeAgentProfile(raw, filePath) : undefined;
 }
 
 function parseYamlProfile(
@@ -100,14 +100,20 @@ function parseMarkdownProfile(
   return { ...fm, systemPromptTemplate: body };
 }
 
-function makeAgentProfile(raw: Record<string, unknown>): AgentProfileInput {
+function makeAgentProfile(
+  raw: Record<string, unknown>,
+  filePath: string,
+): AgentProfileInput {
   const name = raw['name'] as string;
   const description = typeof raw['description'] === 'string' ? raw['description'] as string : undefined;
   const whenToUse = typeof raw['whenToUse'] === 'string' ? raw['whenToUse'] as string : undefined;
   const tools = Array.isArray(raw['tools'])
     ? (raw['tools'] as unknown[]).filter((t): t is string => typeof t === 'string')
     : ['Read', 'Grep', 'Glob', 'Bash'];
-  const template = typeof raw['systemPromptTemplate'] === 'string' ? raw['systemPromptTemplate'] as string : '';
+  let template = typeof raw['systemPromptTemplate'] === 'string' ? raw['systemPromptTemplate'] as string : '';
+  if (template.length === 0) {
+    template = readSystemPromptFile(raw['systemPromptPath'], filePath);
+  }
 
   return {
     name,
@@ -131,4 +137,13 @@ function makeAgentProfile(raw: Record<string, unknown>): AgentProfileInput {
       });
     },
   };
+}
+
+function readSystemPromptFile(value: unknown, filePath: string): string {
+  if (typeof value !== 'string' || value.length === 0) return '';
+  try {
+    return readFileSync(resolve(dirname(filePath), value), 'utf-8');
+  } catch {
+    return '';
+  }
 }

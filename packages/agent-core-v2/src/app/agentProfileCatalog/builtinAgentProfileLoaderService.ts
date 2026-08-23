@@ -15,8 +15,9 @@ import {
 import {
   BUILTIN_AGENT_PROFILE_SOURCE_ID,
   IBuiltinAgentProfileLoader,
+  PRELOADED_AGENT_PROFILE_SOURCE_ID,
 } from './builtinAgentProfileLoader';
-import { getAgentProfileContributions } from './contribution';
+import { getAgentProfileContributionEntries } from './contribution';
 
 export class BuiltinAgentProfileLoaderService
   extends Disposable
@@ -29,16 +30,35 @@ export class BuiltinAgentProfileLoaderService
 
   constructor(@IInstantiationService instantiationService: IInstantiationService) {
     super();
-    const contributions = getAgentProfileContributions();
-    this.ordered = [...contributions];
+    const entries = getAgentProfileContributionEntries();
+    const preloadedNames = new Set(
+      entries.filter((entry) => entry.preloaded).map((entry) => entry.profile.name),
+    );
+    this.ordered = entries.map((entry) => entry.profile);
     this.byName = new Map(this.ordered.map((def) => [def.name, def]));
     this._register(
       instantiationService.createInstance(BuiltinAgentProfileContributionUnit, {
         sourceId: BUILTIN_AGENT_PROFILE_SOURCE_ID,
         priority: AGENT_PROFILE_SOURCE_PRIORITY.builtin,
-        contribution: { profiles: this.ordered },
+        contribution: {
+          profiles: entries
+            .filter((entry) => !entry.preloaded && !preloadedNames.has(entry.profile.name))
+            .map((entry) => entry.profile),
+        },
       }),
     );
+    const preloadedProfiles = entries
+      .filter((entry) => entry.preloaded)
+      .map((entry) => entry.profile);
+    if (preloadedProfiles.length > 0) {
+      this._register(
+        instantiationService.createInstance(BuiltinAgentProfileContributionUnit, {
+          sourceId: PRELOADED_AGENT_PROFILE_SOURCE_ID,
+          priority: AGENT_PROFILE_SOURCE_PRIORITY.preload,
+          contribution: { profiles: preloadedProfiles },
+        }),
+      );
+    }
   }
 
   get(name: string): AgentProfile | undefined {
