@@ -277,10 +277,15 @@ function openMediaPreview(media: ToolMedia): void {
   revokeMediaPreviewUrl();
   mediaPreview.value = media;
   mediaPreviewSrc.value = null;
-  mediaPreviewLoading.value = Boolean(media.fileId);
+  const fileId = media.fileId;
+  mediaPreviewLoading.value = Boolean(fileId);
 
-  if (media.fileId) {
-    void getKimiWebApi().getFileBlob(media.fileId).then((blob) => {
+  if (fileId) {
+    const sid = client.activeSessionId.value;
+    const fetchBlob = media.sessionMedia && sid
+      ? () => getKimiWebApi().getSessionMediaBlob(sid, fileId)
+      : () => getKimiWebApi().getFileBlob(fileId);
+    void fetchBlob().then((blob: Blob) => {
       if (request !== mediaPreviewRequest || mediaPreview.value !== media) return;
       mediaPreviewObjectUrl = URL.createObjectURL(blob);
       mediaPreviewSrc.value = mediaPreviewObjectUrl;
@@ -1019,6 +1024,7 @@ function openPr(url: string): void {
       @steer="client.steerPrompt($event.text, $event.attachments)"
       @approval="(approvalId, response) => client.respondApproval(approvalId, response)"
       @cancel-task="client.cancelTask($event)"
+      @detach-task="client.detachTask($event)"
       @answer="(questionId, response) => client.respondQuestion(questionId, response)"
       @dismiss="(questionId) => client.dismissQuestion(questionId)"
       @command="handleCommand"

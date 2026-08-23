@@ -3,6 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolMedia, QueuedPromptView, TurnAttachment } from '../../types';
+import type { DetachTaskTarget } from '../../lib/detachTarget';
 import type { AppSkill } from '../../api/types';
 import ToolCall from './ToolCall.vue';
 import ToolGroup from './ToolGroup.vue';
@@ -504,6 +505,8 @@ const emit = defineEmits<{
   /** Show a subagent's live detail in the right-side panel (keyed by the
    *  spawning `Agent` tool-call id). */
   openAgent: [toolCallId: string];
+  /** Send a running foreground task (subagent / bash card) to the background. */
+  detachTask: [target: DetachTaskTarget];
   /** Show an Edit/Write tool call's diff in the right-side panel. */
   openToolDiff: [id: string];
   /** Edit + resend the last user message (parent undoes, then refills composer). */
@@ -797,7 +800,7 @@ function userAttachmentMedia(att: TurnAttachment): ToolMedia {
   // back to a generic label and sniffs the mime from the URL when needed. When
   // a fileId is present the preview fetches the bytes with auth (a bare
   // getFileUrl src 401s under daemon auth).
-  return { kind: att.kind === 'video' ? 'video' : 'image', url: att.url, path: att.name, fileId: att.fileId };
+  return { kind: att.kind === 'video' ? 'video' : 'image', url: att.url, path: att.name, fileId: att.fileId, sessionMedia: att.sessionMedia };
 }
 
 // Transient "can't open this type" hint after clicking a file chip of a
@@ -955,8 +958,9 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
               <div v-if="turn.pluginCommand.args" class="skill-act-args">{{ turn.pluginCommand.args }}</div>
             </div>
             <!-- User input renders verbatim (pre-wrap), never through Markdown;
-                 @-mentioned files/folders/skills render as icon pills. -->
-            <div v-else class="u-text">
+                 @-mentioned files/folders/skills render as icon pills. Shown
+                 alongside attachments (the chips above are not exclusive). -->
+            <div v-if="!turn.pluginCommand && turn.text" class="u-text">
               <MentionText
                 :text="turn.text"
                 :open-file="forwardOpenFile"
@@ -1038,8 +1042,9 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
               @open-file="emit('openFile', $event)"
               @open-tool-diff="emit('openToolDiff', $event)"
               @open-agent="emit('openAgent', $event)"
+              @detach-task="emit('detachTask', $event)"
             />
-            <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
+            <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
           </template>
         </template>
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />

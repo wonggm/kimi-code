@@ -8,6 +8,7 @@ import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
+import type { DetachTaskTarget } from '../../../lib/detachTarget';
 import Badge from '../../ui/Badge.vue';
 import ToolRow from '../ToolRow.vue';
 
@@ -29,6 +30,8 @@ const emit = defineEmits<{
   openToolDiff: [id: string];
   /** Open this subagent's live progress in the right-side detail panel. */
   openAgent: [toolCallId: string];
+  /** Send this running foreground subagent to the background (ctrl+b parity). */
+  detachTask: [target: DetachTaskTarget];
 }>();
 
 interface AgentInput {
@@ -84,9 +87,15 @@ const canOpenAgent = computed(() => {
 const resolveAgentTask = inject<(toolCallId: string) => unknown | undefined>('resolveAgentTask');
 const agentTask = computed(() => {
   if (!resolveAgentTask) return undefined;
-  const task = resolveAgentTask(props.tool.id) as { runInBackground?: boolean } | undefined;
+  const task = resolveAgentTask(props.tool.id) as
+    | { runInBackground?: boolean; agentId?: string }
+    | undefined;
   return task ?? undefined;
 });
+// Detach is only meaningful while the subagent still runs in the foreground.
+const canDetach = computed(
+  () => status.value === 'running' && agentTask.value?.runInBackground === false,
+);
 
 function toggle(): void {
   if (!canExpand.value) return;
@@ -122,6 +131,9 @@ watch(
         size="sm"
         class="at-mode"
       >{{ agentTask.runInBackground ? t('tools.agent.background') : t('tools.agent.foreground') }}</Badge>
+      <button v-if="canDetach" type="button" class="at-open" @click.stop="emit('detachTask', { toolCallId: tool.id, agentId: agentTask?.agentId })">
+        {{ t('tasks.sendToBackground') }}
+      </button>
       <button v-if="canOpenAgent" type="button" class="at-open" @click.stop="emit('openAgent', tool.id)">
         {{ t('tasks.openDetail') }}
       </button>

@@ -116,12 +116,20 @@ export interface ToolMedia {
   /** File-store id when the media is an uploaded file. The preview fetches its
    *  bytes with the Bearer credential (a bare getFileUrl src 401s in <img>). */
   fileId?: string;
+  /** True when bytes must be fetched via the session media route
+   *  (`/sessions/{id}/media/{fileId}`), which serves prompt-attached media —
+   *  the generic `/files/{fileId}` does not resolve those ids. */
+  sessionMedia?: boolean;
 }
 
 export type AgentPhase = 'queued' | 'working' | 'suspended' | 'completed' | 'failed';
 
 export interface AgentMember {
   id: string;
+  /** The wire agent id keying the server's transcript store (e.g. `agent-0`),
+   *  when the source row carries it. Distinct from `id` on REST `/tasks`
+   *  rows, which are keyed by background-task id. */
+  agentId?: string;
   toolCallId?: string;
   name: string;
   subagentType?: string;
@@ -248,6 +256,9 @@ export interface TurnAttachment {
   kind: 'image' | 'video' | 'file';
   url: string;
   fileId?: string;
+  /** True when the bytes come from the session media store (prompt-attached),
+   *  not the generic `/files` route. */
+  sessionMedia?: boolean;
   name?: string;
   mediaType?: string;
   size?: number;
