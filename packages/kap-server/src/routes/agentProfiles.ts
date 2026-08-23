@@ -1,5 +1,7 @@
 import {
   IBuiltinAgentProfileLoader,
+  IAgentProfileRegistry,
+  isDiscoveredAgentProfileSource,
   type AgentProfile,
   type Scope,
 } from '@moonshot-ai/agent-core-v2';
@@ -34,7 +36,8 @@ export function registerAgentProfilesRoutes(app: AgentProfilesRouteHost, core: S
     },
     async (req, reply) => {
       const catalog = core.accessor.get(IBuiltinAgentProfileLoader);
-      const profiles = catalog.list().map(toProtocolAgentProfile);
+      const registry = core.accessor.get(IAgentProfileRegistry);
+      const profiles = listVisibleProfiles(catalog.list(), registry.entries());
       reply.send(okEnvelope({ profiles }, req.id));
     },
   );
@@ -43,6 +46,35 @@ export function registerAgentProfilesRoutes(app: AgentProfilesRouteHost, core: S
     listAgentProfilesRoute.options,
     listAgentProfilesRoute.handler as Parameters<AgentProfilesRouteHost['get']>[2],
   );
+}
+
+/**
+ * Merge the builtin loader's profiles with the workspace-discovered
+ * registrations, using the session catalog's precedence: discovered entries
+ * win by priority, and a same-name builtin (or earlier candidate) is only
+ * replaced when the profile declares `override: true`.
+ */
+export function listVisibleProfiles(
+  builtin: readonly AgentProfile[],
+  registrations: readonly {
+    sourceId: string;
+    priority: number;
+    contribution: { profiles: readonly AgentProfile[] };
+  }[],
+): AgentProfileDescriptor[] {
+  const byName = new Map<string, AgentProfile>();
+  for (const profile of builtin) byName.set(profile.name, profile);
+  const discovered = registrations
+    .filter((entry) => isDiscoveredAgentProfileSource(entry.sourceId))
+    .toSorted((a, b) => b.priority - a.priority);
+  for (const entry of discovered) {
+    for (const profile of entry.contribution.profiles) {
+      const existing = byName.get(profile.name);
+      if (existing !== undefined && profile.override !== true) continue;
+      byName.set(profile.name, profile);
+    }
+  }
+  return [...byName.values()].map(toProtocolAgentProfile);
 }
 
 function toProtocolAgentProfile(profile: AgentProfile): AgentProfileDescriptor {
