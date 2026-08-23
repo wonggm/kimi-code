@@ -4,6 +4,8 @@ import type { AgentProfile } from './agentProfileCatalog';
 
 export const BUILTIN_AGENT_PROFILE_SOURCE_ID = 'builtin';
 
+export const PRELOADED_AGENT_PROFILE_SOURCE_ID = 'preload';
+
 export interface IBuiltinAgentProfileLoader {
   readonly _serviceBrand: undefined;
 
