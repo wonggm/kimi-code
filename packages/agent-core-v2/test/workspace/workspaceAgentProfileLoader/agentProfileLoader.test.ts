@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
-import { join } from 'pathe';
+import { dirname, join } from 'pathe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AsyncEmitter, Emitter, Event } from '#/_base/event';
@@ -12,6 +12,9 @@ import { ServiceCollection } from '#/_base/di/serviceCollection';
 import { ILogService } from '#/_base/log/log';
 import { EXTRA_AGENT_DIRS_SECTION } from '#/workspace/workspaceAgentProfileLoader/configSection';
 import { UserAgentProfileLoaderService } from '#/workspace/workspaceAgentProfileLoader/userAgentProfileLoaderService';
+import { preloadAgentProfiles } from '#/app/agentProfileCatalog/userProfileLoader';
+import { rootDelegationExtras } from '#/app/agentProfileCatalog/profile-shared';
+import { PRELOADED_AGENT_PROFILE_SOURCE_ID } from '#/app/agentProfileCatalog/builtinAgentProfileLoader';
 import type { PluginAgentRoot, PluginReloadEvent } from '#/app/plugin/types';
 import {
   DEFAULT_AGENT_PROFILE_NAME,
@@ -344,6 +347,29 @@ describe('agent profile loaders + session catalog', () => {
         expect(stack.catalog.getDefault().name).toBe(DEFAULT_AGENT_PROFILE_NAME);
         expect(stack.catalog.list().length).toBeGreaterThan(0);
         expect(stack.catalog.inspect(DEFAULT_AGENT_PROFILE_NAME)?.sourceId).toBe('builtin');
+      });
+    });
+  });
+
+  it('exposes preloaded profiles under the preload source and admits them for delegation', async () => {
+    await withFixture(async (fixture) => {
+      const preloadDir = await writeAgent(join(fixture.homeDir, 'preloaded'), 'custom.yaml', 'name: preloaded-one\ndescription: preloaded\nsystemPromptTemplate: Preloaded prompt.\n');
+      const configPath = join(fixture.workDir, 'config.toml');
+      await writeFile(configPath, `agent_profiles = ["${dirname(preloadDir)}"]\n`);
+      preloadAgentProfiles(configPath);
+
+      await withStack(fixture, undefined, async (stack) => {
+        await stack.ready();
+
+        expect(stack.builtinLoader.list().map((p) => p.name)).toContain('preloaded-one');
+        const inspection = stack.catalog.inspect('preloaded-one');
+        expect(inspection?.sourceId).toBe(PRELOADED_AGENT_PROFILE_SOURCE_ID);
+        expect(inspection?.priority).toBe(AGENT_PROFILE_SOURCE_PRIORITY.preload);
+        const extras = rootDelegationExtras(stack.catalog, {}, stack.catalog.list());
+        expect(extras).toContain('preloaded-one');
+        expect(stack.builtinLoader.get('preloaded-one')?.systemPrompt({ cwd: '/tmp' })).toContain(
+          'Preloaded prompt.',
+        );
       });
     });
   });

@@ -24,6 +24,7 @@ export const AgentProfileContribution = collection<AgentProfileContributionRecor
 export const AGENT_PROFILE_SOURCE_PRIORITY = {
   builtin: 0,
   plugin: 5,
+  preload: 7,
   user: 10,
   extra: 20,
   workspace: 30,
