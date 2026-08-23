@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ChatTurn, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WorkspaceView } from '../../types';
 import type { AppGoal, AppModel, AppPlanEntry, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
+import type { DetachTaskTarget } from '../../lib/detachTarget';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import ChatPane from './ChatPane.vue';
 import ChatHeader from './ChatHeader.vue';
@@ -139,6 +140,8 @@ const emit = defineEmits<{
   openCompaction: [target: { turnId: string }];
   openAgent: [toolCallId: string];
   openToolDiff: [id: string];
+  /** Send a running foreground task (card or task-list row) to the background. */
+  detachTask: [target: DetachTaskTarget];
   /** Chat header / files pane: focus the diff detail layer and refresh git status. */
   openChanges: [];
   refreshGitStatus: [];
@@ -1733,6 +1736,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               @open-compaction="emit('openCompaction', $event)"
               @open-agent="emit('openAgent', $event)"
               @open-tool-diff="emit('openToolDiff', $event)"
+              @detach-task="emit('detachTask', $event)"
               @edit-message="handleEditMessage"
               @resume-failure="emit('resumeFailure')"
               @load-older-messages="handleLoadOlderMessages"
@@ -1786,6 +1790,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         @toggle-dock-panel="toggleDockPanel($event)"
         @close-dock-panel="closeDockPanel()"
         @open-agent="emit('openAgent', $event)"
+        @detach-task="emit('detachTask', $event)"
         @answer="handleQuestionAnswer"
         @dismiss="emit('dismiss', $event)"
         @approval="handleApproval"

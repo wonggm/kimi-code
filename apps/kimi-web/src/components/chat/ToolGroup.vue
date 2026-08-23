@@ -6,6 +6,7 @@ import ToolCall from './ToolCall.vue';
 import { toolStackKey, toolStackPosition } from '../chatTurnRendering';
 import type { ToolStackItem } from '../chatTurnRendering';
 import type { FilePreviewRequest, ToolMedia } from '../../types';
+import type { DetachTaskTarget } from '../../lib/detachTarget';
 import Icon from '../ui/Icon.vue';
 import StatusDot from '../ui/StatusDot.vue';
 
@@ -23,6 +24,7 @@ const emit = defineEmits<{
   openFile: [target: FilePreviewRequest];
   openToolDiff: [id: string];
   openAgent: [toolCallId: string];
+  detachTask: [target: DetachTaskTarget];
 }>();
 
 // Persist the user's manual open/closed choice across row eviction (see
@@ -91,6 +93,7 @@ function onHeadClick(): void {
           @open-file="emit('openFile', $event)"
           @open-tool-diff="emit('openToolDiff', $event)"
           @open-agent="emit('openAgent', $event)"
+          @detach-task="emit('detachTask', $event)"
         />
       </div>
     </div>
