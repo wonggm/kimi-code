@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toAppConfig, toAppTask } from '../src/api/daemon/mappers';
+import { toAppConfig, toAppMessageContent, toAppTask } from '../src/api/daemon/mappers';
 import type { WireConfig, WireTask } from '../src/api/daemon/wire';
 
 function baseWire(overrides: Partial<WireTask> = {}): WireTask {
@@ -41,6 +41,19 @@ describe('toAppTask model threading', () => {
 
   it('leaves AppTask.agentId undefined when the wire omits it', () => {
     expect(toAppTask(baseWire()).agentId).toBeUndefined();
+  });
+});
+
+describe('toAppMessageContent media sources', () => {
+  it('keeps a session_media image source distinct (daemon read-model shape)', () => {
+    const app = toAppMessageContent({
+      type: 'image',
+      source: { kind: 'session_media', file_id: 'f_01KWK39A0ZC8R2ATZEQMD8716C' },
+    });
+    expect(app).toMatchObject({
+      type: 'image',
+      source: { kind: 'session_media', fileId: 'f_01KWK39A0ZC8R2ATZEQMD8716C' },
+    });
   });
 });
 

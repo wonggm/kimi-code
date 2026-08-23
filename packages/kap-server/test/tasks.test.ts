@@ -442,4 +442,64 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
     const detached = await postJson<null>('/api/v1/sessions/nope/tasks/tid:detach');
     expect(detached.body.code).toBe(40401);
   });
+
+  it('detaches a foreground task which keeps running with run_in_background set', async () => {
+    const id = await createSession();
+    const tasks = await mainAgentTasks(id);
+    const taskId = tasks.registerTask(fakeTask('process'), { detached: false });
+    await flush();
+
+    const before = await getJson<TaskWire>(`/api/v1/sessions/${id}/tasks/${taskId}`);
+    expect(before.body.code).toBe(0);
+    expect(before.body.data.status).toBe('running');
+    expect(before.body.data.run_in_background).toBe(false);
+
+    const detached = await postJson<{ detached: boolean }>(
+      `/api/v1/sessions/${id}/tasks/${taskId}:detach`,
+    );
+    expect(detached.body.code).toBe(0);
+    expect(detached.body.data).toEqual({ detached: true });
+
+    const after = await getJson<TaskWire>(`/api/v1/sessions/${id}/tasks/${taskId}`);
+    expect(after.body.code).toBe(0);
+    expect(after.body.data.status).toBe('running');
+    expect(after.body.data.run_in_background).toBe(true);
+    expect(tasks.getTask(taskId)?.status).toBe('running');
+  });
+
+  it('detaching an unknown task returns 40406', async () => {
+    const id = await createSession();
+    await mainAgentTasks(id);
+    const { body } = await postJson<null>(`/api/v1/sessions/${id}/tasks/nope:detach`);
+    expect(body.code).toBe(40406);
+  });
+
+  it('detaching a terminal task returns 40904 with detached:false', async () => {
+    const id = await createSession();
+    const tasks = await mainAgentTasks(id);
+    const taskId = tasks.registerTask(fakeTask('process'));
+    await flush();
+    await tasks.stopByUser(taskId);
+
+    const { body } = await postJson<{ detached: boolean }>(
+      `/api/v1/sessions/${id}/tasks/${taskId}:detach`,
+    );
+    expect(body.code).toBe(40904);
+    expect(body.data).toEqual({ detached: false });
+    expect(body.details).toEqual({ current_status: 'cancelled' });
+  });
+
+  it('detaching an already-background task is idempotent', async () => {
+    const id = await createSession();
+    const tasks = await mainAgentTasks(id);
+    const taskId = tasks.registerTask(fakeTask('process'));
+    await flush();
+
+    const detached = await postJson<{ detached: boolean }>(
+      `/api/v1/sessions/${id}/tasks/${taskId}:detach`,
+    );
+    expect(detached.body.code).toBe(0);
+    expect(detached.body.data).toEqual({ detached: true });
+    expect(tasks.getTask(taskId)?.status).toBe('running');
+  });
 });

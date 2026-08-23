@@ -3189,6 +3189,7 @@ export function useKimiWebClient() {
     pendingQuestionActions: workspaceState.pendingQuestionActions,
     pendingApprovalActions: workspaceState.pendingApprovalActions,
     cancelTask: workspaceState.cancelTask,
+    detachTask: workspaceState.detachTask,
     seedTaskBody,
 
     // New Phase 1 actions

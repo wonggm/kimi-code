@@ -9,6 +9,7 @@ import type { ActivationBadges, ApprovalBlock, ConversationStatus, FilePreviewRe
 import type { AppGoal, AppModel, AppPlanEntry, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
+import type { DetachTaskTarget } from '../../lib/detachTarget';
 import Composer from './Composer.vue';
 import GoalStrip from './GoalStrip.vue';
 import QuestionCard from './QuestionCard.vue';
@@ -89,6 +90,8 @@ const emit = defineEmits<{
   dismiss: [questionId: string];
   approval: [approvalId: string, response: { decision: 'approved' | 'rejected' | 'cancelled'; scope?: 'session'; feedback?: string; selectedLabel?: string }];
   cancelTask: [taskId: string];
+  /** Send a running foreground bash task row to the background. */
+  detachTask: [target: DetachTaskTarget];
   'toggle-dock-panel': [panel: 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan'];
   'close-dock-panel': [];
   /** A background subagent chip was clicked — open its live detail panel. */
@@ -222,6 +225,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
             v-if="dockPanel === 'bash'"
             :tasks="bashTasks"
             @cancel="emit('cancelTask', $event)"
+            @detach="emit('detachTask', $event)"
           />
           <SubagentGrid
             v-else-if="dockPanel === 'subagent'"

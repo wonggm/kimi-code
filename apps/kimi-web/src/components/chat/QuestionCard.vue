@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { UIQuestion } from '../../types';
 import type { QuestionAnswer, QuestionResponse } from '../../api/types';
+import { clearQuestionDraft, loadQuestionDraft, saveQuestionDraft } from '../../lib/storage';
 import Markdown from './Markdown.vue';
 import Card from '../ui/Card.vue';
 import Badge from '../ui/Badge.vue';
@@ -90,6 +91,10 @@ function seedRecommendedAnswers(): void {
   if (changed) answers.value = next;
 }
 
+// In-progress state is persisted per (session, question) so switching away and
+// back — which unmounts this card — restores what the user had picked/typed.
+let restoredKey = '';
+
 watch(
   () => props.question.questionId,
   () => {
@@ -103,6 +108,20 @@ watch(
 watch(
   () => props.question,
   () => {
+    // Restore the saved draft once per question identity; the deep re-fires
+    // below must not clobber live edits with a stale snapshot. Restore runs
+    // before seedRecommendedAnswers so saved picks win and seeding only fills
+    // questions the user never touched.
+    const identity = `${props.question.sessionId}:${props.question.questionId}`;
+    if (identity !== restoredKey) {
+      restoredKey = identity;
+      const saved = loadQuestionDraft(props.question.sessionId, props.question.questionId);
+      if (saved) {
+        step.value = saved.step;
+        answers.value = saved.answers;
+        otherTexts.value = saved.otherTexts;
+      }
+    }
     if (step.value >= props.question.questions.length) step.value = 0;
     seedRecommendedAnswers();
   },
@@ -142,6 +161,16 @@ function toggleMulti(qid: string, optionId: string): void {
 
 // "Other" text input (single)
 const otherTexts = ref<Record<string, string>>({});
+
+// Persist the in-progress state on every change so a session switch (which
+// unmounts this card) never loses what the user had picked/typed.
+watch([step, answers, otherTexts], () => {
+  saveQuestionDraft(props.question.sessionId, props.question.questionId, {
+    step: step.value,
+    answers: answers.value,
+    otherTexts: otherTexts.value,
+  });
+}, { deep: true });
 
 // Ref to the current question's "Other" input so clicking the option row can
 // focus it. Only the visible step's input is rendered at a time, so a single
@@ -202,6 +231,10 @@ const busy = computed(() => !!props.busyKind);
 
 function submit(): void {
   if (busy.value || !canSubmit()) return;
+  // Clear the persisted draft synchronously before emitting — like
+  // useComposerDraft.clearDraft, we can't rely on the save watcher because the
+  // card unmounts once the daemon accepts the response.
+  clearQuestionDraft(props.question.sessionId, props.question.questionId);
   const response: QuestionResponse = {
     answers: answers.value,
     method: 'click',
@@ -211,6 +244,7 @@ function submit(): void {
 
 function dismiss(): void {
   if (busy.value) return;
+  clearQuestionDraft(props.question.sessionId, props.question.questionId);
   emit('dismiss', props.question.questionId);
 }
 

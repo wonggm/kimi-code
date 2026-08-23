@@ -16,10 +16,15 @@ import Icon from '../ui/Icon.vue';
 import Menu from '../ui/Menu.vue';
 import MenuItem from '../ui/MenuItem.vue';
 import StatusGlyph, { type StatusGlyphStatus } from './StatusGlyph.vue';
+import type { DetachTaskTarget } from '../../lib/detachTarget';
 
 const props = defineProps<{ tasks: TaskItem[] }>();
 
-const emit = defineEmits<{ cancel: [taskId: string] }>();
+const emit = defineEmits<{
+  cancel: [taskId: string];
+  /** Send a still-running foreground bash task to the background. */
+  detach: [target: DetachTaskTarget];
+}>();
 
 const { t } = useI18n();
 
@@ -139,6 +144,11 @@ function hasDetail(task: TaskItem): boolean {
   return Boolean((task.output && task.output.length > 0) || task.meta);
 }
 
+// Detach only applies to tasks still running in the foreground.
+function canDetach(task: TaskItem): boolean {
+  return task.state === 'run' && task.runInBackground !== true;
+}
+
 function glyphStatus(state: string): StatusGlyphStatus {
   // 'cancel' falls through to 'pending' — the muted glyph, deliberately not
   // the danger (fail) or success (done) coloring.
@@ -166,6 +176,7 @@ function glyphStatus(state: string): StatusGlyphStatus {
             task.name,
             task.kind,
             task.timing,
+            task.runInBackground,
             selectedId === task.id,
           ]"
           class="tp-row"
@@ -184,6 +195,11 @@ function glyphStatus(state: string): StatusGlyphStatus {
           <span class="tp-name">{{ task.name }}</span>
           <span class="tp-time">{{ task.timing }}</span>
           <button
+            v-if="canDetach(task)"
+            class="tp-detach"
+            @click.stop="emit('detach', { taskId: task.id, command: task.meta })"
+          >{{ t('tasks.sendToBackground') }}</button>
+          <button
             v-if="task.state === 'run'"
             class="tp-stop"
             @click.stop="emit('cancel', task.id)"
@@ -200,6 +216,11 @@ function glyphStatus(state: string): StatusGlyphStatus {
             <span v-if="selected.state === 'cancel'" class="tp-state">{{ t('tasks.stateCancelled') }}</span>
             <span class="tp-detail-name">{{ selected.name }}</span>
             <span class="tp-detail-time">{{ selected.timing }}</span>
+            <button
+              v-if="canDetach(selected)"
+              class="tp-detach"
+              @click.stop="emit('detach', { taskId: selected.id, command: selected.meta })"
+            >{{ t('tasks.sendToBackground') }}</button>
             <button
               v-if="selected.state === 'run'"
               class="tp-stop"
@@ -350,6 +371,24 @@ function glyphStatus(state: string): StatusGlyphStatus {
   cursor: pointer;
 }
 .tp-stop:hover {
+  background: var(--color-surface-sunken);
+}
+
+/* Neutral sibling of .tp-stop — detach keeps the task running, so it must not
+   borrow the danger styling. */
+.tp-detach {
+  flex: none;
+  background: none;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: 1px var(--space-2);
+  cursor: pointer;
+}
+.tp-detach:hover {
+  color: var(--color-text);
   background: var(--color-surface-sunken);
 }
 

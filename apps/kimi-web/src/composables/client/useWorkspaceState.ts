@@ -35,6 +35,7 @@ import {
   STORAGE_KEYS,
 } from '../../lib/storage';
 import { parseDiff } from '../../lib/parseDiff';
+import { findDetachTarget, type DetachTaskTarget } from '../../lib/detachTarget';
 import { workspaceRootKey } from '../../lib/rootKey';
 import { sessionExportTraceToJsonl, traceKeyEvent } from '../../debug/trace';
 import { readSessionIdFromLocation, sessionUrl } from '../../lib/sessionRoute';
@@ -129,6 +130,8 @@ const pendingQuestionActions = reactive<Record<string, 'answer' | 'dismiss'>>({}
 const pendingApprovalActions = reactive<Record<string, true>>({});
 /** Task ids with an in-flight cancel, keyed by taskId. */
 const pendingTaskCancellations = reactive<Record<string, true>>({});
+/** Detach targets with an in-flight request, keyed by taskId/toolCallId. */
+const pendingTaskDetachments = reactive<Record<string, true>>({});
 /**
  * Workspace ids whose empty-session first prompt is currently being created +
  * submitted. The empty-composer path (`startSessionAndSendPrompt`) awaits
@@ -2273,6 +2276,64 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     }
   }
 
+  /** Release a running foreground task (subagent or `!` bash) into the
+   *  background — the web equivalent of the TUI's ctrl+b. The click sites know
+   *  the task by different keys (task-list row id, Agent tool call id, wire
+   *  agent id, bash command), so the engine task id is resolved here: from a
+   *  locally known row first, then from a fresh REST /tasks list via
+   *  findDetachTarget. */
+  async function detachTask(target: DetachTaskTarget): Promise<void> {
+    const sid = rawState.activeSessionId;
+    if (!sid) return;
+    const guardKey = target.taskId ?? target.toolCallId ?? target.command ?? '';
+    // Guard against a second click while the first detach is in flight.
+    if (pendingTaskDetachments[guardKey]) return;
+    pendingTaskDetachments[guardKey] = true;
+    try {
+      const api = getKimiWebApi();
+      // A background subagent row is keyed by agent id, but REST `/tasks` only
+      // knows its background-task id.
+      const list = rawState.tasksBySession[sid] ?? [];
+      const row = list.find(
+        (t) =>
+          (target.taskId !== undefined && t.id === target.taskId) ||
+          (target.agentId !== undefined && t.agentId === target.agentId),
+      );
+      let engineTaskId = row?.backgroundTaskId;
+      if (engineTaskId === undefined) {
+        // Foreground tasks have no engine id on local rows yet — resolve it
+        // from a fresh REST list. A task-list row click already carries the
+        // REST id; card clicks match by tool call / agent id / command.
+        const fresh = await api.listTasks(sid);
+        if (target.taskId !== undefined && fresh.some((t) => t.id === target.taskId)) {
+          engineTaskId = target.taskId;
+        } else {
+          engineTaskId = findDetachTarget(fresh, {
+            toolCallId: target.toolCallId,
+            agentId: target.agentId,
+            command: target.command,
+          });
+        }
+      }
+      if (engineTaskId === undefined) return;
+      await api.detachTask(sid, engineTaskId);
+      const matchesTarget = (t: (typeof list)[number]): boolean =>
+        t.id === engineTaskId ||
+        (target.agentId !== undefined && t.agentId === target.agentId) ||
+        (target.toolCallId !== undefined && t.parentToolCallId === target.toolCallId);
+      rawState.tasksBySession = {
+        ...rawState.tasksBySession,
+        [sid]: list.map((t) => (matchesTarget(t) ? { ...t, runInBackground: true } : t)),
+      };
+    } catch (err) {
+      if (!isTaskAlreadyFinishedError(err)) {
+        pushOperationFailure('detachTask', err, { sessionId: sid });
+      }
+    } finally {
+      delete pendingTaskDetachments[guardKey];
+    }
+  }
+
   /** Persist and apply plan mode for the active session (pushed to its profile
    *  + sent per-prompt). With no active session the toggle is staged on the
    *  draft and transferred when the first prompt creates the session. */
@@ -3145,6 +3206,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     pendingQuestionActions,
     pendingApprovalActions,
     cancelTask,
+    detachTask,
     setPlanMode,
     togglePlanMode,
     setPlanArmed,

@@ -164,7 +164,8 @@ export type AppMessageContent =
 export type ImageSource =
   | { kind: 'url'; url: string; id?: string }
   | { kind: 'base64'; mediaType: string; data: string }
-  | { kind: 'file'; fileId: string };
+  | { kind: 'file'; fileId: string }
+  | { kind: 'session_media'; fileId: string };
 
 /** Attachment parts accepted on skill activation — the media/file subset of
     `AppMessageContent` (text travels in `args`). Mirrors the daemon's
@@ -932,6 +933,8 @@ export interface KimiWebApi {
   listTasks(sessionId: string, status?: AppTaskStatus): Promise<AppTask[]>;
   getTask(sessionId: string, taskId: string, input?: { withOutput?: boolean; outputBytes?: number }): Promise<AppTask>;
   cancelTask(sessionId: string, taskId: string): Promise<{ cancelled: true }>;
+  /** Release a running foreground task (subagent or `!` bash) to keep running in the background — POST /sessions/{id}/tasks/{id}:detach. */
+  detachTask(sessionId: string, taskId: string): Promise<{ detached: true }>;
   listTerminals(sessionId: string): Promise<AppTerminal[]>;
   createTerminal(sessionId: string, input?: { cwd?: string; shell?: string; cols?: number; rows?: number }): Promise<AppTerminal>;
   getTerminal(sessionId: string, terminalId: string): Promise<AppTerminal>;
@@ -981,6 +984,10 @@ export interface KimiWebApi {
   getFileUrl(fileId: string): string;
   /** Fetch a file's bytes with auth — feed the resulting Blob to a blob URL for <video>/<img> src. */
   getFileBlob(fileId: string): Promise<Blob>;
+  /** Fetch prompt-attached media bytes from the session-scoped media store
+   *  (`/sessions/{id}/media/{fileId}`) — the generic `/files/{fileId}` does not
+   *  resolve `session_media` ids. */
+  getSessionMediaBlob(sessionId: string, fileId: string): Promise<Blob>;
 
   // Config — REAL endpoints
   getConfig(): Promise<AppConfig>;

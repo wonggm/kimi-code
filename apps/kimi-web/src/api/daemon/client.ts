@@ -190,6 +190,10 @@ interface WireCancelResult {
   cancelled: true;
 }
 
+interface WireDetachResult {
+  detached: true;
+}
+
 interface WireSkillDescriptor {
   name: string;
   description: string;
@@ -926,6 +930,13 @@ export class DaemonKimiWebApi implements KimiWebApi {
     return data;
   }
 
+  async detachTask(sessionId: string, taskId: string): Promise<{ detached: true }> {
+    const data = await this.http.post<WireDetachResult>(
+      `/sessions/${encodeURIComponent(sessionId)}/tasks/${encodeURIComponent(taskId)}:detach`,
+    );
+    return data;
+  }
+
   async listTerminals(sessionId: string): Promise<AppTerminal[]> {
     const data = await this.http.get<{ items: WireTerminal[] }>(
       `/sessions/${encodeURIComponent(sessionId)}/terminals`,
@@ -1576,6 +1587,15 @@ export class DaemonKimiWebApi implements KimiWebApi {
    *  those natively without the Authorization header, so the URL alone 401s. */
   async getFileBlob(fileId: string): Promise<Blob> {
     return this.http.getBlob(`/files/${encodeURIComponent(fileId)}`);
+  }
+
+  /** Fetch prompt-attached media bytes from the session-scoped store. The
+   *  generic `/files/{fileId}` does not resolve `session_media` ids, so the
+   *  preview routes those here. */
+  async getSessionMediaBlob(sessionId: string, fileId: string): Promise<Blob> {
+    return this.http.getBlob(
+      `/sessions/${encodeURIComponent(sessionId)}/media/${encodeURIComponent(fileId)}`,
+    );
   }
 
   // -------------------------------------------------------------------------

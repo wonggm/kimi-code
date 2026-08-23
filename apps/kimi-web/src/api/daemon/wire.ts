@@ -198,7 +198,8 @@ export type WireMessageContent =
 export type WireImageSource =
   | { kind: 'url'; url: string; id?: string }
   | { kind: 'base64'; media_type: string; data: string }
-  | { kind: 'file'; file_id: string };
+  | { kind: 'file'; file_id: string }
+  | { kind: 'session_media'; file_id: string };
 
 export interface WireMessage {
   id: string;

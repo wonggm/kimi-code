@@ -328,6 +328,51 @@ describe('messagesToTurns', () => {
     ]);
   });
 
+  it('renders the user text alongside a file-source image attachment', () => {
+    // The ChatPane render fix relies on the projection keeping text AND
+    // attachments on the same turn; pin it so a future refactor can't drop text
+    // just because an image is attached.
+    const fileId = 'f_01KWK39A0ZC8R2ATZEQMD8716C';
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [
+          { type: 'text', text: 'look at this' },
+          { type: 'image', source: { kind: 'file', fileId } },
+        ]),
+      ],
+      [],
+      (id) => `/api/v1/files/${id}`,
+      false,
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ role: 'user', text: 'look at this' });
+    expect(turns[0]?.attachments).toEqual([
+      { url: `/api/v1/files/${fileId}`, kind: 'image', fileId },
+    ]);
+  });
+
+  it('flags a session_media image attachment for the session-scoped fetch', () => {
+    const fileId = 'f_7d22fa2b-e16a-4e15-b2cd-fa80cbefe2d4';
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [
+          { type: 'text', text: 'text alongside image' },
+          { type: 'image', source: { kind: 'session_media', fileId } },
+        ]),
+      ],
+      [],
+      (id) => `/api/v1/files/${id}`,
+      false,
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ role: 'user', text: 'text alongside image' });
+    expect(turns[0]?.attachments).toEqual([
+      { url: '', kind: 'image', fileId, sessionMedia: true },
+    ]);
+  });
+
   it('leaves url-source video parts untouched', () => {
     const dataUrl = 'data:video/mp4;base64,AAAA';
     const turns = messagesToTurns(

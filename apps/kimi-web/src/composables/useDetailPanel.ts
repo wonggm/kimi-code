@@ -135,7 +135,9 @@ export function useDetailPanel({
   function resolveSubagentId(target: string): string | undefined {
     const tasks = client.activeAppTasks.value;
     const task =
-      tasks.find((tk) => tk.id === target) ?? tasks.find((tk) => tk.parentToolCallId === target);
+      tasks.find((tk) => tk.id === target) ??
+      tasks.find((tk) => tk.agentId === target) ??
+      tasks.find((tk) => tk.parentToolCallId === target);
     if (task) return task.id;
     // Same fallback as resolveAgentTaskId: a synthesized subagent task (missed
     // spawn) has no parentToolCallId; if exactly one exists, open it.

@@ -227,6 +227,7 @@ function normalizeToolOutput(output: unknown): string[] | undefined {
 export function toAgentMember(task: AppTask): AgentMember {
   return {
     id: task.id,
+    agentId: task.agentId,
     toolCallId: task.parentToolCallId,
     name: task.description,
     subagentType: task.subagentType,
@@ -844,13 +845,17 @@ export function messagesToTurns(
 
   function resolveMediaUrl(
     c: AppMessage['content'][number],
-  ): { url: string; kind: 'image' | 'video'; fileId?: string } | undefined {
+  ): { url: string; kind: 'image' | 'video'; fileId?: string; sessionMedia?: boolean } | undefined {
     if (c.type === 'image' || c.type === 'video') {
       const kind = c.type;
       const src = c.source;
       if (src.kind === 'url') return { url: src.url, kind };
       if (src.kind === 'base64') return { url: `data:${src.mediaType};base64,${src.data}`, kind };
       if (src.kind === 'file' && getFileUrl) return { url: getFileUrl(src.fileId), kind, fileId: src.fileId };
+      // Prompt-attached media live in the session media store; the generic
+      // /files route does not resolve these ids, so mark them for the
+      // session-scoped fetch and let the preview chip fetch via blob.
+      if (src.kind === 'session_media') return { url: '', kind, fileId: src.fileId, sessionMedia: true };
     }
     if (c.type === 'file' && getFileUrl) {
       if (c.mediaType.startsWith('image/')) return { url: getFileUrl(c.fileId), kind: 'image', fileId: c.fileId };
@@ -992,6 +997,7 @@ export function messagesToTurns(
             kind: media.kind,
             name: c.type === 'file' ? c.name : undefined,
             fileId: media.fileId,
+            sessionMedia: media.sessionMedia,
           });
           continue;
         }

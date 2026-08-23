@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../types';
+import type { DetachTaskTarget } from '../../lib/detachTarget';
 import { resolveToolRenderer } from './tool-calls/toolRegistry';
 
 const props = withDefaults(
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   openFile: [target: FilePreviewRequest];
   openToolDiff: [id: string];
   openAgent: [toolCallId: string];
+  detachTask: [target: DetachTaskTarget];
 }>();
 
 const Renderer = computed(() => resolveToolRenderer(props.tool));
@@ -36,5 +38,6 @@ const Renderer = computed(() => resolveToolRenderer(props.tool));
     @open-file="emit('openFile', $event)"
     @open-tool-diff="emit('openToolDiff', $event)"
     @open-agent="emit('openAgent', $event)"
+    @detach-task="emit('detachTask', $event)"
   />
 </template>

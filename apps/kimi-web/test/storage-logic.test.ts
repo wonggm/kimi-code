@@ -8,6 +8,10 @@ import {
   saveWorkspaceOrder,
   STORAGE_KEYS,
   draftStorageKey,
+  questionDraftStorageKey,
+  loadQuestionDraft,
+  saveQuestionDraft,
+  clearQuestionDraft,
   safeGetJson,
   safeGetString,
   safeRemove,
@@ -221,5 +225,64 @@ describe('loadWorkspaceOrder / saveWorkspaceOrder', () => {
 
     safeSetString(STORAGE_KEYS.workspaceOrder, JSON.stringify({ ws: true }));
     expect(loadWorkspaceOrder()).toEqual([]);
+  });
+});
+
+describe('questionDraftStorageKey', () => {
+  it('scopes by session id and question id', () => {
+    expect(questionDraftStorageKey('s1', 'q1')).toBe('kimi-web.question-draft.s1.q1');
+  });
+
+  it('falls back to __new__ when sid is empty/undefined', () => {
+    expect(questionDraftStorageKey(undefined, 'q1')).toBe('kimi-web.question-draft.__new__.q1');
+    expect(questionDraftStorageKey('', 'q1')).toBe('kimi-web.question-draft.__new__.q1');
+  });
+});
+
+describe('loadQuestionDraft / saveQuestionDraft / clearQuestionDraft', () => {
+  const draft = { step: 1, answers: { q1: { kind: 'other', text: 'hello' } }, otherTexts: { q1: 'hello' } };
+
+  it('returns null when nothing was saved', () => {
+    expect(loadQuestionDraft('s1', 'q1')).toBeNull();
+  });
+
+  it('round-trips a draft per (session, question)', () => {
+    saveQuestionDraft('s1', 'q1', draft);
+    expect(loadQuestionDraft('s1', 'q1')).toEqual(draft);
+  });
+
+  it('does not leak across sessions or questions', () => {
+    saveQuestionDraft('s1', 'q1', draft);
+    expect(loadQuestionDraft('s2', 'q1')).toBeNull();
+    expect(loadQuestionDraft('s1', 'q2')).toBeNull();
+  });
+
+  it('overwrites a previously saved draft', () => {
+    saveQuestionDraft('s1', 'q1', draft);
+    const updated = { ...draft, step: 2 };
+    saveQuestionDraft('s1', 'q1', updated);
+    expect(loadQuestionDraft('s1', 'q1')).toEqual(updated);
+  });
+
+  it('clears the draft', () => {
+    saveQuestionDraft('s1', 'q1', draft);
+    clearQuestionDraft('s1', 'q1');
+    expect(loadQuestionDraft('s1', 'q1')).toBeNull();
+  });
+
+  it('returns null for malformed payloads', () => {
+    safeSetString(questionDraftStorageKey('s1', 'q1'), '{not json');
+    expect(loadQuestionDraft('s1', 'q1')).toBeNull();
+
+    safeSetString(questionDraftStorageKey('s1', 'q1'), JSON.stringify({ step: 0 }));
+    expect(loadQuestionDraft('s1', 'q1')).toBeNull();
+  });
+
+  it('clamps an invalid step to 0', () => {
+    safeSetString(
+      questionDraftStorageKey('s1', 'q1'),
+      JSON.stringify({ step: -3, answers: {}, otherTexts: {} }),
+    );
+    expect(loadQuestionDraft('s1', 'q1')!.step).toBe(0);
   });
 });

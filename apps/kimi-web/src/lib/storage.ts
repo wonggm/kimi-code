@@ -6,6 +6,8 @@
 // fallback. Centralizes the persisted key strings so each key has a single
 // source of truth.
 
+import type { QuestionAnswer } from '../api/types';
+
 export const STORAGE_KEYS = {
   // useKimiWebClient
   permission: 'kimi-web.permission',
@@ -68,6 +70,43 @@ export function draftStorageKey(sid: string | undefined): string {
  *  chips survive a session switch / page refresh just like the text draft. */
 export function attachmentDraftStorageKey(sid: string | undefined): string {
   return `kimi-web.attachment-draft.${sid && sid.length > 0 ? sid : '__new__'}`;
+}
+
+/** Per-question ask-tool draft key: session id + question id, so a restored
+ *  draft can never land on a different question. */
+export function questionDraftStorageKey(sessionId: string | undefined, questionId: string): string {
+  return `kimi-web.question-draft.${sessionId && sessionId.length > 0 ? sessionId : '__new__'}.${questionId}`;
+}
+
+/** In-progress ask-question card state, persisted so leaving the session and
+ *  coming back restores what the user had picked/typed (cleared on
+ *  submit/dismiss; see QuestionCard). */
+export interface QuestionDraft {
+  step: number;
+  answers: Record<string, QuestionAnswer>;
+  otherTexts: Record<string, string>;
+}
+
+export function loadQuestionDraft(sessionId: string | undefined, questionId: string): QuestionDraft | null {
+  const parsed = safeGetJson<unknown>(questionDraftStorageKey(sessionId, questionId));
+  if (!parsed || typeof parsed !== 'object') return null;
+  const raw = parsed as Record<string, unknown>;
+  const answers = raw.answers;
+  const otherTexts = raw.otherTexts;
+  if (!answers || typeof answers !== 'object' || !otherTexts || typeof otherTexts !== 'object') return null;
+  return {
+    step: typeof raw.step === 'number' && Number.isFinite(raw.step) && raw.step >= 0 ? raw.step : 0,
+    answers: answers as Record<string, QuestionAnswer>,
+    otherTexts: otherTexts as Record<string, string>,
+  };
+}
+
+export function saveQuestionDraft(sessionId: string | undefined, questionId: string, draft: QuestionDraft): void {
+  safeSetJson(questionDraftStorageKey(sessionId, questionId), draft);
+}
+
+export function clearQuestionDraft(sessionId: string | undefined, questionId: string): void {
+  safeRemove(questionDraftStorageKey(sessionId, questionId));
 }
 
 export function safeGetString(key: string): string | null {
