@@ -2,6 +2,7 @@ export default {
   tag: 'tasks',
   summary: '{run} running · {done} done',
   stop: 'stop',
+  sendToBackground: 'Send to background',
   defaultDescription: 'Background task',
   dockTasks: 'Background tasks',
   dockBash: 'Bash',

@@ -26,6 +26,7 @@ import type { AgentMember, FilePreviewRequest, ToolMedia } from '../../types';
 import { normalizeToolName, toolLabel, toolSummary } from '../../lib/toolMeta';
 import Badge from '../ui/Badge.vue';
 import Icon from '../ui/Icon.vue';
+import Markdown from './Markdown.vue';
 import PanelHeader from '../ui/PanelHeader.vue';
 import Spinner from '../ui/Spinner.vue';
 
@@ -123,8 +124,10 @@ const isWorking = computed(() => props.member.phase === 'working');
 // live-seed path: REST `/tasks` rows carry `agentId`, live-spawn / roster rows
 // use the task id itself.
 const wireAgentId = computed(() => {
-  const task = (props.tasks ?? []).find((tk) => tk.id === props.member.id);
-  return task?.agentId ?? props.member.id;
+  const task = (props.tasks ?? []).find(
+    (tk) => tk.id === props.member.id || tk.agentId === props.member.id,
+  );
+  return props.member.agentId ?? task?.agentId ?? props.member.id;
 });
 
 const transcriptItems = ref<TranscriptTurn[] | null>(null);
@@ -444,7 +447,9 @@ watch(
         </div>
         <div v-if="liveText" class="ap-field">
           <span class="ap-field-label">Output</span>
-          <div class="ap-field-body ap-live">{{ liveText }}</div>
+          <div class="ap-field-body ap-live">
+            <Markdown :text="liveText" :streaming="isWorking" :open-file="(target) => emit('openFile', target)" />
+          </div>
         </div>
         <div v-if="progressGroups.length > 0" class="ap-field">
           <span class="ap-field-label">Progress</span>
@@ -462,7 +467,9 @@ watch(
         </div>
         <div v-if="member.summary" class="ap-field">
           <span class="ap-field-label">Result</span>
-          <div class="ap-field-body">{{ member.summary }}</div>
+          <div class="ap-field-body">
+            <Markdown :text="member.summary" :open-file="(target) => emit('openFile', target)" />
+          </div>
         </div>
       </div>
 
@@ -496,7 +503,7 @@ watch(
                 <div v-if="isThinkingExpanded(blk.id)" class="ap-think-body">{{ blk.text }}</div>
                 <div v-else class="ap-think-teaser">{{ thinkTeaser(blk.text) }}</div>
               </div>
-              <div v-else-if="blk.kind === 'text'" class="ap-text" :class="{ user: blk.role === 'user' }">{{ blk.text }}</div>
+              <div v-else-if="blk.kind === 'text'" class="ap-text" :class="{ user: blk.role === 'user' }"><Markdown :text="blk.text" :open-file="(target) => emit('openFile', target)" /></div>
               <div
                 v-else-if="blk.kind === 'tool'"
                 class="ap-tool"
