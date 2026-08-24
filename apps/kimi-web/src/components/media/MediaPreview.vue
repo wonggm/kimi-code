@@ -117,6 +117,7 @@ onUnmounted(() => {
         v-else
         class="media-preview-stage"
         :class="{ 'is-dragging': dragging }"
+        @click.self="emit('close')"
         @wheel="onWheel"
         @pointerdown="onPointerDown"
         @pointermove="onPointerMove"
@@ -190,11 +191,11 @@ html[data-liquid-glass='on'] .media-preview-overlay {
 }
 
 .media-preview-stage {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 100%;
-  max-height: 100%;
   overflow: hidden;
   touch-action: none;
   user-select: none;
