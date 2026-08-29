@@ -123,3 +123,12 @@ export function renderBlockKey(block: AssistantRenderBlock, index: number): stri
   if (block.kind === 'tool') return toolStackKey({ tool: block.tool, sourceIndex: block.sourceIndex });
   return `${block.kind}-${block.sourceIndex}`;
 }
+
+/** Key for a folded tool run (`tool-fold` block from lib/toolFold). The
+ *  fold's first-tool id is the stable anchor; falls back to the block's
+ *  source index when no id is present (defensive — persisted tools always
+ *  carry one). */
+export function toolFoldBlockKey(block: { tools: { tool: { id?: string }; sourceIndex: number }[]; sourceIndex: number }): string {
+  const first = block.tools[0];
+  return `tool-fold-${first?.tool.id || `idx-${first?.sourceIndex ?? block.sourceIndex}`}`;
+}

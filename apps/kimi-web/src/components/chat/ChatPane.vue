@@ -7,6 +7,7 @@ import type { DetachTaskTarget } from '../../lib/detachTarget';
 import type { AppSkill } from '../../api/types';
 import ToolCall from './ToolCall.vue';
 import ToolGroup from './ToolGroup.vue';
+import ToolFoldRow from './ToolFoldRow.vue';
 import Markdown from './Markdown.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import ActivityNotice from './ActivityNotice.vue';
@@ -28,10 +29,12 @@ import {
   assistantRenderBlocks,
   formatTokens,
   renderBlockKey,
+  toolFoldBlockKey,
   turnBlocks,
   turnFinalText,
   turnToMarkdown,
 } from '../chatTurnRendering';
+import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX } from '../../lib/toolFold';
 
 const { t, locale } = useI18n();
 const { confirm } = useConfirmDialog();
@@ -197,8 +200,53 @@ onUnmounted(() => {
 // and shifting the document. The plain Map (not reactive: it is only read at
 // card mount and written on toggle) survives eviction and is consumed via
 // inject('toolExpandState') by ToolGroup and the tool-call cards.
+//
+// The Map is also keyed for TOOL-CALL SUMMARY FOLDS (`fold:<id>`), which the
+// render layer folds into one row when ≥ 3 tool calls land in a row inside a
+// single assistant message. That fold is distinct from TurnFold (rejected):
+// it only collapses tool cards within ONE turn and never hides message text.
 const toolExpandState = new Map<string, boolean>();
 provide('toolExpandState', toolExpandState);
+
+// foldTick: bumps whenever a fold toggle lands. The fold-state Map is plain
+// (not reactive) and is mutated in place by ToolFoldRow's click handler; we
+// don't want the fold-state Map reactive either (the eviction survival story
+// would break — see toolExpandState comment), so we instead invalidate the
+// computed `expandedFolds` by touching this counter on every change.
+const foldTick = ref(0);
+
+const expandedFolds = computed<Set<string>>(() => {
+  // Touch the tick so this computed re-evaluates when a fold toggles.
+  void foldTick.value;
+  const set = new Set<string>();
+  for (const [key, value] of toolExpandState) {
+    if (value === true && key.startsWith(TOOL_FOLD_KEY_PREFIX)) set.add(key);
+  }
+  return set;
+});
+
+function onFoldToggle(foldKey: string): void {
+  const next = !toolExpandState.get(foldKey);
+  toolExpandState.set(foldKey, next);
+  foldTick.value++;
+}
+
+function foldKeyForBlock(block: { tools: { tool: { id?: string }; sourceIndex: number }[]; sourceIndex: number }): string {
+  const first = block.tools[0];
+  return `${TOOL_FOLD_KEY_PREFIX}${first?.tool.id ?? `idx-${first?.sourceIndex ?? block.sourceIndex}`}`;
+}
+
+/** Fold a turn's render blocks at the render layer. Pure pass-through to
+ *  the lib helper; lives here so the row template can call it inline without
+ *  re-importing. */
+function renderBlocksFor(turn: ChatTurn) {
+  return foldRenderBlocks(assistantRenderBlocks(turn), expandedFolds.value);
+}
+
+function renderBlockKeyFor(block: ReturnType<typeof renderBlocksFor>[number], index: number): string {
+  if (block.kind === 'tool-fold') return toolFoldBlockKey(block);
+  return renderBlockKey(block, index);
+}
 
 // Keep the transcript's expensive assistant children (Markdown, syntax
 // highlighting, and tool cards) mounted only near the reading viewport. The
@@ -1030,7 +1078,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         :data-turn-id="turn.id"
       >
         <template v-if="isTurnHeavyContentMounted(turn)">
-          <template v-for="(blk, bi) in assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
+          <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
             <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
             <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
             <ToolGroup
@@ -1045,6 +1093,13 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
               @detach-task="emit('detachTask', $event)"
             />
             <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
+            <ToolFoldRow
+              v-else-if="blk.kind === 'tool-fold'"
+              :tools="blk.tools"
+              :source-index="blk.sourceIndex"
+              :expanded="expandedFolds.has(foldKeyForBlock(blk))"
+              @toggle="onFoldToggle(foldKeyForBlock(blk))"
+            />
           </template>
         </template>
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />
