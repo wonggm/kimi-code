@@ -464,6 +464,8 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
       maxOutputSize: model.maxOutputSize,
       alwaysThinking: model.alwaysThinking || undefined,
       thinkingLevel: this.resolveThinkingState(model).effective,
+      compactionThinkingLevel: profileEntry?.thinkingEffort,
+      compactionMaxOutputSize: profileEntry?.maxOutputSize,
       reservedContextSize: profileEntry?.reservedContextSize ?? loopControl?.reservedContextSize,
       compactionTriggerRatio: profileEntry?.triggerRatio ?? loopControl?.compactionTriggerRatio,
       compactionMaxAttempts: loopControl?.compactionMaxAttempts,

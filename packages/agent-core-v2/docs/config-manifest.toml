@@ -450,6 +450,8 @@ timeout_ms = 7200000
 # [subagent_compaction."<name>"]
   # trigger_ratio: number
   # reserved_context_size: integer
+  # thinking_effort: string
+  # max_output_size: integer
 
 # ##########################################################################
 # subagentEfforts (config.toml: subagent_efforts)
