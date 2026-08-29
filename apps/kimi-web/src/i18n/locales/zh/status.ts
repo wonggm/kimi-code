@@ -69,4 +69,7 @@ export default {
   runningShort: '进行中',
   goalDoneWhen: '完成条件',
   goalElapsedLabel: '已运行时长',
+  goalTokensTotal: '共 {n} tokens',
+  goalTokensMain: '主代理 {n}',
+  goalTokensSubagents: '子代理 {n}',
 };

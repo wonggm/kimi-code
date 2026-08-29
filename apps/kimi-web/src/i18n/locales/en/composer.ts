@@ -39,7 +39,6 @@ export default {
   mediaPreviewUnavailable: 'Preview unavailable',
   /** Secondary hint line beneath the primary composer placeholder. Mirrors
    *  upstream's rich placeholder copy: keyboard shortcuts and a brief tip. */
-  placeholderHint: 'Press Enter to send · Shift+Enter for a new line',
   /** Accessible label for the composer textarea (announces it as the chat input). */
   inputLabel: 'Message input',
   attachFile: 'Attach file',

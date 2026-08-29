@@ -2,7 +2,7 @@
 // Vue state composable — the only place that imports both src/api/* and src/types.ts.
 // Components consume computed view props and call actions; they never touch the API or reducer.
 
-import { computed, reactive, ref, watch } from 'vue';
+import { onUnmounted, computed, reactive, ref, watch } from 'vue';
 import { i18n } from '../i18n';
 import { traceClientEvent, traceKeyEvent } from '../debug/trace';
 import { getKimiWebApi } from '../api';
@@ -2235,6 +2235,60 @@ const goal = computed<AppGoal | null>(() => {
   return rawState.goalBySession[sid] ?? null;
 });
 
+// Goal stats go stale between engine snapshot events (the pill showed a frozen
+// elapsed time until the next GoalUpdated arrived). Tick a 1s clock while the
+// active goal is running and extrapolate the elapsed time from the snapshot's
+// arrival moment; tokens split into total / main / subagents using the live
+// session usage (subagents = engine total minus what the main session spent).
+const goalClock = ref(Date.now());
+const goalSnapshotAt = ref(Date.now());
+let goalClockTimer: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => [goal.value?.goalId, goal.value?.status] as const,
+  ([, status]) => {
+    goalSnapshotAt.value = Date.now();
+    if (status === 'active' && goalClockTimer === null) {
+      goalClockTimer = setInterval(() => {
+        goalClock.value = Date.now();
+      }, 1000);
+    } else if (status !== 'active' && goalClockTimer !== null) {
+      clearInterval(goalClockTimer);
+      goalClockTimer = null;
+    }
+  },
+  { immediate: true },
+);
+onUnmounted(() => {
+  if (goalClockTimer !== null) clearInterval(goalClockTimer);
+});
+
+const goalLive = computed<{
+  elapsedMs: number;
+  turnsUsed: number;
+  tokensTotal: number;
+  tokensMain: number;
+  tokensSubagents: number;
+} | null>(() => {
+  const g = goal.value;
+  if (!g) return null;
+  const sid = rawState.activeSessionId;
+  const sess = sid ? rawState.sessions.find((s) => s.id === sid) : undefined;
+  const u = sess?.usage;
+  const main = u
+    ? u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheCreationTokens
+    : 0;
+  return {
+    elapsedMs:
+      g.status === 'active'
+        ? g.wallClockMs + Math.max(0, goalClock.value - goalSnapshotAt.value)
+        : g.wallClockMs,
+    turnsUsed: g.turnsUsed,
+    tokensTotal: g.tokensUsed,
+    tokensMain: main,
+    tokensSubagents: Math.max(0, g.tokensUsed - main),
+  };
+});
+
 /** Current todo list of the active session (TodoList tool, latest write wins). */
 const todos = computed<TodoView[]>(() => {
   const sid = rawState.activeSessionId;
@@ -3140,6 +3194,7 @@ export function useKimiWebClient() {
     activeAppTasks,
     todos,
     goal,
+    goalLive,
     swarms,
     swarmMembersByToolCallId,
     activationBadges,

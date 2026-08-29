@@ -629,6 +629,28 @@ describe('collapsePrompt', () => {
 });
 
 describe('mergeSnapshotMessages', () => {
+  it('keeps optimistic steer echoes that the snapshot can never dedupe', () => {
+    const steerEcho: AppMessage = {
+      id: 'optimistic-1',
+      sessionId: 'sess_1',
+      role: 'user',
+      content: [{ type: 'text', text: 'steer!' }],
+      createdAt: new Date().toISOString(),
+      metadata: { 'kimiWeb.optimisticUserMessage': true },
+    };
+    const snap: AppMessage[] = [
+      {
+        id: 'server-1',
+        sessionId: 'sess_1',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'working' }],
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    const merged = mergeSnapshotMessages([steerEcho], snap);
+    expect(merged.some((m) => m.id === 'optimistic-1')).toBe(true);
+  });
+
   function msg(id: string, createdAt: string): AppMessage {
     return { id, sessionId: 's1', role: 'assistant', content: [], createdAt };
   }

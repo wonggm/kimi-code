@@ -20,4 +20,6 @@ export default {
   // Workbar above the composer (icon-only squares).
   workbarLabel: 'Open {name}',
   openPanel: 'Open right panel',
+  terminalLoopbackOnly: 'Terminal routes are only available when the server is bound to loopback',
+
 } as const;

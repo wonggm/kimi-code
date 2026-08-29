@@ -25,7 +25,21 @@ export function mergeSnapshotMessages(
   const snapshotIds = new Set(snapshot.map((m) => m.id));
   const snapshotUserIds = new Set(snapshot.filter((m) => m.role === 'user').map((m) => m.id));
 
+  // Steer echoes are optimistic user bubbles with no authoritative
+  // counterpart: the daemon never emits a user-message WS event for a steer
+  // and does not persist one into the transcript window, so the snapshot can
+  // never dedupe them. Dropping them here is what made a steered message
+  // disappear after switching away and back — keep them unconditionally
+  // (they are distinguishable from submit echoes by the missing promptId,
+  // which only submit echoes get stamped with).
+  const isSteerEcho = (message: AppMessage): boolean =>
+    message.promptId === undefined &&
+    (message.metadata as Record<string, unknown> | undefined)?.[
+      'kimiWeb.optimisticUserMessage'
+    ] === true;
+
   const older = loaded.filter((message) => {
+    if (isSteerEcho(message)) return true;
     const createdAtMs = Date.parse(message.createdAt);
     if (Number.isNaN(createdAtMs) || createdAtMs >= earliestSnapshotMs) return false;
     if (snapshotIds.has(message.id)) return false;
