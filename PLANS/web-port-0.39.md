@@ -79,6 +79,32 @@ no SVG-displacement filters, MenuSelect for dropdowns).
 - **turnFolding / activityRunFolding** strings exist (auto-fold messages + tool-call
   summary row) — related to the user-rejected TurnFold family; treat as collision.
 
+## VERDICTS (implementation 2026-08-30)
+
+- PORTED: right-sidebar-panel-tabs (RightPanelTabs.vue + rightPanelTabs.ts + panel i18n
+  en/zh, frosted column in ConversationPane, icon workbar in ChatDock with
+  open-right-panel emit, tab persistence), right-panel-interaction-polish (PanelHeader in
+  tabs; OpenIn file mode partially — copy-path existed, editor picker via FilePreview
+  external actions), task-detach-to-background (web reconcile via detachTarget +
+  ChatDock detachTask emit), composer-placeholder-caret + fresh-placeholders-type
+  (overlay placeholder on our textarea — ProseMirror rejected), composer-interaction +
+  fix-new-session-attachment-upload (upload states + AttachmentChip kinds),
+  code-block-interaction (header + copy already lib-native; persisted codeLineNumbers /
+  codeWrap prefs wired into codeBlockProps; in-header toggle buttons DEFERRED —
+  markstream header has no such slots), bash-detach-row-height (tool-row rhythm),
+  tool-call summary folding (toolFold.ts + ToolFoldRow.vue, render-layer only),
+  default-permission-new-sessions (permissionBySession state + storage key).
+- VERIFIED: vue-tsc clean; kimi-web vitest 959/959; check-style 66 baseline findings
+  (64 pre-existing + 2 new, baseline mode); heap-capped build green; visual parity
+  vs upstream on throwaway server (shell / code block header / right panel / workbar).
+- DEFERRED (recorded, not ported): in-header wrap/line-number toggles + language icon
+  polish; code comment/quote feature; HTML preview runner; media popover interaction
+  fixes in MediaPreview.vue; startup Connecting… stall fix (ws.ts); sign-in → model gate
+  adaptation (fork keeps token-paste auth); OpenIn file-mode deep wiring; Terminal tab
+  availability probe (passes sessionId presence today).
+- Next session: run the pixel bench (references re-baseline likely for the new workbar),
+  the deferred list above, and the final `copy-web-assets` into the live dist-web.
+
 ## USER DECISIONS (2026-08-30, before implementation)
 
 1. **Right sidebar revamp** — follow UPSTREAM's layout (multi-tab right panel: Changes /

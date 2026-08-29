@@ -6,11 +6,18 @@ import {
   formatTokens,
   rendersToolCard,
   renderBlockKey,
+  toolFoldBlockKey,
   toolStackPosition,
   turnBlocks,
   turnFinalText,
   turnToMarkdown,
 } from '../src/components/chatTurnRendering';
+import {
+  foldAggregateStatus,
+  foldRenderBlocks,
+  TOOL_FOLD_KEY_PREFIX,
+  TOOL_FOLD_THRESHOLD,
+} from '../src/lib/toolFold';
 
 function tool(id: string, over: Partial<ToolCall> = {}): ToolCall {
   return { id, name: 'read', arg: `· ${id}.ts`, status: 'ok', ...over };
@@ -175,5 +182,172 @@ describe('renderBlockKey', () => {
     expect(
       renderBlockKey({ kind: 'tool-stack', tools: [{ tool: tool('a'), sourceIndex: 5 }] }, 0),
     ).toBe('tool-stack-5');
+  });
+});
+
+describe('toolFoldBlockKey', () => {
+  it('keys the fold on the first tool id', () => {
+    expect(
+      toolFoldBlockKey({
+        tools: [
+          { tool: tool('first'), sourceIndex: 2 },
+          { tool: tool('second'), sourceIndex: 3 },
+        ],
+        sourceIndex: 2,
+      }),
+    ).toBe('tool-fold-first');
+  });
+
+  it('falls back to the first tool source index when no id is present', () => {
+    expect(
+      toolFoldBlockKey({
+        tools: [{ tool: { ...tool('x'), id: '' }, sourceIndex: 7 }],
+        sourceIndex: 7,
+      }),
+    ).toBe('tool-fold-idx-7');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// foldRenderBlocks (tool-call summary fold)
+// ---------------------------------------------------------------------------
+//
+// The fold is a RENDER-LAYER concern — it never mutates the turn store
+// (ChatTurn / blocks / tools[]). These tests exercise the helper directly.
+
+function stackItem(id: string, sourceIndex: number, over: Partial<ToolCall> = {}) {
+  return { tool: tool(id, over), sourceIndex };
+}
+
+function stackBlock(ids: string[], sourceIndex = 0): Extract<ReturnType<typeof assistantRenderBlocks>, { kind: 'tool-stack' }>[number] {
+  return { kind: 'tool-stack', tools: ids.map((id, i) => stackItem(id, sourceIndex + i)) };
+}
+
+describe('foldRenderBlocks', () => {
+  it('returns the input unchanged when empty', () => {
+    expect(foldRenderBlocks([], new Set())).toEqual([]);
+  });
+
+  it('passes a lone tool through as a single tool block', () => {
+    const rendered = assistantRenderBlocks(assistantTurn([toolBlock('a')]));
+    const folded = foldRenderBlocks(rendered, new Set());
+    expect(folded).toEqual(rendered);
+  });
+
+  it('does not fold a 2-tool run (under THRESHOLD)', () => {
+    expect(TOOL_FOLD_THRESHOLD).toBe(3);
+    const rendered = assistantRenderBlocks(assistantTurn([toolBlock('a'), toolBlock('b')]));
+    const folded = foldRenderBlocks(rendered, new Set());
+    expect(folded).toHaveLength(1);
+    expect(folded[0]?.kind).toBe('tool-stack');
+  });
+
+  it('folds exactly THRESHOLD consecutive tool rows into one tool-fold block', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([toolBlock('a'), toolBlock('b'), toolBlock('c')]),
+    );
+    const folded = foldRenderBlocks(rendered, new Set());
+    expect(folded).toHaveLength(1);
+    expect(folded[0]?.kind).toBe('tool-fold');
+    if (folded[0]?.kind === 'tool-fold') {
+      expect(folded[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c']);
+    }
+  });
+
+  it('folds longer consecutive runs (5 cards, including a pre-grouped stack)', () => {
+    // a, b are adjacent → tool-stack; c, d, e stay as singles. Together: 5.
+    const rendered: ReturnType<typeof assistantRenderBlocks> = [
+      stackBlock(['a', 'b'], 0),
+      { kind: 'tool', tool: tool('c'), sourceIndex: 2 },
+      { kind: 'tool', tool: tool('d'), sourceIndex: 3 },
+      { kind: 'tool', tool: tool('e'), sourceIndex: 4 },
+    ];
+    const folded = foldRenderBlocks(rendered, new Set());
+    expect(folded).toHaveLength(1);
+    expect(folded[0]?.kind).toBe('tool-fold');
+    if (folded[0]?.kind === 'tool-fold') {
+      expect(folded[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    }
+  });
+
+  it('breaks the fold when a non-tool block interrupts the run', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([
+        toolBlock('a'),
+        toolBlock('b'),
+        toolBlock('c'),
+        { kind: 'text', text: 'between' },
+        toolBlock('d'),
+        toolBlock('e'),
+        toolBlock('f'),
+      ]),
+    );
+    const folded = foldRenderBlocks(rendered, new Set());
+    // First three → tool-fold, text → text, last three → tool-fold
+    expect(folded.map((b) => b.kind)).toEqual(['tool-fold', 'text', 'tool-fold']);
+  });
+
+  it('does not fold a run the user has expanded (passes through as tool-stack)', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([toolBlock('a'), toolBlock('b'), toolBlock('c')]),
+    );
+    const expanded = new Set<string>([`${TOOL_FOLD_KEY_PREFIX}a`]);
+    const folded = foldRenderBlocks(rendered, expanded);
+    // Expanded fold → chip + underlying stack, side by side.
+    expect(folded.map((b) => b.kind)).toEqual(['tool-fold', 'tool-stack']);
+    if (folded[1]?.kind === 'tool-stack') {
+      expect(folded[1].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c']);
+    }
+  });
+
+  it('does not mutate the input array or its blocks', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([toolBlock('a'), toolBlock('b'), toolBlock('c')]),
+    );
+    const before = JSON.stringify(rendered);
+    foldRenderBlocks(rendered, new Set());
+    expect(JSON.stringify(rendered)).toBe(before);
+  });
+
+  it('emits the same identity for unchanged elements (ref-equality)', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([
+        toolBlock('a'),
+        toolBlock('b'),
+        toolBlock('c'),
+        { kind: 'text', text: 'between' },
+      ]),
+    );
+    const folded = foldRenderBlocks(rendered, new Set());
+    // The text block (no fold around it) keeps its identity.
+    const textOriginal = rendered.find((b) => b.kind === 'text');
+    const textFolded = folded.find((b) => b.kind === 'text');
+    expect(textFolded).toBe(textOriginal);
+  });
+});
+
+describe('foldAggregateStatus', () => {
+  it('reports running if any tool is running', () => {
+    expect(
+      foldAggregateStatus([
+        stackItem('a', 0, { status: 'ok' }),
+        stackItem('b', 1, { status: 'running' }),
+      ]),
+    ).toBe('running');
+  });
+
+  it('reports error when no tool is running but at least one is error', () => {
+    expect(
+      foldAggregateStatus([
+        stackItem('a', 0, { status: 'ok' }),
+        stackItem('b', 1, { status: 'error' }),
+      ]),
+    ).toBe('error');
+  });
+
+  it('reports done when every tool succeeded', () => {
+    expect(
+      foldAggregateStatus([stackItem('a', 0, { status: 'ok' }), stackItem('b', 1, { status: 'ok' })]),
+    ).toBe('done');
   });
 });

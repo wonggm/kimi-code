@@ -111,6 +111,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 const PERMISSION_STORAGE_KEY = STORAGE_KEYS.permission;
+const PERMISSION_BY_SESSION_KEY = STORAGE_KEYS.permissionBySession;
 const ACTIVE_WORKSPACE_KEY = STORAGE_KEYS.activeWorkspace;
 const PLAN_MODE_STORAGE_KEY = STORAGE_KEYS.planMode;
 const PLAN_ARMED_STORAGE_KEY = STORAGE_KEYS.planArmed;
@@ -150,6 +151,34 @@ function savePermissionToStorage(mode: PermissionMode): void {
     safeSetString(PERMISSION_STORAGE_KEY, mode);
   } catch {
     // ignore
+  }
+}
+
+// Per-session permission mode (upstream `default-permission-new-sessions`):
+// the active session keeps its own pick; a session with no entry inherits the
+// daemon config's `defaultPermissionMode`. Stored as a JSON map of session id
+// -> mode; entries for unknown / forgotten sessions are ignored on load.
+function loadPermissionBySessionFromStorage(): Record<string, PermissionMode> {
+  try {
+    const raw = safeGetString(PERMISSION_BY_SESSION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, PermissionMode> = {};
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (value === 'auto' || value === 'yolo' || value === 'manual') out[id] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function savePermissionBySessionToStorage(): void {
+  try {
+    safeSetString(PERMISSION_BY_SESSION_KEY, JSON.stringify(rawState.permissionBySession));
+  } catch {
+    // storage unavailable — ignore
   }
 }
 
@@ -307,7 +336,16 @@ export interface ExtendedState extends KimiClientState {
   backend: 'v1' | 'v2';
   workspaceName: string;
   connection: ConnectionState;
+  /** Permission mode draft when no session is active (pre-pick that flows into
+   *  a new session on first send — see createDraftSession). For an active
+   *  session the live value lives in `permissionBySession`, and `permission`
+   *  (the exposed computed) reads it instead. Upstream semantics:
+   *  `default-permission-new-sessions` scopes the pick per session so a
+   *  toggle in one session never bleeds into another. */
   permission: PermissionMode;
+  /** Per-session permission mode, keyed by session id. Sessions with no entry
+   *  fall back to the daemon config's `defaultPermissionMode`. */
+  permissionBySession: Record<string, PermissionMode>;
   /** The thinking level shown and submitted for the ACTIVE session. Resolved by
    *  useModelProviderState: the session's own daemon-reported level
    *  (`thinkingBySession`) when the model still declares it, else the model's
@@ -401,6 +439,7 @@ const rawState: ExtendedState = reactive({
   workspaceName: 'kimi-web',
   connection: 'disconnected' as ConnectionState,
   permission: loadPermissionFromStorage(),
+  permissionBySession: loadPermissionBySessionFromStorage(),
   // Resolved per session/model once the catalog/session is known (loadModels
   // and the active-session watcher in useModelProviderState) — the per-session
   // map below starts empty and is fed by /status folds.
@@ -640,6 +679,7 @@ function forgetSession(sessionId: string): void {
   delete rawState.swarmModeBySession[sessionId];
   delete rawState.goalModeBySession[sessionId];
   delete rawState.thinkingBySession[sessionId];
+  delete rawState.permissionBySession[sessionId];
   // Drop the session's side-chat binding and the hidden user-message ids it
   // contributed — the agent-keyed transcript is freed by clearSideChatForSession.
   sideChat.clearSideChatForSession(sessionId);
@@ -648,6 +688,7 @@ function forgetSession(sessionId: string): void {
   savePlanArmedToStorage();
   saveSwarmModeToStorage();
   saveGoalModeToStorage();
+  savePermissionBySessionToStorage();
 }
 
 // Models + Providers reactive state and helpers live in
@@ -692,6 +733,20 @@ async function refreshSessionStatus(sessionId: string): Promise<void> {
   }));
   rawState.swarmModeBySession = { ...rawState.swarmModeBySession, [sessionId]: st.swarmMode };
   rawState.planModeBySession = { ...rawState.planModeBySession, [sessionId]: st.planMode };
+  // Fold the session's own permission mode (daemon is the source of truth for
+  // what this session actually runs at). Only persisted when the daemon
+  // reports a recognized value; an unknown / empty mode leaves the existing
+  // pick untouched so the UI doesn't bounce to the config default after a
+  // /status fold. Mirrors plan/swarm fold pattern above.
+  if (st.permission === 'manual' || st.permission === 'auto' || st.permission === 'yolo') {
+    if (rawState.permissionBySession[sessionId] !== st.permission) {
+      rawState.permissionBySession = {
+        ...rawState.permissionBySession,
+        [sessionId]: st.permission,
+      };
+      savePermissionBySessionToStorage();
+    }
+  }
   // Fold the session's own thinking level too — per-session state wins over the
   // per-model storage pick (see thinkingBySession on ExtendedState).
   if (st.thinkingEffort.length > 0) {
@@ -2224,7 +2279,16 @@ function clearDangerousBypassAuth(): void {
   rawState.dangerousBypassAuth = false;
 }
 
-const permission = computed<PermissionMode>(() => rawState.permission);
+const permission = computed<PermissionMode>(() => {
+  // Per-session when one is active; otherwise the draft pre-pick
+  // (rawState.permission), which createDraftSession copies into the new
+  // session's permissionBySession entry on first send.
+  const sid = rawState.activeSessionId;
+  if (sid !== null && sid !== undefined) {
+    return rawState.permissionBySession[sid] ?? rawState.permission;
+  }
+  return rawState.permission;
+});
 const thinking = computed<ThinkingLevel | undefined>(() => rawState.thinking);
 // Mode toggles reflect the ACTIVE session (or the draft when no session is
 // open). Each session keeps its own value in the *BySession maps above.
@@ -2421,6 +2485,19 @@ const status = computed<ConversationStatus>(() => {
     }
   }
 
+  // Per-session permission: active session's own pick wins, else the
+  // config's defaultPermissionMode (so a fresh session doesn't leak the user's
+  // last pick from a different session — upstream `default-permission-new-sessions`).
+  const configDefault = (() => {
+    const mode = rawState.config?.defaultPermissionMode;
+    return mode === 'auto' || mode === 'yolo' || mode === 'manual' ? mode : 'manual';
+  })();
+  const sid = activeSession?.id;
+  const sessionPermission =
+    sid !== undefined && rawState.permissionBySession[sid] !== undefined
+      ? rawState.permissionBySession[sid]!
+      : configDefault;
+
   return {
     model: displayModel,
     // Raw id for exact comparison in pickers (display name diverges from id).
@@ -2428,7 +2505,7 @@ const status = computed<ConversationStatus>(() => {
     ctxUsed: usage?.contextTokens ?? 0,
     ctxMax: usage?.contextLimit ?? 0,
     cacheHitRate,
-    permission: rawState.permission,
+    permission: sessionPermission,
     branch,
     cwd: activeSession?.cwd ?? '',
     isGitRepo: gitInfo.value !== null,
@@ -2815,6 +2892,7 @@ const workspaceState = useWorkspaceState(rawState, {
   savePlanArmedToStorage,
   saveSwarmModeToStorage,
   saveGoalModeToStorage,
+  savePermissionBySessionToStorage,
   draftModes,
   saveUnread,
   saveActiveWorkspaceToStorage,
