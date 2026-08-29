@@ -1497,9 +1497,12 @@ export class DaemonKimiWebApi implements KimiWebApi {
   }> {
     const data = await this.http.get<WireAuthResult>('/auth');
     return {
-      ready: data.ready,
+      // Upstream 0.39 renamed `ready` to `models_ready` (the "signed-in users
+      // without a usable model" send-gate rework); accept both so the bundle
+      // keeps working against older daemons.
+      ready: data.ready ?? data.models_ready ?? false,
       providersCount: data.providers_count,
-      defaultModel: data.default_model,
+      defaultModel: data.default_model ?? null,
       managedProvider: data.managed_provider
         ? { status: data.managed_provider.status }
         : null,
