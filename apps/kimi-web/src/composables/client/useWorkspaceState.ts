@@ -303,6 +303,8 @@ export interface UseWorkspaceStateDeps {
   savePlanArmedToStorage: () => void;
   saveSwarmModeToStorage: () => void;
   saveGoalModeToStorage: () => void;
+  /** Persist the per-session permission map (read off rawState). */
+  savePermissionBySessionToStorage: () => void;
   /** Staged mode toggles for the not-yet-created draft session. */
   draftModes: { planMode: boolean; planArmed: boolean; swarmMode: boolean; goalMode: boolean };
   saveUnread: (changes: Record<string, boolean>) => void;
@@ -353,6 +355,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     savePlanArmedToStorage,
     saveSwarmModeToStorage,
     saveGoalModeToStorage,
+    savePermissionBySessionToStorage,
     draftModes,
     saveUnread,
     saveActiveWorkspaceToStorage,
@@ -1208,6 +1211,14 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       rawState.goalModeBySession = { ...rawState.goalModeBySession, [sid]: true };
       saveGoalModeToStorage();
     }
+    // Seed the new session's permission mode from the draft pick so the
+    // pre-session toggle survives into the session. The submitPrompt path
+    // reads `permissionBySession[sid]` first; without this seed a draft
+    // 'auto' pick would silently fall back to the daemon default on send.
+    if (rawState.permission !== 'manual') {
+      rawState.permissionBySession = { ...rawState.permissionBySession, [sid]: rawState.permission };
+      savePermissionBySessionToStorage();
+    }
     draftModes.planMode = false;
     draftModes.planArmed = false;
     draftModes.swarmMode = false;
@@ -1293,7 +1304,11 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
           model,
           planMode,
           swarmMode,
-          permissionMode: rawState.permission,
+          // Per-session: the draft pick was just seeded into permissionBySession
+          // by createDraftSession, so reading from there matches what the
+          // session will actually use. Fall back to the draft for a draft with
+          // no per-session entry (manual is the safe default).
+          permissionMode: rawState.permissionBySession[sid] ?? rawState.permission,
         },
         sid,
       );
@@ -1626,7 +1641,11 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         // a background session would otherwise submit the level of the session
         // the user switched to since enqueueing.
         thinking: (await modelProvider.resolveThinkingForPrompt(sid, model)) ?? rawState.thinking,
-        permissionMode: rawState.permission,
+        // Per-session (upstream `default-permission-new-sessions`): read this
+        // session's own pick, falling back to the draft only as a safety net —
+        // a freshly seeded session with no entry yet should still submit the
+        // user's last-chosen mode rather than the daemon default.
+        permissionMode: rawState.permissionBySession[sid] ?? rawState.permission,
         planMode,
         swarmMode,
       });
@@ -1827,7 +1846,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
         // Resolved against this prompt's own session + model, same as a normal
         // send (see submitPromptInternal).
         thinking: (await modelProvider.resolveThinkingForPrompt(sid, model)) ?? rawState.thinking,
-        permissionMode: rawState.permission,
+        permissionMode: rawState.permissionBySession[sid] ?? rawState.permission,
         planMode: rawState.planModeBySession[sid] ?? false,
         swarmMode: rawState.swarmModeBySession[sid] ?? false,
       });
@@ -2527,11 +2546,21 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
 
   /** Persist and apply a new permission mode. Approval decisions are owned by
    *  the daemon (auto/yolo are resolved server-side), so any pending approvals
-   *  are left for the user to answer explicitly. */
-  function setPermission(mode: PermissionMode): void {
-    rawState.permission = mode;
-    savePermissionToStorage(mode);
-    void persistSessionProfile({ permissionMode: mode });
+   *  are left for the user to answer explicitly. Per-session: writing with an
+   *  active session id lands in the per-session map and never bleeds into
+   *  other sessions (upstream `default-permission-new-sessions`). With no
+   *  active session the pick becomes the draft default for the next new
+   *  session — createDraftSession copies it into the new session's entry. */
+  function setPermission(mode: PermissionMode, sessionId?: string): void {
+    const sid = sessionId ?? rawState.activeSessionId ?? undefined;
+    if (sid !== undefined) {
+      rawState.permissionBySession = { ...rawState.permissionBySession, [sid]: mode };
+      savePermissionBySessionToStorage();
+      void persistSessionProfile({ permissionMode: mode }, sid);
+    } else {
+      rawState.permission = mode;
+      savePermissionToStorage(mode);
+    }
   }
 
   /** Dismiss a warning by index */

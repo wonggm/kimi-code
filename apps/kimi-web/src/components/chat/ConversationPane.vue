@@ -11,6 +11,8 @@ import ChatPane from './ChatPane.vue';
 import ChatHeader from './ChatHeader.vue';
 import Composer from './Composer.vue';
 import ChatDock from './ChatDock.vue';
+import RightPanelTabs from './RightPanelTabs.vue';
+import type { RightPanelTab } from '../../lib/rightPanelTabs';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
@@ -24,6 +26,9 @@ const { t } = useI18n();
 const props = defineProps<{
   turns: ChatTurn[];
   sessionId?: string;
+  sideChatTurns?: ChatTurn[];
+  sideChatRunning?: boolean;
+  sideChatSending?: boolean;
   approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
   gitInfo?: { branch: string; ahead: number; behind: number } | null;
   tasks: TaskItem[];
@@ -116,6 +121,7 @@ const emit = defineEmits<{
   steer: [payload: { text: string; attachments: PromptAttachment[] }];
   approval: [approvalId: string, response: { decision: 'approved' | 'rejected' | 'cancelled'; scope?: 'session'; feedback?: string }];
   cancelTask: [taskId: string];
+  sideChatSend: [text: string];
   answer: [questionId: string, response: QuestionResponse];
   dismiss: [questionId: string];
   command: [cmd: string, attachments?: PromptAttachment[]];
@@ -326,21 +332,17 @@ const latestPlan = computed<AppPlanEntry | null>(() => {
   if (!plans || plans.length === 0) return null;
   return plans[plans.length - 1]!;
 });
-type DockPanel = 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan';
-const dockPanel = ref<DockPanel | null>(null);
+const activePanelTab = ref<RightPanelTab | null>(null);
 const changesCount = computed(() => (props.gitInfo ? props.changes?.length ?? 0 : 0));
 
-function toggleDockPanel(panel: DockPanel): void {
-  dockPanel.value = dockPanel.value === panel ? null : panel;
+/** Workbar toggle: clicking the active tab's square closes the panel. */
+function openRightPanel(tab: RightPanelTab): void {
+  activePanelTab.value = activePanelTab.value === tab ? null : tab;
 }
 
-function closeDockPanel(): void {
-  dockPanel.value = null;
+function closeRightPanel(): void {
+  activePanelTab.value = null;
 }
-
-watch(hasDockWork, (hasWork) => {
-  if (!hasWork) closeDockPanel();
-});
 
 function tocTitle(turn: ChatTurn): string {
   if (turn.role === 'compaction') return t('conversation.compactedPlain');
@@ -1749,6 +1751,36 @@ defineExpose({ loadComposerForEdit, focusComposer });
           </template>
         </div>
       </div>
+      <!-- Right-side multi-tab panel (0.39 port): Changes / Side chat /
+           Turn diff / Terminal / task lists. Frosted second column. -->
+      <Transition name="sheet">
+        <RightPanelTabs
+          v-if="activePanelTab !== null"
+          class="right-panel"
+          :turns="turns"
+          :changed-files="changedFiles"
+          :plan-entry="latestPlan"
+          :plan-mode="planMode"
+          :todos="todos"
+          :bash-tasks="bashTasks"
+          :subagent-tasks="subagentTasks"
+          :open-file="(target) => emit('openFile', target)"
+          :side-chat="{
+            turns: props.sideChatTurns ?? [],
+            running: props.sideChatRunning ?? false,
+            sending: props.sideChatSending ?? false,
+          }"
+          :terminal-available="sessionId !== undefined"
+          :session-id="sessionId"
+          @update:active-tab="activePanelTab = $event"
+          @close="closeRightPanel()"
+          @side-chat-send="emit('sideChatSend', $event)"
+          @cancel-task="emit('cancelTask', $event)"
+          @detach-task="emit('detachTask', $event)"
+          @open-agent="emit('openAgent', $event)"
+          @open-changed-file="(target) => emit('openFile', target)"
+        />
+      </Transition>
       <ChatDock
         v-if="!(turns.length === 0 && !sessionLoading)"
         :ref="bindChatDock"
@@ -1771,7 +1803,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :skills="skills"
         :goal="goal"
         :goal-expand-signal="goalExpandSignal"
-        :dock-panel="dockPanel"
+        :active-panel-tab="activePanelTab"
         :bash-tasks="bashTasks"
         :subagent-tasks="subagentTasks"
         :plan-entry="latestPlan"
@@ -1787,8 +1819,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :pending-approval="pendingApproval"
         :approval-busy="approvalBusy"
         :mobile="mobile"
-        @toggle-dock-panel="toggleDockPanel($event)"
-        @close-dock-panel="closeDockPanel()"
+        @open-right-panel="openRightPanel($event)"
         @open-agent="emit('openAgent', $event)"
         @detach-task="emit('detachTask', $event)"
         @answer="handleQuestionAnswer"
@@ -1969,6 +2000,35 @@ html[data-liquid-glass="on"] .panes.has-header {
   height: 100%;
   min-height: 0;
   position: relative;
+}
+
+/* Right-side multi-tab panel (0.39 port) — frosted second column overlaying
+   the reading column's right edge, below the overlay header and above the
+   dock. Tint-only controls inside (Firefox: no nested backdrop-filter). */
+.right-panel {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  bottom: calc(var(--dock-height, 0px) + var(--space-2));
+  width: min(400px, 94vw);
+  z-index: calc(var(--z-modal) - 10);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+html[data-liquid-glass="on"] .right-panel {
+  background: color-mix(in srgb, var(--panel) 58%, transparent);
+  backdrop-filter: blur(34px) saturate(180%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+html:not([data-liquid-glass="on"]) .right-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
 }
 .chat-scroll {
   flex: 1;

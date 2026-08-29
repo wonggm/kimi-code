@@ -23,7 +23,23 @@ export default {
   remove: '移除',
   removeNamed: '移除 {name}',
   uploading: '上传中',
+  uploaded: '已上传',
   uploadFailed: '上传失败',
+  /** 附件 chip 上的紧凑状态徽标 —— 替代裸 spinner。 */
+  stateUploading: '上传中',
+  stateUploaded: '已上传',
+  stateUploadFailed: '上传失败',
+  /** 附件 chip 上传失败时展示的完整说明，告知用户两种恢复路径（移除或重新拖入）。 */
+  attachmentUploadFailed: '上传失败 —— 移除该附件，或重新拖入文件重试',
+  attachmentUploadInterrupted: '上传已中断 —— 移除该附件，或重新拖入文件重试',
+  /** 媒体预览占位区域在预览生成期间显示的副标题。 */
+  mediaPreviewUploading: '上传中 —— 预览就绪后显示',
+  mediaPreviewLoading: '正在加载预览…',
+  mediaPreviewUnavailable: '预览不可用',
+  /** 主占位符下方的副提示行，镜像上游的富占位符样式，展示快捷键与简短提示。 */
+  placeholderHint: '回车发送 · Shift+回车换行',
+  /** 输入框的可访问标签（向屏幕阅读器宣告为聊天输入框）。 */
+  inputLabel: '消息输入',
   attachFile: '添加附件',
   addMenu: '添加',
   addFiles: '文件',

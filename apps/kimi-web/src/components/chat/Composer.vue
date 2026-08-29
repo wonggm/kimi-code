@@ -86,8 +86,20 @@ const placeholder = computed(() =>
       ? t('composer.placeholderRunning')
       : props.goalMode
         ? t('status.goalPlaceholder')
-        : t('composer.placeholder')
+        : t('composer.placeholder'),
 );
+
+// Secondary hint line rendered beneath the primary placeholder. Suppressed when
+// the running/starting/goal branch is active — those messages are full
+// operational prompts and adding a hint row underneath would be visual noise.
+const placeholderHint = computed(() => {
+  if (props.starting || props.running || props.goalMode) return '';
+  return t('composer.placeholderHint');
+});
+
+// Hide the overlay placeholder when the textarea has content. Native
+// `:placeholder-shown` mirrors this state without an explicit watcher.
+const showPlaceholderOverlay = computed(() => !text.value && !props.starting);
 
 const emit = defineEmits<{
   submit: [payload: { text: string; attachments: PromptAttachment[] }];
@@ -1257,12 +1269,32 @@ function selectModel(modelId: string): void {
         />
 
         <div class="input-row">
+          <!-- Placeholder overlay — positioned behind/over the textarea, fully
+               pointer-event transparent. The textarea keeps the `:placeholder`
+               attribute as a fallback for screen readers and for environments
+               where the overlay cannot render (CSS disabled), but the visible
+               placeholder is this div so a click anywhere inside the composer
+               box focuses the textarea without the placeholder element ever
+               intercepting it. This re-expresses the upstream
+               `composer-placeholder-overlay` pattern on our plain <textarea>:
+               upstream moved to ProseMirror (overlay div outside the editor);
+               we keep the textarea and overlay the same way. -->
+          <div
+            v-show="showPlaceholderOverlay"
+            class="ph-overlay"
+            :class="{ 'has-hint': placeholderHint }"
+            aria-hidden="true"
+          >
+            <span class="ph-overlay-primary">{{ placeholder }}</span>
+            <span v-if="placeholderHint" class="ph-overlay-hint">{{ placeholderHint }}</span>
+          </div>
           <textarea
             ref="textareaRef"
             v-model="text"
             class="ph"
             :style="wmPillStyle"
             :placeholder="placeholder"
+            :aria-label="t('composer.inputLabel')"
             :disabled="starting"
             rows="1"
             @keydown="handleKeydown"
@@ -1751,6 +1783,8 @@ function selectModel(modelId: string): void {
 }
 
 .ph {
+  position: relative;
+  z-index: 1;
   color: var(--faint);
   /* Keep the caret at the normal text colour even when the field is empty:
      the empty state sets `color` to `--faint` (so the placeholder feels soft),
@@ -1770,12 +1804,61 @@ function selectModel(modelId: string): void {
   margin-bottom: 6px;
 }
 
+/* The native placeholder attribute is kept for screen readers and CSS-disabled
+   fallback, but it is invisible because the textarea sits on top of the
+   overlay (z-index:1) and the overlay is fully pointer-event transparent. */
 .ph::placeholder {
-  color: var(--muted);
+  color: transparent;
 }
 
 .ph:not(:placeholder-shown) {
   color: var(--color-text);
+}
+
+/* Placeholder overlay — sits BEHIND the textarea in the flex row, fully
+   pointer-event transparent so clicks fall through to the textarea. The
+   overlay is hidden the moment text is typed (showPlaceholderOverlay) so it
+   never competes with the caret or the IME composition. */
+.ph-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--content-font-size);
+  line-height: 1.5;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+  z-index: 0;
+}
+.ph-overlay-primary {
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ph-overlay-hint {
+  color: var(--dim);
+  font-size: calc(var(--content-font-size) - 1px);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* When the composer is focused the overlay stays visible (we still want to
+   show the placeholder copy behind a moving caret), but its colour softens a
+   touch — mirrors the upstream pattern. */
+.composer-card:focus-within .ph-overlay-primary {
+  color: var(--dim);
+}
+.composer-card:focus-within .ph-overlay-hint {
+  color: var(--faint);
 }
 
 /* Expanded editor: a tall composing area at ~70% of the viewport — clearly
