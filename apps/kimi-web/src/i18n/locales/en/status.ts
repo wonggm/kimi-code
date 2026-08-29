@@ -70,4 +70,7 @@ export default {
   runningShort: 'in progress',
   goalDoneWhen: 'Done when',
   goalElapsedLabel: 'Elapsed time',
+  goalTokensTotal: '{n} tokens total',
+  goalTokensMain: 'main {n}',
+  goalTokensSubagents: 'subagents {n}',
 } as const;

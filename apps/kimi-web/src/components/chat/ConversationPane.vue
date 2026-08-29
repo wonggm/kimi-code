@@ -14,6 +14,7 @@ import ChatDock from './ChatDock.vue';
 import RightPanelTabs from './RightPanelTabs.vue';
 import type { RightPanelTab } from '../../lib/rightPanelTabs';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
+import EmptyDoodle from './EmptyDoodle.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
 import Tooltip from '../ui/Tooltip.vue';
@@ -38,6 +39,7 @@ const props = defineProps<{
   /** Model-maintained todo list (TodoList tool) — shown as a floating card. */
   todos?: TodoView[];
   goal?: AppGoal | null;
+  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number; tokensMain: number; tokensSubagents: number } | null;
   activationBadges?: ActivationBadges;
   status: ConversationStatus;
   thinking?: ThinkingLevel;
@@ -1614,7 +1616,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
             <div class="empty-hint">
               <span class="empty-hint-title" :class="{ 'is-starting': starting }">
                 <Spinner v-if="starting" size="sm" />
-                <span>{{ starting ? t('conversation.starting') : t('composer.emptyConversationTitle') }}</span>
+                <EmptyDoodle v-else />
               </span>
               <span v-if="!starting" class="empty-hint-text">{{ t('composer.emptyConversation') }}</span>
               <!-- Workspace picker: choose where this new conversation starts.
@@ -1684,6 +1686,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :swarm-mode="swarmMode"
               :goal-mode="goalMode"
               :goal="goal"
+              :goal-live="goalLive"
               :activation-badges="activationBadges"
               :models="models"
               :starred-ids="starredIds"
@@ -1757,6 +1760,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         <RightPanelTabs
           v-if="activePanelTab !== null"
           class="right-panel"
+          :active-tab="activePanelTab"
           :turns="turns"
           :changed-files="changedFiles"
           :plan-entry="latestPlan"
@@ -2019,6 +2023,10 @@ html[data-liquid-glass="on"] .panes.has-header {
 }
 
 html[data-liquid-glass="on"] .right-panel {
+  /* Glass-on renders the chat header as a transparent overlay anchored to
+     the top of .chat-layout — the panel must clear it (glass-off keeps the
+     header in normal flow, so plain --space-2 is correct there). */
+  top: calc(48px + var(--space-2));
   background: color-mix(in srgb, var(--panel) 58%, transparent);
   backdrop-filter: blur(34px) saturate(180%);
   border: 1px solid var(--border);

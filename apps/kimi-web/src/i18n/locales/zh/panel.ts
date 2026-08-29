@@ -15,4 +15,6 @@ export default {
   terminalUnavailable: '当前版本未提供终端',
   workbarLabel: '打开{name}',
   openPanel: '打开右侧面板',
+  terminalLoopbackOnly: '仅当服务器绑定到回环地址时终端路由才可用',
+
 } as const;
