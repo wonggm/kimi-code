@@ -2310,7 +2310,7 @@ describe('FullCompaction', () => {
       provider: CATALOGUED_PROVIDER,
       modelCapabilities: CATALOGUED_MODEL_CAPABILITIES,
     });
-    await ctx.get(IAgentProfileService).applyProfile(EXACT_COMPACTION_REFRESH_PROFILE);
+    await ctx.get(IAgentProfileService).applyProfile(EXACT_COMPACTION_PROFILE);
     ctx.appendExchange(1, 'old user one', 'old assistant one', 120_000);
 
     ctx.mockNextResponse({ type: 'text', text: 'Per-profile threshold summary.' });
