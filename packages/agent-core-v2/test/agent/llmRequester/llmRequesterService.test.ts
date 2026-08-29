@@ -178,6 +178,8 @@ function createService(
       maxOutputSize: undefined,
       alwaysThinking: undefined,
       thinkingLevel,
+      compactionThinkingLevel: undefined,
+      compactionMaxOutputSize: undefined,
       reservedContextSize: undefined,
       compactionTriggerRatio: undefined,
     }),

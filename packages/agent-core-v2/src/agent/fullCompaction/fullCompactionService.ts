@@ -628,13 +628,14 @@ export class AgentFullCompactionService extends Service implements IAgentFullCom
       await this.hooks.onWillCompact.run(active);
 
       const resolvedModel = this.profile.resolveModelContext();
-      thinkingEffort = resolvedModel.thinkingLevel;
+      thinkingEffort = resolvedModel.compactionThinkingLevel ?? resolvedModel.thinkingLevel;
       const maxContextTokens = resolvedModel.modelCapabilities.max_context_tokens;
       const defaultCompactionCap =
         maxContextTokens > 0
           ? Math.min(maxContextTokens, DEFAULT_COMPACTION_MAX_COMPLETION_TOKENS)
           : undefined;
-      const compactionMaxOutputSize = resolvedModel.maxOutputSize ?? defaultCompactionCap;
+      const compactionMaxOutputSize =
+        resolvedModel.compactionMaxOutputSize ?? resolvedModel.maxOutputSize ?? defaultCompactionCap;
 
       const customInstruction = data.instruction?.trim() ?? '';
       const instruction = renderPrompt(compactionInstructionTemplate, {
@@ -658,6 +659,7 @@ export class AgentFullCompactionService extends Service implements IAgentFullCom
             {
               messages,
               maxOutputSize: compactionMaxOutputSize,
+              thinkingEffort,
               source: {
                 type: 'operation',
                 turnId: active.originTurnId,

@@ -72,6 +72,8 @@ export const SUBAGENT_COMPACTION_SECTION = 'subagentCompaction';
 export const SubagentCompactionEntrySchema = z.object({
   triggerRatio: z.number().min(0.5).max(0.99).optional(),
   reservedContextSize: z.number().int().min(0).optional(),
+  thinkingEffort: z.string().optional(),
+  maxOutputSize: z.number().int().min(0).optional(),
 });
 
 export type SubagentCompactionEntry = z.infer<typeof SubagentCompactionEntrySchema>;

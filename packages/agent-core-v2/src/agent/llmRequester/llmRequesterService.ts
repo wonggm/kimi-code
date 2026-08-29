@@ -632,7 +632,8 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
       }),
       capability: resolved.modelCapabilities,
       usedContextTokens:
-        overrides.messages === undefined
+        overrides.messages === undefined ||
+        (overrides.source?.type === 'operation' && overrides.source.requestKind === 'full_compaction')
           ? this.tokenCounting.get(this.scopeContext.agentContext).measured
           : undefined,
     });
@@ -644,7 +645,7 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
       model: requester.model,
       params: { ...baseParams, ...budgetParams },
       modelAlias: resolved.modelAlias,
-      thinkingEffort: resolved.thinkingLevel,
+      thinkingEffort: overrides.thinkingEffort ?? resolved.thinkingLevel,
       systemPrompt: overrides.systemPrompt ?? turnConfig?.systemPrompt ?? this.profile.getSystemPrompt(),
       tools: [...(overrides.tools ?? this.defaultTools())],
       messages: [...messages],
