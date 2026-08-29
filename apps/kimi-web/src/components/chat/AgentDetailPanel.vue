@@ -141,7 +141,8 @@ async function fetchTranscript(): Promise<void> {
   const sid = props.sessionId;
   const agentId = wireAgentId.value;
   const token = ++fetchToken;
-  transcriptItems.value = null;
+  // Keep the previous page mounted while refreshing — nulling it here blanked
+  // the pane (and reset its scroll) on every subagent event.
   transcriptError.value = false;
   transcriptLoading.value = true;
   if (!sid) {
@@ -367,29 +368,28 @@ function thinkTeaser(text: string): string {
 // ---------------------------------------------------------------------------
 
 const bodyEl = ref<HTMLElement | null>(null);
-const liveStripEl = ref<HTMLElement | null>(null);
 
 // Follow the live strip's bottom edge as the tool progress / live text grows —
 // but only while the user's view still ends at or above the strip's bottom
 // (reading the transcript below never gets yanked back). Without a loaded
 // transcript the strip ends at the body bottom, so this is the old
 // "follow-the-bottom" behavior.
+// Follow the live strip ONLY while the user is already pinned at the bottom
+// (within 40px). Any manual scroll up releases the follow until they return.
+const pinnedBottom = ref(true);
+function onBodyScroll(): void {
+  const b = bodyEl.value;
+  if (!b) return;
+  pinnedBottom.value = b.scrollTop + b.clientHeight >= b.scrollHeight - 40;
+}
+
 watch(
   () => progressLines.value.length + liveText.value.length,
   () => {
     void nextTick(() => {
       const body = bodyEl.value;
-      const strip = liveStripEl.value;
-      if (!body || !strip) return;
-      // Rect deltas (not offsetTop: the offset parent may be a positioned
-      // ancestor above the scroller) pin the strip's bottom inside the body.
-      const stripRect = strip.getBoundingClientRect();
-      const bodyRect = body.getBoundingClientRect();
-      const stripBottom = stripRect.top - bodyRect.top + stripRect.height;
-      const viewBottom = body.scrollTop + body.clientHeight;
-      if (viewBottom > stripBottom + 4) return;
-      const target = Math.max(0, Math.min(stripBottom - body.clientHeight, body.scrollHeight - body.clientHeight));
-      body.scrollTop = target;
+      if (!body || !pinnedBottom.value) return;
+      body.scrollTop = body.scrollHeight;
     });
   },
   { immediate: true },
@@ -397,8 +397,9 @@ watch(
 
 // Fresh transcript lands at the top of the scroller (a new panel starts at the
 // subagent's first turn, or the live strip while running).
-watch(transcriptItems, () => {
-  if (!transcriptItems.value || transcriptItems.value.length === 0) return;
+watch(transcriptItems, (next, prev) => {
+  if (!next || next.length === 0) return;
+  if (prev !== null) return;
   void nextTick(() => {
     if (bodyEl.value) bodyEl.value.scrollTop = 0;
   });
@@ -427,7 +428,7 @@ watch(
     >
       <Badge variant="neutral" size="sm" class="ap-phase">{{ phaseLabel(member.phase) }}</Badge>
     </PanelHeader>
-    <div ref="bodyEl" class="ap-body">
+    <div ref="bodyEl" class="ap-body" @scroll.passive="onBodyScroll">
       <!-- Identity strip: subagent type / model / effort + suspension reason -->
       <div v-if="member.subagentType || member.suspendedReason" class="ap-id">
         <div v-if="member.subagentType" class="ap-type">{{ member.subagentType }}<span v-if="displayModel"> ({{ displayModel }}<span v-if="member.thinkingEffort">, {{ member.thinkingEffort }}</span>)</span><span v-else-if="member.thinkingEffort"> ({{ member.thinkingEffort }})</span></div>
@@ -438,7 +439,6 @@ watch(
            fallback snapshot when the REST transcript gave nothing. -->
       <div
         v-if="isWorking || !hasTranscript"
-        ref="liveStripEl"
         class="ap-live-strip"
       >
         <div v-if="member.prompt" class="ap-field">

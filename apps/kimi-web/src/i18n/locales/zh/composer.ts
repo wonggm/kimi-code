@@ -37,7 +37,6 @@ export default {
   mediaPreviewLoading: '正在加载预览…',
   mediaPreviewUnavailable: '预览不可用',
   /** 主占位符下方的副提示行，镜像上游的富占位符样式，展示快捷键与简短提示。 */
-  placeholderHint: '回车发送 · Shift+回车换行',
   /** 输入框的可访问标签（向屏幕阅读器宣告为聊天输入框）。 */
   inputLabel: '消息输入',
   attachFile: '添加附件',
