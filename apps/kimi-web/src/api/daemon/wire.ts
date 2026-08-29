@@ -526,9 +526,12 @@ export interface WireManagedProvider {
 }
 
 export interface WireAuthResult {
-  ready: boolean;
+  /** 0.38-and-earlier daemons. Upstream 0.39 renamed this to
+   *  `models_ready` and dropped `default_model` from the payload. */
+  ready?: boolean;
+  models_ready?: boolean;
   providers_count: number;
-  default_model: string | null;
+  default_model?: string | null;
   managed_provider: WireManagedProvider | null;
 }
 
