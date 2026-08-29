@@ -32,10 +32,10 @@
 #   secondaryModel           src/session/subagent/configSection.ts
 #   services                 src/app/auth/configSection.ts
 #   subagent                 src/session/subagent/configSection.ts
-#   swarm                    src/features/swarm/configSection.ts
 #   subagentCompaction       src/agent/loop/configSection.ts
 #   subagentEfforts          src/session/subagent/configSection.ts
 #   subagentModels           src/session/subagent/configSection.ts
+#   swarm                    src/features/swarm/configSection.ts
 #   task                     src/agent/task/configSection.ts
 #   thinking                 src/app/kosongConfig/configSection.ts
 #   tokenCounting            src/agent/tokenCounting/configSection.ts
@@ -426,18 +426,6 @@ merge_all_available_skills = true
 timeout_ms = 7200000
 
 # ##########################################################################
-# swarm
-#   owner: src/features/swarm/configSection.ts
-#   scope: core
-#   hooks: stripEnv
-#   env:
-#     timeout_ms <- KIMI_CODE_SWARM_TIMEOUT_MS (custom parse)
-# ##########################################################################
-
-[swarm]
-timeout_ms = 7200000
-
-# ##########################################################################
 # subagentCompaction (config.toml: subagent_compaction)
 #   owner: src/agent/loop/configSection.ts
 #   scope: core
@@ -470,6 +458,18 @@ timeout_ms = 7200000
 
 [subagent_models]
 # <name>: string
+
+# ##########################################################################
+# swarm
+#   owner: src/features/swarm/configSection.ts
+#   scope: core
+#   hooks: stripEnv
+#   env:
+#     timeout_ms <- KIMI_CODE_SWARM_TIMEOUT_MS (custom parse)
+# ##########################################################################
+
+[swarm]
+timeout_ms = 7200000
 
 # ##########################################################################
 # task

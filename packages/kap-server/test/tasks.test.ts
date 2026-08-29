@@ -454,11 +454,11 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
     expect(before.body.data.status).toBe('running');
     expect(before.body.data.run_in_background).toBe(false);
 
-    const detached = await postJson<{ detached: boolean }>(
+    const detached = await postJson<{ detached: boolean; status: string }>(
       `/api/v1/sessions/${id}/tasks/${taskId}:detach`,
     );
     expect(detached.body.code).toBe(0);
-    expect(detached.body.data).toEqual({ detached: true });
+    expect(detached.body.data).toEqual({ detached: true, status: 'running' });
 
     const after = await getJson<TaskWire>(`/api/v1/sessions/${id}/tasks/${taskId}`);
     expect(after.body.code).toBe(0);
@@ -474,19 +474,18 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
     expect(body.code).toBe(40406);
   });
 
-  it('detaching a terminal task returns 40904 with detached:false', async () => {
+  it('detaching a terminal task reports detached:false with its status', async () => {
     const id = await createSession();
     const tasks = await mainAgentTasks(id);
     const taskId = tasks.registerTask(fakeTask('process'));
     await flush();
     await tasks.stopByUser(taskId);
 
-    const { body } = await postJson<{ detached: boolean }>(
+    const { body } = await postJson<{ detached: boolean; status: string }>(
       `/api/v1/sessions/${id}/tasks/${taskId}:detach`,
     );
-    expect(body.code).toBe(40904);
-    expect(body.data).toEqual({ detached: false });
-    expect(body.details).toEqual({ current_status: 'cancelled' });
+    expect(body.code).toBe(0);
+    expect(body.data).toEqual({ detached: false, status: 'cancelled' });
   });
 
   it('detaching an already-background task is idempotent', async () => {
@@ -495,11 +494,11 @@ describe('server-v2 /api/v1/sessions/{sid}/tasks', () => {
     const taskId = tasks.registerTask(fakeTask('process'));
     await flush();
 
-    const detached = await postJson<{ detached: boolean }>(
+    const detached = await postJson<{ detached: boolean; status: string }>(
       `/api/v1/sessions/${id}/tasks/${taskId}:detach`,
     );
     expect(detached.body.code).toBe(0);
-    expect(detached.body.data).toEqual({ detached: true });
+    expect(detached.body.data).toEqual({ detached: false, status: 'running' });
     expect(tasks.getTask(taskId)?.status).toBe('running');
   });
 });

@@ -127,7 +127,7 @@ function makeAgentProfile(
       return renderPrompt(template, {
         KIMI_OS: ctx.osKind ?? '',
         KIMI_SHELL: `${shellName} (\`${shellPath}\`)`,
-        KIMI_NOW: ctx.now ?? new Date().toISOString(),
+        KIMI_NOW: typeof ctx['now'] === 'string' ? ctx['now'] : new Date().toISOString(),
         KIMI_WORK_DIR: ctx.cwd ?? '',
         KIMI_WORK_DIR_LS: ctx.cwdListing ?? '',
         KIMI_AGENTS_MD: ctx.agentsMd ?? '',
