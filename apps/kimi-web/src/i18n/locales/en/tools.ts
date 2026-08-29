@@ -67,6 +67,10 @@ export default {
     error: 'failed',
     done: 'done',
   },
+  fold: {
+    summary: '{count} tool calls · last: {last}',
+    expandedSummary: '{count} tool calls · last: {last} · expanded',
+  },
   ask: {
     dismissed: 'Dismissed',
     answer: '{count} answer',

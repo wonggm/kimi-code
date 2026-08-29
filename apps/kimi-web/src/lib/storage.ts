@@ -11,6 +11,12 @@ import type { QuestionAnswer } from '../api/types';
 export const STORAGE_KEYS = {
   // useKimiWebClient
   permission: 'kimi-web.permission',
+  // Per-session permission mode (upstream `default-permission-new-sessions`):
+  // key is session id, value is one of 'manual' | 'auto' | 'yolo'. Persisted
+  // as a compact JSON map so a fresh session with no entry inherits the
+  // daemon config's `defaultPermissionMode` instead of stealing whatever the
+  // last user pick was.
+  permissionBySession: 'kimi-web.permission-by-session',
   activeWorkspace: 'kimi-active-workspace',
   planMode: 'kimi-web.plan-mode',
   planArmed: 'kimi-web.plan-armed',
@@ -50,6 +56,13 @@ export const STORAGE_KEYS = {
   sidebarViewMode: 'kimi-web.sidebar-view-mode',
   /** Pinned-section height (px) in the sidebar, owned by its resize handle. */
   pinnedHeight: 'kimi-web.pinned-height',
+  // Active right-panel tab (multi-tab layout replacing the dock pills).
+  rightPanelActiveTab: 'kimi-web.right-panel.active-tab',
+  // Code-block rendering preferences in chat messages: word wrap and line-number
+  // gutter. Persisted so a user's toggle survives a reload; each block honors
+  // the saved preference at render time (Markdown.vue reads these helpers).
+  codeWrap: 'kimi-web.code-wrap',
+  codeLineNumbers: 'kimi-web.code-line-numbers',
   // Experimental Lab settings (default off): multi-tab sidebar (Open / Done /
   // Workspaces). The admin page shares this flag's Lab gate.
   labSidebarTabs: 'kimi-web.lab.sidebar-tabs',
@@ -282,4 +295,37 @@ export function loadLabSidebarTabs(): boolean {
 
 export function saveLabSidebarTabs(on: boolean): void {
   safeSetString(STORAGE_KEYS.labSidebarTabs, on ? 'true' : 'false');
+}
+
+// ---------------------------------------------------------------------------
+// Code-block rendering preferences (Markdown.vue reads these per render).
+//
+// Persisted as 'true'/'false' strings. The wrap helper accepts an explicit
+// default (true) because word-wrap is the friendlier default for chat-sized
+// code; line-numbers default to false because every chat block starts at line 1
+// and most users prefer the cleaner read.
+// ---------------------------------------------------------------------------
+
+/** Word-wrap preference for fenced code blocks in chat markdown. Defaults to
+ *  true — long unbreakable lines remain horizontally scrollable inside the
+ *  block, while most chat snippets benefit from wrapping to the column. */
+export function loadCodeWrap(): boolean {
+  const raw = safeGetString(STORAGE_KEYS.codeWrap);
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return true;
+}
+
+export function saveCodeWrap(on: boolean): void {
+  safeSetString(STORAGE_KEYS.codeWrap, on ? 'true' : 'false');
+}
+
+/** Line-number gutter preference for fenced code blocks. Defaults to false —
+ *  the gutter is opt-in via the per-block toggle in the code-block header. */
+export function loadCodeLineNumbers(): boolean {
+  return safeGetString(STORAGE_KEYS.codeLineNumbers) === 'true';
+}
+
+export function saveCodeLineNumbers(on: boolean): void {
+  safeSetString(STORAGE_KEYS.codeLineNumbers, on ? 'true' : 'false');
 }

@@ -170,7 +170,7 @@ async function dockToc(ctx: BenchContext): Promise<void> {
   await ctx.settle(500);
 
   ctx.sampler.start();
-  const panels: Exclude<DockPanel, null>[] = ['bash', 'subagent', 'todos'];
+  const panels: Exclude<DockPanel, null>[] = ['bash', 'subagents', 'todos'];
   for (let i = 0; i < 12; i++) {
     ctx.dockPanel.value = panels[i % panels.length]!;
     await ctx.settle(180);

@@ -25,7 +25,8 @@ import { useAppearance } from '../composables/client/useAppearance';
 import { buildLongConversation, streamingMarkdown, BENCH_EPOCH_ISO } from '../bench/fixtures';
 import { Sampler, signalDone, signalReady } from '../bench/sampler';
 import { scenarios } from '../bench/scenarios';
-import type { BenchContext, DockPanel, ScenarioName, Theme } from '../bench/types';
+import type { BenchContext, ScenarioName, Theme } from '../bench/types';
+import type { RightPanelTab } from '../lib/rightPanelTabs';
 
 import ChatPane from '../components/chat/ChatPane.vue';
 import ConversationToc, { type ConversationTocItem } from '../components/chat/ConversationToc.vue';
@@ -66,7 +67,7 @@ const sheetOpen = ref(false);
 const bottomSheetOpen = ref(false);
 const settingsOpen = ref(false);
 const serverAuthOpen = ref(false);
-const dockPanel = ref<DockPanel>(null);
+const dockPanel = ref<RightPanelTab | null>(null);
 const warnings = ref<AppWarning[]>([]);
 // Work-mode arming for the composer's + menu: the dock's toggle-plan-armed
 // emit flips this so the armed-plan pill pose is reachable in bench scenes.
@@ -260,12 +261,11 @@ onMounted(async () => {
         :subagent-running="1"
         :todo-done-count="1"
         :has-dock-work="true"
-        :dock-panel="dockPanel"
+        :active-panel-tab="dockPanel"
         :mobile="false"
         :plan-armed="planArmed"
         session-id="bench-session"
-        @toggle-dock-panel="(p) => (dockPanel = dockPanel === p ? null : p)"
-        @close-dock-panel="dockPanel = null"
+        @open-right-panel="(tab) => (dockPanel = dockPanel === tab ? null : tab)"
         @toggle-plan-armed="planArmed = !planArmed"
       />
     </div>

@@ -70,4 +70,14 @@ export default {
     expand: '展开',
     collapse: '收起',
   },
+  codeBlock: {
+    copyCode: '复制代码',
+    copied: '已复制',
+    showLineNumbers: '显示行号',
+    hideLineNumbers: '隐藏行号',
+    wrapCode: '开启自动换行',
+    unwrapCode: '关闭自动换行',
+    viewFullscreen: '全屏查看',
+    exitFullscreen: '退出全屏',
+  },
 } as const;

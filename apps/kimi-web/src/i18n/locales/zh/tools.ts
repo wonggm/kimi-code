@@ -67,6 +67,10 @@ export default {
     error: '有失败',
     done: '已完成',
   },
+  fold: {
+    summary: '{count} 个工具调用 · 最近：{last}',
+    expandedSummary: '{count} 个工具调用 · 最近：{last} · 已展开',
+  },
   ask: {
     dismissed: '已忽略',
     answer: '{count} 个回答',

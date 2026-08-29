@@ -89,6 +89,7 @@ function createState(): ExtendedState {
     workspaceName: 'kimi-web',
     connection: 'connected',
     permission: 'manual',
+    permissionBySession: {},
     thinking: 'high',
     thinkingBySession: {},
     planModeBySession: {},
@@ -159,6 +160,7 @@ function createDeps(): UseWorkspaceStateDeps {
     savePlanArmedToStorage: vi.fn(),
     saveSwarmModeToStorage: vi.fn(),
     saveGoalModeToStorage: vi.fn(),
+    savePermissionBySessionToStorage: vi.fn(),
     draftModes: { planMode: false, planArmed: false, swarmMode: false, goalMode: false },
     saveUnread: vi.fn(),
     saveActiveWorkspaceToStorage: vi.fn(),
@@ -2353,5 +2355,63 @@ describe('Lab sidebar-tabs flag — storage round-trip', () => {
   it('reads a previously persisted value', () => {
     localStorage.setItem(STORAGE_KEYS.labSidebarTabs, 'true');
     expect(loadLabSidebarTabs()).toBe(true);
+  });
+});
+
+describe('useWorkspaceState — per-session permission mode (default-permission-new-sessions)', () => {
+  it('setPermission writes to the per-session map and never the global draft when an active session exists', async () => {
+    const savePermissionBySessionToStorage = vi.fn();
+    const deps = createDeps();
+    deps.savePermissionBySessionToStorage = savePermissionBySessionToStorage;
+    const state = createState();
+    const ws = useWorkspaceState(state, deps);
+
+    ws.setPermission('auto'); // active session id = sess_1 (createState)
+
+    expect(state.permissionBySession.sess_1).toBe('auto');
+    expect(state.permission).toBe('manual'); // global draft untouched
+    expect(savePermissionBySessionToStorage).toHaveBeenCalled();
+  });
+
+  it('setPermission with no active session writes to the draft default', () => {
+    const savePermissionBySessionToStorage = vi.fn();
+    const deps = createDeps();
+    deps.savePermissionBySessionToStorage = savePermissionBySessionToStorage;
+    const state = createState();
+    state.activeSessionId = undefined;
+    const ws = useWorkspaceState(state, deps);
+
+    ws.setPermission('yolo');
+
+    expect(state.permissionBySession.sess_1).toBeUndefined();
+    expect(state.permission).toBe('yolo');
+    expect(savePermissionBySessionToStorage).not.toHaveBeenCalled();
+  });
+
+  it('createDraftSession seeds the new session from the draft pick (so a pre-pick survives)', async () => {
+    const savePermissionBySessionToStorage = vi.fn();
+    const registered = { id: 'wd_1', root: '/abs/path', name: 'A', sessionCount: 0 };
+    const newSession = { ...createSession(), id: 'sess_new', workspaceId: 'wd_1', cwd: '/abs/path' };
+    apiMock.addWorkspace.mockReset();
+    apiMock.createSession.mockReset();
+    apiMock.submitPrompt.mockReset();
+    apiMock.addWorkspace.mockResolvedValue(registered);
+    apiMock.createSession.mockResolvedValue(newSession);
+    apiMock.submitPrompt.mockResolvedValue({ promptId: 'p1', userMessageId: 'u1', status: 'running' });
+    const deps = createDeps();
+    deps.savePermissionBySessionToStorage = savePermissionBySessionToStorage;
+    deps.mergedWorkspaces = computed(() => [workspace('wd_1', '/abs/path', 'A')]);
+    deps.modelProvider = {
+      draftModel: ref(null),
+      resolveThinkingForPrompt: async () => undefined,
+    } as unknown as UseWorkspaceStateDeps['modelProvider'];
+    const state = createState();
+    state.permission = 'auto';
+    const ws = useWorkspaceState(state, deps);
+
+    await ws.startSessionAndSendPrompt('wd_1', 'hello');
+
+    expect(state.permissionBySession.sess_new).toBe('auto');
+    expect(savePermissionBySessionToStorage).toHaveBeenCalled();
   });
 });

@@ -23,7 +23,25 @@ export default {
   remove: 'Remove',
   removeNamed: 'Remove {name}',
   uploading: 'Uploading',
+  uploaded: 'Uploaded',
   uploadFailed: 'Upload failed',
+  /** Compact state badge used inside an attachment chip — replaces the bare spinner. */
+  stateUploading: 'Uploading',
+  stateUploaded: 'Uploaded',
+  stateUploadFailed: 'Upload failed',
+  /** Full-text label shown when an attachment chip failed to upload — explains
+   *  the two recovery paths the user can take (remove or drop again). */
+  attachmentUploadFailed: 'Upload failed — remove the attachment, or drop the file in again to retry',
+  attachmentUploadInterrupted: 'Upload interrupted — remove the attachment, or drop the file in again to retry',
+  /** Sub-label inside a media-preview placeholder while the preview is loading. */
+  mediaPreviewUploading: 'Uploading — preview when ready',
+  mediaPreviewLoading: 'Loading preview…',
+  mediaPreviewUnavailable: 'Preview unavailable',
+  /** Secondary hint line beneath the primary composer placeholder. Mirrors
+   *  upstream's rich placeholder copy: keyboard shortcuts and a brief tip. */
+  placeholderHint: 'Press Enter to send · Shift+Enter for a new line',
+  /** Accessible label for the composer textarea (announces it as the chat input). */
+  inputLabel: 'Message input',
   attachFile: 'Attach file',
   addMenu: 'Add',
   addFiles: 'Files',

@@ -34,8 +34,12 @@ const props = withDefaults(
     removable?: boolean;
     /** Accessible label for the remove button. */
     removeLabel?: string;
+    /** Composer: the upload was interrupted (e.g. session switch during upload)
+     *  rather than failing — the chip surfaces a different message ("interrupted"
+     *  vs. "failed") but renders the same error styling. */
+    interrupted?: boolean;
   }>(),
-  { uploading: false, error: false, removable: false },
+  { uploading: false, error: false, removable: false, interrupted: false },
 );
 
 const emit = defineEmits<{
@@ -76,16 +80,38 @@ const title = computed(() => {
   if (props.size !== undefined) parts.push(formatSize(props.size));
   return parts.join(' · ');
 });
+
+// Inline state badge text — replaces the bare spinner so the chip is readable
+// without hovering. Mirrors upstream's compact state label.
+const stateLabel = computed(() => {
+  if (props.uploading) return t('composer.stateUploading');
+  if (props.error) {
+    return props.interrupted
+      ? t('composer.attachmentUploadInterrupted')
+      : t('composer.attachmentUploadFailed');
+  }
+  return '';
+});
+
+// Full accessible description for screen readers — the title attribute is
+// short, so a dedicated aria-label spells out the failure mode too.
+const ariaLabel = computed(() => {
+  const parts = [displayName.value];
+  if (props.size !== undefined) parts.push(formatSize(props.size));
+  if (props.uploading) parts.push(t('composer.stateUploading'));
+  else if (props.error) parts.push(stateLabel.value);
+  return parts.join(' · ');
+});
 </script>
 
 <template>
   <span
     class="att-chip"
-    :class="{ 'is-error': error, uploading }"
+    :class="{ 'is-error': error, 'is-uploading': uploading, 'is-interrupted': interrupted }"
     :title="title"
     :data-kind="kind"
   >
-    <button type="button" class="att-activate" :aria-label="title" @click="emit('activate')">
+    <button type="button" class="att-activate" :aria-label="ariaLabel" @click="emit('activate')">
       <span class="att-tile">
         <AuthMedia
           v-if="kind === 'image' && url"
@@ -100,8 +126,17 @@ const title = computed(() => {
         <Icon v-else :name="fileIcon" size="sm" />
       </span>
       <span class="att-name">{{ displayName }}</span>
-      <Spinner v-if="uploading" size="sm" :label="t('composer.uploading')" />
-      <span v-else-if="error" class="att-err"><Icon name="info" size="sm" /></span>
+      <!-- The state badge replaces the silent spinner / info glyph so the chip
+           tells the user what's happening without needing to hover or read the
+           screen-reader-only label. It still occupies the same slot as the
+           existing ext badge would, so the chip layout doesn't jump when the
+           state flips. -->
+      <span v-if="uploading || error" class="att-state">
+        <Spinner v-if="uploading" size="sm" />
+        <Icon v-else name="info" size="sm" />
+        <span class="att-state-text">{{ stateLabel }}</span>
+      </span>
+      <span v-else-if="ext" class="att-ext">{{ ext }}</span>
     </button>
     <Tooltip v-if="removable" :text="removeLabel ?? t('composer.remove')">
       <button type="button" class="att-rm" :aria-label="removeLabel ?? t('composer.remove')" @click="emit('remove')">
@@ -116,13 +151,13 @@ const title = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
+  max-width: 260px;
   padding: 4px 9px 4px 5px;
   background: var(--color-bg);
   border: 1px solid var(--color-line);
   border-radius: 999px;
   font-size: var(--ui-font-size-sm);
-  transition: border-color var(--duration-fast) ease;
+  transition: border-color var(--duration-fast) ease, background var(--duration-fast) ease;
 }
 .att-chip:hover {
   border-color: var(--color-line-strong);
@@ -156,6 +191,20 @@ const title = computed(() => {
   color: var(--color-text-muted);
   background: var(--color-surface-sunken);
 }
+/* Kind-specific tile accents — match upstream's `data-attachment-kind`
+   distinction: media (image / video) gets a coloured ring so the kind reads at
+   a glance; generic files keep the neutral sunken tile. Mirrors the
+   attachment-image / attachment-video selectors in the upstream bundle,
+   re-expressed in our token system. */
+.att-chip[data-kind="image"] .att-tile,
+.att-chip[data-kind="video"] .att-tile {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.att-chip[data-kind="video"] .att-tile {
+  /* A slightly deeper accent so video reads distinct from image. */
+  background: color-mix(in srgb, var(--color-accent-soft) 88%, var(--color-text) 12%);
+}
 .att-tile :deep(.att-thumb) {
   width: 100%;
   height: 100%;
@@ -170,14 +219,58 @@ const title = computed(() => {
   color: var(--color-text);
   font-weight: var(--weight-medium);
 }
+/* Upload-state badge — replaces the silent spinner / info glyph with a compact
+   "Uploading" / "Upload failed" label. The badge adopts the chip's
+   accent/danger wash so it matches the chip outline. */
+.att-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: var(--ui-font-size-xs);
+  font-weight: var(--weight-medium);
+  line-height: 18px;
+  white-space: nowrap;
+}
+.att-chip.is-uploading .att-state {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.att-chip.is-error .att-state {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+.att-state-text {
+  /* Truncate the long interruption message in narrow strips — the tooltip /
+     aria-label carry the full text. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9em;
+}
+.att-ext {
+  /* Kept as the ext badge that used to sit between the name and the remove
+     button when no upload state is active. */
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-size-xs);
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--color-surface-sunken);
+  line-height: 18px;
+}
 .att-chip.is-error {
   border-color: var(--color-danger-bd);
 }
-.att-chip.is-error .att-err {
-  flex: none;
-  display: flex;
-  align-items: center;
-  color: var(--color-danger);
+/* Interrupted uploads share the error chrome but get a dashed rim to signal
+   the chip can still be retried by re-dropping the same file (the message
+   copy tells the user that explicitly). */
+.att-chip.is-interrupted {
+  border-style: dashed;
 }
 .att-rm {
   flex: none;

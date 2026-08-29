@@ -45,6 +45,7 @@ function createState(): ExtendedState {
     permission: 'auto',
     thinking: 'high',
     planModeBySession: { sess_1: true },
+    permissionBySession: {},
     swarmModeBySession: {},
     sideChatMessagesByAgent: {},
     sideChatSendingByAgent: {},

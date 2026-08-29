@@ -1,7 +1,10 @@
 <!-- ChatDock.vue -->
-<!-- Bottom dock that belongs to the chat tab: goal strip, running-task chips, -->
-<!-- pending question/approval cards, and the composer. Only rendered inside a -->
-<!-- chat-pane group so it never leaks into files/tasks/preview/btw panes. -->
+<!-- Bottom dock that belongs to the chat tab: goal strip, running-task chips,
+     pending question/approval cards, and the composer. Only rendered inside a
+     chat-pane group so it never leaks into files/tasks/preview/btw panes. -->
+<!-- Workbar (above the composer) is now an icon-only square row that opens a
+     tab in the right-side multi-tab panel (RightPanelTabs). Tabs that have no
+     matching panel (e.g. plan) still pop over a dock-style inline panel. -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -10,17 +13,14 @@ import type { AppGoal, AppModel, AppPlanEntry, AppSkill, QuestionResponse, Think
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { DetachTaskTarget } from '../../lib/detachTarget';
+import type { RightPanelTab } from '../../lib/rightPanelTabs';
 import Composer from './Composer.vue';
 import GoalStrip from './GoalStrip.vue';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
-import TasksPane from './TasksPane.vue';
-import SubagentGrid from './SubagentGrid.vue';
 import PlanPanel from './PlanPanel.vue';
-import TodoCard from './TodoCard.vue';
-import ChangedFilesCard from './ChangedFilesCard.vue';
 import Icon from '../ui/Icon.vue';
-import Pill from '../ui/Pill.vue';
+import Tooltip from '../ui/Tooltip.vue';
 
 const props = defineProps<{
   sessionId?: string;
@@ -44,7 +44,9 @@ const props = defineProps<{
   skills?: AppSkill[];
   goal?: AppGoal | null;
   goalExpandSignal?: number;
-  dockPanel: 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan' | null;
+  /** Active right-panel tab (when the panel is open); the workbar mirrors it
+   *  for its `is-active` styling. */
+  activePanelTab?: RightPanelTab | null;
   bashTasks: TaskItem[];
   subagentTasks: TaskItem[];
   /** Latest ExitPlanMode plan entry of the active session — the plan viewer
@@ -92,8 +94,9 @@ const emit = defineEmits<{
   cancelTask: [taskId: string];
   /** Send a running foreground bash task row to the background. */
   detachTask: [target: DetachTaskTarget];
-  'toggle-dock-panel': [panel: 'bash' | 'subagent' | 'todos' | 'changed-files' | 'plan'];
-  'close-dock-panel': [];
+  /** Open the right panel on the given tab. When the tab is the same as the
+   *  active tab, the caller treats this as a toggle (close the panel). */
+  'open-right-panel': [tab: RightPanelTab];
   /** A background subagent chip was clicked — open its live detail panel. */
   openAgent: [taskId: string];
 }>();
@@ -111,7 +114,6 @@ const composerRef = ref<{
   loadAttachmentsForEdit: (atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string }[]) => void;
   focus: () => void;
 } | null>(null);
-const workPanelRef = ref<HTMLElement | null>(null);
 const workbarRef = ref<HTMLElement | null>(null);
 const dockRef = ref<HTMLElement | null>(null);
 
@@ -132,23 +134,32 @@ function focus(): void {
   composerRef.value?.focus();
 }
 
+// Plan is the one entry that has no matching right-panel tab today. Keep the
+// popover panel for it; the rest of the chips have a corresponding right-panel
+// tab and toggle it open via `open-right-panel`.
+const showPlanPopover = ref(false);
+const planPopoverRef = ref<HTMLElement | null>(null);
+
+function togglePlanPopover(): void {
+  showPlanPopover.value = !showPlanPopover.value;
+}
+
+
 function onDocumentMouseDown(event: MouseEvent): void {
-  if (!props.dockPanel) return;
   const target = event.target as Node | null;
   if (!target) return;
-  if (workPanelRef.value?.contains(target)) return;
+  if (planPopoverRef.value?.contains(target)) return;
   if (workbarRef.value?.contains(target)) return;
-  emit('close-dock-panel');
+  showPlanPopover.value = false;
 }
 
 watch(
-  () => props.dockPanel,
-  (panel) => {
+  () => showPlanPopover.value,
+  (open) => {
     if (typeof document === 'undefined') return;
     document.removeEventListener('mousedown', onDocumentMouseDown, true);
-    if (panel) document.addEventListener('mousedown', onDocumentMouseDown, true);
+    if (open) document.addEventListener('mousedown', onDocumentMouseDown, true);
   },
-  { immediate: true },
 );
 
 let dockResizeObserver: ResizeObserver | null = null;
@@ -177,80 +188,76 @@ onUnmounted(() => {
 });
 
 defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
+
+interface WorkbarEntry {
+  id: RightPanelTab | 'plan';
+  icon: 'clock' | 'sparkles' | 'check-list' | 'file-edit';
+  labelKey: string;
+  ariaLabel: string;
+  visible: boolean;
+  active: boolean;
+  badge?: string;
+}
+
+const workbarEntries = computed<WorkbarEntry[]>(() => [
+  {
+    id: 'bash',
+    icon: 'clock',
+    labelKey: 'panel.tabs.bash',
+    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.bash') }),
+    visible: props.bashTasks.length > 0,
+    active: props.activePanelTab === 'bash',
+    badge: props.bashTasks.length > 0 ? `${props.bashTasks.length}` : undefined,
+  },
+  {
+    id: 'subagents',
+    icon: 'sparkles',
+    labelKey: 'panel.tabs.subagents',
+    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.subagents') }),
+    visible: props.subagentTasks.length > 0,
+    active: props.activePanelTab === 'subagents',
+    badge: props.subagentTasks.length > 0 ? `${props.subagentTasks.length}` : undefined,
+  },
+  {
+    id: 'todos',
+    icon: 'check-list',
+    labelKey: 'panel.tabs.todos',
+    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.todos') }),
+    visible: (props.todos?.length ?? 0) > 0,
+    active: props.activePanelTab === 'todos',
+    badge: (props.todos?.length ?? 0) > 0 ? `${props.todoDoneCount}/${props.todos?.length ?? 0}` : undefined,
+  },
+  {
+    id: 'plan',
+    icon: 'file-edit',
+    labelKey: 'panel.tabs.todos',
+    ariaLabel: t('panel.workbarLabel', { name: t('tasks.dockPlan') }),
+    visible: props.planMode || !!props.planEntry,
+    active: false,
+    badge: planReviewLabel.value ? `· ${planReviewLabel.value}` : undefined,
+  },
+  {
+    id: 'changes',
+    icon: 'file-edit',
+    labelKey: 'panel.tabs.changes',
+    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.changes') }),
+    visible: props.changedFiles.length > 0,
+    active: props.activePanelTab === 'changes',
+    badge: props.changedFiles.length > 0 ? `${props.changedFiles.length}` : undefined,
+  },
+]);
+
+function clickWorkbar(id: RightPanelTab | 'plan'): void {
+  if (id === 'plan') {
+    togglePlanPopover();
+    return;
+  }
+  emit('open-right-panel', id);
+}
 </script>
 
 <template>
   <div ref="dockRef" class="chat-dock" :class="[mobile ? 'align-mobile' : 'align-center']" @click.stop>
-    <Transition name="dock-panel">
-      <div
-        ref="workPanelRef"
-        v-if="dockPanel"
-        class="dock-work-panel lg-glass"
-        @click.stop
-      >
-        <div class="dock-work-head">
-          <span
-            v-if="dockPanel === 'bash'"
-            class="dock-work-tab static"
-          >
-            {{ t('tasks.dockBash') }} · {{ bashRunning }} {{ t('tasks.running') }}
-          </span>
-          <span
-            v-else-if="dockPanel === 'subagent'"
-            class="dock-work-tab static"
-          >
-            {{ t('tasks.dockSubagent') }} · {{ subagentRunning }} {{ t('tasks.running') }}
-          </span>
-          <span
-            v-else-if="dockPanel === 'todos'"
-            class="dock-work-tab static"
-          >
-            {{ t('tasks.dockTodos') }} · {{ todoDoneCount }}/{{ todos?.length ?? 0 }}
-          </span>
-          <span
-            v-else-if="dockPanel === 'changed-files'"
-            class="dock-work-tab static"
-          >
-            {{ t('conversation.changedFiles.title') }} · {{ changedFiles.length }}
-          </span>
-          <span
-            v-else-if="dockPanel === 'plan'"
-            class="dock-work-tab static"
-          >
-            {{ t('tasks.dockPlan') }}<template v-if="planReviewLabel"> · {{ planReviewLabel }}</template>
-          </span>
-        </div>
-        <div class="dock-work-body">
-          <TasksPane
-            v-if="dockPanel === 'bash'"
-            :tasks="bashTasks"
-            @cancel="emit('cancelTask', $event)"
-            @detach="emit('detachTask', $event)"
-          />
-          <SubagentGrid
-            v-else-if="dockPanel === 'subagent'"
-            :tasks="subagentTasks"
-            @cancel="emit('cancelTask', $event)"
-            @open="emit('openAgent', $event)"
-          />
-          <PlanPanel
-            v-else-if="dockPanel === 'plan'"
-            :plan="planEntry ?? null"
-            :plan-mode="planMode"
-            :open-file="openFile"
-          />
-          <TodoCard
-            v-else-if="dockPanel === 'todos'"
-            :todos="todos ?? []"
-          />
-          <ChangedFilesCard
-            v-else-if="dockPanel === 'changed-files'"
-            :files="changedFiles"
-          />
-        </div>
-      </div>
-    </Transition>
-
     <GoalStrip
       v-if="goal"
       :goal="goal"
@@ -258,61 +265,43 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       @control-goal="emit('controlGoal', $event)"
     />
     <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">
-      <Pill
-        v-if="bashTasks.length > 0"
-        class="lg-glass"
-        :active="dockPanel === 'bash'"
-        :aria-pressed="dockPanel === 'bash'"
-        @click="emit('toggle-dock-panel', 'bash')"
+      <Tooltip
+        v-for="entry in workbarEntries"
+        v-show="entry.visible"
+        :key="entry.id"
+        :text="entry.ariaLabel"
       >
-        <Icon name="clock" size="md" />
-        <span>{{ t('tasks.dockBash') }}</span>
-        <span class="dw-count">(<b>{{ bashTasks.length }}</b>)</span>
-      </Pill>
-      <Pill
-        v-if="subagentTasks.length > 0"
-        class="lg-glass"
-        :active="dockPanel === 'subagent'"
-        :aria-pressed="dockPanel === 'subagent'"
-        @click="emit('toggle-dock-panel', 'subagent')"
-      >
-        <Icon name="sparkles" size="md" />
-        <span>{{ t('tasks.dockSubagent') }}</span>
-        <span class="dw-count">(<b>{{ subagentTasks.length }}</b>)</span>
-      </Pill>
-      <Pill
-        v-if="(todos?.length ?? 0) > 0"
-        class="lg-glass"
-        :active="dockPanel === 'todos'"
-        :aria-pressed="dockPanel === 'todos'"
-        @click="emit('toggle-dock-panel', 'todos')"
-      >
-        <Icon name="check-list" size="md" />
-        <span>{{ t('tasks.dockTodos') }}</span>
-        <span class="dw-count">(<b>{{ todoDoneCount }}/{{ todos?.length ?? 0 }}</b>)</span>
-      </Pill>
-      <Pill
-        v-if="planMode || planEntry"
-        class="lg-glass"
-        :active="dockPanel === 'plan'"
-        :aria-pressed="dockPanel === 'plan'"
-        @click="emit('toggle-dock-panel', 'plan')"
-      >
-        <Icon name="file-edit" size="md" />
-        <span>{{ t('tasks.dockPlan') }}</span>
-        <span v-if="planReviewLabel" class="dw-count">· {{ planReviewLabel }}</span>
-      </Pill>
-      <Pill
-        v-if="changedFiles.length > 0"
-        class="lg-glass"
-        :active="dockPanel === 'changed-files'"
-        :aria-pressed="dockPanel === 'changed-files'"
-        @click="emit('toggle-dock-panel', 'changed-files')"
-      >
-        <Icon name="file-edit" size="md" />
-        <span>{{ t('conversation.changedFiles.title') }}</span>
-        <span class="dw-count">(<b>{{ changedFiles.length }}</b>)</span>
-      </Pill>
+        <button
+          type="button"
+          class="ptb- dock-square lg-glass"
+          :class="{ 'is-on': entry.active }"
+          :aria-label="entry.ariaLabel"
+          :aria-pressed="entry.active"
+          @click="clickWorkbar(entry.id)"
+        >
+          <Icon :name="entry.icon" size="md" />
+          <span v-if="entry.badge" class="dw-count">{{ entry.badge }}</span>
+        </button>
+      </Tooltip>
+      <Transition name="dock-popover">
+        <div
+          v-if="showPlanPopover"
+          ref="planPopoverRef"
+          class="dock-plan-pop lg-glass"
+          @click.stop
+        >
+          <div class="dock-plan-head">
+            <span class="dock-plan-title">{{ t('tasks.dockPlan') }}<template v-if="planReviewLabel"> · {{ planReviewLabel }}</template></span>
+          </div>
+          <div class="dock-plan-body">
+            <PlanPanel
+              :plan="planEntry ?? null"
+              :plan-mode="planMode"
+              :open-file="openFile"
+            />
+          </div>
+        </div>
+      </Transition>
     </div>
 
     <QuestionCard
@@ -331,7 +320,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
       :block="pendingApproval.block"
       :agent-name="pendingApproval.agentName"
       :busy="approvalBusy"
-      @decide="emit('approval', pendingApproval!.approvalId, $event)"
+      @decide="emit('approval', pendingApproval.approvalId, $event)"
     />
     <Composer
       v-else
@@ -400,60 +389,109 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
   background: transparent;
 }
 
-.dock-work-panel {
-  position: absolute;
-  left: 16px;
-  right: calc(16px + var(--panes-scrollbar-width, 0px));
-  bottom: 100%;
-  background: var(--color-surface);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  margin-bottom: 7px;
-  max-height: min(360px, 50vh);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.dock-work-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--color-line);
-}
-.dock-work-tab {
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--color-text);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-sunken);
-  border: 1px solid var(--color-line);
-}
-.dock-work-tab.static {
-  background: transparent;
-  border-color: transparent;
-  padding-left: 2px;
-}
-.dock-work-body {
-  padding: 8px 10px;
-  overflow-y: auto;
-  min-height: 0;
-}
-.dock-work-body :deep(.taskspane) {
-  border: none;
-  background: transparent;
-  padding: 0;
-}
-
+/* Icon-only workbar squares above the composer. Each square is a small
+   glass pill (lg-glass) replacing the old labeled work pills. Upstream
+   class `ptb-` is kept for parity with the screenshot evidence. */
 .dock-workbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 4px var(--dock-inline-right) 2px var(--dock-inline-left);
 }
-.dock-workbar .dw-count { margin-left: 1px; }
-.dock-workbar .dw-count b { font-weight: 500; }
+
+.dock-square {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
+}
+.dock-square:hover:not(.is-on) {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+.dock-square.is-on {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-line));
+}
+.dock-square:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
+.dock-square .dw-count {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  padding: 1px 3px;
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  border-radius: 6px;
+}
+.dock-square.is-on .dw-count {
+  color: var(--color-accent);
+}
+
+/* Plan popover: only the plan chip lacks a matching right-panel tab today,
+   so it pops a small glass card over the workbar instead of toggling a tab. */
+.dock-plan-pop {
+  position: absolute;
+  left: var(--dock-inline-left);
+  right: var(--dock-inline-right);
+  bottom: calc(100% + 6px);
+  z-index: var(--z-overlay);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 8px 10px;
+  max-height: min(280px, 50vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dock-plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 6px 0;
+  border-bottom: 1px solid var(--color-line);
+}
+.dock-plan-title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+.dock-plan-body {
+  padding-top: 6px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.dock-popover-enter-active,
+.dock-popover-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.dock-popover-enter-from,
+.dock-popover-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
 
 .dock-approval {
   margin-top: 8px;
@@ -479,23 +517,18 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
     --dock-inline-left: max(12px, var(--safe-left));
     --dock-inline-right: max(12px, var(--safe-right));
   }
-  .dock-work-panel {
-    left: 10px;
-    right: calc(10px + var(--panes-scrollbar-width, 0px));
-  }
 }
 
 .chat-dock:not(.align-mobile) :deep(.composer) {
   padding-bottom: 14px;
 }
 
-.dock-panel-enter-active,
-.dock-panel-leave-active {
-  transition: opacity 0.16s ease, transform 0.16s ease;
-}
-.dock-panel-enter-from,
-.dock-panel-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
+/* The plan chip's popover sits above the workbar like the old dock-work-panel,
+   so on mobile we let it span the full dock width. */
+@media (max-width: 640px) {
+  .dock-plan-pop {
+    left: 10px;
+    right: calc(10px + var(--panes-scrollbar-width, 0px));
+  }
 }
 </style>

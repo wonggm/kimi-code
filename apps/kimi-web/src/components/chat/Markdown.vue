@@ -1,5 +1,6 @@
 <!-- apps/kimi-web/src/components/chat/Markdown.vue -->
 <script setup lang="ts">
+import { loadCodeLineNumbers } from '../../lib/storage';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
@@ -358,9 +359,14 @@ const CODE_THEMES = [CODE_LIGHT_THEME, CODE_DARK_THEME];
 // is ignored by the settled renderer (it draws inside a shadow root; its
 // vertical padding comes from `--diffs-gap-block` below) but sets the loading
 // fallback's inline padding, keeping the fallback → settled swap stable.
+// 0.39 `code-block-interaction` port: line-number gutter, persisted like the
+// other viewer prefs. The in-header wrap/line-number toggle buttons upstream
+// shows are a code-app component we have not ported (deferred).
+const showCodeLineNumbers = loadCodeLineNumbers();
 const codeBlockProps = {
   showHeader: true,
   showCopyButton: true,
+  showLineNumbers: showCodeLineNumbers,
   showExpandButton: false,
   showPreviewButton: false,
   showCollapseButton: false,

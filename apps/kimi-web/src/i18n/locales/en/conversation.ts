@@ -70,4 +70,14 @@ export default {
     expand: 'Show more',
     collapse: 'Show less',
   },
+  codeBlock: {
+    copyCode: 'Copy code',
+    copied: 'Copied',
+    showLineNumbers: 'Show line numbers',
+    hideLineNumbers: 'Hide line numbers',
+    wrapCode: 'Enable word wrap',
+    unwrapCode: 'Disable word wrap',
+    viewFullscreen: 'View fullscreen',
+    exitFullscreen: 'Exit fullscreen',
+  },
 } as const;
