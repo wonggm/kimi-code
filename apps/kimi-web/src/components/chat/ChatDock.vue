@@ -43,6 +43,7 @@ const props = defineProps<{
   starredIds?: string[];
   skills?: AppSkill[];
   goal?: AppGoal | null;
+  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number; tokensMain: number; tokensSubagents: number } | null;
   goalExpandSignal?: number;
   /** Active right-panel tab (when the panel is open); the workbar mirrors it
    *  for its `is-active` styling. */
@@ -191,7 +192,7 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
 
 interface WorkbarEntry {
   id: RightPanelTab | 'plan';
-  icon: 'clock' | 'sparkles' | 'check-list' | 'file-edit';
+  icon: 'clock' | 'sparkles' | 'check-list' | 'file-edit' | 'file-text' | 'target';
   labelKey: string;
   ariaLabel: string;
   visible: boolean;
@@ -229,7 +230,7 @@ const workbarEntries = computed<WorkbarEntry[]>(() => [
   },
   {
     id: 'plan',
-    icon: 'file-edit',
+    icon: 'target',
     labelKey: 'panel.tabs.todos',
     ariaLabel: t('panel.workbarLabel', { name: t('tasks.dockPlan') }),
     visible: props.planMode || !!props.planEntry,
@@ -238,7 +239,7 @@ const workbarEntries = computed<WorkbarEntry[]>(() => [
   },
   {
     id: 'changes',
-    icon: 'file-edit',
+    icon: 'file-text',
     labelKey: 'panel.tabs.changes',
     ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.changes') }),
     visible: props.changedFiles.length > 0,
@@ -261,6 +262,7 @@ function clickWorkbar(id: RightPanelTab | 'plan'): void {
     <GoalStrip
       v-if="goal"
       :goal="goal"
+      :live="goalLive"
       :force-expanded="goalExpandSignal"
       @control-goal="emit('controlGoal', $event)"
     />
@@ -406,27 +408,58 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
   color: var(--color-text-muted);
   cursor: pointer;
   transition:
     background var(--duration-base) var(--ease-out),
     color var(--duration-base) var(--ease-out),
-    border-color var(--duration-base) var(--ease-out);
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+/* Liquid-glass material for the squares — doubled-class specificity beats
+   the generic .lg-glass rule; single backdrop-filter (the workbar is a
+   sibling of the frosted composer card, so Firefox nesting is not an
+   issue). Falls back to the solid look above when the toggle is off. */
+html[data-liquid-glass="on"] .dock-square.lg-glass {
+  background: color-mix(in srgb, var(--panel) 10%, transparent);
+  backdrop-filter: blur(10px) saturate(160%);
+  border-color: color-mix(in srgb, var(--color-line) 72%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-text) 7%, transparent),
+    0 1px 2px color-mix(in srgb, black 18%, transparent);
+}
+html[data-liquid-glass="on"] .dock-square.lg-glass:hover:not(.is-on) {
+  background: color-mix(in srgb, var(--panel) 22%, transparent);
+  color: var(--color-text);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-text) 9%, transparent),
+    0 3px 8px color-mix(in srgb, black 22%, transparent);
 }
 .dock-square:hover:not(.is-on) {
   background: var(--color-surface-sunken);
   color: var(--color-text);
 }
 .dock-square.is-on {
-  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
   color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-line));
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
+}
+html[data-liquid-glass="on"] .dock-square.lg-glass.is-on {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  backdrop-filter: blur(10px) saturate(170%);
+  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-accent) 18%, transparent),
+    0 2px 10px color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 .dock-square:focus-visible {
   outline: none;
@@ -434,18 +467,20 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 }
 .dock-square .dw-count {
   position: absolute;
-  bottom: 1px;
-  right: 1px;
+  bottom: -3px;
+  right: -3px;
   font-size: 9px;
   line-height: 1;
-  color: var(--color-text-muted);
+  color: var(--color-text);
   font-variant-numeric: tabular-nums;
-  padding: 1px 3px;
-  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
-  border-radius: 6px;
+  padding: 2px 4px;
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  border: 1px solid var(--color-line);
+  border-radius: 7px;
 }
 .dock-square.is-on .dw-count {
   color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-line));
 }
 
 /* Plan popover: only the plan chip lacks a matching right-panel tab today,

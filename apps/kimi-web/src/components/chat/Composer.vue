@@ -89,14 +89,6 @@ const placeholder = computed(() =>
         : t('composer.placeholder'),
 );
 
-// Secondary hint line rendered beneath the primary placeholder. Suppressed when
-// the running/starting/goal branch is active — those messages are full
-// operational prompts and adding a hint row underneath would be visual noise.
-const placeholderHint = computed(() => {
-  if (props.starting || props.running || props.goalMode) return '';
-  return t('composer.placeholderHint');
-});
-
 // Hide the overlay placeholder when the textarea has content. Native
 // `:placeholder-shown` mirrors this state without an explicit watcher.
 const showPlaceholderOverlay = computed(() => !text.value && !props.starting);
@@ -1282,11 +1274,9 @@ function selectModel(modelId: string): void {
           <div
             v-show="showPlaceholderOverlay"
             class="ph-overlay"
-            :class="{ 'has-hint': placeholderHint }"
             aria-hidden="true"
           >
             <span class="ph-overlay-primary">{{ placeholder }}</span>
-            <span v-if="placeholderHint" class="ph-overlay-hint">{{ placeholderHint }}</span>
           </div>
           <textarea
             ref="textareaRef"
@@ -1843,22 +1833,11 @@ function selectModel(modelId: string): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ph-overlay-hint {
-  color: var(--dim);
-  font-size: calc(var(--content-font-size) - 1px);
-  font-weight: var(--weight-medium);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* When the composer is focused the overlay stays visible (we still want to
    show the placeholder copy behind a moving caret), but its colour softens a
    touch — mirrors the upstream pattern. */
 .composer-card:focus-within .ph-overlay-primary {
   color: var(--dim);
-}
-.composer-card:focus-within .ph-overlay-hint {
-  color: var(--faint);
 }
 
 /* Expanded editor: a tall composing area at ~70% of the viewport — clearly

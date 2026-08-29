@@ -10,7 +10,20 @@ import IconButton from '../ui/IconButton.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import Icon from '../ui/Icon.vue';
 
-const props = defineProps<{ goal: AppGoal; forceExpanded?: number }>();
+const props = defineProps<{
+  goal: AppGoal;
+  forceExpanded?: number;
+  /** Live-ticked stats from the client (elapsed extrapolated between engine
+   *  snapshots; tokens split total / main / subagents). Optional — the strip
+   *  falls back to the snapshot values when absent. */
+  live?: {
+    elapsedMs: number;
+    turnsUsed: number;
+    tokensTotal: number;
+    tokensMain: number;
+    tokensSubagents: number;
+  } | null;
+}>();
 const emit = defineEmits<{ controlGoal: [action: 'pause' | 'resume' | 'cancel'] }>();
 
 const { t } = useI18n();
@@ -63,42 +76,38 @@ async function onCancel(): Promise<void> {
 </script>
 
 <template>
-  <Card class="goal-strip" :class="{ expanded }">
-    <template #head>
-      <button class="goal-row" type="button" @click="expanded = !expanded">
-        <Icon class="goal-icon" name="target" size="md" />
-        <span class="goal-kicker">{{ t('status.goalLabel') }}</span>
-        <span class="goal-objective" :class="{ 'expanded-hidden': expanded }">{{ goal.objective }}</span>
-        <Badge
-          :variant="goal.status === 'active' ? 'success' : goal.status === 'blocked' ? 'danger' : goal.status === 'paused' ? 'warning' : 'neutral'"
-          size="sm"
-          class="goal-status"
-        >{{ goalStatusLabel(goal.status) }}</Badge>
-        <span v-if="goal.budget.tokenBudget !== null" class="goal-progress" aria-hidden="true">
-          <span class="goal-progress-fill" :style="{ width: `${tokenPct}%` }"></span>
-        </span>
-        <span class="goal-elapsed" :title="t('status.goalElapsedLabel')">{{ formatMs(goal.wallClockMs) }}</span>
-        <Icon class="goal-chevron" :class="{ open: expanded }" name="chevron-right" size="md" />
-      </button>
-    </template>
-
-    <template #default>
-      <div class="goal-full">{{ goal.objective }}</div>
-      <div v-if="goal.completionCriterion" class="goal-criterion">
-        <span>{{ t('status.goalDoneWhen') }}</span>
-        <p>{{ goal.completionCriterion }}</p>
-      </div>
-    </template>
-
-    <template #foot>
-      <div
-        class="goal-footer"
-        :inert="!expanded"
-        :aria-hidden="!expanded"
-      >
+  <div class="goal-wrap">
+    <Card class="goal-strip" :class="{ expanded }">
+      <template #head>
+        <button class="goal-row" type="button" @click="expanded = !expanded">
+          <Icon class="goal-icon" name="target" size="md" />
+          <span class="goal-kicker">{{ t('status.goalLabel') }}</span>
+          <span class="goal-objective">{{ goal.objective }}</span>
+          <Badge
+            :variant="goal.status === 'active' ? 'success' : goal.status === 'blocked' ? 'danger' : goal.status === 'paused' ? 'warning' : 'neutral'"
+            size="sm"
+            class="goal-status"
+          >{{ goalStatusLabel(goal.status) }}</Badge>
+          <span v-if="goal.budget.tokenBudget !== null" class="goal-progress" aria-hidden="true">
+            <span class="goal-progress-fill" :style="{ width: `${tokenPct}%` }"></span>
+          </span>
+          <span class="goal-elapsed" :title="t('status.goalElapsedLabel')">{{ formatMs(live?.elapsedMs ?? goal.wallClockMs) }}</span>
+          <Icon class="goal-chevron" :class="{ open: expanded }" name="chevron-right" size="md" />
+        </button>
+      </template>
+    </Card>
+    <Transition name="pop">
+      <div v-if="expanded" class="goal-pop lg-frost">
+        <div class="goal-full">{{ goal.objective }}</div>
+        <div v-if="goal.completionCriterion" class="goal-criterion">
+          <span>{{ t('status.goalDoneWhen') }}</span>
+          <p>{{ goal.completionCriterion }}</p>
+        </div>
         <div class="goal-meta">
-          <span>{{ goal.turnsUsed }} turns</span>
-          <span>{{ formatTokens(goal.tokensUsed) }} tokens</span>
+          <span>{{ live?.turnsUsed ?? goal.turnsUsed }} turns</span>
+          <span>{{ t('status.goalTokensTotal', { n: formatTokens(live?.tokensTotal ?? goal.tokensUsed) }) }}</span>
+          <span>{{ t('status.goalTokensMain', { n: formatTokens(live?.tokensMain ?? 0) }) }}</span>
+          <span>{{ t('status.goalTokensSubagents', { n: formatTokens(live?.tokensSubagents ?? 0) }) }}</span>
           <span v-if="goal.budget.tokenBudget !== null">{{ tokenPct }}% token budget</span>
         </div>
         <div class="goal-actions">
@@ -129,16 +138,61 @@ async function onCancel(): Promise<void> {
               :label="t('status.goalCancel')"
               @click.stop="onCancel"
             >
-              <Icon name="close" size="md" />
+              <Icon name="stop" size="md" />
             </IconButton>
           </Tooltip>
         </div>
       </div>
-    </template>
-  </Card>
+    </Transition>
+  </div>
 </template>
 
+
 <style scoped>
+.goal-wrap {
+  position: relative;
+}
+/* The Card only carries the head row; the empty body slot would render a
+   padded box, so collapse it. Expanded content lives in .goal-pop. */
+.goal-strip :deep(.ui-card__body) {
+  display: none;
+}
+.goal-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: calc(var(--z-sticky) + 5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+}
+html[data-liquid-glass="on"] .goal-pop {
+  background: color-mix(in srgb, var(--panel) 58%, transparent);
+  backdrop-filter: blur(34px) saturate(180%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+html:not([data-liquid-glass="on"]) .goal-pop {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+.goal-pop-enter-active,
+.goal-pop-leave-active {
+  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.goal-pop-enter-from,
+.goal-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.goal-pop .goal-meta {
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .goal-strip {
   --composer-send-size: 32px;
   --composer-send-inset: var(--space-2);
@@ -328,7 +382,51 @@ async function onCancel(): Promise<void> {
   color: var(--color-danger);
 }
 @media (max-width: 640px) {
-  .goal-strip {
+  .goal-wrap {
+  position: relative;
+}
+/* The Card only carries the head row; the empty body slot would render a
+   padded box, so collapse it. Expanded content lives in .goal-pop. */
+.goal-strip :deep(.ui-card__body) {
+  display: none;
+}
+.goal-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: calc(var(--z-sticky) + 5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+}
+html[data-liquid-glass="on"] .goal-pop {
+  background: color-mix(in srgb, var(--panel) 58%, transparent);
+  backdrop-filter: blur(34px) saturate(180%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+html:not([data-liquid-glass="on"]) .goal-pop {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+.goal-pop-enter-active,
+.goal-pop-leave-active {
+  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.goal-pop-enter-from,
+.goal-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.goal-pop .goal-meta {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.goal-strip {
     --composer-send-size: 36px;
     margin: var(--space-2) var(--space-3) 0;
   }
