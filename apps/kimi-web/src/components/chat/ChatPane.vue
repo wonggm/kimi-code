@@ -543,6 +543,8 @@ watch(
 const showWorking = computed(() => props.working);
 
 const emit = defineEmits<{
+  /** Quote a turn's text into the composer as a markdown blockquote. */
+  quote: [text: string];
   openFile: [target: FilePreviewRequest];
   openMedia: [media: ToolMedia];
   copyConversationCopied: [];
@@ -829,6 +831,16 @@ function copyAssistantRun(index: number): void {
   }).catch(() => {/* ignore */});
 }
 
+// Format a turn's text as a markdown blockquote for quote-to-chat.
+function toQuoteBlock(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+function quoteTurn(text: string): void {
+  emit('quote', toQuoteBlock(text));
+}
 function copyUserMessage(turn: ChatTurn): void {
   const text = turn.text;
   if (!text.trim()) return;
@@ -1032,6 +1044,15 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
               v-if="turn.text.trim().length > 0"
               type="button"
               class="u-copy"
+              :aria-label="t('conversation.quote')"
+              @click.stop="quoteTurn(turn.text)"
+            >
+              <Icon name="message" size="sm" />
+            </button>
+            <button
+              v-if="turn.text.trim().length > 0"
+              type="button"
+              class="u-copy"
               :aria-label="t('filePreview.copy')"
               @click.stop="copyUserMessage(turn)"
             >
@@ -1105,6 +1126,15 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />
         <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && assistantRunFinalText(ti).trim().length > 0" class="a-msg-ft">
           <MessageTime v-if="turn.createdAt" :time="turn.createdAt" />
+          <button
+            v-if="assistantRunFinalText(ti).trim().length > 0"
+            class="a-cpbtn"
+            :aria-label="t('conversation.quote')"
+            :title="t('conversation.quote')"
+            @click="quoteTurn(assistantRunFinalText(ti))"
+          >
+            <Icon name="message" size="sm" />
+          </button>
           <button
             v-if="assistantRunFinalText(ti).trim().length > 0"
             class="a-cpbtn"

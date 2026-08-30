@@ -1221,6 +1221,19 @@ function handleComposerSubmit(payload: { text: string; attachments: PromptAttach
 // returns. Scrolling here would target the pre-undo bottom and fight the
 // bubble-exit animation, so we only arm the follow state; the scrollKey watcher
 // smooth-scrolls once the truncated turns actually land.
+// Quote-to-chat (0.39 `code comment/quote` port): a turn's text lands in the
+// active composer as a markdown blockquote; the user adds their own comment
+// and sends. Local bridge — no undo/resend semantics like edit.
+function handleQuote(text: string): void {
+  following.value = true;
+  showPill.value = false;
+  userActionFollowUntil = Date.now() + USER_ACTION_FOLLOW_LOCK_MS;
+  const composer = dockedComposerRef.value ?? emptyComposerRef.value;
+  if (!composer) return;
+  if (composer.loadForEdit(text) === false) return;
+  composer.focus();
+}
+
 function handleEditMessage(payload: {
   text: string;
   attachments?: TurnAttachment[];
@@ -1742,6 +1755,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
               @open-agent="emit('openAgent', $event)"
               @open-tool-diff="emit('openToolDiff', $event)"
               @detach-task="emit('detachTask', $event)"
+              @quote="handleQuote"
               @edit-message="handleEditMessage"
               @resume-failure="emit('resumeFailure')"
               @load-older-messages="handleLoadOlderMessages"

@@ -1,4 +1,5 @@
 export default {
+  quote: '引用',
   jumpToLatestAria: '跳到最新消息',
   toc: '对话目录',
   newMessages: '最新消息',
