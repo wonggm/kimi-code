@@ -1,6 +1,5 @@
 <!-- apps/kimi-web/src/components/chat/Markdown.vue -->
 <script setup lang="ts">
-import { loadCodeLineNumbers } from '../../lib/storage';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
@@ -9,6 +8,7 @@ import {
   enableMermaid,
   registerMarkdownPlugin,
   type MarkdownIt,
+  setCustomComponents,
   setKaTeXWorker,
   clearKaTeXWorker,
   setMermaidWorker,
@@ -26,6 +26,8 @@ import * as katexWorkerModule from 'markstream-vue/workers/katexRenderer.worker?
 import * as mermaidWorkerModule from 'markstream-vue/workers/mermaidParser.worker?worker&type=module';
 import Tooltip from '../ui/Tooltip.vue';
 import Icon from '../ui/Icon.vue';
+import MarkdownCodeBlock from './MarkdownCodeBlock.vue';
+import { useCodeBlockPrefs } from '../../lib/codeBlockPrefs';
 // px-based CSS build (our app is px, not rem). Imported here so the styles
 // load wherever Markdown is used; scoped overrides below re-skin it to
 // Terminal Pro. Importing the same file from multiple components is a no-op
@@ -359,26 +361,29 @@ const CODE_THEMES = [CODE_LIGHT_THEME, CODE_DARK_THEME];
 // is ignored by the settled renderer (it draws inside a shadow root; its
 // vertical padding comes from `--diffs-gap-block` below) but sets the loading
 // fallback's inline padding, keeping the fallback → settled swap stable.
-// 0.39 `code-block-interaction` port: line-number gutter, persisted like the
-// other viewer prefs. The in-header wrap/line-number toggle buttons upstream
-// shows are a code-app component we have not ported (deferred).
-const showCodeLineNumbers = loadCodeLineNumbers();
-const codeBlockProps = {
-  showHeader: true,
-  showCopyButton: true,
-  showLineNumbers: showCodeLineNumbers,
+// 0.39 `code-block-interaction` port: the header row (language label +
+// line-number / word-wrap toggles + copy) is OUR MarkdownCodeBlock wrapper,
+// registered as the custom code_block renderer below; both toggles drive the
+// shared persisted prefs (lib/codeBlockPrefs). The wrapper forces
+// showHeader/showCopyButton off on markstream's CodeBlock and renders the
+// gutter via the line-number toggle, so those props stay out of here.
+setCustomComponents('kimi-web-chat', { code_block: MarkdownCodeBlock });
+const { codeLineNumbers } = useCodeBlockPrefs();
+const codeBlockProps = computed(() => ({
   showExpandButton: false,
   showPreviewButton: false,
   showCollapseButton: false,
   showFontSizeButtons: false,
   loading: false,
+  // The settled grid renderer gates its number column on the top-level
+  // string prop: gutter shows iff lineNumbers !== 'off'.
+  lineNumbers: codeLineNumbers.value ? 'on' : 'off',
   monacoOptions: {
-    lineNumbers: false,
     fontSize: 13,
     fontFamily: 'var(--font-mono)',
     padding: { top: 12, bottom: 12 },
   },
-};
+}));
 
 // Root cause for the "large session turns into code skeletons" failure:
 // markstream mounts every code block in the loaded transcript, then shiki has
@@ -492,6 +497,7 @@ function copyDiff(code: string, idx: number) {
         :code-block-dark-theme="CODE_DARK_THEME"
         :themes="CODE_THEMES"
         :code-block-props="codeBlockProps"
+        custom-id="kimi-web-chat"
         :final="final"
         :smooth-streaming="streaming"
         :batch-rendering="batchRenderWhileStreaming"
@@ -747,6 +753,19 @@ function copyDiff(code: string, idx: number) {
 .md :deep(.code-block-container .code-pre-fallback) {
   white-space: pre !important;
   overflow-x: auto !important;
+}
+/* Word-wrap toggle (MarkdownCodeBlock header): the --wrap variant flips both
+   the fallback and the settled renderer onto wrapped geometry. Same
+   specificity as the force rules above; source order makes these win. */
+.md :deep(.mdcb--wrap .code-pre-fallback) {
+  white-space: pre-wrap !important;
+  overflow-x: hidden !important;
+  overflow-wrap: anywhere;
+}
+.md :deep(.mdcb--wrap pre:not(.code-pre-fallback)) {
+  white-space: pre-wrap;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
 }
 .md :deep(.code-block-container pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)),
 .md :deep(.markstream-pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)) {
