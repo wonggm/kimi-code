@@ -205,3 +205,30 @@ approval).
    the host's inotify budget is exhausted by the ZCode server (kap-server cannot start;
    env limit needs `sudo sysctl -w fs.inotify.max_user_watches=1048576` to fix
    durably). Same mock serves the extracted upstream bundle for side-by-sides.
+
+3. **Comment/quote-to-chat — DONE (commit `1e900d5c1`).** Port shape: a Quote button
+   (message icon) next to copy on user turns and assistant run footers in
+   ChatPane.vue; clicking emits `quote` with the turn text, and ConversationPane's
+   `handleQuote` pushes it through the existing loadForEdit bridge into the docked
+   (or empty-state) composer as a `> `-prefixed block, with the follow-scroll lock
+   held and focus moved to the composer. i18n `conversation.quote` en+zh. Verified:
+   vue-tsc clean, 962/962 vitest, capped build, CDP probe on the mock stack
+   (quote flow screenshotted end to end).
+
+4. **HTML preview runner — DONE (commit `2f0e4bb7f`, i18n fix `d4118ac17`).**
+   markstream HAS the full runner built in (`HtmlPreviewFrame`: teleported overlay,
+   sandboxed srcdoc iframe, backdrop/Escape close) but its only trigger lives in the
+   built-in header's more-menu, which our headerless CodeBlockNode mount never
+   renders, and the component is not exported — so the runner is re-expressed in
+   MarkdownCodeBlock.vue: a Preview (play) button on html/html-vue blocks toggles a
+   local ref; while open, a Teleported `.lg-glass` overlay holds
+   `<iframe sandbox="allow-scripts" :srcdoc="code">` (no `allow-same-origin`, so the
+   document stays on an opaque origin; close = iframe unmount = stop). Plain-rgba
+   backdrop + separate glass frame keeps Firefox clear of nested backdrop-filters.
+   Upstream comparison (mock stack, extended to the v2 sessions + transcript
+   contract so the upstream bundle renders the same conversation): upstream's
+   settled chat blocks expose exactly line-numbers/wrap/copy — no preview trigger
+   even on hover — so our header row is a strict superset and the feature completes
+   the 0.39 code-block-interaction port. Verified: vue-tsc clean, 962/962 vitest,
+   capped build, CDP screenshots (overlay open with rendered page + script running,
+   Escape close, upstream side-by-side).
