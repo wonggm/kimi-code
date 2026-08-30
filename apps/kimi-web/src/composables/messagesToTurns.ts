@@ -261,6 +261,12 @@ interface SubagentTranscriptTurn {
   kind: 'turn';
   steps: SubagentTranscriptStep[];
 }
+// Marker items (compaction/undo checkpoints) ride the transcript stream with
+// no steps; the projection skips them via the kind guard below.
+interface SubagentTranscriptMarker {
+  kind: 'marker';
+}
+type SubagentTranscriptItem = SubagentTranscriptTurn | SubagentTranscriptMarker;
 interface SubagentTranscriptStep {
   kind: 'step';
   frames: SubagentTranscriptFrame[];
@@ -275,7 +281,7 @@ type SubagentTranscriptFrame =
  *  Returns `undefined` fields when there is nothing to show, so an empty seed
  *  is a no-op for the reducer. */
 export function projectSubagentTranscript(
-  items: readonly SubagentTranscriptTurn[],
+  items: readonly SubagentTranscriptItem[],
 ): { text?: string; outputLines?: string[] } {
   let text = '';
   const outputLines: string[] = [];

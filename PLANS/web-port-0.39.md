@@ -107,21 +107,31 @@ no SVG-displacement filters, MenuSelect for dropdowns).
 
 ## OPEN BUG + deferred (2026-08-30, session 2)
 
-**Agent pane self-close (UNFIXED)** — clicking Open on a subagent card mounts
-AgentDetailPanel (`.ap`) then it vanishes ~200-400ms later. Verified server-side fine
-(task rows carry agent_id; `/transcript?agent_id=agent-N` returns items). Hardening that
-did NOT stop it: last-known-member fallback, open debounce, explicit-close latch on the
-App render condition. Instrumentation facts: `Node.removeChild`/`Element.remove` never
-called with `.ap` (removal bypasses both — innerHTML/textContent wipe or class swap?);
-detailTarget transitions could not be observed (root `setupState` unreachable). The
-fresh-profile headless screenshot ALSO shows the right panel rendering at an odd
-x-position (~450px, not right-pinned) — verify whether the containing block for
-`.right-panel`'s `position:absolute` is narrower than expected. NEXT SESSION: reproduce
-with `vue-devtools` or a dev build (not minified) and watch the App branch chain; check
-whether an earlier v-else-if branch (file/diff/toolDiff/btw) steals the layer, and audit
-`useTaskPoller` refresh cycles at ~250ms.
+**Agent pane self-close — ROOT-CAUSED + FIXED (session 3, 2026-08-30).** The earlier
+forensics were misleading: the panel WAS unmounted via removeChild (the session-2 patch
+missed it), and the unmount is a RENDER ERROR, not a state flip — which is exactly why
+the member-fallback / debounce / latch hardening could not help. When a subagent's
+`GET /transcript?agent_id=` page contains marker items (`kind: 'marker'` — compaction
+checkpoints, no `steps` array), `viewTurns` in AgentDetailPanel threw
+`TypeError: …steps is not iterable` on the first re-render after the fetch landed
+(~50–300ms after Open) and Vue tore the whole branch down (aside left `open` + empty —
+the impossible-looking hold=false/spv=true observation). Targets with marker-free
+transcripts survived, which made the bug look flaky. Fix: wire/app types widened
+(`WireTranscriptItem` / `TranscriptItem` = turn | marker), `viewTurns` renders marker
+payload text as a notice block, `projectSubagentTranscript` input widened (its
+`kind !== 'turn'` guard already existed). Verified in dev: all 5 bench-session subagent
+panels stay open, zero console errors; regression test in agent-event-projector.test.ts;
+vue-tsc clean; 961/961 vitest; build green. NOTE the deployed dist-web was confirmed
+byte-identical (module-hash cascade apart) to the committed source — the user HAD the
+hardened build; the latch genuinely couldn't fix a render error.
 
-**Still deferred**: media-popover fixes (exact surface unknown — MediaPreview.vue is the
+**Bonus fix (dev-only, no changeset):** RightPanelTabs.vue had its terminal-probe
+immediate watcher ABOVE `defineProps` — TDZ ReferenceError (`Cannot access 'props'
+before initialization`) killed setup in dev mode and made `.right-panel` unmountable
+(prod compiles `props` accesses to inline `__props`, so prod never threw). Watcher moved
+below the props declaration. This is what blocked session-2's dev-build tracing plan.
+
+Still deferred: media-popover fixes (exact surface unknown — MediaPreview.vue is the
 fullscreen lightbox, not the popover), in-header code toggles (markstream header has no
 slots), comment/quote-to-chat, HTML preview runner.
 
