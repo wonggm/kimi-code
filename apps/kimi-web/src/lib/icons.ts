@@ -152,6 +152,8 @@ import RawInformationLine from '~icons/ri/information-line?raw';
 import RawLinksLine from '~icons/ri/links-line?raw';
 import RawListCheck from '~icons/ri/list-check?raw';
 import RawListUnordered from '~icons/ri/list-unordered?raw';
+import RiTextWrapLine from '~icons/ri/text-wrap';
+import RawTextWrapLine from '~icons/ri/text-wrap?raw';
 import RawLoginBoxLine from '~icons/ri/login-box-line?raw';
 import RawMailLine from '~icons/ri/mail-line?raw';
 import RawMessageLine from '~icons/ri/message-line?raw';
@@ -205,6 +207,7 @@ export type IconName =
   | 'expand'
   | 'collapse'
   | 'list'
+  | 'text-wrap'
   | 'sort'
   | 'grip'
   | 'folder'
@@ -292,6 +295,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   expand: entry(RiExpandDiagonalLine, RawExpandDiagonalLine),
   collapse: entry(RiCollapseDiagonalLine, RawCollapseDiagonalLine),
   list: entry(RiListUnordered, RawListUnordered),
+  'text-wrap': entry(RiTextWrapLine, RawTextWrapLine),
   sort: entry(RiSortDesc, RawSortDesc),
   grip: entry(RiDraggable, RawDraggable),
   folder: entry(KimiFolderOpen, RawKimiFolderOpen),
