@@ -284,6 +284,21 @@ describe('subagent detail seeded from transcript history', () => {
     expect(projectSubagentTranscript(items)).toEqual({ text: undefined, outputLines: undefined });
   });
 
+  it('skips marker items (no steps) instead of crashing on them', () => {
+    const items = [
+      { kind: 'marker', markerId: 'm1', marker: 'compaction', payload: { text: '🧠 handoff note' } },
+      {
+        kind: 'turn',
+        turnId: 't',
+        ordinal: 0,
+        state: 'completed',
+        steps: [{ kind: 'step', stepId: 's', frames: [{ kind: 'text', role: 'assistant', text: 'Done.' }] }],
+      },
+      { kind: 'marker', markerId: 'm2', marker: 'compaction', payload: { text: '🧠 second note' } },
+    ];
+    expect(projectSubagentTranscript(items)).toEqual({ text: 'Done.', outputLines: undefined });
+  });
+
   it('seeds an empty preview body via taskSeeded and appends — never duplicates — later live frames', () => {
     const state = {
       ...createInitialState(),

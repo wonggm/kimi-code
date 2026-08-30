@@ -406,10 +406,22 @@ export interface WireTranscriptTurn {
   endedAt?: string;
 }
 
+/** Non-turn transcript stream item (`transcriptItemSchema`, marker variant) —
+ *  compaction/undo markers carry no steps. */
+export interface WireTranscriptMarker {
+  kind: 'marker';
+  markerId: string;
+  marker: string;
+  payload?: unknown;
+  at?: string;
+}
+
+export type WireTranscriptItem = WireTranscriptTurn | WireTranscriptMarker;
+
 /** `GET /sessions/{id}/transcript` response — turn-granular, per-agent. */
 export interface WireTranscriptPage {
   agent_id: string;
-  items: WireTranscriptTurn[];
+  items: WireTranscriptItem[];
   has_more: boolean;
   seq?: number;
 }

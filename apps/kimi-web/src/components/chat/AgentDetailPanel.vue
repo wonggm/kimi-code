@@ -21,7 +21,7 @@ bottom edge as long as the user hasn't scrolled past it into the transcript. -->
 import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getKimiWebApi } from '../../api';
-import type { AppTask, TranscriptTurn } from '../../api/types';
+import type { AppTask, TranscriptItem } from '../../api/types';
 import type { AgentMember, FilePreviewRequest, ToolMedia } from '../../types';
 import { normalizeToolName, toolLabel, toolSummary } from '../../lib/toolMeta';
 import Badge from '../ui/Badge.vue';
@@ -130,11 +130,20 @@ const wireAgentId = computed(() => {
   return props.member.agentId ?? task?.agentId ?? props.member.id;
 });
 
-const transcriptItems = ref<TranscriptTurn[] | null>(null);
+const transcriptItems = ref<TranscriptItem[] | null>(null);
 const transcriptLoading = ref(false);
 const transcriptError = ref(false);
 
 const hasTranscript = computed(() => (transcriptItems.value?.length ?? 0) > 0);
+
+/** Extract a displayable note from a marker item's payload (`{ text }`). */
+function markerText(item: { payload?: unknown }): string | undefined {
+  const payload = item.payload;
+  if (payload === null || typeof payload !== 'object') return undefined;
+  const text = (payload as Record<string, unknown>)['text'];
+  if (typeof text !== 'string' || text.trim().length === 0) return undefined;
+  return text;
+}
 
 let fetchToken = 0;
 async function fetchTranscript(): Promise<void> {
@@ -198,13 +207,21 @@ const VIEW_TOOL = 'tool';
 const VIEW_NOTICE = 'notice';
 
 const viewTurns = computed<ViewTurn[]>(() =>
-  (transcriptItems.value ?? []).map((turn) => {
+  (transcriptItems.value ?? []).map((item) => {
+    if (item.kind !== 'turn') {
+      // Marker items (compaction/undo checkpoints) ride the transcript stream
+      // with no steps — surface the marker text as a notice instead of
+      // crashing the render on the missing steps array.
+      const text = markerText(item);
+      const blocks: ViewBlock[] = text !== undefined ? [{ kind: VIEW_NOTICE, text }] : [];
+      return { id: item.markerId, blocks };
+    }
     const blocks: ViewBlock[] = [];
-    if (turn.prompt?.trim()) {
-      blocks.push({ kind: VIEW_TEXT, role: 'user', text: turn.prompt });
+    if (item.prompt?.trim()) {
+      blocks.push({ kind: VIEW_TEXT, role: 'user', text: item.prompt });
     }
     let thinkingIndex = 0;
-    for (const step of turn.steps) {
+    for (const step of item.steps) {
       for (const frame of step.frames) {
         switch (frame.kind) {
           case VIEW_THINKING:
@@ -212,7 +229,7 @@ const viewTurns = computed<ViewTurn[]>(() =>
               kind: VIEW_THINKING,
               // Stable across recomputes: the fetch result is static, so the
               // per-turn index is enough to key the collapse state.
-              id: `${turn.turnId}:${thinkingIndex++}`,
+              id: `${item.turnId}:${thinkingIndex++}`,
               text: frame.text,
             });
             break;
@@ -230,7 +247,7 @@ const viewTurns = computed<ViewTurn[]>(() =>
         }
       }
     }
-    return { id: turn.turnId, state: turn.state, blocks };
+    return { id: item.turnId, state: item.state, blocks };
   }),
 );
 
