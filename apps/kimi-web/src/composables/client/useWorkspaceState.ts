@@ -709,8 +709,14 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
    *  Returns the merged, recency-sorted list and seeds per-workspace hasMore.
    *  When every workspace request fails, returns undefined so the caller keeps
    *  the previously loaded sessions instead of committing a false empty list. */
-  async function loadInitialSessionsByWorkspace(): Promise<AppSession[] | undefined> {
-    const workspaces = rawState.workspaces;
+  async function loadInitialSessionsByWorkspace(
+    /** When set, only these workspace ids are fetched (startup split: the
+     *  first page dismisses the splash, the rest fill in via a background
+     *  continuation instead of stalling "Connecting…" on every workspace). */
+    only?: string[],
+  ): Promise<AppSession[] | undefined> {
+    const allWorkspaces = rawState.workspaces;
+    const workspaces = only ? allWorkspaces.filter((w) => only.includes(w.id)) : allWorkspaces;
     if (workspaces.length === 0) {
       // /workspaces may be unavailable or empty on older / partially-failing
       // daemons while /sessions still works. Fall back to the legacy global
@@ -808,6 +814,26 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       // continuations), keep the larger count so collapse returns to what was
       // first visible.
       counts[workspaceId] = Math.max(page.items.length, SESSIONS_INITIAL_PAGE_SIZE);
+    }
+    // Scoped run (startup split): carry through the cached sessions of
+    // out-of-scope workspaces untouched — the scoped replacement would
+    // otherwise drop them, and if their own continuation later fails there is
+    // nothing left to preserve.
+    if (only !== undefined) {
+      const scope = new Set(only);
+      const inScope = (session: AppSession): boolean =>
+        // Explicit id first: the root-derived id is ambiguous with shared
+        // roots (two registered workspaces on one root), which would drop a
+        // failed workspace's cached sessions in the scoped first load.
+        session.workspaceId !== undefined
+          ? scope.has(session.workspaceId)
+          : scope.has(workspaceIdForSession(session));
+      for (const session of rawState.sessions) {
+        if (loadedIds.has(session.id)) continue;
+        if (inScope(session)) continue;
+        loaded.push(session);
+        loadedIds.add(session.id);
+      }
     }
     rawState.sessionsHasMoreByWorkspace = hasMore;
     rawState.sessionsCursorByWorkspace = cursors;
@@ -940,9 +966,20 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       // the old full global walk: the sidebar now truncates by loading, not by
       // hiding already-fetched rows.
       await loadWorkspaces();
-      const loadedSessions = await loadInitialSessionsByWorkspace();
+      const firstWorkspaceId = rawState.workspaces[0]?.id;
+      const remainingWorkspaceIds = rawState.workspaces.slice(1).map((w) => w.id);
+      const loadedSessions = await loadInitialSessionsByWorkspace(
+        firstWorkspaceId === undefined ? undefined : [firstWorkspaceId],
+      );
       const sessions = loadedSessions ?? rawState.sessions;
       if (loadedSessions !== undefined) setSessionsPreservingLiveUsage(loadedSessions);
+      // Remaining workspaces fill the sidebar after first paint instead of
+      // stalling it (upstream `startup-first-grouped-page`).
+      if (remainingWorkspaceIds.length > 0) {
+        void loadInitialSessionsByWorkspace(remainingWorkspaceIds).then((rest) => {
+          if (rest !== undefined) setSessionsPreservingLiveUsage(rest);
+        });
+      }
 
       // First load: pick the workspace of the most-recent session, unless the
       // user already has a persisted active workspace that still exists.
