@@ -343,7 +343,8 @@ const {
   compactionPanelVisible,
   openCompactionPanel,
   closeCompactionPanel,
-  agentPanelMember,
+  agentPanelMemberStable,
+  agentPanelHold,
   openAgentPanel,
   closeAgentPanel,
   toolDiffTarget,
@@ -1130,8 +1131,8 @@ function openPr(url: string): void {
         @close="closeCompactionPanel"
       />
       <AgentDetailPanel
-        v-else-if="detailTarget === 'agent' && agentPanelMember"
-        :member="agentPanelMember"
+        v-else-if="agentPanelHold"
+        :member="agentPanelMemberStable!"
         :session-id="client.activeSessionId.value ?? undefined"
         :tasks="client.activeAppTasks.value"
         @close="closeAgentPanel"
