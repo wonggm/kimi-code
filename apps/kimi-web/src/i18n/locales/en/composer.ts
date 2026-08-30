@@ -60,4 +60,6 @@ export default {
   noCommands: 'No matching commands',
   slashSheetTitle: 'Commands',
   mentionSheetTitle: 'Files',
+  steerHint: 'Ctrl+S to steer into the running turn',
+
 } as const;
