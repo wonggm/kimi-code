@@ -1,4 +1,5 @@
 export default {
+  quote: 'Quote',
   jumpToLatestAria: 'Jump to latest message',
   toc: 'Conversation outline',
   newMessages: 'Latest messages',
