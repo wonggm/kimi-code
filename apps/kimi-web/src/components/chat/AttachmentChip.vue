@@ -7,9 +7,10 @@
      Tile rule: images show a real thumbnail, videos a play glyph, files a
      neutral file icon with the extension badge next to the name. -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import AuthMedia from './AuthMedia.vue';
+import MediaTip from './MediaTip.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
 import Tooltip from '../ui/Tooltip.vue';
@@ -102,14 +103,88 @@ const ariaLabel = computed(() => {
   else if (props.error) parts.push(stateLabel.value);
   return parts.join(' · ');
 });
+
+// ---------------------------------------------------------------------------
+// Media hover popover (image / video chips only). Delayed show + grace-period
+// hide, with the popover's own enter cancelling the hide — the same
+// flicker-free bridge MentionText uses; moving between chip and popover never
+// bounces the tip. Scroll/resize hides it: the anchor moves out from under the
+// fixed position.
+// ---------------------------------------------------------------------------
+const mediaKind = computed<'image' | 'video' | null>(() =>
+  props.kind === 'image' || props.kind === 'video' ? props.kind : null,
+);
+
+const mediaTipAnchor = ref<DOMRect | null>(null);
+let showTimer: ReturnType<typeof setTimeout> | null = null;
+let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearTipTimers(): void {
+  if (showTimer !== null) clearTimeout(showTimer);
+  if (hideTimer !== null) clearTimeout(hideTimer);
+  showTimer = null;
+  hideTimer = null;
+}
+
+function onTipShowIntent(): void {
+  if (mediaKind.value === null) return;
+  clearTipTimers();
+  showTimer = setTimeout(() => {
+    showTimer = null;
+    mediaTipAnchor.value = chipRef.value?.getBoundingClientRect() ?? null;
+  }, 120);
+}
+
+function onTipHideIntent(): void {
+  clearTipTimers();
+  hideTimer = setTimeout(() => {
+    hideTimer = null;
+    mediaTipAnchor.value = null;
+  }, 140);
+}
+
+function onTipStay(): void {
+  clearTipTimers();
+}
+
+function hideMediaTip(): void {
+  clearTipTimers();
+  mediaTipAnchor.value = null;
+}
+
+function onMediaTipFullscreen(): void {
+  hideMediaTip();
+  emit('activate');
+}
+
+function onViewportChange(): void {
+  if (mediaTipAnchor.value !== null) hideMediaTip();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('scroll', onViewportChange, true);
+  window.addEventListener('resize', onViewportChange);
+}
+onUnmounted(() => {
+  clearTipTimers();
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('scroll', onViewportChange, true);
+    window.removeEventListener('resize', onViewportChange);
+  }
+});
+
+const chipRef = ref<HTMLElement | null>(null);
 </script>
 
 <template>
   <span
+    ref="chipRef"
     class="att-chip"
     :class="{ 'is-error': error, 'is-uploading': uploading, 'is-interrupted': interrupted }"
     :title="title"
     :data-kind="kind"
+    @mouseenter="onTipShowIntent"
+    @mouseleave="onTipHideIntent"
   >
     <button type="button" class="att-activate" :aria-label="ariaLabel" @click="emit('activate')">
       <span class="att-tile">
@@ -143,6 +218,24 @@ const ariaLabel = computed(() => {
         <Icon name="close" size="sm" />
       </button>
     </Tooltip>
+    <Teleport to="body">
+      <MediaTip
+        v-if="mediaKind !== null && mediaTipAnchor !== null"
+        :kind="mediaKind"
+        :name="name"
+        :url="url"
+        :file-id="fileId"
+        :media-type="mediaType"
+        :size="size"
+        :uploading="uploading"
+        :error="error"
+        :interrupted="interrupted"
+        :anchor="mediaTipAnchor"
+        :on-hide="hideMediaTip"
+        :on-stay="onTipStay"
+        @fullscreen="onMediaTipFullscreen"
+      />
+    </Teleport>
   </span>
 </template>
 

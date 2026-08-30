@@ -37,6 +37,7 @@ export default {
   mediaPreviewUploading: 'Uploading — preview when ready',
   mediaPreviewLoading: 'Loading preview…',
   mediaPreviewUnavailable: 'Preview unavailable',
+  mediaPreviewFullscreen: 'View fullscreen',
   /** Secondary hint line beneath the primary composer placeholder. Mirrors
    *  upstream's rich placeholder copy: keyboard shortcuts and a brief tip. */
   /** Accessible label for the composer textarea (announces it as the chat input). */
