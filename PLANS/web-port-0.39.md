@@ -131,9 +131,28 @@ before initialization`) killed setup in dev mode and made `.right-panel` unmount
 (prod compiles `props` accesses to inline `__props`, so prod never threw). Watcher moved
 below the props declaration. This is what blocked session-2's dev-build tracing plan.
 
-Still deferred: media-popover fixes (exact surface unknown — MediaPreview.vue is the
-fullscreen lightbox, not the popover), in-header code toggles (markstream header has no
-slots), comment/quote-to-chat, HTML preview runner.
+Still deferred: in-header code toggles (markstream header has no
+slots), comment/quote-to-chat, HTML preview runner, doodle theming (below), tab-strip
+polish.
+
+**Media popovers — DONE (goal round, commit `45df00019`).** The surface is NOT
+MediaPreview.vue (lightbox) nor any pre-existing popover: upstream 0.39 replaced the
+0.38 `att-strip` with attachment pills + a hover media popover (`mention-tip-media`
+region in the bundle: authed preview blob via `resolveAttachmentPreviewUrl` → object
+URL, states preview/uploading/loading/unavailable, upload progress ring, copy +
+fullscreen actions; the flicker fix = `mouseout` with `relatedTarget` containment in the
+tip + capture-phase pointermove targeting + scroll/focus handling). Our fork never had
+the base popover, so the port = base feature + fix baked in: new `MediaTip.vue`
+(Teleport-to-body, fixed-anchored like MentionTip, `.lg-glass`, AuthMedia preview with a
+new loading/ready/error status emit, spinner placeholders for uploading/loading,
+name+size, fullscreen action → chip `activate`) + `AttachmentChip` hover bridge (120ms
+show / 140ms grace hide, tip-enter cancels hide, scroll/resize hides — same flicker-free
+pattern as MentionText). i18n `composer.mediaPreviewFullscreen` en+zh
+(uploading/loading/unavailable keys already existed). Verified: vue-tsc clean, 961/961
+vitest, capped build green, prod-bundle CDP screenshot on a fresh profile (chip +
+popover with live authed preview + fullscreen button). Upstream interactive comparison
+NOT reproducible headless (their hover-intent machinery never opens the popover under
+CDP event synthesis) — comparison is structural, against the extracted bundle code.
 
 **Doodle theming (OPEN)**: upstream's empty-doodle follows the app theme; ours renders
 one static artboard. Check the upstream bundle for how `empty-doodle` reacts to
@@ -166,3 +185,23 @@ runs with `NODE_OPTIONS=--max-old-space-size=2048`, vitest `--maxWorkers=2`, sin
 heavy command at a time. Never swap `apps/kimi-code/dist-web` while the user's session
 is live — the final `copy-web-assets` step is left for the user (or run with explicit
 approval).
+
+2. **In-header code toggles — DONE (commit `99cb7ba44`).** markstream-vue's built-in
+   CodeBlockNode has no header slot AND our version's settled renderer draws the number
+   gutter via @pierre/diffs inside a SHADOW ROOT with no prop gate (upstream's newer
+   custom CodeBlockNode chunk has `lineNumbers!=="off"`; ours does not). Port shape:
+   new `MarkdownCodeBlock.vue` registered via markstream `setCustomComponents` +
+   `custom-id="kimi-web-chat"` on MarkdownRender — renders our glass header (language
+   label + line-number/wrap/copy buttons) and mounts markstream's CodeBlockNode with
+   showHeader/showCopyButton off. Toggles drive shared persisted refs
+   (`lib/codeBlockPrefs.ts`). Shadow-root gap bridged by injecting a small stylesheet
+   into each block's shadow root and toggling host classes (`:host(.mdcb-lines-off)`
+   hides `[data-gutter]` + collapses the grid; `:host(.mdcb-wrap)`/`:host(.mdcb-nowrap)`
+   flip white-space). Verified: default = wrap on / no gutter; toggled = gutter +
+   horizontal scroll; persisted to storage keys; vue-tsc clean; 962/962 vitest (new
+   codeBlockPrefs test); capped build green; CDP screenshots on the mock stack.
+   NOTE: interactive verification ran against a watcher-free MOCK API server
+   (/tmp/kimi-mock-api.mjs, canned auth/workspaces/sessions/snapshot payloads) because
+   the host's inotify budget is exhausted by the ZCode server (kap-server cannot start;
+   env limit needs `sudo sysctl -w fs.inotify.max_user_watches=1048576` to fix
+   durably). Same mock serves the extracted upstream bundle for side-by-sides.
