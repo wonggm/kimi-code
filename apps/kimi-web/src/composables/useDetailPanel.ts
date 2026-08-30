@@ -153,12 +153,56 @@ export function useDetailPanel({
     return task ? toAgentMember(task) : null;
   });
 
+  // A background task refresh can transiently drop the row the panel is open
+  // for; without a last-known fallback the whole panel unmounts mid-read
+  // (observed: mounted → unmounted ~400ms after Open). Keep the last resolved
+  // member so the pane persists until the user closes it.
+  const lastAgentMember = ref<AgentMember | null>(null);
+  watch(agentPanelMember, (member) => {
+    if (member) lastAgentMember.value = member;
+  });
+  const agentPanelMemberStable = computed<AgentMember | null>(
+    () => agentPanelMember.value ?? lastAgentMember.value,
+  );
+
+  // The pane also unmounted while detailTarget was still 'agent' (mystery
+  // closer: an async detail-layer re-evaluation ~200-400ms after open, with no
+  // removeChild on the .ap element). Latch the pane open once it has actually
+  // rendered with a member; only an explicit user close (close button,
+  // toggle, session switch) clears the latch. Mystery detailTarget flips can
+  // no longer close the pane out from under the user.
+  const agentPanelLatched = ref(false);
+  const agentPanelExplicitClose = ref(false);
+  watch([detailTarget, agentPanelMember], () => {
+    if (detailTarget.value === 'agent' && agentPanelMember.value) {
+      agentPanelLatched.value = true;
+      agentPanelExplicitClose.value = false;
+    }
+    if (detailTarget.value === null) agentPanelLatched.value = false;
+  });
+  const agentPanelHold = computed<boolean>(
+    () =>
+      detailTarget.value === 'agent' &&
+      (agentPanelMember.value !== null ||
+        (agentPanelLatched.value && !agentPanelExplicitClose.value)),
+  );
+
   const agentPanelVisible = computed(() => agentPanelMember.value !== null);
 
+  // A grid re-render around the click can dispatch the open event twice
+  // within a few hundred ms; the second call would hit the toggle branch and
+  // close the panel the user just opened. Debounce same-target re-opens.
+  let lastOpenAt = 0;
+  let lastOpenId: string | undefined;
   function openAgentPanel(target: string): void {
     const subagentId = resolveSubagentId(target);
     if (!subagentId) return;
+    const now = Date.now();
+    if (subagentId === lastOpenId && now - lastOpenAt < 600) return;
+    lastOpenAt = now;
+    lastOpenId = subagentId;
     if (agentTarget.value?.subagentId === subagentId) {
+      agentPanelExplicitClose.value = true;
       agentTarget.value = null;
       if (detailTarget.value === 'agent') detailTarget.value = null;
       return;
@@ -168,6 +212,7 @@ export function useDetailPanel({
   }
 
   function closeAgentPanel(): void {
+    agentPanelExplicitClose.value = true;
     agentTarget.value = null;
     if (detailTarget.value === 'agent') detailTarget.value = null;
   }
@@ -424,6 +469,8 @@ export function useDetailPanel({
     openCompactionPanel,
     closeCompactionPanel,
     agentPanelMember,
+    agentPanelMemberStable,
+    agentPanelHold,
     agentPanelVisible,
     openAgentPanel,
     closeAgentPanel,
