@@ -105,6 +105,31 @@ no SVG-displacement filters, MenuSelect for dropdowns).
 - Next session: run the pixel bench (references re-baseline likely for the new workbar),
   the deferred list above, and the final `copy-web-assets` into the live dist-web.
 
+## OPEN BUG + deferred (2026-08-30, session 2)
+
+**Agent pane self-close (UNFIXED)** — clicking Open on a subagent card mounts
+AgentDetailPanel (`.ap`) then it vanishes ~200-400ms later. Verified server-side fine
+(task rows carry agent_id; `/transcript?agent_id=agent-N` returns items). Hardening that
+did NOT stop it: last-known-member fallback, open debounce, explicit-close latch on the
+App render condition. Instrumentation facts: `Node.removeChild`/`Element.remove` never
+called with `.ap` (removal bypasses both — innerHTML/textContent wipe or class swap?);
+detailTarget transitions could not be observed (root `setupState` unreachable). The
+fresh-profile headless screenshot ALSO shows the right panel rendering at an odd
+x-position (~450px, not right-pinned) — verify whether the containing block for
+`.right-panel`'s `position:absolute` is narrower than expected. NEXT SESSION: reproduce
+with `vue-devtools` or a dev build (not minified) and watch the App branch chain; check
+whether an earlier v-else-if branch (file/diff/toolDiff/btw) steals the layer, and audit
+`useTaskPoller` refresh cycles at ~250ms.
+
+**Still deferred**: media-popover fixes (exact surface unknown — MediaPreview.vue is the
+fullscreen lightbox, not the popover), in-header code toggles (markstream header has no
+slots), comment/quote-to-chat, HTML preview runner.
+
+**Doodle theming (OPEN)**: upstream's empty-doodle follows the app theme; ours renders
+one static artboard. Check the upstream bundle for how `empty-doodle` reacts to
+appearance (two artboards / state input / re-instantiate on theme change) and mirror it
+in EmptyDoodle.vue.
+
 ## USER DECISIONS (2026-08-30, before implementation)
 
 1. **Right sidebar revamp** — follow UPSTREAM's layout (multi-tab right panel: Changes /
