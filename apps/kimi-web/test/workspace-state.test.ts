@@ -1452,6 +1452,9 @@ describe('useWorkspaceState — session list loading', () => {
     const { state, deps, workspaceState } = createSessionLoadRig([cached, staleCurrent]);
 
     await workspaceState.load();
+    // The 0.39 startup split loads the remaining workspaces after first paint —
+    // flush the background continuation before asserting merged state.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(state.sessions.map((session) => session.id)).toEqual(['sess_fresh', 'sess_cached']);
     expect(deps.pushOperationFailure).toHaveBeenCalledOnce();
@@ -1488,6 +1491,9 @@ describe('useWorkspaceState — session list loading', () => {
     const { state, deps, workspaceState } = createSessionLoadRig([cached]);
 
     await workspaceState.load();
+    // The 0.39 startup split loads the remaining workspaces after first paint —
+    // flush the background continuation before asserting merged state.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(state.sessions.map((session) => session.id)).toEqual(['sess_fresh', 'sess_cached']);
     expect(deps.pushOperationFailure).toHaveBeenCalledOnce();
