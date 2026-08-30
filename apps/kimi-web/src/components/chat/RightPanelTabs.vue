@@ -31,30 +31,6 @@ import {
 
 const { t } = useI18n();
 
-// PTY availability probe (per session, cached). Upstream 0.39 restricts
-// terminal routes to loopback-bound servers; when kimi web binds 0.0.0.0 the
-// daemon answers 403/404 and the tab must say so instead of a dead terminal.
-const terminalProbe = ref<'pending' | 'ok' | 'unavailable'>('pending');
-let probedSession: string | undefined;
-watch(
-  () => props.sessionId,
-  async (sid) => {
-    if (sid === undefined || sid === probedSession) return;
-    probedSession = sid;
-    terminalProbe.value = 'pending';
-    try {
-      const r = await fetch(
-        `/api/v1/sessions/${encodeURIComponent(sid)}/terminals`,
-        { headers: { authorization: `Bearer ${(location.hash.match(/token=([^&]+)/)?.[1]) ?? ''}` } },
-      );
-      terminalProbe.value = r.ok ? 'ok' : 'unavailable';
-    } catch {
-      terminalProbe.value = 'ok';
-    }
-  },
-  { immediate: true },
-);
-
 const props = defineProps<{
   /** Tab requested from outside (workbar squares). When it changes, the
    *  panel switches to it — without this the workbar opens the panel on
@@ -106,6 +82,32 @@ const emit = defineEmits<{
 // page refreshes. Loaded once on mount; writes are debounced via watch.
 // ---------------------------------------------------------------------------
 const activeTab = ref<RightPanelTab>(coerceRightPanelTab(safeGetString(STORAGE_KEYS.rightPanelActiveTab)));
+
+// PTY availability probe (per session, cached). Upstream 0.39 restricts
+// terminal routes to loopback-bound servers; when kimi web binds 0.0.0.0 the
+// daemon answers 403/404 and the tab must say so instead of a dead terminal.
+// Must stay below the props declaration: the immediate callback reads
+// props.sessionId synchronously during setup.
+const terminalProbe = ref<'pending' | 'ok' | 'unavailable'>('pending');
+let probedSession: string | undefined;
+watch(
+  () => props.sessionId,
+  async (sid) => {
+    if (sid === undefined || sid === probedSession) return;
+    probedSession = sid;
+    terminalProbe.value = 'pending';
+    try {
+      const r = await fetch(
+        `/api/v1/sessions/${encodeURIComponent(sid)}/terminals`,
+        { headers: { authorization: `Bearer ${(location.hash.match(/token=([^&]+)/)?.[1]) ?? ''}` } },
+      );
+      terminalProbe.value = r.ok ? 'ok' : 'unavailable';
+    } catch {
+      terminalProbe.value = 'ok';
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.activeTab,

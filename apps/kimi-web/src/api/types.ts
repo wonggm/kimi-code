@@ -415,9 +415,20 @@ export interface TranscriptTurn {
   endedAt?: string;
 }
 
+/** Non-turn transcript stream item — compaction/undo markers carry no steps. */
+export interface TranscriptMarkerItem {
+  kind: 'marker';
+  markerId: string;
+  marker: string;
+  payload?: unknown;
+  at?: string;
+}
+
+export type TranscriptItem = TranscriptTurn | TranscriptMarkerItem;
+
 export interface TranscriptPage {
   agentId: string;
-  items: TranscriptTurn[];
+  items: TranscriptItem[];
   hasMore: boolean;
   seq?: number;
 }
