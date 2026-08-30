@@ -36,6 +36,7 @@ export default {
   mediaPreviewUploading: '上传中 —— 预览就绪后显示',
   mediaPreviewLoading: '正在加载预览…',
   mediaPreviewUnavailable: '预览不可用',
+  mediaPreviewFullscreen: '全屏查看',
   /** 主占位符下方的副提示行，镜像上游的富占位符样式，展示快捷键与简短提示。 */
   /** 输入框的可访问标签（向屏幕阅读器宣告为聊天输入框）。 */
   inputLabel: '消息输入',

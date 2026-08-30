@@ -26,6 +26,11 @@ const props = withDefaults(
   { mediaClass: 'u-img', controls: true, muted: false },
 );
 
+/** Optional lifecycle signal for hosts that render a loading placeholder:
+ *  'loading' from the authed fetch start, 'ready' once the element decoded,
+ *  'error' when the fetch or decode failed. */
+const emit = defineEmits<{ status: ['loading' | 'ready' | 'error'] }>();
+
 const resolvedUrl = ref<string>(props.fileId ? '' : props.url);
 const mediaEl = ref<HTMLElement | null>(null);
 // Flips true once the element nears the viewport, deferring the authenticated
@@ -51,6 +56,7 @@ function revoke(): void {
 async function resolve(): Promise<void> {
   const seq = ++requestSeq;
   revoke();
+  if (props.fileId) emit('status', 'loading');
   if (!props.fileId) {
     resolvedUrl.value = props.url;
     return;
@@ -69,7 +75,15 @@ async function resolve(): Promise<void> {
     if (disposed || seq !== requestSeq) return;
     // Honest broken-media state beats a blank box if the authenticated fetch fails.
     resolvedUrl.value = props.url;
+    emit('status', 'error');
   }
+}
+
+function onReady(): void {
+  emit('status', 'ready');
+}
+function onError(): void {
+  emit('status', 'error');
 }
 
 watch(() => [props.fileId, props.url, visible.value] as const, resolve, { immediate: true });
@@ -110,6 +124,8 @@ onBeforeUnmount(() => {
     :muted="muted"
     playsinline
     preload="metadata"
+    @loadeddata="onReady"
+    @error="onError"
   />
   <img
     v-else
@@ -118,5 +134,7 @@ onBeforeUnmount(() => {
     :src="resolvedUrl || undefined"
     :alt="alt || ''"
     loading="lazy"
+    @load="onReady"
+    @error="onError"
   />
 </template>
