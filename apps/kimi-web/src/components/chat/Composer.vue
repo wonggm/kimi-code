@@ -1415,6 +1415,11 @@ function selectModel(modelId: string): void {
 
         </div>
 
+        <!-- Steer hint: visible while a turn runs — the overlay hint only
+             shows on an empty box, which is exactly when you can't see it
+             while composing a steer. -->
+        <span v-if="running" class="steer-hint">{{ t('composer.steerHint') }}</span>
+
         <!-- Right: ctx + model -->
         <div class="toolbar-right">
           <!-- Compact chip when context is high -->
@@ -1741,6 +1746,7 @@ function selectModel(modelId: string): void {
 
 /* Input row */
 .input-row {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
@@ -1787,6 +1793,7 @@ function selectModel(modelId: string): void {
   font-family: var(--font-ui);
   font-size: var(--content-font-size);
   background: transparent;
+  padding: 9px 14px 0;
   min-height: 36px;
   max-height: calc(100vh / 4);
   overflow-y: auto;
@@ -1814,9 +1821,12 @@ function selectModel(modelId: string): void {
   inset: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  align-items: flex-start;
   gap: 2px;
-  padding: 0;
+  /* must match .ph's padding exactly so the placeholder starts on the same
+     pixel the caret does when typing begins */
+  padding: 9px 14px 0;
   color: var(--muted);
   font-family: var(--font-ui);
   font-size: var(--content-font-size);
@@ -1972,6 +1982,15 @@ function selectModel(modelId: string): void {
   pointer-events: none;
 }
 
+.steer-hint {
+  margin-left: auto;
+  margin-right: var(--space-2);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
 .toolbar-left,
 .toolbar-right {
   display: flex;
