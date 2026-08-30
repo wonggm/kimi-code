@@ -43,6 +43,29 @@ const innerProps = computed<Record<string, unknown>>(() => {
   };
 });
 
+// HTML preview runner (0.39 code-block-interaction): html/html-vue blocks get
+// a Preview button in our header. markstream's own overlay is unreachable here
+// (its trigger lives in the header we disable), so the runner is ours: a
+// sandboxed srcdoc iframe that only exists while open (close = stop).
+// `allow-scripts` without `allow-same-origin` keeps the document on an opaque
+// origin — scripts run, but they cannot reach our origin's storage or DOM.
+const isPreviewable = computed(() => language.value === 'html' || language.value === 'html-vue');
+const previewOpen = ref(false);
+
+function openPreview(): void {
+  previewOpen.value = true;
+}
+function closePreview(): void {
+  previewOpen.value = false;
+}
+function onPreviewKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') closePreview();
+}
+watch(previewOpen, (open) => {
+  if (open) window.addEventListener('keydown', onPreviewKeydown);
+  else window.removeEventListener('keydown', onPreviewKeydown);
+});
+
 // ---------------------------------------------------------------------------
 // Shadow-root overrides. The settled code renderer draws inside a shadow root
 // (markstream's @pierre/diffs grid), which light-DOM CSS cannot reach, and our
@@ -100,6 +123,7 @@ onMounted(() => {
 onUnmounted(() => {
   shadowObserver?.disconnect();
   shadowObserver = null;
+  window.removeEventListener('keydown', onPreviewKeydown);
 });
 
 const copied = ref(false);
@@ -122,12 +146,22 @@ async function onCopy(): Promise<void> {
       <span class="mdcb-lang">{{ language }}</span>
       <span class="mdcb-actions">
         <button
+          v-if="isPreviewable"
+          type="button"
+          class="mdcb-btn"
+          :aria-label="t('common.preview')"
+          :title="t('common.preview')"
+          @click="openPreview"
+        >
+          <Icon name="play" size="sm" />
+        </button>
+        <button
           type="button"
           class="mdcb-btn"
           :class="{ active: codeLineNumbers }"
           :aria-pressed="codeLineNumbers"
-          :aria-label="t('markdown.toggleLineNumbers')"
-          :title="t('markdown.toggleLineNumbers')"
+          :aria-label="t('common.toggleLineNumbers')"
+          :title="t('common.toggleLineNumbers')"
           @click="toggleLineNumbers"
         >
           <Icon name="list" size="sm" />
@@ -137,8 +171,8 @@ async function onCopy(): Promise<void> {
           class="mdcb-btn"
           :class="{ active: codeWrap }"
           :aria-pressed="codeWrap"
-          :aria-label="t('markdown.toggleWordWrap')"
-          :title="t('markdown.toggleWordWrap')"
+          :aria-label="t('common.toggleWordWrap')"
+          :title="t('common.toggleWordWrap')"
           @click="toggleWrap"
         >
           <Icon name="text-wrap" size="sm" />
@@ -155,6 +189,31 @@ async function onCopy(): Promise<void> {
       </span>
     </div>
     <CodeBlockNode ref="codeRef" v-bind="innerProps" :node="node" />
+    <Teleport to="body">
+      <div v-if="previewOpen" class="mdcb-preview-backdrop" @click="closePreview">
+        <div class="mdcb-preview lg-glass" role="dialog" :aria-label="t('common.preview')" @click.stop>
+          <div class="mdcb-preview-head">
+            <span class="mdcb-preview-dot" aria-hidden="true" />
+            <span class="mdcb-preview-title">{{ t('common.preview') }}</span>
+            <button
+              type="button"
+              class="mdcb-btn"
+              :aria-label="t('common.cancel')"
+              :title="t('common.cancel')"
+              @click="closePreview"
+            >
+              <Icon name="close" size="sm" />
+            </button>
+          </div>
+          <iframe
+            class="mdcb-preview-frame"
+            sandbox="allow-scripts"
+            referrerpolicy="no-referrer"
+            :srcdoc="rawCode"
+          />
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -206,5 +265,56 @@ async function onCopy(): Promise<void> {
 .mdcb-btn:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
+}
+
+/* HTML preview runner overlay. Teleported to body; the backdrop is a plain
+   translucent layer and the frame is a separate .lg-glass element, so Firefox
+   never sees a backdrop-filter nested inside another filtered element. */
+.mdcb-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: rgba(10, 14, 20, 0.45);
+}
+.mdcb-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 92vw);
+  height: min(680px, 86vh);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.mdcb-preview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px 6px 14px;
+  border-bottom: 1px solid var(--color-line);
+  font: var(--text-xs) var(--font-ui);
+  color: var(--color-text-muted);
+}
+.mdcb-preview-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex: none;
+}
+.mdcb-preview-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mdcb-preview-frame {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  background: #fff;
 }
 </style>
