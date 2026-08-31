@@ -154,10 +154,18 @@ popover with live authed preview + fullscreen button). Upstream interactive comp
 NOT reproducible headless (their hover-intent machinery never opens the popover under
 CDP event synthesis) — comparison is structural, against the extracted bundle code.
 
-**Doodle theming (OPEN)**: upstream's empty-doodle follows the app theme; ours renders
-one static artboard. Check the upstream bundle for how `empty-doodle` reacts to
-appearance (two artboards / state input / re-instantiate on theme change) and mirror it
-in EmptyDoodle.vue.
+**Doodle theming — DONE (goal round, commit `f9138c9d0`).** Upstream's mechanism
+(KimiDoodle in the bundle): the k3_doodle1 riv's first state machine has a numeric
+`light/dark` input; on load upstream plays the state machine and sets the input from
+its theme ref (dark = 1), re-applying via a theme watcher inside a rAF. Mirrored in
+EmptyDoodle.vue: `rive.play(stateMachineNames[0])` on load, then the input is found
+via `stateMachineInputs(sm)` and driven from our `useIsDark()` singleton (which
+resolves the three-state `data-color-scheme` against the OS preference and tracks
+both), re-applied on every flip. The reduced-motion / wasm-failure path still falls
+back to the plain title text. Verified: vue-tsc clean, 962/962 vitest, capped build,
+CDP screenshots on fresh profiles — light vs dark wordmark visibly flips (side-by-side
+with the upstream bundle, same behavior), and the emulated reduced-motion run shows
+the "Kimi Code" text fallback with the canvas hidden.
 
 ## USER DECISIONS (2026-08-30, before implementation)
 
