@@ -133,7 +133,8 @@ below the props declaration. This is what blocked session-2's dev-build tracing 
 
 Still deferred: in-header code toggles (markstream header has no
 slots), comment/quote-to-chat, HTML preview runner, doodle theming (below), tab-strip
-polish.
+polish — ALL SIX since cleared in the goal round (verdicts below; tab-strip polish is
+item 6 at the end of this list).
 
 **Media popovers — DONE (goal round, commit `45df00019`).** The surface is NOT
 MediaPreview.vue (lightbox) nor any pre-existing popover: upstream 0.39 replaced the
@@ -166,6 +167,25 @@ back to the plain title text. Verified: vue-tsc clean, 962/962 vitest, capped bu
 CDP screenshots on fresh profiles — light vs dark wordmark visibly flips (side-by-side
 with the upstream bundle, same behavior), and the emulated reduced-motion run shows
 the "Kimi Code" text fallback with the canvas hidden.
+
+**Right-panel tab-strip polish — DONE (goal round, commit `b2c937cf8`).** Upstream's
+PanelTabBar is a browser-like labeled-tab system (28px `--panel-tab-h` pills, 2px gaps,
+per-tab close, +/expand/hide tail, panel default `--panel-default-w: 460px`); ours stays
+the fixed icon-only strip per the user decision, so the polish adopts the measurable
+rhythm, not the layout: tabs 32px → 28px inside the shared `--panel-head-h` (48px) bar
+with `--space-1` gaps and token padding (was hardcoded 6px/8px, 44px tall), dot anchors
+re-seated for the smaller buttons, and the panel widened 400px → `min(460px, 94vw)` to
+match the upstream default. Dot correctness fix baked in: the Terminal tab's has-content
+dot now also requires the PTY probe to be reachable (previously any open session lit it,
+even when the daemon answered loopback-only). No new strings (tabs keep their existing
+tooltips/aria-labels en+zh); no backdrop-filter/SVG-filter changes, so the Firefox
+constraints are untouched. Verified: vue-tsc clean, 962/962 vitest, capped build green,
+CDP probe on the mock stack (rebuilt under `.tmp/mock-replay/` after another /tmp wipe,
+now with a `/tasks` route so bash/subagent content exists) — measured ours: bar 48px,
+tabs 28×28, gap 4px, panel 460px at top 56/right 8, dots on Changes/Turn diff/Terminal/
+Bash/Sub agents and correctly absent on empty Side chat/Todos; upstream measured on the
+same mock: 28px labeled tab, 2px gap, panel open on Changes. Screenshots in
+`.tmp/mock-replay/shots/` (ours-panel-bash/changes, up-panel).
 
 ## USER DECISIONS (2026-08-30, before implementation)
 
