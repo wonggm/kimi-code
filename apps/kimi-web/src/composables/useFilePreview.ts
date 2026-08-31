@@ -180,10 +180,23 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     };
     // The raw URL 401s under daemon auth (browsers load media without the
     // Bearer token), so fetch the bytes with auth and preview a blob URL.
+    // Prompt-attached session_media ids only resolve on the session-scoped
+    // route; the generic /files call 404s for them.
     if (media.fileId) {
+      const sid = client.activeSessionId.value;
+      const fetchBlob = media.sessionMedia
+        ? sid
+          ? () => getKimiWebApi().getSessionMediaBlob(sid, media.fileId!)
+          : undefined
+        : () => getKimiWebApi().getFileBlob(media.fileId!);
       previewLoading.value = true;
       previewFile.value = base;
-      void getKimiWebApi().getFileBlob(media.fileId).then((blob) => {
+      if (!fetchBlob) {
+        previewLoading.value = false;
+        previewFile.value = isPlayableMediaUrl(media.url) ? { ...base, sourceUrl: media.url } : base;
+        return;
+      }
+      void fetchBlob().then((blob) => {
         if (seq !== previewRequestSeq) return;
         // The user may have switched to another detail panel while this was in
         // flight — don't create (and leak) a blob URL for a hidden panel.
