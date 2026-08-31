@@ -1793,7 +1793,7 @@ function selectModel(modelId: string): void {
   font-family: var(--font-ui);
   font-size: var(--content-font-size);
   background: transparent;
-  padding: 9px 14px 0;
+  padding: 9px 14px 0 0;
   min-height: 36px;
   max-height: calc(100vh / 4);
   overflow-y: auto;
@@ -1825,8 +1825,10 @@ function selectModel(modelId: string): void {
   align-items: flex-start;
   gap: 2px;
   /* must match .ph's padding exactly so the placeholder starts on the same
-     pixel the caret does when typing begins */
-  padding: 9px 14px 0;
+     pixel the caret does when typing begins. Left padding is zero: the
+     textarea's box edge already sits on the toolbar's + icon x-position, so
+     the text aligns with that glyph (upstream's uniform composer inset). */
+  padding: 9px 14px 0 0;
   color: var(--muted);
   font-family: var(--font-ui);
   font-size: var(--content-font-size);
