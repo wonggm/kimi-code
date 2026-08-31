@@ -823,7 +823,7 @@ html[data-liquid-glass="on"] .side .col {
    was teleported). Instead it is lifted out of flow as an overlay on the
    conversation column: the chat scroller extends to the very top of the
    column and message text physically passes UNDER the bar, where the
-   .chat-layout::before blur band (ConversationPane.vue) blurs it as it goes. */
+   .chat-main::before blur band (ConversationPane.vue) blurs it as it goes. */
 html[data-liquid-glass="on"] .chat-header {
   position: absolute;
   top: 0;
@@ -889,7 +889,7 @@ html[data-liquid-glass="on"] .model-dropdown .effort-segments {
 /* Settings-dialog controls — same glass material as the composer pills
    (text-colour tint + refraction rim), but no backdrop-filter: they sit on
    the frosted dialog panel, so there is nothing behind them to blur (and
-   nested backdrop-filter renders nothing in Firefox). Scoped to the settings
+   nested backdrop-filter renders nothing in Firefox and Chromium). Scoped to the settings
    root (.sd); the primary CTA keeps its solid accent fill, like the
    composer's Send button. Existing border-radius is kept — settings controls
    stay rectangular. */
@@ -958,19 +958,18 @@ html[data-liquid-glass="on"] .dock-workbar button.ui-pill.is-active {
   --lg-glass-tint-top: color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
-/* Firefox: a backdrop-filter nested inside another backdrop-filter element
-   silently renders nothing — every menu inside the frosted composer card
-   (slash, mention, model, permission) showed sharp, unblurred text behind it
-   in Firefox while Chromium rendered the same stack correctly. The card's
-   own blur is invisible anyway (nothing scrolls beneath the composer — its
-   backdrop is only the page background), so drop it in Gecko and the nested
-   menus blur correctly. Chromium keeps the card blur. Doubled class to
-   outrank the `.lg-frost.lg-frost` base rule. */
-@supports (-moz-appearance: none) {
-  html[data-liquid-glass="on"] .composer-card.lg-frost.lg-frost {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+/* A backdrop-filter nested inside another backdrop-filter element silently
+   renders nothing — every menu inside the frosted composer card (slash,
+   mention, model, permission) shows sharp, unblurred text behind it. This was
+   first worked around for Firefox only, but current Chromium drops the nested
+   filter the same way. The card's own blur is invisible anyway (nothing
+   scrolls beneath the composer — its backdrop is only the page background,
+   already frosted by the dock blur band), so drop it in every engine and the
+   nested menus blur correctly. Doubled class to outrank the
+   `.lg-frost.lg-frost` base rule. */
+html[data-liquid-glass="on"] .composer-card.lg-frost.lg-frost {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Wide screen mode — settings toggle writes data-wide-mode on <html>. The

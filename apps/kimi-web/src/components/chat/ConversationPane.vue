@@ -1567,9 +1567,14 @@ defineExpose({ loadComposerForEdit, focusComposer });
 
 <template>
   <section class="con" :class="{ mobile }">
-    <!-- Chat context header: workspace/session, git status, open-in-editor,
-         copy-all, PR. Hidden for the empty-composer (no session context yet). -->
-    <ChatHeader
+    <div class="chat-layout" :style="{ '--dock-height': `${dockHeight}px` }">
+      <!-- Chat column: header + transcript + dock. A sibling wrapper so the
+           right panel can dock as a second in-flow column (upstream 0.39
+           behavior) instead of floating over the transcript. -->
+      <div class="chat-main">
+      <!-- Chat context header: workspace/session, git status, open-in-editor,
+           copy-all, PR. Hidden for the empty-composer (no session context yet). -->
+      <ChatHeader
       v-if="!mobile && !(turns.length === 0 && !sessionLoading)"
       :session-id="sessionId"
       :workspace-name="workspaceName"
@@ -1607,7 +1612,6 @@ defineExpose({ loadComposerForEdit, focusComposer });
       @select="scrollToTurn"
     />
 
-    <div class="chat-layout" :style="{ '--dock-height': `${dockHeight}px` }">
       <div
         :ref="bindChatPane"
         class="panes chat-scroll"
@@ -1769,36 +1773,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
         </div>
       </div>
       <!-- Right-side multi-tab panel (0.39 port): Changes / Side chat /
-           Turn diff / Terminal / task lists. Frosted second column. -->
-      <Transition name="sheet">
-        <RightPanelTabs
-          v-if="activePanelTab !== null"
-          class="right-panel"
-          :active-tab="activePanelTab"
-          :turns="turns"
-          :changed-files="changedFiles"
-          :plan-entry="latestPlan"
-          :plan-mode="planMode"
-          :todos="todos"
-          :bash-tasks="bashTasks"
-          :subagent-tasks="subagentTasks"
-          :open-file="(target) => emit('openFile', target)"
-          :side-chat="{
-            turns: props.sideChatTurns ?? [],
-            running: props.sideChatRunning ?? false,
-            sending: props.sideChatSending ?? false,
-          }"
-          :terminal-available="sessionId !== undefined"
-          :session-id="sessionId"
-          @update:active-tab="activePanelTab = $event"
-          @close="closeRightPanel()"
-          @side-chat-send="emit('sideChatSend', $event)"
-          @cancel-task="emit('cancelTask', $event)"
-          @detach-task="emit('detachTask', $event)"
-          @open-agent="emit('openAgent', $event)"
-          @open-changed-file="(target) => emit('openFile', target)"
-        />
-      </Transition>
+           Turn diff / Terminal / task lists. Docked second column, moved
+           after the dock — see the end of .chat-layout. -->
       <ChatDock
         v-if="!(turns.length === 0 && !sessionLoading)"
         :ref="bindChatDock"
@@ -1862,33 +1838,68 @@ defineExpose({ loadComposerForEdit, focusComposer });
           @pick-model="emit('pickModel')"
           @select-model="emit('selectModel', $event)"
       />
-    </div>
 
-    <!-- "New messages" pill — only visible when scrolled up and new content arrives. -->
-    <Transition name="pill">
-      <button
-        v-if="showPill"
-        class="newmsg-pill"
-        :style="{ bottom: `${dockHeight + 12}px` }"
-        :aria-label="t('conversation.jumpToLatestAria')"
-        @click="scrollToBottom(true)"
-      >
-        <Icon class="pill-chevron" name="chevron-down" size="md" />
-        {{ t('conversation.newMessages') }}
-      </button>
-    </Transition>
+      <!-- "New messages" pill — only visible when scrolled up and new content arrives. -->
+      <Transition name="pill">
+        <button
+          v-if="showPill"
+          class="newmsg-pill"
+          :style="{ bottom: `${dockHeight + 12}px` }"
+          :aria-label="t('conversation.jumpToLatestAria')"
+          @click="scrollToBottom(true)"
+        >
+          <Icon class="pill-chevron" name="chevron-down" size="md" />
+          {{ t('conversation.newMessages') }}
+        </button>
+      </Transition>
 
-    <!-- Manual-abort toast: shown when the user presses Escape to stop a prompt -->
-    <Transition name="abort-toast">
-      <div
-        v-if="abortToastVisible"
-        class="abort-toast"
-        role="status"
-        aria-live="polite"
-      >
-        <span class="abort-toast-text">{{ t('conversation.manuallyAborted') }}</span>
+      <!-- Manual-abort toast: shown when the user presses Escape to stop a prompt -->
+      <Transition name="abort-toast">
+        <div
+          v-if="abortToastVisible"
+          class="abort-toast"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="abort-toast-text">{{ t('conversation.manuallyAborted') }}</span>
+        </div>
+      </Transition>
       </div>
-    </Transition>
+
+      <!-- Right-side multi-tab panel (0.39 port): Changes / Side chat /
+           Turn diff / Terminal / task lists. Docked as an in-flow second
+           column (upstream behavior) — the chat column shrinks to make room
+           instead of the panel floating over the transcript. -->
+      <Transition name="sheet">
+        <RightPanelTabs
+          v-if="activePanelTab !== null"
+          class="right-panel"
+          :active-tab="activePanelTab"
+          :turns="turns"
+          :changed-files="changedFiles"
+          :plan-entry="latestPlan"
+          :plan-mode="planMode"
+          :todos="todos"
+          :bash-tasks="bashTasks"
+          :subagent-tasks="subagentTasks"
+          :open-file="(target) => emit('openFile', target)"
+          :side-chat="{
+            turns: props.sideChatTurns ?? [],
+            running: props.sideChatRunning ?? false,
+            sending: props.sideChatSending ?? false,
+          }"
+          :terminal-available="sessionId !== undefined"
+          :session-id="sessionId"
+          @update:active-tab="activePanelTab = $event"
+          @close="closeRightPanel()"
+          @side-chat-send="emit('sideChatSend', $event)"
+          @cancel-task="emit('cancelTask', $event)"
+          @detach-task="emit('detachTask', $event)"
+          @open-agent="emit('openAgent', $event)"
+          @open-changed-file="(target) => emit('openFile', target)"
+        />
+      </Transition>
+    </div>
   </section>
 </template>
 
@@ -1920,7 +1931,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
    hard-clipped. Pure compositing (mask is paint-only, no layout or input
    impact, no backdrop-filter). Gated behind the liquid-glass toggle.
    The bottom fade is short on purpose: the frost layer below
-   (.chat-layout::after) makes text illegible before the mask makes it
+   (.chat-main::after) makes text illegible before the mask makes it
    invisible, so a long eased tail here would only re-introduce the grey
    ghost-text look the frost replaced. */
 html[data-liquid-glass="on"] .panes {
@@ -1940,12 +1951,13 @@ html[data-liquid-glass="on"] .panes {
    scroller extends beneath it, so message text physically passes under the
    bar. This band blurs that underlaying text: full strength across the
    48px header zone, then fading out over the next 48px so it blends into
-   the vignette instead of ending in a hard edge. An overlay on .chat-layout
-   (not a .panes pseudo, which would scroll with the content); the header
+   the vignette instead of ending in a hard edge. An overlay on .chat-main
+   (not a .panes pseudo, which would scroll with the content), so it spans
+   the chat column only and never blurs the docked right panel; the header
    itself stays filter-free so it never captures fixed-position menus.
    Blur runs a step stronger than the .lg-glass dropdowns (14px vs 8px) —
    the band is the one place the user asked to read as clearly blurred. */
-html[data-liquid-glass="on"] .chat-layout::before {
+html[data-liquid-glass="on"] .chat-main::before {
   content: '';
   position: absolute;
   top: 0;
@@ -1973,9 +1985,9 @@ html[data-liquid-glass="on"] .chat-layout::before {
    transcript never extends under the dock — sibling layout), so the
    per-frame raster cost of the backdrop-filter stays confined to the top
    72px strip — the same cost class as the top band (style.css perf: WS-1A).
-   Same placement rule as the top band: on .chat-layout, never on .panes
+   Same placement rule as the top band: on .chat-main, never on .panes
    (a .panes pseudo would scroll with the content). */
-html[data-liquid-glass="on"] .chat-layout::after {
+html[data-liquid-glass="on"] .chat-main::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -2010,47 +2022,67 @@ html[data-liquid-glass="on"] .panes.has-header {
   padding-top: var(--panel-head-h, 48px);
 }
 
-/* Chat tab layout: the message list scrolls, while the dock stays as the
-   bottom sibling inside the same chat pane. */
+/* Chat tab layout: the chat column (header + message list + dock) sits in
+   .chat-main; the right panel docks as an in-flow second column next to it
+   (upstream 0.39 behavior), so opening the panel shrinks the chat column
+   instead of floating a card over the transcript. */
 .chat-layout {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   min-height: 0;
   position: relative;
 }
 
-/* Right-side multi-tab panel (0.39 port) — frosted second column overlaying
-   the reading column's right edge, below the overlay header and above the
-   dock. Tint-only controls inside (Firefox: no nested backdrop-filter).
-   Width matches the upstream panel's --panel-default-w (460px). */
+.chat-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* Query container for everything in the chat column (ChatPane's
+     @container rules, the TOC's cqi cap) so those track the column width
+     left over after the panel docks, not the full .con width. */
+  container-type: inline-size;
+}
+
+/* Right-side multi-tab panel (0.39 port) — docked second column, flush with
+   the window's top/right/bottom edges like upstream's panel; the chat
+   header overlay (glass-on) spans .chat-main only, so the panel reaches the
+   very top with its own 48px tab bar beside the header. Tint-only controls
+   inside (no nested backdrop-filter in Firefox or Chromium). Width matches
+   the upstream panel's --panel-default-w (460px). */
 .right-panel {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  bottom: calc(var(--dock-height, 0px) + var(--space-2));
+  flex: none;
   width: min(460px, 94vw);
-  z-index: calc(var(--z-modal) - 10);
-  border-radius: var(--radius-lg);
+  min-height: 0;
+  border-left: 1px solid var(--border);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 html[data-liquid-glass="on"] .right-panel {
-  /* Glass-on renders the chat header as a transparent overlay anchored to
-     the top of .chat-layout — the panel must clear it (glass-off keeps the
-     header in normal flow, so plain --space-2 is correct there). */
-  top: calc(48px + var(--space-2));
   background: color-mix(in srgb, var(--panel) 58%, transparent);
   backdrop-filter: blur(34px) saturate(180%);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
 }
 
 html:not([data-liquid-glass="on"]) .right-panel {
   background: var(--panel);
+}
+
+/* Mobile (≤640px): no room for a docked column — keep the old floating
+   card over the transcript (no header is rendered on mobile, so --space-2
+   is the right top inset in both glass modes). */
+.con.mobile .right-panel {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  bottom: calc(var(--dock-height, 0px) + var(--space-2));
+  z-index: calc(var(--z-modal) - 10);
   border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
 }
 .chat-scroll {
@@ -2311,7 +2343,7 @@ html:not([data-liquid-glass="on"]) .right-panel {
 /* Liquid glass: the pill floats over the bottom vignette/blur zone, so give
    it the same frost as the dock chips instead of letting faded text read
    through a flat wash. Sibling of the bands (not nested), so the extra
-   backdrop-filter is safe in Firefox. */
+   backdrop-filter is safe in Firefox and Chromium. */
 html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill {
   background: color-mix(in srgb, var(--panel) 68%, transparent);
   -webkit-backdrop-filter: blur(8px) saturate(170%) brightness(1.04);

@@ -209,7 +209,9 @@ const toolExpandState = new Map<string, boolean>();
 provide('toolExpandState', toolExpandState);
 
 // foldTick: bumps whenever a fold toggle lands. The fold-state Map is plain
-// (not reactive) and is mutated in place by ToolFoldRow's click handler; we
+// (not reactive) and is mutated in place by onFoldToggle below (ToolFoldRow's
+// click only emits — the write MUST stay single-writer here, a second write
+// in the child would flip the key twice and the fold would never open); we
 // don't want the fold-state Map reactive either (the eviction survival story
 // would break — see toolExpandState comment), so we instead invalidate the
 // computed `expandedFolds` by touching this counter on every change.
@@ -973,7 +975,10 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
          when one of the row-level inputs below changed. `ti` is REQUIRED
          because isAssistantRunEnd(ti) / copyAssistantRun(ti) capture the
          index — older-history prepends shift every index, costing one full
-         re-render of the transcript per prepend (acceptable). -->
+         re-render of the transcript per prepend (acceptable). `foldTick` is
+         REQUIRED because toolExpandState is a plain Map (non-reactive on
+         purpose, so expanded state survives turn eviction) — bumping the
+         tick is the only signal that a fold chip's expanded state changed. -->
     <template
       v-for="(turn, ti) in turns"
       :key="turn.id"
@@ -988,6 +993,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         turn.id === lastUserTurnId,
         working,
         locale,
+        foldTick,
       ]"
     >
       <!-- User turn → right-aligned soft-blue bubble (undo affordance lives

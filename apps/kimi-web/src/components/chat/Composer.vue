@@ -1415,11 +1415,6 @@ function selectModel(modelId: string): void {
 
         </div>
 
-        <!-- Steer hint: visible while a turn runs — the overlay hint only
-             shows on an empty box, which is exactly when you can't see it
-             while composing a steer. -->
-        <span v-if="running" class="steer-hint">{{ t('composer.steerHint') }}</span>
-
         <!-- Right: ctx + model -->
         <div class="toolbar-right">
           <!-- Compact chip when context is high -->
@@ -1793,7 +1788,10 @@ function selectModel(modelId: string): void {
   font-family: var(--font-ui);
   font-size: var(--content-font-size);
   background: transparent;
-  padding: 9px 14px 0 0;
+  /* No top padding: the card's own inset already places the editor row, and
+     upstream's contenteditable has zero editor padding — the 9px here pushed
+     both placeholder and typed text below the upstream text origin. */
+  padding: 0 14px 0 0;
   min-height: 36px;
   max-height: calc(100vh / 4);
   overflow-y: auto;
@@ -1828,7 +1826,7 @@ function selectModel(modelId: string): void {
      pixel the caret does when typing begins. Left padding is zero: the
      textarea's box edge already sits on the toolbar's + icon x-position, so
      the text aligns with that glyph (upstream's uniform composer inset). */
-  padding: 9px 14px 0 0;
+  padding: 0 14px 0 0;
   color: var(--muted);
   font-family: var(--font-ui);
   font-size: var(--content-font-size);
@@ -1984,15 +1982,6 @@ function selectModel(modelId: string): void {
   pointer-events: none;
 }
 
-.steer-hint {
-  margin-left: auto;
-  margin-right: var(--space-2);
-  color: var(--dim);
-  font-size: 11px;
-  line-height: 1;
-  white-space: nowrap;
-  user-select: none;
-}
 .toolbar-left,
 .toolbar-right {
   display: flex;
@@ -2183,13 +2172,15 @@ function selectModel(modelId: string): void {
 }
 
 /* Model dropdown — anchored to the toolbar; the flip / horizontal clamp comes
-   from the inline style computed in positionModelDropdown. */
+   from the inline style computed in positionModelDropdown. The frame itself
+   never scrolls: ComposerModelMenu's .md-list region owns the overflow so the
+   thinking row / cache note / "more models" footer stays pinned in view. */
 .model-dropdown {
   position: absolute;
   z-index: var(--z-dropdown);
   min-width: 200px;
   max-height: min(70vh, 520px);
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--color-surface-raised);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
@@ -2201,7 +2192,7 @@ function selectModel(modelId: string): void {
   font-family: var(--font-ui);
 }
 
-/* Concentric corners: the frame is radius-lg, so the outermost rows pick up
+/* Concentric corners: the frame is radius-lg, so the outermost regions pick up
    radius-md (≈ frame radius minus padding) on their outer corners. */
 .model-dropdown > :first-child {
   border-top-left-radius: var(--radius-md);

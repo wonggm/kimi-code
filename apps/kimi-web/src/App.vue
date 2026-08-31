@@ -278,27 +278,48 @@ function openMediaPreview(media: ToolMedia): void {
   mediaPreview.value = media;
   mediaPreviewSrc.value = null;
   const fileId = media.fileId;
-  mediaPreviewLoading.value = Boolean(fileId);
+  const fallbackSrc = /^(?:https?:|blob:|data:)/i.test(media.url) ? media.url : null;
 
-  if (fileId) {
-    const sid = client.activeSessionId.value;
-    const fetchBlob = media.sessionMedia && sid
-      ? () => getKimiWebApi().getSessionMediaBlob(sid, fileId)
-      : () => getKimiWebApi().getFileBlob(fileId);
-    void fetchBlob().then((blob: Blob) => {
-      if (request !== mediaPreviewRequest || mediaPreview.value !== media) return;
-      mediaPreviewObjectUrl = URL.createObjectURL(blob);
-      mediaPreviewSrc.value = mediaPreviewObjectUrl;
-      mediaPreviewLoading.value = false;
-    }).catch(() => {
-      if (request !== mediaPreviewRequest || mediaPreview.value !== media) return;
-      mediaPreviewSrc.value = /^(?:https?:|blob:|data:)/i.test(media.url) ? media.url : null;
-      mediaPreviewLoading.value = false;
-    });
+  if (!fileId) {
+    mediaPreviewLoading.value = false;
+    mediaPreviewSrc.value = fallbackSrc;
     return;
   }
 
-  mediaPreviewSrc.value = /^(?:https?:|blob:|data:)/i.test(media.url) ? media.url : null;
+  mediaPreviewLoading.value = true;
+  const sid = client.activeSessionId.value;
+  // Prompt-attached media ids only resolve on the session-scoped route; without
+  // an active session id the generic /files call is a guaranteed 404, so skip
+  // straight to the fallback instead of waiting for it.
+  const fetchBlob = media.sessionMedia
+    ? sid
+      ? () => getKimiWebApi().getSessionMediaBlob(sid, fileId)
+      : undefined
+    : () => getKimiWebApi().getFileBlob(fileId);
+  if (!fetchBlob) {
+    mediaPreviewSrc.value = fallbackSrc;
+    mediaPreviewLoading.value = false;
+    return;
+  }
+  // Staleness is guarded by the request counter alone — every open/close bumps
+  // it. Comparing mediaPreview.value against the passed object is NOT a valid
+  // guard: the ref wraps object values in a reactive proxy, so a freshly-built
+  // media literal never compares equal and both settle branches would be
+  // discarded, leaving the overlay stuck on "Loading preview…" forever.
+  void Promise.resolve()
+    .then(fetchBlob)
+    .then((blob: Blob) => {
+      if (request !== mediaPreviewRequest) return;
+      mediaPreviewObjectUrl = URL.createObjectURL(blob);
+      mediaPreviewSrc.value = mediaPreviewObjectUrl;
+    })
+    .catch(() => {
+      if (request !== mediaPreviewRequest) return;
+      mediaPreviewSrc.value = fallbackSrc;
+    })
+    .finally(() => {
+      if (request === mediaPreviewRequest) mediaPreviewLoading.value = false;
+    });
 }
 
 // True while the right-side slot is actually occupied, so the sidebar reserves

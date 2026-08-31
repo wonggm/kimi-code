@@ -84,79 +84,99 @@ function thinkingSegmentLabel(segment: string): string {
 </script>
 
 <template>
-  <!-- Starred models from other providers -->
-  <div v-if="starredOtherModels.length > 0" class="md-section">{{ t('status.starredModels') }}</div>
-  <button
-    v-for="m in starredOtherModels"
-    :key="m.id"
-    class="md-row"
-    :class="{ 'is-current': m.id === status?.modelId }"
-    role="menuitem"
-    @click="emit('select', m.id)"
-  >
-    <span class="md-check"><Icon v-if="m.id === status?.modelId" name="check" size="sm" /></span>
-    <span class="md-name">{{ m.displayName ?? m.model }}</span>
-    <span class="md-provider">{{ m.provider }}</span>
-    <Icon class="md-star" name="star" size="sm" />
-  </button>
-
-  <div v-if="starredOtherModels.length > 0" class="md-divider" />
-
-  <!-- Current provider models -->
-  <div v-if="providerModels.length > 0" class="md-section">{{ currentProvider }}</div>
-  <button
-    v-for="m in providerModels"
-    :key="m.id"
-    class="md-row"
-    :class="{ 'is-current': m.id === status?.modelId }"
-    role="menuitem"
-    @click="emit('select', m.id)"
-  >
-    <span class="md-check"><Icon v-if="m.id === status?.modelId" name="check" size="sm" /></span>
-    <span class="md-name">{{ m.displayName ?? m.model }}</span>
-    <Icon v-if="isStarred(m.id)" class="md-star" name="star" size="sm" />
-  </button>
-
-  <div v-if="providerModels.length > 0" class="md-divider" />
-
-  <!-- Thinking level — segmented control. Effort models show every declared
-       level; boolean models show On/Off; unsupported shows a note. -->
-  <div class="md-thinking" :class="{ 'is-readonly': thinkingReadonly }">
-    <span class="md-name">{{ t('status.thinkingLabel') }}</span>
-    <span
-      v-if="thinkingAvailability === 'unsupported'"
-      class="md-note"
-    >{{ t('status.modeNotSupported') }}</span>
-    <div
-      v-else
-      class="effort-segments"
-      role="group"
-      :aria-label="t('status.thinkingLabel')"
+  <!-- Scrollable region: starred models from other providers, then the current
+       provider's models. The thinking row + cache note + "more models" live in
+       the pinned footer below, so a provider with many models never pushes
+       them out of reach. -->
+  <div class="md-list">
+    <!-- Starred models from other providers -->
+    <div v-if="starredOtherModels.length > 0" class="md-section">{{ t('status.starredModels') }}</div>
+    <button
+      v-for="m in starredOtherModels"
+      :key="m.id"
+      class="md-row"
+      :class="{ 'is-current': m.id === status?.modelId }"
+      role="menuitem"
+      @click="emit('select', m.id)"
     >
-      <button
-        v-for="seg in thinkingSegments"
-        :key="seg"
-        type="button"
-        class="effort-seg"
-        :class="{ 'is-active': seg === activeThinkingSegment }"
-        :disabled="thinkingReadonly"
-        @click="setThinkingSegment(seg)"
-      >{{ thinkingSegmentLabel(seg) }}</button>
-    </div>
+      <span class="md-check"><Icon v-if="m.id === status?.modelId" name="check" size="sm" /></span>
+      <span class="md-name">{{ m.displayName ?? m.model }}</span>
+      <span class="md-provider">{{ m.provider }}</span>
+      <Icon class="md-star" name="star" size="sm" />
+    </button>
+
+    <div v-if="starredOtherModels.length > 0" class="md-divider" />
+
+    <!-- Current provider models -->
+    <div v-if="providerModels.length > 0" class="md-section">{{ currentProvider }}</div>
+    <button
+      v-for="m in providerModels"
+      :key="m.id"
+      class="md-row"
+      :class="{ 'is-current': m.id === status?.modelId }"
+      role="menuitem"
+      @click="emit('select', m.id)"
+    >
+      <span class="md-check"><Icon v-if="m.id === status?.modelId" name="check" size="sm" /></span>
+      <span class="md-name">{{ m.displayName ?? m.model }}</span>
+      <Icon v-if="isStarred(m.id)" class="md-star" name="star" size="sm" />
+    </button>
   </div>
 
-  <div class="md-divider" />
-  <div class="md-cache-note">{{ t('status.cacheNote') }}</div>
+  <div class="md-footer">
+    <div class="md-divider" />
 
-  <div class="md-divider" />
+    <!-- Thinking level — segmented control. Effort models show every declared
+         level; boolean models show On/Off; unsupported shows a note. -->
+    <div class="md-thinking" :class="{ 'is-readonly': thinkingReadonly }">
+      <span class="md-name">{{ t('status.thinkingLabel') }}</span>
+      <span
+        v-if="thinkingAvailability === 'unsupported'"
+        class="md-note"
+      >{{ t('status.modeNotSupported') }}</span>
+      <div
+        v-else
+        class="effort-segments"
+        role="group"
+        :aria-label="t('status.thinkingLabel')"
+      >
+        <button
+          v-for="seg in thinkingSegments"
+          :key="seg"
+          type="button"
+          class="effort-seg"
+          :class="{ 'is-active': seg === activeThinkingSegment }"
+          :disabled="thinkingReadonly"
+          @click="setThinkingSegment(seg)"
+        >{{ thinkingSegmentLabel(seg) }}</button>
+      </div>
+    </div>
 
-  <!-- More models → open full picker -->
-  <button class="md-row md-row-more" role="menuitem" @click="emit('more')">
-    <span class="md-name">{{ t('status.moreModels') }}</span>
-  </button>
+    <div class="md-divider" />
+    <div class="md-cache-note">{{ t('status.cacheNote') }}</div>
+
+    <div class="md-divider" />
+
+    <!-- More models → open full picker -->
+    <button class="md-row md-row-more" role="menuitem" @click="emit('more')">
+      <span class="md-name">{{ t('status.moreModels') }}</span>
+    </button>
+  </div>
 </template>
 
 <style scoped>
+/* The list scrolls while the footer (thinking + note + more) stays pinned.
+   min-height:0 lets the list shrink inside the dropdown's flex column; on the
+   mobile sheet (no height constraint) nothing scrolls and the sheet grows as
+   before. */
+.md-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.md-footer {
+  flex: none;
+}
+
 .md-section {
   padding: 4px 7px 2px;
   font-size: var(--text-xs);

@@ -384,7 +384,7 @@ function clickWorkbar(id: RightPanelTab | 'plan'): void {
 .chat-dock.align-mobile { max-width: none; }
 
 /* Liquid glass: drop the opaque background so the frost layer behind the
-   dock (ConversationPane's .chat-layout::after) shows through and the chips
+   dock (ConversationPane's .chat-main::after) shows through and the chips
    and composer read as embedded in one glass slab. Cards in the dock
    (question / approval / todo panel) carry their own backgrounds. */
 html[data-liquid-glass="on"] .chat-dock.chat-dock {
