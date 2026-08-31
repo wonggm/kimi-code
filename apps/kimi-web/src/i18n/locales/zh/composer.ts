@@ -59,6 +59,5 @@ export default {
   noCommands: '没有匹配的命令',
   slashSheetTitle: '命令',
   mentionSheetTitle: '文件',
-  steerHint: 'Ctrl+S 注入运行中的回合',
 
 } as const;

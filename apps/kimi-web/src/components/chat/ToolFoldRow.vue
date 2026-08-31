@@ -12,10 +12,10 @@
      the per-turn tool cards inside ONE assistant message, and only at the
      render layer (turn-store objects are untouched). -->
 <script setup lang="ts">
-import { computed, inject } from 'vue';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toolLabel } from '../../lib/toolMeta';
-import { foldAggregateStatus, type FoldStatus, TOOL_FOLD_KEY_PREFIX } from '../../lib/toolFold';
+import { foldAggregateStatus, type FoldStatus } from '../../lib/toolFold';
 import type { ToolStackItem } from '../chatTurnRendering';
 import StatusDot from '../ui/StatusDot.vue';
 import Icon from '../ui/Icon.vue';
@@ -38,15 +38,6 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-
-const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
-
-const firstId = computed<string>(() => {
-  const first = props.tools[0];
-  return first?.tool.id || `idx-${first?.sourceIndex ?? props.sourceIndex}`;
-});
-
-const foldKey = computed<string>(() => `${TOOL_FOLD_KEY_PREFIX}${firstId.value}`);
 
 const status = computed<FoldStatus>(() => foldAggregateStatus(props.tools));
 const statusLabel = computed(() => {
@@ -81,7 +72,9 @@ const summaryLabel = computed(() => {
 });
 
 function onClick(): void {
-  if (toolExpandState) toolExpandState.set(foldKey.value, !props.expanded);
+  // The parent (ChatPane) owns the fold-state write via the `toggle` emit —
+  // writing the injected Map here too would double-toggle back to the
+  // pre-click state and the chip would never expand.
   emit('toggle');
 }
 
