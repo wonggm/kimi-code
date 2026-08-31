@@ -164,7 +164,9 @@ const tabs = computed<TabSpec[]>(() => [
     labelKey: 'panel.tabs.terminal',
     icon: 'terminal',
     alwaysAvailable: true,
-    hasContent: () => props.terminalAvailable,
+    // "Has content" only once the PTY probe confirms reachability — a plain
+    // session id is not enough when the daemon is loopback-bound.
+    hasContent: () => props.terminalAvailable && terminalProbe.value !== 'unavailable',
   },
   {
     id: 'bash',
@@ -449,13 +451,18 @@ function openChangedFile(path: string): void {
   min-height: 0;
 }
 
-/* Tab bar: glass strip pinned at the top. */
+/* Tab bar: glass strip pinned at the top. Rhythm mirrors the upstream
+   PanelTabBar: 28px tabs (their --panel-tab-h) centred in the shared
+   --panel-head-h (48px) header row, tight --space-1 gaps (upstream uses
+   2px between its labeled tabs; 4px keeps icon-only targets separable). */
 .rpt-bar {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--space-1);
+  height: var(--panel-head-h, 48px);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
   border-bottom: 1px solid var(--color-line);
   background: var(--color-surface);
 }
@@ -466,8 +473,8 @@ function openChangedFile(path: string): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -493,8 +500,8 @@ function openChangedFile(path: string): void {
 }
 .rpt-tab-dot {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 3px;
+  right: 3px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
