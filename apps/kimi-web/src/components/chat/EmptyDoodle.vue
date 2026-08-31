@@ -3,14 +3,18 @@
      the KIMI wordmark). Lazily imports @rive-app/canvas and falls back to the
      plain title text whenever Rive can't run (reduced motion, wasm/riv load
      failure, exception) — the fallback IS the pre-port look, so this never
-     renders worse than before. -->
+     renders worse than before. The artboard follows the app theme through the
+     state machine's "light/dark" number input (1 = dark), mirroring upstream's
+     KimiDoodle. -->
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useIsDark } from '../../composables/useIsDark';
 import rivUrl from '../../assets/rive/k3_doodle1.riv?url';
 import wasmUrl from '../../assets/rive/rive.wasm?url';
 
 const { t } = useI18n();
+const isDark = useIsDark();
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const failed = ref(false);
 let stop: (() => void) | null = null;
@@ -23,16 +27,32 @@ onMounted(async () => {
     }
     const { Rive, Layout, Fit, RuntimeLoader } = await import('@rive-app/canvas');
     RuntimeLoader.setWasmUrl(wasmUrl);
+    let themeInput: { value: number | boolean } | null = null;
+    const applyTheme = () => {
+      if (themeInput) themeInput.value = isDark.value ? 1 : 0;
+    };
     const rive = new Rive({
       canvas: canvasRef.value!,
       src: rivUrl,
       layout: new Layout({ fit: Fit.Contain }),
       autoplay: true,
+      onLoad: () => {
+        const sm = rive.stateMachineNames[0];
+        if (!sm) return;
+        rive.play(sm);
+        themeInput =
+          (rive.stateMachineInputs(sm) ?? []).find((input) => input.name === 'light/dark') ?? null;
+        // Mirror upstream: apply on the next frame so the state machine is
+        // actually running when the input lands.
+        requestAnimationFrame(applyTheme);
+      },
       onLoadError: () => {
         failed.value = true;
       },
     });
+    const stopThemeWatch = watch(isDark, applyTheme);
     stop = () => {
+      stopThemeWatch();
       try {
         rive.stop();
       } catch {
