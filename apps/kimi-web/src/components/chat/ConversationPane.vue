@@ -2022,13 +2022,14 @@ html[data-liquid-glass="on"] .panes.has-header {
 
 /* Right-side multi-tab panel (0.39 port) — frosted second column overlaying
    the reading column's right edge, below the overlay header and above the
-   dock. Tint-only controls inside (Firefox: no nested backdrop-filter). */
+   dock. Tint-only controls inside (Firefox: no nested backdrop-filter).
+   Width matches the upstream panel's --panel-default-w (460px). */
 .right-panel {
   position: absolute;
   top: var(--space-2);
   right: var(--space-2);
   bottom: calc(var(--dock-height, 0px) + var(--space-2));
-  width: min(400px, 94vw);
+  width: min(460px, 94vw);
   z-index: calc(var(--z-modal) - 10);
   border-radius: var(--radius-lg);
   overflow: hidden;
