@@ -1,8 +1,9 @@
 <!-- apps/kimi-web/src/components/chat/ConversationToc.vue -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ChatTurn } from '../../types';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 
 export interface ConversationTocItem {
   id: string;
@@ -34,6 +35,13 @@ const { t } = useI18n();
 const visible = computed(
   () => !props.mobile && !props.sessionLoading && props.items.length > 1,
 );
+
+const cardEl = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback (Firefox/Safari): the card only refracts
+// while actually revealed — expansion itself is pure CSS clip-path (the
+// renderer mirrors clip-path onto the slice canvas each layout pass).
+const revealed = ref(false);
+useGlassRefraction(cardEl, { when: computed(() => visible.value && revealed.value) });
 </script>
 
 <template>
@@ -50,6 +58,10 @@ const visible = computed(
     :class="{ 'toc-clipped': occluded }"
     :aria-label="t('conversation.toc')"
     :aria-hidden="occluded || undefined"
+    @mouseenter="revealed = true"
+    @mouseleave="revealed = false"
+    @focusin="revealed = true"
+    @focusout="revealed = false"
   >
     <div class="toc-rail" aria-hidden="true">
       <span
@@ -59,7 +71,7 @@ const visible = computed(
         :class="{ active: activeTurnId === item.id }"
       />
     </div>
-    <div class="toc-card">
+    <div ref="cardEl" class="toc-card lg-glass lg-lens">
       <div class="toc-card-scroll">
         <button
           v-for="item in items"
@@ -174,42 +186,11 @@ const visible = computed(
   clip-path: inset(0 0 0 0 round var(--radius-lg));
 }
 
-/* Liquid glass on: same material as the .lg-glass dropdowns — translucent
-   surface tint (50% dark / 45% light) over an 8px (dark) / 20px (light)
-   backdrop blur and a specular top-right bloom. */
-html[data-liquid-glass="on"] .toc-card {
-  border-color: color-mix(in srgb, var(--color-line) 60%, transparent);
-  background:
-    radial-gradient(
-      140% 90% at 88% -20%,
-      color-mix(in srgb, #fff 10%, transparent),
-      transparent 55%
-    ),
-    linear-gradient(
-      to bottom,
-      color-mix(in srgb, color-mix(in srgb, var(--color-surface-raised) 95%, white) 50%, transparent) 0%,
-      color-mix(in srgb, var(--color-surface-raised) 50%, transparent) 30%
-    ),
-    color-mix(in srgb, var(--color-surface-raised) 50%, transparent);
-  -webkit-backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
-  backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
-}
-html:not([data-color-scheme="dark"])[data-liquid-glass="on"] .toc-card {
-  background:
-    radial-gradient(
-      140% 90% at 88% -20%,
-      color-mix(in srgb, #fff 10%, transparent),
-      transparent 55%
-    ),
-    linear-gradient(
-      to bottom,
-      color-mix(in srgb, color-mix(in srgb, var(--color-surface-raised) 95%, white) 45%, transparent) 0%,
-      color-mix(in srgb, var(--color-surface-raised) 45%, transparent) 30%
-    ),
-    color-mix(in srgb, var(--color-surface-raised) 45%, transparent);
-  -webkit-backdrop-filter: blur(20px) saturate(170%) brightness(1.04);
-  backdrop-filter: blur(20px) saturate(170%) brightness(1.04);
-}
+/* Liquid glass on: the card carries .lg-glass, so the shared consuming rule
+   in style.css paints the material (translucent surface tint, bloom, rim,
+   8px dark / 20px light blur) — the hand-written duplicate and its
+   per-theme retune are gone; the solid .toc-card background above remains
+   as the glass-off fallback. */
 
 .toc-card-scroll {
   display: flex;
