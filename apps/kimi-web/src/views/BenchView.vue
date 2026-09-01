@@ -16,7 +16,7 @@
   Optional: &theme=dark|light  &glass=on|off
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, provide, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, provide, ref } from 'vue';
 import type { AppApprovalRequest, AppMessage, AppModel, AppSkill, AppWarning } from '../api/types';
 import type { ChatTurn, ConversationStatus, TaskItem, TodoView } from '../types';
 import { messagesToTurns } from '../composables/messagesToTurns';
@@ -32,14 +32,18 @@ import ChatPane from '../components/chat/ChatPane.vue';
 import ConversationToc, { type ConversationTocItem } from '../components/chat/ConversationToc.vue';
 import ChatDock from '../components/chat/ChatDock.vue';
 import Dialog from '../components/ui/Dialog.vue';
+import GlassDefs from '../components/ui/GlassDefs.vue';
 import Sheet from '../components/ui/Sheet.vue';
 import Tooltip from '../components/ui/Tooltip.vue';
 import BottomSheet from '../components/dialogs/BottomSheet.vue';
 import SettingsDialog from '../components/settings/SettingsDialog.vue';
 import ServerAuthDialog from '../components/ServerAuthDialog.vue';
 import WarningToasts from '../components/WarningToasts.vue';
+import { ensureGlassEngine } from '../lib/glass/gl-renderer';
 
 const appearance = useAppearance();
+// Liquid-glass WebGL refraction fallback lifecycle (see App.vue — same hook).
+onUnmounted(ensureGlassEngine());
 
 // Markdown injects this to rewrite local image URLs; a no-op stub is fine here.
 provide('resolveImage', (src: string) => Promise.resolve(src));
@@ -226,6 +230,9 @@ onMounted(async () => {
 
 <template>
   <div class="bench-root">
+    <!-- Shared liquid-glass SVG defs (floating glass surfaces on the bench
+         page append the #lg-refract filter via @supports). -->
+    <GlassDefs />
     <!-- A thin bench toolbar; also hosts the tooltip trigger for pixel poses. -->
     <div class="bench-bar">
       <span class="bench-bar__title">kimi-web bench</span>
@@ -406,7 +413,10 @@ html[data-liquid-glass='on'] .bench-root .panes {
   mask-image: var(--con-pane-vignette);
 }
 
-/* Top blur band (glass-gated) — blurs scrolling text under the 96px header zone. */
+/* Top blur band (glass-gated) — blurs scrolling text under the 96px header zone.
+   The material (blur / saturate / brightness + the @supports refraction lens) is
+   owned by the shared band rule in style.css; this block keeps geometry and the
+   fade mask only. */
 html[data-liquid-glass='on'] .bench-root .chat-layout::before {
   content: '';
   position: absolute;
@@ -416,8 +426,6 @@ html[data-liquid-glass='on'] .bench-root .chat-layout::before {
   height: 96px;
   z-index: 2;
   pointer-events: none;
-  -webkit-backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
-  backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
   -webkit-mask-image: linear-gradient(to bottom, black 0, transparent 100%);
   mask-image: linear-gradient(to bottom, black 0, transparent 100%);
 }

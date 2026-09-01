@@ -65,6 +65,7 @@ import SessionRow from './SessionRow.vue';
 import ResizeHandle from './ResizeHandle.vue';
 import { isMacosDesktop } from '../lib/desktopFlag';
 import { useSidebarLayout } from '../composables/useSidebarLayout';
+import { useGlassRefraction } from '../composables/useGlassRefraction';
 import IconButton from './ui/IconButton.vue';
 import Tooltip from './ui/Tooltip.vue';
 import Icon from './ui/Icon.vue';
@@ -187,6 +188,9 @@ const emit = defineEmits<{
 }>();
 
 const { sidebarViewMode, loadSidebarViewMode, toggleSidebarViewMode } = useSidebarLayout();
+
+const colRef = ref<HTMLElement | null>(null);
+useGlassRefraction(colRef, { transient: false });
 const pinnedSessions = computed(() =>
   props.groups
     .flatMap((group) => group.sessions)
@@ -900,7 +904,7 @@ onBeforeUnmount(() => {
     :style="{ width: collapsed ? '0px' : colWidth + 'px' }"
   >
     <!-- Session column -->
-    <div class="col" :style="{ width: colWidth + 'px' }">
+    <div ref="colRef" class="col lg-lens" :style="{ width: colWidth + 'px' }">
       <!-- Header: brand + collapse. The collapse button lives INSIDE the header
            on non-mac platforms (right-aligned); on macOS desktop the brand is
            hidden (traffic lights own that corner) and the header is just a

@@ -12,6 +12,7 @@ import { useI18n } from 'vue-i18n';
 import { CodeBlockNode } from 'markstream-vue';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { useCodeBlockPrefs } from '../../lib/codeBlockPrefs';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import Icon from '../ui/Icon.vue';
 
 const props = defineProps<{
@@ -51,6 +52,12 @@ const innerProps = computed<Record<string, unknown>>(() => {
 // origin — scripts run, but they cannot reach our origin's storage or DOM.
 const isPreviewable = computed(() => language.value === 'html' || language.value === 'html-vue');
 const previewOpen = ref(false);
+const previewFrameRef = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback (Firefox/Safari) on the glass frame (the
+// backdrop stays a plain translucent layer). Non-transient like ui/Dialog: the
+// runner can stay open indefinitely, so its backdrop keeps refreshing instead
+// of freezing the snapshot for the whole app.
+useGlassRefraction(previewFrameRef, { transient: false });
 
 function openPreview(): void {
   previewOpen.value = true;
@@ -191,7 +198,7 @@ async function onCopy(): Promise<void> {
     <CodeBlockNode ref="codeRef" v-bind="innerProps" :node="node" />
     <Teleport to="body">
       <div v-if="previewOpen" class="mdcb-preview-backdrop" @click="closePreview">
-        <div class="mdcb-preview lg-glass" role="dialog" :aria-label="t('common.preview')" @click.stop>
+        <div ref="previewFrameRef" class="mdcb-preview lg-glass lg-lens" role="dialog" :aria-label="t('common.preview')" @click.stop>
           <div class="mdcb-preview-head">
             <span class="mdcb-preview-dot" aria-hidden="true" />
             <span class="mdcb-preview-title">{{ t('common.preview') }}</span>

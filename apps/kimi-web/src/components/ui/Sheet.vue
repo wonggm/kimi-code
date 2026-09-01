@@ -2,12 +2,18 @@
 <!-- Design-system §03 Sheet / BottomSheet: mobile bottom panel (≤640px dialogs
      anchor here). Top radius xl + drag handle + xl shadow. -->
 <script setup lang="ts">
+import { ref } from 'vue';
 import IconButton from './IconButton.vue';
 import Icon from './Icon.vue';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 
 defineProps<{ open: boolean; title?: string }>();
 
 const emit = defineEmits<{ 'update:open': [value: boolean]; close: [] }>();
+
+const panel = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback (Firefox/Safari): persistent sheet panel.
+useGlassRefraction(panel, { transient: false });
 
 function close() {
   emit('update:open', false);
@@ -17,8 +23,8 @@ function close() {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="ui-sheet__scrim" @mousedown.self="close">
-      <div class="ui-sheet lg-frost" role="dialog" aria-modal="true">
+    <div v-if="open" class="ui-sheet__scrim lg-scrim" @mousedown.self="close">
+      <div ref="panel" class="ui-sheet lg-frost lg-lens" role="dialog" aria-modal="true">
         <div class="ui-sheet__handle" aria-hidden="true" />
         <div v-if="title" class="ui-sheet__head">
           <span class="ui-sheet__title">{{ title }}</span>
@@ -41,8 +47,8 @@ function close() {
   align-items: flex-end;
   justify-content: center;
   background: rgba(13, 17, 23, 0.32);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  backdrop-filter: blur(10px) saturate(140%);
+  /* defocus blur comes from the shared .lg-scrim utility (lg-frost family,
+     style.css) — no hand-written recipe here. */
 }
 .ui-sheet {
   width: 100%;

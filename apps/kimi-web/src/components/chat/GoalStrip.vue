@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { AppGoal } from '../../api/types';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import { formatTokens } from '../../lib/formatTokens';
 import Card from '../ui/Card.vue';
 import Badge from '../ui/Badge.vue';
@@ -14,14 +15,12 @@ const props = defineProps<{
   goal: AppGoal;
   forceExpanded?: number;
   /** Live-ticked stats from the client (elapsed extrapolated between engine
-   *  snapshots; tokens split total / main / subagents). Optional — the strip
-   *  falls back to the snapshot values when absent. */
+   *  snapshots). Optional — the strip falls back to the snapshot values when
+   *  absent. */
   live?: {
     elapsedMs: number;
     turnsUsed: number;
     tokensTotal: number;
-    tokensMain: number;
-    tokensSubagents: number;
   } | null;
 }>();
 const emit = defineEmits<{ controlGoal: [action: 'pause' | 'resume' | 'cancel'] }>();
@@ -30,6 +29,14 @@ const { t } = useI18n();
 const { confirm } = useConfirmDialog();
 
 const expanded = ref(false);
+const goalPopEl = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback (Firefox/Safari). Registered non-transient
+// (like ui/Dialog / Sheet / Toast, not like ui/Menu): a transient pane freezes
+// the SHARED page snapshot for every open pane while it is up, and this pop has
+// no lifetime bound — it stays expanded until the user collapses it, possibly
+// across a whole run. The element is v-if'd, so its ref appearing/disappearing
+// is the mount signal.
+useGlassRefraction(goalPopEl, { transient: false });
 
 watch(
   () => props.forceExpanded,
@@ -82,7 +89,7 @@ async function onCancel(): Promise<void> {
         <button class="goal-row" type="button" @click="expanded = !expanded">
           <Icon class="goal-icon" name="target" size="md" />
           <span class="goal-kicker">{{ t('status.goalLabel') }}</span>
-          <span class="goal-objective">{{ goal.objective }}</span>
+          <span class="goal-objective" :class="{ 'expanded-hidden': expanded }">{{ goal.objective }}</span>
           <Badge
             :variant="goal.status === 'active' ? 'success' : goal.status === 'blocked' ? 'danger' : goal.status === 'paused' ? 'warning' : 'neutral'"
             size="sm"
@@ -97,7 +104,7 @@ async function onCancel(): Promise<void> {
       </template>
     </Card>
     <Transition name="pop">
-      <div v-if="expanded" class="goal-pop lg-frost">
+      <div v-if="expanded" ref="goalPopEl" class="goal-pop lg-frost lg-lens">
         <div class="goal-full">{{ goal.objective }}</div>
         <div v-if="goal.completionCriterion" class="goal-criterion">
           <span>{{ t('status.goalDoneWhen') }}</span>
@@ -105,9 +112,7 @@ async function onCancel(): Promise<void> {
         </div>
         <div class="goal-meta">
           <span>{{ live?.turnsUsed ?? goal.turnsUsed }} turns</span>
-          <span>{{ t('status.goalTokensTotal', { n: formatTokens(live?.tokensTotal ?? goal.tokensUsed) }) }}</span>
-          <span>{{ t('status.goalTokensMain', { n: formatTokens(live?.tokensMain ?? 0) }) }}</span>
-          <span>{{ t('status.goalTokensSubagents', { n: formatTokens(live?.tokensSubagents ?? 0) }) }}</span>
+          <span>{{ formatTokens(live?.tokensTotal ?? goal.tokensUsed) }} tokens</span>
           <span v-if="goal.budget.tokenBudget !== null">{{ tokenPct }}% token budget</span>
         </div>
         <div class="goal-actions">
@@ -159,7 +164,10 @@ async function onCancel(): Promise<void> {
 }
 .goal-pop {
   position: absolute;
-  top: calc(100% + 6px);
+  /* The pill sits directly above the composer at the bottom of the viewport,
+     so the overlay opens UPWARD over the transcript — opening down would push
+     the action row past the window's bottom edge. */
+  bottom: calc(100% + 6px);
   left: 0;
   right: 0;
   z-index: calc(var(--z-sticky) + 5);
@@ -167,17 +175,15 @@ async function onCancel(): Promise<void> {
   flex-direction: column;
   gap: 10px;
   padding: 14px;
+  max-height: 50vh;
+  overflow-y: auto;
   border-radius: var(--radius-md);
-}
-html[data-liquid-glass="on"] .goal-pop {
-  background: color-mix(in srgb, var(--panel) 58%, transparent);
-  backdrop-filter: blur(34px) saturate(180%);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-}
-html:not([data-liquid-glass="on"]) .goal-pop {
+  /* Solid fallback; with liquid glass on, the .lg-frost class on the
+     element pulls the shared frost material from the consuming rule in
+     style.css (background, rim and all), so this rule carries no recipe of
+     its own. */
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-line);
   box-shadow: var(--shadow-lg);
 }
 .goal-pop-enter-active,
@@ -187,7 +193,7 @@ html:not([data-liquid-glass="on"]) .goal-pop {
 .goal-pop-enter-from,
 .goal-pop-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(4px);
 }
 .goal-pop .goal-meta {
   flex-wrap: wrap;
@@ -382,51 +388,7 @@ html:not([data-liquid-glass="on"]) .goal-pop {
   color: var(--color-danger);
 }
 @media (max-width: 640px) {
-  .goal-wrap {
-  position: relative;
-}
-/* The Card only carries the head row; the empty body slot would render a
-   padded box, so collapse it. Expanded content lives in .goal-pop. */
-.goal-strip :deep(.ui-card__body) {
-  display: none;
-}
-.goal-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: calc(var(--z-sticky) + 5);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border-radius: var(--radius-md);
-}
-html[data-liquid-glass="on"] .goal-pop {
-  background: color-mix(in srgb, var(--panel) 58%, transparent);
-  backdrop-filter: blur(34px) saturate(180%);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-}
-html:not([data-liquid-glass="on"]) .goal-pop {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-}
-.goal-pop-enter-active,
-.goal-pop-leave-active {
-  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
-}
-.goal-pop-enter-from,
-.goal-pop-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-.goal-pop .goal-meta {
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.goal-strip {
+  .goal-strip {
     --composer-send-size: 36px;
     margin: var(--space-2) var(--space-3) 0;
   }

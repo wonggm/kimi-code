@@ -36,9 +36,11 @@ import { useAuthGate } from './composables/useAuthGate';
 import { usePageTitle } from './composables/usePageTitle';
 import { useSidebarLayout } from './composables/useSidebarLayout';
 import { useFilePreview, type DetailTarget } from './composables/useFilePreview';
+import { ensureGlassEngine } from './lib/glass/gl-renderer';
 import { useDetailPanel } from './composables/useDetailPanel';
 import { useIsMobile } from './composables/useIsMobile';
 import { useMemoizedSwarmMembers } from './composables/useMemoizedSwarmMembers';
+import { useGlassRefraction } from './composables/useGlassRefraction';
 import { openDialogCount } from './composables/dialogStack';
 import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
@@ -48,6 +50,7 @@ import type { AppConfig, ManagedUsageResult, ThinkingLevel } from './api/types';
 import { effectiveThinkingLevel } from './lib/modelThinking';
 import { stripSkillPrefix } from './lib/slashCommands';
 import Button from './components/ui/Button.vue';
+import GlassDefs from './components/ui/GlassDefs.vue';
 import IconButton from './components/ui/IconButton.vue';
 import Icon from './components/ui/Icon.vue';
 import Spinner from './components/ui/Spinner.vue';
@@ -64,6 +67,10 @@ const authRequired = ref(false);
 let offAuthRequired: (() => void) | null = null;
 
 const client = useKimiWebClient();
+// Liquid-glass WebGL refraction fallback (Firefox/Safari; no-op on Blink).
+// The renderer is a module singleton — this only ties its lifecycle to the
+// mounted app (see lib/glass/gl-renderer.ts).
+onUnmounted(ensureGlassEngine());
 // When the server runs with `--dangerous-bypass-auth`, `/meta` advertises it
 // and we skip the token prompt entirely — there is no credential to enter.
 const showServerAuth = computed(
@@ -796,6 +803,11 @@ async function handleGenerateSessionTitle(
 // regular warning stack from client.exportSession.
 const exportToastVisible = ref(false);
 const exportToastDone = ref(false);
+const exportToastEl = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback (Firefox/Safari): like the design-system toast,
+// this one rests over live content for seconds, so non-transient — the page
+// snapshot keeps refreshing underneath (see ui/Toast.vue).
+useGlassRefraction(exportToastEl, { transient: false });
 let exportToastTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => client.exportState.value,
@@ -884,6 +896,9 @@ function openPr(url: string): void {
 
 <template>
   <div class="app-shell">
+    <!-- SVG defs for the liquid-glass refraction layer (zero-footprint; see
+         components/ui/GlassDefs.vue). -->
+    <GlassDefs />
     <ServerAuthDialog v-if="showServerAuth" />
     <section v-if="showAuthGate" class="auth-page">
       <div class="auth-page-inner">
@@ -1321,7 +1336,8 @@ function openPr(url: string): void {
     <Transition name="export-toast">
       <div
         v-if="exportToastVisible"
-        class="export-toast lg-glass"
+        ref="exportToastEl"
+        class="export-toast lg-glass lg-lens"
         role="status"
         aria-live="polite"
       >

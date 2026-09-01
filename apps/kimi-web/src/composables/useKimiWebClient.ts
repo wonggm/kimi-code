@@ -2237,16 +2237,18 @@ const goal = computed<AppGoal | null>(() => {
 
 // Goal stats go stale between engine snapshot events (the pill showed a frozen
 // elapsed time until the next GoalUpdated arrived). Tick a 1s clock while the
-// active goal is running and extrapolate the elapsed time from the snapshot's
-// arrival moment; tokens split into total / main / subagents using the live
-// session usage (subagents = engine total minus what the main session spent).
+// active goal is running and extrapolate from the latest snapshot's arrival
+// moment. The engine's wallClockMs is already live at emission
+// (liveWallClockMs), so the baseline must reset on EVERY fresh snapshot — the
+// goal object is replaced on each GoalUpdated / REST goal fold — not only on
+// goalId/status transitions, or the two intervals double-count.
 const goalClock = ref(Date.now());
 const goalSnapshotAt = ref(Date.now());
 let goalClockTimer: ReturnType<typeof setInterval> | null = null;
 watch(
-  () => [goal.value?.goalId, goal.value?.status] as const,
-  ([, status]) => {
-    goalSnapshotAt.value = Date.now();
+  () => [goal.value, goal.value?.status] as const,
+  ([g, status]) => {
+    if (g) goalSnapshotAt.value = Date.now();
     if (status === 'active' && goalClockTimer === null) {
       goalClockTimer = setInterval(() => {
         goalClock.value = Date.now();
@@ -2266,17 +2268,9 @@ const goalLive = computed<{
   elapsedMs: number;
   turnsUsed: number;
   tokensTotal: number;
-  tokensMain: number;
-  tokensSubagents: number;
 } | null>(() => {
   const g = goal.value;
   if (!g) return null;
-  const sid = rawState.activeSessionId;
-  const sess = sid ? rawState.sessions.find((s) => s.id === sid) : undefined;
-  const u = sess?.usage;
-  const main = u
-    ? u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheCreationTokens
-    : 0;
   return {
     elapsedMs:
       g.status === 'active'
@@ -2284,8 +2278,6 @@ const goalLive = computed<{
         : g.wallClockMs,
     turnsUsed: g.turnsUsed,
     tokensTotal: g.tokensUsed,
-    tokensMain: main,
-    tokensSubagents: Math.max(0, g.tokensUsed - main),
   };
 });
 

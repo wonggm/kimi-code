@@ -39,7 +39,7 @@ const props = defineProps<{
   /** Model-maintained todo list (TodoList tool) — shown as a floating card. */
   todos?: TodoView[];
   goal?: AppGoal | null;
-  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number; tokensMain: number; tokensSubagents: number } | null;
+  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number } | null;
   activationBadges?: ActivationBadges;
   status: ConversationStatus;
   thinking?: ThinkingLevel;
@@ -1703,7 +1703,6 @@ defineExpose({ loadComposerForEdit, focusComposer });
               :swarm-mode="swarmMode"
               :goal-mode="goalMode"
               :goal="goal"
-              :goal-live="goalLive"
               :activation-badges="activationBadges"
               :models="models"
               :starred-ids="starredIds"
@@ -1796,6 +1795,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
         :starred-ids="starredIds"
         :skills="skills"
         :goal="goal"
+        :goal-live="goalLive"
         :goal-expand-signal="goalExpandSignal"
         :active-panel-tab="activePanelTab"
         :bash-tasks="bashTasks"
@@ -1986,7 +1986,9 @@ html[data-liquid-glass="on"] .chat-main::before {
    per-frame raster cost of the backdrop-filter stays confined to the top
    72px strip — the same cost class as the top band (style.css perf: WS-1A).
    Same placement rule as the top band: on .chat-main, never on .panes
-   (a .panes pseudo would scroll with the content). */
+   (a .panes pseudo would scroll with the content). The blur material is
+   owned by the shared band rule in style.css; this block keeps geometry
+   and the ramp mask only. */
 html[data-liquid-glass="on"] .chat-main::after {
   content: '';
   position: absolute;
@@ -1996,8 +1998,6 @@ html[data-liquid-glass="on"] .chat-main::after {
   height: calc(var(--dock-height, 0px) + 72px);
   pointer-events: none;
   z-index: 2;
-  -webkit-backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
-  backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0,
@@ -2057,15 +2057,24 @@ html[data-liquid-glass="on"] .panes.has-header {
   flex: none;
   width: min(460px, 94vw);
   min-height: 0;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--color-line);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
+/* Glass on: the panel consumes the shared frost material straight from the
+   consuming rule in style.css (.right-panel is on its selector list) — this
+   block only retargets the parameters: the frost tier's blur/tint, no rim on
+   the three edges flush with the window (only the left seam faces the chat),
+   and a shadow-sm drop instead of the dialog-xl rest. */
 html[data-liquid-glass="on"] .right-panel {
-  background: color-mix(in srgb, var(--panel) 58%, transparent);
-  backdrop-filter: blur(34px) saturate(180%);
+  --lg-blur: var(--lg-blur-frost);
+  --lg-tint-a: var(--lg-tint-frost-a);
+  --lg-rim-top: transparent;
+  --lg-rim-side-r: transparent;
+  --lg-rim-bottom: transparent;
+  --lg-drop-shadow: var(--shadow-sm);
 }
 
 html:not([data-liquid-glass="on"]) .right-panel {
@@ -2081,7 +2090,7 @@ html:not([data-liquid-glass="on"]) .right-panel {
   right: var(--space-2);
   bottom: calc(var(--dock-height, 0px) + var(--space-2));
   z-index: calc(var(--z-modal) - 10);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
 }
@@ -2340,17 +2349,18 @@ html:not([data-liquid-glass="on"]) .right-panel {
   z-index: 3;
 }
 .newmsg-pill:hover { background: var(--panel2); }
-/* Liquid glass: the pill floats over the bottom vignette/blur zone, so give
-   it the same frost as the dock chips instead of letting faded text read
-   through a flat wash. Sibling of the bands (not nested), so the extra
-   backdrop-filter is safe in Firefox and Chromium. */
+/* Liquid glass: the pill floats over the bottom vignette/blur zone, so it
+   consumes the shared glass material from the consuming rule in style.css
+   (.newmsg-pill is on its selector list) with a denser tint than a dropdown
+   — faded moving text must not read through it. Sibling of the bands (not
+   nested), so the backdrop-filter is safe in Firefox and Chromium. */
 html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill {
-  background: color-mix(in srgb, var(--panel) 68%, transparent);
-  -webkit-backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
-  backdrop-filter: blur(8px) saturate(170%) brightness(1.04);
+  --lg-tint: color-mix(in srgb, var(--panel) 68%, transparent);
+  --lg-tint-top: color-mix(in srgb, var(--panel) 68%, transparent);
 }
 html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill:hover {
-  background: color-mix(in srgb, var(--panel2) 78%, transparent);
+  --lg-tint: color-mix(in srgb, var(--panel2) 78%, transparent);
+  --lg-tint-top: color-mix(in srgb, var(--panel2) 78%, transparent);
 }
 .pill-chevron {
   width: 12px;
