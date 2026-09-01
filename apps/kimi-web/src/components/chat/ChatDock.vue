@@ -16,6 +16,7 @@ import type { DetachTaskTarget } from '../../lib/detachTarget';
 import type { RightPanelTab } from '../../lib/rightPanelTabs';
 import Composer from './Composer.vue';
 import GoalStrip from './GoalStrip.vue';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import PlanPanel from './PlanPanel.vue';
@@ -43,7 +44,7 @@ const props = defineProps<{
   starredIds?: string[];
   skills?: AppSkill[];
   goal?: AppGoal | null;
-  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number; tokensMain: number; tokensSubagents: number } | null;
+  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number } | null;
   goalExpandSignal?: number;
   /** Active right-panel tab (when the panel is open); the workbar mirrors it
    *  for its `is-active` styling. */
@@ -140,6 +141,12 @@ function focus(): void {
 // tab and toggle it open via `open-right-panel`.
 const showPlanPopover = ref(false);
 const planPopoverRef = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback (Firefox/Safari). Registered transient (the
+// composable's default, like ui/Menu): this pop closes on any outside
+// mousedown, so freezing the shared page snapshot while it is up is exactly
+// the menu behaviour the flag exists for. The element is v-if'd, so its ref
+// appearing/disappearing is the mount signal.
+useGlassRefraction(planPopoverRef);
 
 function togglePlanPopover(): void {
   showPlanPopover.value = !showPlanPopover.value;
@@ -275,7 +282,7 @@ function clickWorkbar(id: RightPanelTab | 'plan'): void {
       >
         <button
           type="button"
-          class="ptb- dock-square lg-glass"
+          class="ptb- dock-square lg-band"
           :class="{ 'is-on': entry.active }"
           :aria-label="entry.ariaLabel"
           :aria-pressed="entry.active"
@@ -289,7 +296,7 @@ function clickWorkbar(id: RightPanelTab | 'plan'): void {
         <div
           v-if="showPlanPopover"
           ref="planPopoverRef"
-          class="dock-plan-pop lg-glass"
+          class="dock-plan-pop lg-glass lg-lens"
           @click.stop
         >
           <div class="dock-plan-head">
@@ -392,8 +399,9 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 }
 
 /* Icon-only workbar squares above the composer. Each square is a small
-   glass pill (lg-glass) replacing the old labeled work pills. Upstream
-   class `ptb-` is kept for parity with the screenshot evidence. */
+   band-tier glass pill (.lg-band — 14px blur, embedded look) replacing the
+   old labeled work pills. Upstream class `ptb-` is kept for parity with the
+   screenshot evidence. */
 .dock-workbar {
   position: relative;
   display: flex;
@@ -424,25 +432,21 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
     transform var(--duration-base) var(--ease-out);
 }
 
-/* Liquid-glass material for the squares — doubled-class specificity beats
-   the generic .lg-glass rule; single backdrop-filter (the workbar is a
-   sibling of the frosted composer card, so Firefox nesting is not an
-   issue). Falls back to the solid look above when the toggle is off. */
-html[data-liquid-glass="on"] .dock-square.lg-glass {
-  background: color-mix(in srgb, var(--panel) 10%, transparent);
-  backdrop-filter: blur(10px) saturate(160%);
+/* Liquid-glass material for the squares — they carry .lg-band, so the shared
+   band tier (14px blur + faint tint, no rim / dispersion / drop — they ride
+   embedded in the chat-main::after frost slab) is painted by the consuming
+   rule in style.css. These blocks only retarget the tint parameters per
+   state; the solid look above still applies when the toggle is off. */
+html[data-liquid-glass="on"] .dock-square.lg-band {
+  --lg-tint-a: 10%;
   border-color: color-mix(in srgb, var(--color-line) 72%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--color-text) 7%, transparent),
-    0 1px 2px color-mix(in srgb, black 18%, transparent);
 }
-html[data-liquid-glass="on"] .dock-square.lg-glass:hover:not(.is-on) {
-  background: color-mix(in srgb, var(--panel) 22%, transparent);
+html[data-liquid-glass="on"] .dock-square.lg-band:hover:not(.is-on) {
+  --lg-tint-a: 22%;
+  /* re-assert the glass background over the solid :hover fallback below */
+  background: var(--lg-bg);
   color: var(--color-text);
   transform: translateY(-1px);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--color-text) 9%, transparent),
-    0 3px 8px color-mix(in srgb, black 22%, transparent);
 }
 .dock-square:hover:not(.is-on) {
   background: var(--color-surface-sunken);
@@ -453,13 +457,15 @@ html[data-liquid-glass="on"] .dock-square.lg-glass:hover:not(.is-on) {
   color: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
 }
-html[data-liquid-glass="on"] .dock-square.lg-glass.is-on {
-  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
-  backdrop-filter: blur(10px) saturate(170%);
+html[data-liquid-glass="on"] .dock-square.lg-band.is-on {
+  --lg-tint: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  --lg-tint-top: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  /* Re-assert the glass background: the solid .is-on rule above is a
+     specificity tie against the shared consuming rule and would otherwise
+     mask it. */
+  background: var(--lg-bg);
+  color: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--color-accent) 18%, transparent),
-    0 2px 10px color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 .dock-square:focus-visible {
   outline: none;

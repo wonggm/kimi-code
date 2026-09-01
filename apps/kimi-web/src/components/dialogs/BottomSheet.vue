@@ -6,6 +6,7 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 
 const { t } = useI18n();
 
@@ -17,6 +18,9 @@ const { t } = useI18n();
 // gates the scrim filter here; `step-2` gates the panel's `.lg-frost` filter
 // via the WS-1B override in style.css.
 const settleStep = ref(0);
+const sheetPanel = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback (Firefox/Safari): persistent sheet panel.
+useGlassRefraction(sheetPanel, { transient: false });
 let settleRaf = 0;
 
 const props = withDefaults(
@@ -85,8 +89,8 @@ onUnmounted(() => {
       class="sheet-root"
       :class="{ 'step-1': settleStep >= 1, 'step-2': settleStep >= 2 }"
     >
-      <div class="sheet-scrim" @click="close" />
-      <div class="sheet-panel lg-frost" role="dialog" :aria-label="title || t('mobile.sheetLabel')">
+      <div class="sheet-scrim lg-scrim" @click="close" />
+      <div ref="sheetPanel" class="sheet-panel lg-frost lg-lens" role="dialog" :aria-label="title || t('mobile.sheetLabel')">
         <button
           type="button"
           class="sheet-grab"
@@ -118,8 +122,7 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background: rgba(13, 17, 23, 0.32);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  backdrop-filter: blur(10px) saturate(140%);
+  /* defocus blur: the shared .lg-scrim utility (lg-frost family, style.css). */
 }
 /* Backdrop-filter warm-up (see `settleStep`): the scrim blur lands on
    frame 2 of the enter transition, the panel's frost on frame 3. */

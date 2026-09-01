@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { openDialogCount } from '../../composables/dialogStack';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import IconButton from './IconButton.vue';
 import Icon from './Icon.vue';
 
@@ -50,6 +51,9 @@ const emit = defineEmits<{
 }>();
 
 const panel = ref<HTMLElement | null>(null);
+// WebGL rim-refraction fallback on Firefox/Safari: the panel is a persistent
+// surface (transient: false) so its backdrop keeps refreshing with the app.
+useGlassRefraction(panel, { transient: false });
 let previouslyFocused: Element | null = null;
 
 const FOCUSABLE =
@@ -165,13 +169,13 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="open"
-      class="ui-dialog__overlay"
+      class="ui-dialog__overlay lg-scrim"
       :class="{ 'step-1': settleStep >= 1, 'step-2': settleStep >= 2 }"
       @mousedown="onOverlayClick"
     >
       <div
         ref="panel"
-        class="ui-dialog lg-frost"
+        class="ui-dialog lg-frost lg-lens"
         :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed' }, { 'step-2': settleStep >= 2 }]"
         role="dialog"
         aria-modal="true"
@@ -205,8 +209,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: var(--space-6);
   background: rgba(13, 17, 23, 0.32);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  backdrop-filter: blur(10px) saturate(140%);
+  /* defocus blur: the shared .lg-scrim utility (style.css — the lg-frost
+     family's always-on scrim), not a hand-written recipe. */
   animation: kimi-dialog-overlay-in var(--duration-base) var(--ease-out);
 }
 @keyframes kimi-dialog-overlay-in {

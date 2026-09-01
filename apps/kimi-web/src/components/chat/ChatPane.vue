@@ -1807,7 +1807,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 }
 .top-sentinel-btn {
   appearance: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-line);
   background: transparent;
   color: var(--muted);
   font-size: var(--ui-font-size-sm);
