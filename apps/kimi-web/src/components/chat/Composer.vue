@@ -24,6 +24,7 @@ import { useAttachmentUpload, type Attachment } from '../../composables/useAttac
 import { useIsMobile } from '../../composables/useIsMobile';
 import { clampMenuPlacement } from '../../composables/useViewportClamp';
 import { trackMenuOpen } from '../../composables/useMenuOpen';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import Spinner from '../ui/Spinner.vue';
@@ -346,6 +347,10 @@ watch(
 // placement), clamped into the viewport horizontally and flipped below when the
 // space above the toolbar is too small.
 const modelDropdownRef = ref<HTMLElement | null>(null);
+// The composer card itself is an always-on lens surface: non-transient, so
+// the page snapshot keeps refreshing while it refracts.
+const cardRef = ref<HTMLElement | null>(null);
+useGlassRefraction(cardRef, { transient: false });
 const modelDropdownStyle = ref<Record<string, string>>({});
 
 function positionModelDropdown(): void {
@@ -1189,7 +1194,7 @@ function selectModel(modelId: string): void {
       />
     </div>
 
-    <div v-if="previewAttachment" class="att-lightbox" @click.self="closeAttachmentPreview">
+    <div v-if="previewAttachment" class="att-lightbox lg-scrim" @click.self="closeAttachmentPreview">
       <div class="att-lightbox-card">
         <Tooltip :text="t('model.close')">
           <button
@@ -1212,7 +1217,7 @@ function selectModel(modelId: string): void {
     </div>
 
     <!-- Main composer card -->
-    <div class="composer-card lg-frost">
+    <div ref="cardRef" class="composer-card lg-frost lg-lens">
       <!-- Input row with popup menus -->
       <div ref="cinWrapRef" class="cin-wrap">
         <!-- Work-mode pill — armed/active plan or armed goal, floating over the
@@ -1686,8 +1691,7 @@ function selectModel(modelId: string): void {
   justify-content: center;
   padding: 24px;
   background: rgba(20, 23, 28, 0.62);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  backdrop-filter: blur(10px) saturate(140%);
+  /* defocus blur: the shared .lg-scrim utility (lg-frost family, style.css). */
 }
 .att-lightbox-card {
   position: relative;

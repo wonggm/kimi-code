@@ -22,6 +22,7 @@ import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { STORAGE_KEYS, safeGetString, safeSetString } from '../../lib/storage';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import {
   coerceRightPanelTab,
   latestTurnDiffEntries,
@@ -30,6 +31,9 @@ import {
 } from '../../lib/rightPanelTabs';
 
 const { t } = useI18n();
+
+const rootRef = ref<HTMLElement | null>(null);
+useGlassRefraction(rootRef, { transient: false });
 
 const props = defineProps<{
   /** Tab requested from outside (workbar squares). When it changes, the
@@ -236,7 +240,7 @@ function openChangedFile(path: string): void {
 </script>
 
 <template>
-  <div class="rpt">
+  <div ref="rootRef" class="rpt lg-lens">
     <header class="rpt-bar lg-glass">
       <Tooltip
         v-for="tab in orderedTabs"

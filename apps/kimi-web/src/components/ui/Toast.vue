@@ -3,8 +3,10 @@
      + close. Variants color the icon (info / success / warning / danger). The
      default slot carries extra body content (action links, detail panels…). -->
 <script setup lang="ts">
+import { ref } from 'vue';
 import IconButton from './IconButton.vue';
 import Icon from './Icon.vue';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 
 withDefaults(defineProps<{
   variant?: 'info' | 'success' | 'warning' | 'danger';
@@ -17,10 +19,15 @@ withDefaults(defineProps<{
 });
 
 defineEmits<{ dismiss: [] }>();
+
+const el = ref<HTMLElement | null>(null);
+// Toasts stay mounted for seconds over live content: non-transient, so the
+// page snapshot keeps refreshing underneath (Firefox/Safari only).
+useGlassRefraction(el, { transient: false });
 </script>
 
 <template>
-  <div class="ui-toast lg-glass" :class="`ui-toast--${variant}`">
+  <div ref="el" class="ui-toast lg-glass lg-lens" :class="`ui-toast--${variant}`">
     <span class="ui-toast__icon" aria-hidden="true">
       <slot name="icon">
         <Icon v-if="variant === 'success'" name="check" />

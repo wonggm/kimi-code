@@ -11,6 +11,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { isAnyMenuOpen, menuOpenCount } from '../../composables/useMenuOpen';
+import { useGlassRefraction } from '../../composables/useGlassRefraction';
 
 type Placement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -37,6 +38,10 @@ const trigger = ref<HTMLElement>();
 const bubble = ref<HTMLElement>();
 const open = ref(false);
 const mounted = ref(false);
+
+// WebGL rim-refraction fallback for Firefox/Safari (inert on Chromium). The
+// bubble only participates while actually shown (v-show="open").
+useGlassRefraction(bubble, { when: open });
 const positioned = ref(false);
 const bubbleStyle = ref<Record<string, string>>({ maxWidth: `${props.maxWidth}px` });
 
@@ -173,7 +178,7 @@ onBeforeUnmount(() => {
       v-if="mounted"
       ref="bubble"
       v-show="open"
-      class="ui-tip__bubble lg-glass"
+      class="ui-tip__bubble lg-glass lg-lens"
       :class="{ positioned }"
       :style="[bubbleStyle, { '--tip-lines': maxLines }]"
       role="tooltip"
