@@ -188,7 +188,9 @@ async function onCancel(): Promise<void> {
 }
 .goal-pop-enter-active,
 .goal-pop-leave-active {
-  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+  transition:
+    opacity var(--duration-spring-gentle) var(--spring-gentle),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 .goal-pop-enter-from,
 .goal-pop-leave-to {

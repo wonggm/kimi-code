@@ -12,6 +12,11 @@ export default {
   // Generic tab strip.
   newTab: 'New tab',
   close: 'Close right panel',
+  // In-panel drill stack (list → detail views opened inside the panel).
+  back: 'Back',
+  agentGone: 'This subagent is no longer available. Go back to the list.',
+  drillAgentLabel: 'Subagent detail',
+  drillFileLabel: 'File preview',
   // Turn diff tab: shows the diff for files changed by the latest turn.
   turnDiffEmpty: 'No files changed in this turn',
   turnDiffUnavailable: 'Turn diff unavailable',

@@ -79,4 +79,14 @@ defineExpose({ focus, select, el });
 .ui-input[readonly] { background: var(--color-surface-sunken); }
 .ui-input.has-error { border-color: var(--color-danger); }
 .ui-input.has-error:focus { box-shadow: 0 0 0 3px var(--color-danger-soft); }
+
+/* Phones: iOS auto-zooms the page when a focused input renders below 16px, and
+   both sizes sit at 13-14px. The composer's textarea pins 16px for exactly this
+   reason; the same floor applies to every Input on a phone surface (search
+   fields in the model picker / session search / add-workspace dialogs). */
+@media (max-width: 640px) {
+  .ui-input { font-size: 16px; }
+  .ui-input--md { height: 44px; }
+  .ui-input--sm { height: 44px; font-size: 16px; }
+}
 </style>

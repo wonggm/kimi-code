@@ -12,6 +12,18 @@
      (resolution-independent). Mount exactly once per app root (App.vue,
      BenchView.vue). -->
 <script setup lang="ts">
+// Theme-linked specular for the SVG lens. `specularConstant` /
+// `specularExponent` are SVG attributes, not CSS properties, so the theme
+// choice cannot be a token retarget on one filter — instead the two themes get
+// twin filters that differ ONLY in the rim highlight, and style.css selects the
+// twin through `--lg-lens-filter` (gl-renderer takes the same numbers from
+// `--lg-spec` on the WebGL path). Dark keeps the full white band; a white rim
+// on a white face is invisible, so the light variant drops the highlight to a
+// thin, tighter edge and lets the shaded CSS rim carry the contour.
+const LENS_VARIANTS = [
+  { id: 'lg-refract', specularConstant: 0.55, specularExponent: 22 },
+  { id: 'lg-refract-soft', specularConstant: 0.24, specularExponent: 30 },
+];
 </script>
 
 <template>
@@ -37,8 +49,9 @@
       <rect id="lg-lens-x-src" width="100" height="100" fill="url(#lg-lens-x-grad)" />
       <rect id="lg-lens-y-src" width="100" height="100" fill="url(#lg-lens-y-grad)" />
 
-      <!-- #lg-refract — the floating overlay surfaces that carry the .lg-lens
-           marker class (always paired with .lg-glass or .lg-frost). Primitives: feImage (x2, the R/G lens
+      <!-- #lg-refract / #lg-refract-soft — the surfaces that carry the
+           .lg-lens marker class (always paired with .lg-glass or .lg-frost).
+           Primitives: feImage (x2, the R/G lens
            ramps) → feComposite arithmetic (channel-wise sum into one lens
            map) → feComponentTransfer (table remap, holds the neutral 0.5
            centre and caps the edge pull at ±0.25) → feDisplacementMap (the
@@ -51,7 +64,9 @@
            feColorMatrix + feComposite (single-octave fractal grain at a few
            percent alpha) → feMerge. -->
       <filter
-        id="lg-refract"
+        v-for="variant in LENS_VARIANTS"
+        :key="variant.id"
+        :id="variant.id"
         x="-6%"
         y="-6%"
         width="112%"
@@ -69,7 +84,14 @@
         </feComponentTransfer>
         <feDisplacementMap in="SourceGraphic" in2="lens" scale="0.3" xChannelSelector="R" yChannelSelector="G" result="bent" />
         <feGaussianBlur in="SourceAlpha" stdDeviation="0.015" result="bevel" />
-        <feSpecularLighting in="bevel" surfaceScale="0.04" specularConstant="0.55" specularExponent="22" lighting-color="#ffffff" result="spec">
+        <feSpecularLighting
+          in="bevel"
+          surfaceScale="0.04"
+          :specularConstant="variant.specularConstant"
+          :specularExponent="variant.specularExponent"
+          lighting-color="#ffffff"
+          result="spec"
+        >
           <feDistantLight azimuth="225" elevation="55" />
         </feSpecularLighting>
         <feComposite in="spec" in2="bent" operator="in" result="spec-in" />

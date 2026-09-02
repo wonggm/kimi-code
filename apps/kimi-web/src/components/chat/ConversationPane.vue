@@ -3,7 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, ApprovalBlock, ChatTurn, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, TaskItem, TodoView, ToolMedia, TurnAttachment, UIQuestion, WorkspaceView } from '../../types';
-import type { AppGoal, AppModel, AppPlanEntry, AppSkill, QuestionResponse, ThinkingLevel } from '../../api/types';
+import type { AppGoal, AppModel, AppPlanEntry, AppSkill, AppTask, QuestionResponse, ThinkingLevel } from '../../api/types';
 import type { FileItem } from './MentionMenu.vue';
 import type { DetachTaskTarget } from '../../lib/detachTarget';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
@@ -33,6 +33,9 @@ const props = defineProps<{
   approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
   gitInfo?: { branch: string; ahead: number; behind: number } | null;
   tasks: TaskItem[];
+  /** Live session task rows in wire shape — forwarded to the right panel, whose
+   *  in-panel subagent drill rebuilds AgentMember records from them. */
+  appTasks?: AppTask[];
   /** ExitPlanMode plan history of the active session, timeline order — the
    *  dock's plan pill shows the latest entry; the plan panel renders it. */
   plans?: AppPlanEntry[];
@@ -1569,8 +1572,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
   <section class="con" :class="{ mobile }">
     <div class="chat-layout" :style="{ '--dock-height': `${dockHeight}px` }">
       <!-- Chat column: header + transcript + dock. A sibling wrapper so the
-           right panel can dock as a second in-flow column (upstream 0.39
-           behavior) instead of floating over the transcript. -->
+           floating right panel (absolutely positioned over .chat-layout)
+           never participates in the column's flex layout. -->
       <div class="chat-main">
       <!-- Chat context header: workspace/session, git status, open-in-editor,
            copy-all, PR. Hidden for the empty-composer (no session context yet). -->
@@ -1867,9 +1870,10 @@ defineExpose({ loadComposerForEdit, focusComposer });
       </div>
 
       <!-- Right-side multi-tab panel (0.39 port): Changes / Side chat /
-           Turn diff / Terminal / task lists. Docked as an in-flow second
-           column (upstream behavior) — the chat column shrinks to make room
-           instead of the panel floating over the transcript. -->
+           Turn diff / Terminal / task lists. Floating card over the
+           transcript — see the .right-panel rule below. Drill-downs started
+           inside it (subagent / file preview) stay in-panel via its own view
+           stack; only task/media opens still bubble to the app-level layer. -->
       <Transition name="sheet">
         <RightPanelTabs
           v-if="activePanelTab !== null"
@@ -1882,7 +1886,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
           :todos="todos"
           :bash-tasks="bashTasks"
           :subagent-tasks="subagentTasks"
-          :open-file="(target) => emit('openFile', target)"
+          :app-tasks="appTasks"
+          :workspace-root="workspaceRoot"
           :side-chat="{
             turns: props.sideChatTurns ?? [],
             running: props.sideChatRunning ?? false,
@@ -1895,8 +1900,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
           @side-chat-send="emit('sideChatSend', $event)"
           @cancel-task="emit('cancelTask', $event)"
           @detach-task="emit('detachTask', $event)"
-          @open-agent="emit('openAgent', $event)"
-          @open-changed-file="(target) => emit('openFile', target)"
+          @open-media="emit('openMedia', $event)"
         />
       </Transition>
     </div>
@@ -2023,9 +2027,9 @@ html[data-liquid-glass="on"] .panes.has-header {
 }
 
 /* Chat tab layout: the chat column (header + message list + dock) sits in
-   .chat-main; the right panel docks as an in-flow second column next to it
-   (upstream 0.39 behavior), so opening the panel shrinks the chat column
-   instead of floating a card over the transcript. */
+   .chat-main; the right panel is a floating card positioned absolutely over
+   it (see .right-panel), so opening the panel overlays the transcript
+   instead of squeezing the chat column. */
 .chat-layout {
   display: flex;
   flex-direction: row;
@@ -2042,22 +2046,30 @@ html[data-liquid-glass="on"] .panes.has-header {
   flex-direction: column;
   position: relative;
   /* Query container for everything in the chat column (ChatPane's
-     @container rules, the TOC's cqi cap) so those track the column width
-     left over after the panel docks, not the full .con width. */
+     @container rules, the TOC's cqi cap). The floating right panel is not
+     part of this column, so the chat keeps its full width when the panel
+     opens. */
   container-type: inline-size;
 }
 
-/* Right-side multi-tab panel (0.39 port) — docked second column, flush with
-   the window's top/right/bottom edges like upstream's panel; the chat
-   header overlay (glass-on) spans .chat-main only, so the panel reaches the
-   very top with its own 48px tab bar beside the header. Tint-only controls
-   inside (no nested backdrop-filter in Firefox or Chromium). Width matches
-   the upstream panel's --panel-default-w (460px). */
+/* Right-side multi-tab panel — a floating card over the transcript: detached
+   from the layout edges, rounded on all four corners, elevated with the lg
+   drop shadow. It overlays instead of squeezing the chat column; the top
+   inset clears the 48px chat header row, the bottom inset clears the
+   composer dock (measured --dock-height on .chat-layout). Width matches the
+   upstream panel's --panel-default-w (460px). Tint-only controls inside (no
+   nested backdrop-filter in Firefox or Chromium). */
 .right-panel {
-  flex: none;
-  width: min(460px, 94vw);
+  position: absolute;
+  top: calc(var(--panel-head-h, 48px) + var(--space-2));
+  right: var(--space-3);
+  bottom: calc(var(--dock-height, 0px) + var(--space-3));
+  z-index: calc(var(--z-modal) - 10);
+  width: min(460px, calc(100% - var(--space-3) * 2));
   min-height: 0;
-  border-left: 1px solid var(--color-line);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2065,34 +2077,25 @@ html[data-liquid-glass="on"] .panes.has-header {
 
 /* Glass on: the panel consumes the shared frost material straight from the
    consuming rule in style.css (.right-panel is on its selector list) — this
-   block only retargets the parameters: the frost tier's blur/tint, no rim on
-   the three edges flush with the window (only the left seam faces the chat),
-   and a shadow-sm drop instead of the dialog-xl rest. */
+   block only retargets the parameters: the frost tier's blur/tint, and the
+   resting drop shadow stepped up to lg now that every edge faces the chat
+   (the rim stays whole — nothing is flush with the window anymore). */
 html[data-liquid-glass="on"] .right-panel {
   --lg-blur: var(--lg-blur-frost);
   --lg-tint-a: var(--lg-tint-frost-a);
-  --lg-rim-top: transparent;
-  --lg-rim-side-r: transparent;
-  --lg-rim-bottom: transparent;
-  --lg-drop-shadow: var(--shadow-sm);
+  --lg-drop-shadow: var(--shadow-lg);
 }
 
 html:not([data-liquid-glass="on"]) .right-panel {
   background: var(--panel);
 }
 
-/* Mobile (≤640px): no room for a docked column — keep the old floating
-   card over the transcript (no header is rendered on mobile, so --space-2
-   is the right top inset in both glass modes). */
+/* Mobile: no chat header row is rendered, so the card starts at the very
+   top with the tighter --space-2 insets it has always used. */
 .con.mobile .right-panel {
-  position: absolute;
   top: var(--space-2);
   right: var(--space-2);
   bottom: calc(var(--dock-height, 0px) + var(--space-2));
-  z-index: calc(var(--z-modal) - 10);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
 }
 .chat-scroll {
   flex: 1;
@@ -2368,7 +2371,9 @@ html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill:hover {
 }
 .pill-enter-active,
 .pill-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity var(--duration-spring-gentle) var(--spring-gentle),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 .pill-enter-from,
 .pill-leave-to {
@@ -2396,7 +2401,9 @@ html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill:hover {
 }
 .abort-toast-enter-active,
 .abort-toast-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity var(--duration-spring-gentle) var(--spring-gentle),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 .abort-toast-enter-from,
 .abort-toast-leave-to {
