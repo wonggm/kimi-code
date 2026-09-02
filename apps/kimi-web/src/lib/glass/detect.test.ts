@@ -7,7 +7,9 @@ import {
   parseNumberToken,
   parsePercentToken,
   parsePxToken,
+  resolveGlassRegime,
   type GlassEngineEnv,
+  type GlassRegimeEnv,
 } from './detect';
 
 const blink = { supportsUrlBackdrop: true, isBlink: true };
@@ -56,6 +58,50 @@ describe('token parsers', () => {
     expect(parseNumberToken('1.04')).toBeCloseTo(1.04);
     expect(parseNumberToken('1.04 ')).toBeCloseTo(1.04);
     expect(parseNumberToken('abc')).toBeNull();
+  });
+
+  it('parses the leading-dot form a minified stylesheet ships', () => {
+    // The production CSS is minified: `--lg-spec: 0.08` arrives as `.08`, and a
+    // custom property's computed value is that token stream verbatim. A parser
+    // that demands a leading digit reads null and the caller silently keeps its
+    // own default — which is how the light theme painted the dark rim strength.
+    expect(parseNumberToken('.08')).toBeCloseTo(0.08);
+    expect(parseNumberToken(' .2 ')).toBeCloseTo(0.2);
+    expect(parseNumberToken('-0.08')).toBeCloseTo(-0.08);
+    expect(parsePxToken('.5px')).toBeCloseTo(0.5);
+    expect(parsePercentToken('.5%')).toBeCloseTo(0.005);
+  });
+
+  it('still rejects forms that are not plain numbers', () => {
+    expect(parseNumberToken('1e-2')).toBeNull();
+    expect(parseNumberToken('.')).toBeNull();
+    expect(parseNumberToken('0.08.1')).toBeNull();
+    expect(parsePxToken('.px')).toBeNull();
+    expect(parsePercentToken('%')).toBeNull();
+  });
+});
+
+describe('ambient regime selection', () => {
+  const regime = (over: Partial<GlassRegimeEnv>): GlassRegimeEnv => ({
+    liquidGlassOn: true,
+    reducedTransparency: false,
+    budgetExceeded: false,
+    ...over,
+  });
+
+  it('paints the refractive regime with glass on and nothing pressing', () => {
+    expect(resolveGlassRegime(regime({}))).toBe('refractive');
+  });
+
+  it('demotes on the OS transparency contract and on the frame budget', () => {
+    expect(resolveGlassRegime(regime({ reducedTransparency: true }))).toBe('opaque');
+    expect(resolveGlassRegime(regime({ budgetExceeded: true }))).toBe('opaque');
+  });
+
+  it('has no regime distinction at all with the glass toggle off', () => {
+    expect(resolveGlassRegime(regime({ liquidGlassOn: false, reducedTransparency: true }))).toBe(
+      'refractive',
+    );
   });
 });
 

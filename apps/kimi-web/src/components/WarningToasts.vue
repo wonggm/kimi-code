@@ -239,8 +239,9 @@ onUnmounted(() => {
    top of the stack as it leaves). */
 .toast-enter-active,
 .toast-leave-active {
-  transition: opacity var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
+  transition:
+    opacity var(--duration-spring-gentle) var(--spring-gentle),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 .toast-enter-from,
 .toast-leave-to {
@@ -248,7 +249,7 @@ onUnmounted(() => {
   transform: translateX(16px);
 }
 .toast-move {
-  transition: transform var(--duration-base) var(--ease-out);
+  transition: transform var(--duration-spring-gentle) var(--spring-gentle);
 }
 .actions {
   display: flex;

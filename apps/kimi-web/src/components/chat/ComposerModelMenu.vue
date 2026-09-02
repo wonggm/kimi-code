@@ -334,6 +334,9 @@ function thinkingSegmentLabel(segment: string): string {
    (same flex treatment the composer's docked menu got). */
 @media (max-width: 640px) {
   .md-row {
+    /* Sheet rows follow the + menu's mobile rule (ComposerAddMenu): a 44px tap
+       height. They render at 32px here, under the touch floor. */
+    min-height: 44px;
     font-size: var(--ui-font-size);
   }
   .md-section {
@@ -350,6 +353,8 @@ function thinkingSegmentLabel(segment: string): string {
   }
   .md-thinking .effort-seg {
     flex: 1;
+    /* 22px at desktop padding — under the touch floor once the row is stretched. */
+    min-height: 44px;
     padding: 5px 6px;
   }
 }

@@ -208,7 +208,9 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   pointer-events: none;
   opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
+  /* Opacity clamps, so the responsive curve's overshoot tail would be dead
+     time on a pure fade — gentle is the fade preset. */
+  transition: opacity var(--duration-spring-gentle) var(--spring-gentle);
 }
 .ui-tip__bubble.positioned { opacity: 1; }
 /* Glass fallback background is light/translucent — restore dark-on-light text
@@ -217,8 +219,18 @@ onBeforeUnmount(() => {
    bg scoped to dark theme only preserves that look without a per-theme rewrite
    of the base rule. */
 html[data-liquid-glass="on"] .ui-tip__bubble.lg-glass { color: var(--color-text); }
-html:not([data-color-scheme="dark"])[data-liquid-glass="on"] .ui-tip__bubble.lg-glass {
+/* "Light theme" here means light, not merely "not explicitly dark": a
+   system-scheme user on a dark OS must get the dark treatment, so the system
+   case is spelled out under a light-OS media query (same keying as the
+   `--lg-*` light re-tune in style.css). */
+html[data-color-scheme="light"][data-liquid-glass="on"] .ui-tip__bubble.lg-glass {
   background: var(--color-text);
   color: var(--color-bg);
+}
+@media (prefers-color-scheme: light) {
+  html[data-color-scheme="system"][data-liquid-glass="on"] .ui-tip__bubble.lg-glass {
+    background: var(--color-text);
+    color: var(--color-bg);
+  }
 }
 </style>

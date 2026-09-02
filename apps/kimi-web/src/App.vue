@@ -1014,6 +1014,7 @@ function openPr(url: string): void {
       :changes="client.changes.value"
       :git-info="client.gitInfo.value"
       :tasks="client.tasks.value"
+      :app-tasks="client.activeAppTasks.value"
       :plans="client.activePlans.value"
       :todos="client.todos.value"
       :goal="client.goal.value"

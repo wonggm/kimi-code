@@ -1,12 +1,23 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { ICON_GROUPS } from '../lib/icons';
 import Icon from '../components/ui/Icon.vue';
+import { setGlassRegimeForced } from '../lib/glass/gl-renderer';
 
 const emit = defineEmits<{ close: [] }>();
 
 function close(): void {
   emit('close');
+}
+
+// Material-regime demo: forcing the opaque regime is the same path the
+// frame-budget watchdog takes, so the designed demoted state can be inspected
+// side by side with the refractive one without waiting for a slow frame.
+const regimeForced = ref(false);
+
+function toggleRegime(): void {
+  regimeForced.value = !regimeForced.value;
+  setGlassRegimeForced(regimeForced.value);
 }
 
 let io: IntersectionObserver | null = null;
@@ -406,8 +417,53 @@ onUnmounted(() => {
                 <tr><td class="tk">--duration-fast</td><td class="val">120ms</td><td>press, focus</td></tr>
                 <tr><td class="tk">--duration-base</td><td class="val">160ms</td><td>hover, show/hide</td></tr>
                 <tr><td class="tk">--duration-slow</td><td class="val">260ms</td><td>dialog, Sheet, layout</td></tr>
+                <tr><td class="tk">--spring-responsive</td><td class="val">linear(…) ≈5% overshoot · cubic-bezier(0.22, 1, 0.36, 1)</td><td>glass control feedback — pill hover lift, popover / menu reveal, toast slide (<code>--duration-spring-responsive</code> 200ms)</td></tr>
+                <tr><td class="tk">--spring-gentle</td><td class="val">linear(…) ≈1% overshoot · cubic-bezier(0.16, 1, 0.3, 1)</td><td>large-travel surfaces — sheet slide-up, dialog scrim fade, toast stack reflow (<code>--duration-spring-gentle</code> 420ms)</td></tr>
+                <tr><td class="tk">--spring-confident</td><td class="val">linear(…) ≈10% overshoot · cubic-bezier(0.34, 1.4, 0.5, 1)</td><td>the decisive short entrance — dialog card (<code>--duration-spring-confident</code> 320ms)</td></tr>
               </tbody>
             </table>
+            <div class="callout info"><span class="ico">i</span><div>
+              The three <b>named spring presets</b> are the motion vocabulary for <b>glass-adjacent surfaces only</b> — menus, toasts, the composer, dialogs and sheets. Everything else keeps <code>--ease-*</code> + <code>--duration-*</code>; do not rewrite app-wide transitions to springs. Each preset ships the <code>cubic-bezier</code> value above and upgrades to the sampled <code>linear()</code> curve inside <code>@supports (transition-timing-function: linear(0, 1))</code>, so an engine without <code>linear()</code> gets the approximation rather than nothing. <code>prefers-reduced-motion: reduce</code> collapses all three to a still curve in <code>style.css</code>; components never check the media feature themselves.
+            </div></div>
+
+            <h3 class="sub">Material regimes (two-regime ambient)</h3>
+            <p>
+              The glass system paints in <b>two regimes from one recipe</b>. <b>Refractive</b> is the default material: translucent tint over a blurred, saturated backdrop, an asymmetric rim band, and refraction (SVG lens on Chromium, WebGL snapshot elsewhere). <b>Opaque</b> is the designed demoted state — the Mica lesson: same hue family, same border and radius geometry, one faint top-edge rim, and <b>no blur, no refraction, no GL pane</b>. It is a resting state, not an error path.
+            </p>
+            <table class="dt">
+              <thead><tr><th>Token</th><th>Value</th><th>Usage</th></tr></thead>
+              <tbody>
+                <tr><td class="tk">--lg-amb-deepen / --lg-amb-lift</td><td class="val">0% … 12%</td><td>Render-time ambient tint, written per surface by the engine: a region darker than the page deepens the face, a brighter one lifts it. Exactly one is ever non-zero, and a WebGL-painted pane carries the value as a shader uniform instead (never both).</td></tr>
+                <tr><td class="tk">ambient reference</td><td class="val">the page’s own measured luminance, same pass</td><td>Rec. 709 on gamma-encoded channels (the weights the shader uses), sampled from the snapshot as a whole or from a nine-point hit-test grid — no per-theme constant to keep in step, so an ordinary backdrop leaves the tint untouched</td></tr>
+                <tr><td class="tk">--lg-spec</td><td class="val">0.2 dark / 0.08 light</td><td>Theme-linked rim specular: the WebGL shader takes it as a uniform, the SVG path selects the matching filter twin (<code>#lg-refract</code> / <code>#lg-refract-soft</code>)</td></tr>
+                <tr><td class="tk">--lg-flat-top / --lg-flat-rim</td><td class="val">raised surface 96% + white / white 26%</td><td>The demoted face stop and its single faint top-edge rim</td></tr>
+                <tr><td class="tk">--lg-optic-bg / -filter / -shadow / -border</td><td class="val">unset → refractive fallback</td><td>The regime switch: the shared material rule reads each slot with the refractive recipe as its fallback, so a demotion is a token retarget that reaches every tier without a specificity fight</td></tr>
+              </tbody>
+            </table>
+            <div class="callout info"><span class="ico">i</span><div>
+              Three things select the opaque regime, all through the same slots: <code>prefers-reduced-transparency: reduce</code> (the OS contract — demoted from the first frame), the <b>frame-budget watchdog</b> in <code>src/lib/glass/gl-renderer.ts</code> (when capture + draw average over 20ms across a rolling 2s window it latches <code>html[data-glass-regime="opaque"]</code> and stops the loop, one-way for the session), and <code>.lg-demoted</code> on a single element. The accessibility states are token overrides in <code>style.css</code> (§08) — <code>prefers-contrast: more</code> thickens the rim and border rather than inventing per-component rules.
+            </div></div>
+
+            <div class="stage-wrap">
+              <div class="stage-bar">
+                <span class="st">Refractive vs demoted face<span class="tag spec">live</span></span>
+                <span class="sactions">
+                  <button class="ds-regime-btn" type="button" :aria-pressed="regimeForced" @click="toggleRegime()">{{ regimeForced ? 'Release opaque regime' : 'Force opaque regime' }}</button>
+                </span>
+              </div>
+              <div class="stage col">
+                <div class="ds-regime-pair">
+                  <div class="ds-regime-card lg-glass lg-lens">
+                    <span class="ds-regime-tag">refractive</span>
+                    <div class="ds-regime-body">Translucent face over the blurred, lensed backdrop — the default material.</div>
+                  </div>
+                  <div class="ds-regime-card lg-glass lg-lens lg-demoted">
+                    <span class="ds-regime-tag">demoted</span>
+                    <div class="ds-regime-body">Same geometry, opaque face, one faint top edge — the designed resting state the frame budget falls back to.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <h4 class="mini">Reduced motion</h4>
             <div class="callout info"><span class="ico">i</span><div>
@@ -1525,7 +1581,10 @@ onUnmounted(() => {
             <p>Desktop click targets <b>≥ 32px</b>; touch devices <b>≥ 44px</b> (consistent with the §01 principle and the IconButton <code>lg</code> tier).</p>
 
             <h4 class="mini">6. Reduced motion</h4>
-            <p>Handled uniformly in the global styles per §02's <code>@media (prefers-reduced-motion: reduce)</code>; components do not check this individually. The MoonSpinner moon phase pauses on the current frame.</p>
+            <p>Handled uniformly in the global styles per §02's <code>@media (prefers-reduced-motion: reduce)</code>; components do not check this individually. The MoonSpinner moon phase pauses on the current frame, and the glass material's transitions snap (including the §02 spring presets, which collapse to a still curve, so no menu / dialog travels).</p>
+
+            <h4 class="mini">6b. Reduced transparency &amp; increased contrast</h4>
+            <p>Both are contracts of the <b>material system</b>, not per-component rules (see §02 "Material regimes"): <code>prefers-reduced-transparency: reduce</code> retargets the <code>--lg-optic-*</code> slots from the root, so every glass surface renders the designed <b>opaque</b> regime — no blur, no refraction, no WebGL pane — and the ambient read is dropped. <code>prefers-contrast: more</code> thickens the rim hairlines, widens the inset edge-glow and densifies the tier tints, so a panel separates from its backdrop by its edge. Add new surfaces to the tier lists in <code>style.css</code> rather than writing an accessibility override inside a component.</p>
 
             <h4 class="mini">7. Live announcements (non-mandatory)</h4>
             <p>Screen-reader announcements are <b>not a mandatory contract</b> in this product. Short hints like Toast can use <code>role="status"</code> / <code>aria-live</code>; chat streaming output is currently not announced word-by-word, which is an acceptable trade-off, to be added later if a real need arises.</p>
@@ -1757,6 +1816,41 @@ onUnmounted(() => {
   }
   .stage-label { width: 100%; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--d-fg-faint); margin-bottom: -6px; }
   .stage.dark .stage-label { color: #6b7280; }
+
+  /* ---------- Material regimes demo (§02) ---------- */
+  .ds-regime-pair { display: flex; flex-wrap: wrap; gap: 16px; }
+  .ds-regime-card {
+    flex: 1 1 240px;
+    min-width: 240px;
+    padding: 14px 16px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    color: var(--color-text);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+  }
+  .ds-regime-tag {
+    display: block;
+    margin-bottom: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--d-accent-2);
+  }
+  .ds-regime-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--d-line);
+    border-radius: 8px;
+    background: var(--d-bg);
+    color: var(--d-fg);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .ds-regime-btn:hover { background: var(--d-surface-2); }
+  .ds-regime-btn:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+  .ds-regime-btn[aria-pressed='true'] { border-color: var(--d-accent-2); color: var(--d-accent-2); }
 
   /* ---------- Before / After ---------- */
   .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--d-line); border-radius: 16px; overflow: hidden; margin: 18px 0; box-shadow: var(--d-shadow-sm); }

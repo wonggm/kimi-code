@@ -868,6 +868,13 @@ function closePermDropdown(): void {
 }
 
 function onDocClick(e: MouseEvent): void {
+  // On mobile the model menu is a bottom sheet teleported to <body>, so a row
+  // tap always looks like a click "outside" the toolbar here. Dismissing the
+  // menu in this capture-phase handler unmounts the sheet's rows before they
+  // receive the tap, and Vue drops emits from an already-unmounted instance —
+  // the row would silently do nothing. The sheet dismisses itself instead
+  // (scrim / grab handle / Escape), which routes back through closeDropdown().
+  if (isMobile.value && dropdownOpen.value) return;
   if (toolbarRef.value && !toolbarRef.value.contains(e.target as Node)) {
     closeDropdown();
     closePermDropdown();
@@ -2484,6 +2491,14 @@ function selectModel(modelId: string): void {
   }
   .model-pill {
     max-width: min(52vw, 220px);
+    /* The pill is the composer's model-switch entry; at desktop height it
+       measures 27px — under the touch floor, and it can't take the ::before
+       halo the round controls use because it clips its own overflow. Raise the
+       box itself (the collapsed variant keeps its 36px circle). */
+    min-height: 44px;
+  }
+  .model-pill.icon-only {
+    min-height: var(--composer-control-size);
   }
   .model-pill b {
     max-width: min(40vw, 170px);
@@ -2512,18 +2527,25 @@ function selectModel(modelId: string): void {
 @media (max-width: 640px) and (hover: none) {
   .send,
   .stop,
-  .expand-btn {
+  .expand-btn,
+  .add-btn {
     position: relative;
   }
   .send::before,
   .stop::before,
-  .expand-btn::before {
+  .expand-btn::before,
+  .add-btn::before {
     content: "";
     position: absolute;
     inset: -6px;
   }
   .expand-btn::before {
     inset: -11px;
+  }
+  /* The "+" is an md IconButton (32px), a step smaller than the 36px circles it
+     sits beside, so it needs the extra reach to clear the touch floor. */
+  .add-btn::before {
+    inset: -8px;
   }
 }
 

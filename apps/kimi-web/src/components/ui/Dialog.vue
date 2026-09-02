@@ -211,7 +211,7 @@ onBeforeUnmount(() => {
   background: rgba(13, 17, 23, 0.32);
   /* defocus blur: the shared .lg-scrim utility (style.css — the lg-frost
      family's always-on scrim), not a hand-written recipe. */
-  animation: kimi-dialog-overlay-in var(--duration-base) var(--ease-out);
+  animation: kimi-dialog-overlay-in var(--duration-spring-gentle) var(--spring-gentle);
 }
 @keyframes kimi-dialog-overlay-in {
   from { opacity: 0; }
@@ -233,7 +233,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-xl);
   outline: none;
   overflow: hidden;
-  animation: kimi-card-in var(--duration-slow) var(--ease-out);
+  animation: kimi-card-in var(--duration-spring-confident) var(--spring-confident);
 }
 .ui-dialog--md { width: min(440px, 100%); }
 .ui-dialog--lg { width: min(640px, 100%); }
@@ -262,5 +262,20 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 22px 20px;
+}
+
+/* Phones on touch input: the header close button is an sm IconButton (26px) and
+   is often the only dismissal control in the dialog. Widen its hit area with
+   the transparent-halo treatment the composer's round controls already use, so
+   the visible size stays at the design system's sm tier. */
+@media (max-width: 640px) and (hover: none) {
+  .ui-dialog__close {
+    position: relative;
+  }
+  .ui-dialog__close::before {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
 }
 </style>

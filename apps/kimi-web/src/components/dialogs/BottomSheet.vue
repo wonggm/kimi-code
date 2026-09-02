@@ -192,14 +192,20 @@ onUnmounted(() => {
   padding-bottom: max(16px, var(--safe-bottom));
 }
 
-/* Slide-up + fade transition for the whole sheet (scrim fades, panel slides). */
+/* Slide-up + fade transition for the whole sheet (scrim fades, panel slides).
+   Glass-adjacent motion names a spring preset instead of a bare curve. Both
+   the scrim and the panel take `gentle`: a spring that overshoots by 10% of a
+   100vh slide would lift the panel off the bottom edge, so large-travel
+   surfaces get the near-critical curve, and the extra settle time is what
+   reads as weight. `prefers-reduced-motion` collapses the presets to a still
+   curve in style.css, so no component checks the media feature itself. */
 .sheet-enter-active,
 .sheet-leave-active {
-  transition: opacity var(--duration-slow) var(--ease-out);
+  transition: opacity var(--duration-spring-gentle) var(--spring-gentle);
 }
 .sheet-enter-active .sheet-panel,
 .sheet-leave-active .sheet-panel {
-  transition: transform var(--duration-slow) var(--ease-out);
+  transition: transform var(--duration-spring-gentle) var(--spring-gentle);
 }
 .sheet-enter-from,
 .sheet-leave-to {

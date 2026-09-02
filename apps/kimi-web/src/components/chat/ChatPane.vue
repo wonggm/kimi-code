@@ -1385,8 +1385,9 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 }
 .undo-toast-enter-active,
 .undo-toast-leave-active {
-  transition: opacity var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
+  transition:
+    opacity var(--duration-spring-responsive) var(--spring-responsive),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 .undo-toast-enter-from,
 .undo-toast-leave-to {
@@ -1595,6 +1596,18 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
     font-size: var(--ui-font-size-sm);
     padding: 8px 10px;
     margin: -4px -6px;
+    /* 30px tall with the padding above; the user-message counterparts
+       (.u-copy / .u-edit) are bumped to the same floor below. */
+    min-height: 40px;
+  }
+  /* Per-turn Copy / Quote / edit actions: same padding-and-negative-margin
+     treatment, so the hit area reaches the touch floor without moving the row
+     they sit in. */
+  .u-copy,
+  .u-edit {
+    min-height: 40px;
+    padding: 8px 10px;
+    margin: -6px -5px;
   }
 }
 .a-msg .msg {

@@ -346,5 +346,15 @@ function selectTab(tabId: string): void {
   .caps {
     display: none;
   }
+  /* Provider tabs and the row's star button are the dialog's only controls on a
+     phone: at desktop size they land at 30px / 26px tall, under the touch floor.
+     The rows already clear 44px. */
+  .tab-strip :deep(.ui-button) {
+    min-height: 44px;
+  }
+  .model-row :deep(.ui-icon-button) {
+    width: 44px;
+    height: 44px;
+  }
 }
 </style>
