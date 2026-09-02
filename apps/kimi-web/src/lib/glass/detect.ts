@@ -33,6 +33,42 @@ export function needsWebglRefraction(env: GlassEngineEnv): boolean {
   return !(env.supportsUrlBackdrop && env.isBlink);
 }
 
+/** The two ambient regimes: refractive glass, or the designed opaque (Mica-like) face. */
+export type GlassRegime = 'refractive' | 'opaque';
+
+export interface GlassRegimeEnv {
+  /** html[data-liquid-glass="on"] */
+  liquidGlassOn: boolean;
+  /** prefers-reduced-transparency: reduce */
+  reducedTransparency: boolean;
+  /** The frame-budget watchdog latched (one-way per session). */
+  budgetExceeded: boolean;
+  /** Hand-forced opaque (design-system demo / debug override). */
+  forcedOpaque?: boolean;
+}
+
+/**
+ * Which regime the app paints in. Glass off means no glass material at all, so
+ * the refractive/opaque distinction only exists while the toggle is on; the OS
+ * transparency contract, a tripped frame budget and an explicit demo override
+ * all land on the opaque regime, which is a designed state rather than a
+ * degraded one.
+ */
+export function resolveGlassRegime(env: GlassRegimeEnv): GlassRegime {
+  if (!env.liquidGlassOn) return 'refractive';
+  if (env.reducedTransparency || env.budgetExceeded || env.forcedOpaque) return 'opaque';
+  return 'refractive';
+}
+
+// A CSS `<number>` as it reaches getComputedStyle().getPropertyValue(). The
+// leading-dot branch is not optional: the production stylesheet is minified, so
+// `--lg-spec: 0.08` ships as `--lg-spec: .08` — a custom property's computed
+// value is that token stream verbatim, and a parser that demands a leading
+// digit reads it as null and silently keeps its own default. That is exactly
+// how the light theme ended up painting the dark rim strength in every build
+// while the dev server (unminified CSS) looked correct.
+const NUMBER = String.raw`[+-]?(?:\d+(?:\.\d+)?|\.\d+)`;
+
 /**
  * Parse a CSS length token to pixels. Only plain `Npx` / unitless-zero /
  * plain-number forms are understood; anything else (calc(), var() leftovers,
@@ -41,10 +77,10 @@ export function needsWebglRefraction(env: GlassEngineEnv): boolean {
 export function parsePxToken(raw: string | null | undefined): number | null {
   if (!raw) return null;
   const v = raw.trim();
-  if (v === '' || v === '0') return v === '0' ? 0 : null;
-  const px = /^(-?\d+(?:\.\d+)?)px$/.exec(v);
+  if (v === '0') return 0;
+  const px = new RegExp(`^(${NUMBER})px$`).exec(v);
   if (px) return Number(px[1]);
-  const plain = /^(\d+(?:\.\d+)?)$/.exec(v);
+  const plain = new RegExp(`^(${NUMBER})$`).exec(v);
   if (plain) return Number(plain[1]);
   return null;
 }
@@ -52,14 +88,14 @@ export function parsePxToken(raw: string | null | undefined): number | null {
 /** Parse `saturate()`-style percentage tokens ('190%') to a multiplier (1.9). */
 export function parsePercentToken(raw: string | null | undefined): number | null {
   if (!raw) return null;
-  const m = /^(-?\d+(?:\.\d+)?)%$/.exec(raw.trim());
+  const m = new RegExp(`^(${NUMBER})%$`).exec(raw.trim());
   return m ? Number(m[1]) / 100 : null;
 }
 
-/** Parse a unitless number token ('1.04'); null on anything else. */
+/** Parse a unitless number token ('1.04', '.08'); null on anything else. */
 export function parseNumberToken(raw: string | null | undefined): number | null {
   if (!raw) return null;
-  const m = /^(-?\d+(?:\.\d+)?)$/.exec(raw.trim());
+  const m = new RegExp(`^(${NUMBER})$`).exec(raw.trim());
   return m ? Number(m[1]) : null;
 }
 

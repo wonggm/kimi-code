@@ -32,8 +32,22 @@ import {
   parseNumberToken,
   parsePercentToken,
   parsePxToken,
+  resolveGlassRegime,
+  type GlassRegime,
 } from './detect';
-import { capturePageSnapshot, makeBlurredVariant, type PageSnapshot } from './snapshot';
+import {
+  FrameBudget,
+  clearSurfaceAmbient,
+  setSurfaceAmbient,
+  tintAdjustFromLuma,
+} from './ambient';
+import {
+  capturePageSnapshot,
+  makeBlurredVariant,
+  samplePageLuminance,
+  sampleRegionLuminance,
+  type PageSnapshot,
+} from './snapshot';
 
 export interface GlassSurfaceOptions {
   /** Menus/tooltips: freezes snapshot refresh while open (default true). */
@@ -41,6 +55,7 @@ export interface GlassSurfaceOptions {
 }
 
 type ActiveListener = (active: boolean) => void;
+type RegimeListener = (regime: GlassRegime) => void;
 
 interface SurfaceParams {
   blurPx: number;
@@ -48,6 +63,8 @@ interface SurfaceParams {
   bright: number;
   edgePx: number;
   radiusPx: number;
+  /** Rim-band specular strength (`--lg-spec`), theme-linked. */
+  spec: number;
 }
 
 interface Surface {
@@ -62,6 +79,10 @@ interface Surface {
   genPainted: number; // snapshot generation this pane's canvas holds
   painted: boolean;
   demoted: boolean; // exceeded the canvas cap → stays plain-blur
+  /** Signed ambient tint adjustment measured for the current snapshot. */
+  ambient: number;
+  /** `paramsEpoch` the surface's computed-style params were last read under. */
+  paramsEpochRead: number;
 }
 
 interface TierTexture {
@@ -77,7 +98,9 @@ interface TierTexture {
 // Fractions, so pane size changes cost nothing.
 const LENS_EDGE_FRACTION = 0.12;
 const LENS_PULL_FRACTION = 0.01875;
-const SPEC_STRENGTH = 0.2; // feSpecularLighting specularConstant analogue
+// Fallback for the token the shader consumes when a panel's computed style
+// cannot be parsed: --lg-spec (rim-band specular strength).
+const SPEC_STRENGTH = 0.2;
 const GRAIN_AMPLITUDE = 0.05; // feTurbulence+feColorMatrix grain analogue
 
 const MAX_ATTACHED = 10;
@@ -109,6 +132,8 @@ uniform vec2 uPull;    // max displacement px (per axis)
 uniform float uBright;
 uniform float uSat;
 uniform float uHasSpec;
+uniform float uSpec;    // rim-band specular strength (--lg-spec), theme-linked
+uniform float uAmbient;  // signed ±luminance ambient tint for this pane's region
 
 float sdRoundRect(vec2 p, vec2 b, float r) {
   vec2 q = abs(p) - b + vec2(r);
@@ -145,19 +170,27 @@ void main() {
   // identically, so there is no chromatic split to mirror here.
   vec2 uv = clamp((texel + disp) / uTexSize, vec2(0.0), vec2(1.0));
   vec3 col = texture2D(uTex, uv).rgb;
-  // saturate + brightness, mirroring --lg-sat / --lg-bright.
+  // saturate + brightness, mirroring --lg-sat / --lg-bright, then the
+  // render-time ambient tint for the region behind this pane (uAmbient is a
+  // signed fraction, so dark content deepens and bright content lifts the
+  // surface). style.css applies the same read to the face tint through
+  // --lg-amb-deepen / --lg-amb-lift; the renderer writes one channel or the
+  // other per surface, never both, so a pane is never tinted twice.
   float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(vec3(luma), col, uSat) * uBright;
+  col = mix(vec3(luma), col, uSat) * (uBright * (1.0 + uAmbient));
   // Rim-band specular (feSpecularLighting analogue): rides the same
   // separable rim field as the displacement, weighted toward the top edge
   // and slightly the left — the key light sits high-left, and corners,
   // where both ramps meet, read brightest, matching how a real glass
   // highlight follows the edge curvature rather than sitting as a blob.
+  // uSpec follows the theme's surface brightness (--lg-spec): the dark theme
+  // keeps the full white edge, the light theme drops it because a white rim
+  // on a white face is invisible and the shaded edges carry the contour.
   if (uHasSpec > 0.5) {
     float wTop = sgn.y < 0.0 ? 1.0 : 0.12;
     float wSide = sgn.x < 0.0 ? 0.55 : 0.15;
     float rimSpec = pow(wy, 2.5) * wTop + pow(wx, 2.5) * wSide;
-    col += vec3(rimSpec * ${SPEC_STRENGTH.toFixed(3)});
+    col += vec3(rimSpec * uSpec);
   }
   // Static hash grain (feTurbulence analogue) — no animation, so it is safe
   // under prefers-reduced-motion by construction.
@@ -166,6 +199,18 @@ void main() {
   gl_FragColor = vec4(clamp(col, 0.0, 1.0) * coverage, coverage);
 }
 `;
+
+/**
+ * Re-read a surface's computed-style params, stamping the epoch only on success
+ * so a read that fails (style not resolvable yet) retries on the next sync
+ * instead of freezing whatever value the surface happened to hold.
+ */
+function syncParams(s: Surface): void {
+  const params = readParams(s.el);
+  if (!params) return;
+  s.params = params;
+  s.paramsEpochRead = paramsEpoch;
+}
 
 function readParams(el: HTMLElement): SurfaceParams | null {
   const cs = getComputedStyle(el);
@@ -177,6 +222,7 @@ function readParams(el: HTMLElement): SurfaceParams | null {
     bright: parseNumberToken(cs.getPropertyValue('--lg-bright')) ?? 1.04,
     edgePx: parsePxToken(cs.getPropertyValue('--lg-edge-px')) ?? 10,
     radiusPx: Math.max(0, parsePxToken(cs.borderTopLeftRadius) ?? 0),
+    spec: parseNumberToken(cs.getPropertyValue('--lg-spec')) ?? SPEC_STRENGTH,
   };
 }
 
@@ -188,6 +234,12 @@ let refCount = 0;
 let watching = false; // document-level attribute/media listeners installed
 let sessionDisabled = false;
 let active = false;
+// The frame-budget watchdog latched: the app is in the designed opaque regime
+// and the GL loop stays down for the rest of the session (one-way by design).
+let budgetDemoted = false;
+// Hand-forced opaque regime (design-system demo control).
+let forcedOpaque = false;
+const frameBudget = new FrameBudget();
 
 let surfaces: Surface[] = [];
 let listenersInstalled = false;
@@ -210,9 +262,14 @@ let tierTextures = new Map<number, TierTexture>();
 // when the transcript scrolls — re-syncing computed styles and re-painting
 // them every frame doubled p95 frame time (16→30ms measured on live
 // Firefox). paintedGen tracks the snapshot generation the canvases hold;
-// paramsStale forces one style re-sync after a theme switch.
+// paramsEpoch invalidates every surface's computed-style params. It is compared
+// per surface (`paramsEpochRead`) rather than consumed as one global flag: a
+// single `paramsStale` boolean was cleared by the first layout pass even when
+// individual surfaces had skipped that pass (hidden pane, no canvas yet), so a
+// theme change could leave a pane's `--lg-*`-derived params — uSpec included —
+// stale for as long as the page stayed still.
 let paintedGen = -1;
-let paramsStale = true;
+let paramsEpoch = 0;
 
 let layerCanvas: HTMLCanvasElement | null = null;
 let layerScale = 1;
@@ -225,6 +282,8 @@ let followUntil = 0;
 const lastSlices: Record<string, unknown>[] = [];
 
 const activeListeners = new Set<ActiveListener>();
+const regimeListeners = new Set<RegimeListener>();
+let currentRegime: GlassRegime = 'refractive';
 
 function emitActive(): void {
   for (const fn of Array.from(activeListeners)) fn(active);
@@ -238,6 +297,32 @@ export function subscribeGlassActive(fn: ActiveListener): () => void {
 
 export function isGlassWebglActive(): boolean {
   return active;
+}
+
+/** Current ambient regime (refractive glass vs designed opaque). */
+export function glassRegime(): GlassRegime {
+  return currentRegime;
+}
+
+/** Subscribe to regime changes (frame-budget demotion, OS transparency). */
+export function subscribeGlassRegime(fn: RegimeListener): () => void {
+  regimeListeners.add(fn);
+  return () => regimeListeners.delete(fn);
+}
+
+/**
+ * Force the designed opaque regime on or off by hand (the design-system view's
+ * regime control). Clearing it also releases the frame-budget latch, which is
+ * the only way the latch opens; that is deliberate — it happens from an
+ * explicit user action, never from the watchdog.
+ */
+export function setGlassRegimeForced(opaque: boolean): void {
+  forcedOpaque = opaque;
+  if (!opaque) {
+    budgetDemoted = false;
+    frameBudget.reset();
+  }
+  evaluate();
 }
 
 function probeEnv() {
@@ -256,11 +341,40 @@ function probeEnv() {
 }
 
 function evaluate(): void {
-  if (sessionDisabled) {
+  applyRegime();
+  if (sessionDisabled || budgetDemoted) {
+    setActive(false);
+    return;
+  }
+  // The designed opaque regime needs no refraction engine at all: CSS paints
+  // the flat face, so the loop stays down (this is also the path taken when
+  // prefers-reduced-transparency matches or the demo control forces opaque).
+  if (currentRegime === 'opaque') {
     setActive(false);
     return;
   }
   setActive(needsWebglRefraction(probeEnv()));
+}
+
+/**
+ * Publish the current regime on `<html>` so style.css can switch every glass
+ * surface between the refractive and the designed opaque material. Reduced
+ * transparency is a CSS media contract too, but writing the attribute keeps
+ * the DOM honest about what is actually being painted (and lets the design
+ * view / debug surface read it).
+ */
+function applyRegime(): void {
+  const regime = resolveGlassRegime({
+    liquidGlassOn: document.documentElement.dataset.liquidGlass === 'on',
+    reducedTransparency: mqTransparency?.matches ?? false,
+    budgetExceeded: budgetDemoted,
+    forcedOpaque,
+  });
+  if (document.documentElement.dataset.glassRegime === regime) return;
+  if (regime === 'refractive') delete document.documentElement.dataset.glassRegime;
+  else document.documentElement.dataset.glassRegime = regime;
+  currentRegime = regime;
+  for (const fn of Array.from(regimeListeners)) fn(regime);
 }
 
 function setActive(on: boolean): void {
@@ -271,7 +385,8 @@ function setActive(on: boolean): void {
     installListeners();
     for (const s of surfaces) {
       s.demoted = false; // fresh canvas budget per activation
-      s.params = readParams(s.el) ?? s.params;
+      s.ambient = 0;
+      syncParams(s);
       markRegistration(s);
     }
     requestFollow();
@@ -292,6 +407,23 @@ function disableSession(): void {
   setActive(false);
 }
 
+/**
+ * Frame-budget demotion: the loop stopped paying for itself, so every surface
+ * moves to the designed opaque regime and the GL loop stops. One-way for the
+ * session — no recovery machinery, because the opaque state is a resting
+ * design state rather than an error.
+ */
+function demoteForBudget(averageMs: number): void {
+  if (budgetDemoted) return;
+  budgetDemoted = true;
+  console.warn(
+    `[glass] frame budget exceeded (${averageMs.toFixed(1)}ms mean over the rolling window) — ` +
+      'switching to the opaque regime for this session',
+  );
+  setActive(false);
+  applyRegime();
+}
+
 // ---------------------------------------------------------------------------
 // Public registration API (used by composables/useGlassRefraction)
 // ---------------------------------------------------------------------------
@@ -304,12 +436,22 @@ export function registerGlassSurface(el: HTMLElement, options: GlassSurfaceOptio
     canvas: null,
     ctx: null,
     styleObserver: null,
-    params: readParams(el) ?? { blurPx: 8, sat: 1.9, bright: 1.04, edgePx: 10, radiusPx: 8 },
+    params:
+      readParams(el) ?? {
+        blurPx: 8,
+        sat: 1.9,
+        bright: 1.04,
+        edgePx: 10,
+        radiusPx: 8,
+        spec: SPEC_STRENGTH,
+      },
     lastRect: null,
     lastOpacity: Number.NaN,
     genPainted: -1,
     painted: false,
     demoted: false,
+    ambient: 0,
+    paramsEpochRead: -1,
   };
   surfaces.push(surface);
   markRegistration(surface);
@@ -331,6 +473,7 @@ export function unregisterGlassSurface(el: HTMLElement): void {
   surfaces.splice(idx, 1);
   // detachCanvas drops the canvas, class AND the snapshot-fixup attributes.
   detachCanvas(surface);
+  clearSurfaceAmbient(el);
   // Last transient pane closed: honour any capture the freeze deferred.
   if (active && captureDirty) scheduleCapture(0);
   requestFollow();
@@ -361,6 +504,9 @@ function countAttached(): number {
 
 function attachCanvas(surface: Surface): void {
   if (!active || surface.canvas || surface.demoted) return;
+  // A hand-demoted surface is out of the refractive regime: it takes the
+  // designed opaque face and never gets a GL pane.
+  if (surface.el.classList.contains('lg-demoted')) return;
   if (!surface.el.parentElement) return;
   if (countAttached() >= MAX_ATTACHED) {
     // Newest registrations win. Demote the oldest TRANSIENT pane first —
@@ -507,9 +653,14 @@ function startWatchingDocument(): void {
   // token on the page, so a theme switch must also refresh the snapshot —
   // scroll/typing would eventually do it, but a pane opened right after the
   // switch would otherwise freeze onto the old theme's backdrop.
+  // The theme attribute is applied by useAppearance at module-evaluation time,
+  // i.e. BEFORE this observer exists, so the boot state can never arrive as a
+  // mutation. That is why every surface starts at paramsEpochRead = -1 (first
+  // sync always reads) and why the epoch comparison below, not a witnessed
+  // mutation, is what guarantees fresh params.
   htmlObserver = new MutationObserver(() => {
     evaluate();
-    paramsStale = true; // theme tokens feed readParams — re-sync every pane
+    paramsEpoch++; // theme tokens feed readParams — re-sync every pane
     if (active) scheduleCapture(CAPTURE_DEBOUNCE_MS, true);
   });
   htmlObserver.observe(document.documentElement, {
@@ -580,6 +731,13 @@ async function runCapture(): Promise<void> {
     snapshotGen++;
     captureFailures = 0;
     invalidateTierTextures();
+    // Ambient read: one 12×12 resample of the page plus one per surface, here
+    // at snapshot regeneration — never per frame. The resamples are synchronous
+    // canvas readbacks, so they join the capture's own main-thread cost in the
+    // budget sample.
+    const ambientStart = performance.now();
+    updateAmbient(snap);
+    sampleFrameCost(snap.costMs + (performance.now() - ambientStart));
     requestFollow();
   } catch (e) {
     captureFailures++;
@@ -597,6 +755,34 @@ async function runCapture(): Promise<void> {
       scheduleCapture(CAPTURE_DEBOUNCE_MS);
     }
   }
+}
+
+/**
+ * One ambient read per surface, at snapshot cadence. A surface whose pane the
+ * canvas actually paints takes the value through the shader uniform and has
+ * its CSS channels cleared; every other surface (capped-out pane, pane without
+ * a canvas yet) takes the CSS variables, which is the same adjustment on the
+ * face tint. Never both, so no panel is tinted twice.
+ */
+function updateAmbient(snap: PageSnapshot): void {
+  const pageLuma = samplePageLuminance(snap);
+  for (const s of surfaces) {
+    const box = s.lastRect ?? s.el.getBoundingClientRect();
+    const rect = 'w' in box ? box : { x: box.x, y: box.y, w: box.width, h: box.height };
+    const luma = sampleRegionLuminance(snap, rect);
+    s.ambient = luma === null || pageLuma === null ? 0 : tintAdjustFromLuma(luma, pageLuma);
+    // A pane the canvas actually paints carries the value in the shader
+    // (uAmbient) and must not also carry the CSS copy; anything else reads the
+    // CSS variables. clearSurfaceAmbient is a no-op when nothing was written.
+    if (s.painted && s.canvas) clearSurfaceAmbient(s.el);
+    else setSurfaceAmbient(s.el, s.ambient);
+  }
+}
+
+/** Feed the frame-budget watchdog one measured cost. */
+function sampleFrameCost(costMs: number): void {
+  if (budgetDemoted || forcedOpaque) return;
+  if (frameBudget.sample(costMs, performance.now())) demoteForBudget(frameBudget.averageMs);
 }
 
 // ---------------------------------------------------------------------------
@@ -769,14 +955,14 @@ function layoutAndRender(): void {
     // pane moved, the params went stale, a fresh snapshot arrived, or the
     // pane is transient (menus fade/reveal without moving, so they keep the
     // per-frame sync). Static permanent panes cost one rect read per frame.
-    if (moved || paramsStale || s.transient || s.genPainted !== gen) {
+    if (moved || s.transient || s.genPainted !== gen || s.paramsEpochRead !== paramsEpoch) {
       const cs = getComputedStyle(s.el);
       const opacity = Number.parseFloat(cs.opacity);
       if (rect.width < 8 || rect.height < 8 || (Number.isFinite(opacity) && opacity < 0.02)) {
         continue; // hidden pane: nothing to follow, no rAF churn
       }
       anyVisible = true;
-      s.params = readParams(s.el) ?? s.params;
+      syncParams(s);
       const pdpr = glassPixelRatio(window.devicePixelRatio || 1);
       const canvas = s.canvas;
       const origin = measureCanvasOrigin(canvas);
@@ -803,11 +989,13 @@ function layoutAndRender(): void {
     }
     s.lastRect = { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
   }
-  paramsStale = false;
   // Paint only when something actually changed: a pane moved, or a fresh
   // snapshot arrived. A static frame leaves every canvas untouched.
   if (anyVisible && snapshot && (moving || paintedGen !== gen)) {
+    const paintStart = performance.now();
     paint();
+    // Draw pass cost: rect sync + GL draws + the per-pane slice readbacks.
+    sampleFrameCost(performance.now() - paintStart);
     paintedGen = gen;
     for (const s of surfaces) s.genPainted = gen;
   }
@@ -906,6 +1094,8 @@ function paint(): void {
     );
     setUniform1f(glRef, 'uBright', s.params.bright);
     setUniform1f(glRef, 'uSat', s.params.sat);
+    setUniform1f(glRef, 'uSpec', s.params.spec);
+    setUniform1f(glRef, 'uAmbient', s.ambient);
     setUniform1f(glRef, 'uHasSpec', 1);
     glRef.drawArrays(glRef.TRIANGLE_STRIP, 0, 4);
     drawn.add(s);
@@ -978,6 +1168,9 @@ function paint(): void {
     if (!s.painted) {
       s.painted = true;
       s.el.classList.add('lg-gl-refracted');
+      // This pane's ambient now travels in the shader uniform; drop the CSS
+      // copy so it is not applied twice.
+      clearSurfaceAmbient(s.el);
     }
   }
 }
@@ -1035,15 +1228,29 @@ export function glassDebugState(): Record<string, unknown> {
     hasSnapshot: snapshot !== null,
     surfaces: surfaces.length,
     attached: countAttached(),
+    regime: currentRegime,
+    budgetDemoted,
+    budgetAverageMs: Math.round(frameBudget.averageMs * 10) / 10,
+    ambients: surfaces.map((s) => ({
+      cls: s.el.className.split(' ')[0],
+      ambient: Math.round(s.ambient * 1000) / 1000,
+      spec: s.params.spec,
+      painted: s.painted,
+      paramsStale: s.paramsEpochRead !== paramsEpoch,
+    })),
     lastSlices,
   };
 }
 
 // Live-audit bridge: the webbridge/CDP probes read the pipeline state from
 // the page context, where the module closure is otherwise unreachable.
+// `__glassBudgetSample` feeds the watchdog a cost, which is how the frame-budget
+// demotion is exercised without waiting for a genuinely slow machine.
 if (typeof window !== 'undefined') {
   (window as { __glassDebug?: typeof glassDebugState }).__glassDebug = glassDebugState;
   (window as { __glassLayerDump?: typeof layerDump }).__glassLayerDump = layerDump;
+  (window as { __glassBudgetSample?: (ms: number) => void }).__glassBudgetSample = (ms: number) =>
+    sampleFrameCost(ms);
 }
 
 /** Debug/test hook: RGBA sample of the shared GL layer canvas plus the
