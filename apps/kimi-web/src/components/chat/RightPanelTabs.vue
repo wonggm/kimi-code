@@ -1,9 +1,10 @@
 <!-- apps/kimi-web/src/components/chat/RightPanelTabs.vue -->
 <!-- Right-side multi-tab panel — replaces the dock pills with a tabbed panel.
      Tabs: Changes / Side chat / Turn diff / Terminal / Bash / Sub agents /
-     Todos. The tab bar is glass and each tab pane is a frost panel; the drill
-     views are solid (content, not controls). Active tab persists in
-     localStorage via STORAGE_KEYS.rightPanelActiveTab.
+     Todos. The tab bar is glass; the tab panes and the drill views are solid
+     (content, not controls). The tab bar's ✕ is the panel's only close — the
+     panes render no close of their own, and a drill view's ✕ pops one level.
+     Active tab persists in localStorage via STORAGE_KEYS.rightPanelActiveTab.
      Drill-downs started inside the panel (subagent card, plan file link)
      push a detail view onto an in-panel stack instead of opening the
      app-level right-side detail layer; the tab bar's back button, Escape while
@@ -175,6 +176,10 @@ const drillAgentView = computed(() =>
 const drillFileView = computed(() =>
   drillTop.value?.kind === 'file' ? drillTop.value : null,
 );
+/** A subagent transcript needs more room than a list, so the panel widens while
+ *  an agent view is on top of the stack (the width rule lives with .right-panel
+ *  in ConversationPane). A file drill keeps the default width. */
+const drillWidensPanel = computed(() => drillTop.value?.kind === 'agent');
 
 function pushDrill(view: PanelDrillView): void {
   const trigger = currentDrillTrigger();
@@ -468,6 +473,7 @@ function openChangedFile(path: string): void {
   <div
     ref="rootRef"
     class="rpt lg-lens"
+    :class="{ 'right-panel-wide': drillWidensPanel }"
     @keydown.capture="onPanelKeydown"
     @pointerdown="onPanelPointerdown"
   >
@@ -517,14 +523,13 @@ function openChangedFile(path: string): void {
 
     <section
       v-show="activeTab === 'changes' && drillStack.length === 0"
-      class="rpt-pane lg-frost"
+      class="rpt-pane"
       role="tabpanel"
     >
       <PanelHeader
         :title="t('panel.tabs.changes')"
         :subtitle="changedFiles.length > 0 ? `${changedFiles.length}` : ''"
-        :close-label="t('panel.close')"
-        @close="emit('close')"
+        :closable="false"
       />
       <div class="rpt-pane-body">
         <ChangedFilesCard
@@ -538,28 +543,27 @@ function openChangedFile(path: string): void {
 
     <section
       v-show="activeTab === 'sideChat' && drillStack.length === 0"
-      class="rpt-pane lg-frost"
+      class="rpt-pane"
       role="tabpanel"
     >
       <SideChatPanel
         :turns="sideChat.turns"
         :running="sideChat.running"
         :sending="sideChat.sending"
+        :closable="false"
         @send="openSideChatSend"
-        @close="emit('close')"
       />
     </section>
 
     <section
       v-show="activeTab === 'turnDiff' && drillStack.length === 0"
-      class="rpt-pane lg-frost"
+      class="rpt-pane"
       role="tabpanel"
     >
       <PanelHeader
         :title="t('panel.tabs.turnDiff')"
         :subtitle="turnDiffEntries.length > 0 ? `${turnDiffEntries.length}` : ''"
-        :close-label="t('panel.close')"
-        @close="emit('close')"
+        :closable="false"
       />
       <div class="rpt-pane-body rpt-turndiff">
         <div v-if="turnDiffEntries.length === 0" class="rpt-empty">{{ t('panel.turnDiffEmpty') }}</div>
@@ -599,13 +603,12 @@ function openChangedFile(path: string): void {
 
     <section
       v-show="activeTab === 'terminal' && drillStack.length === 0"
-      class="rpt-pane lg-frost"
+      class="rpt-pane"
       role="tabpanel"
     >
       <PanelHeader
         :title="t('panel.tabs.terminal')"
-        :close-label="t('panel.close')"
-        @close="emit('close')"
+        :closable="false"
       />
       <div class="rpt-pane-body">
         <Terminal v-if="terminalAvailable && sessionId && terminalProbe !== 'unavailable'" :session-id="sessionId" />
@@ -617,14 +620,13 @@ function openChangedFile(path: string): void {
 
     <section
       v-show="activeTab === 'bash' && drillStack.length === 0"
-      class="rpt-pane lg-frost"
+      class="rpt-pane"
       role="tabpanel"
     >
       <PanelHeader
         :title="t('panel.tabs.bash')"
         :subtitle="`${bashTasks.length}`"
-        :close-label="t('panel.close')"
-        @close="emit('close')"
+        :closable="false"
       />
       <div class="rpt-pane-body">
         <TasksPane
@@ -637,14 +639,13 @@ function openChangedFile(path: string): void {
 
     <section
       v-show="activeTab === 'subagents' && drillStack.length === 0"
-      class="rpt-pane lg-frost"
+      class="rpt-pane"
       role="tabpanel"
     >
       <PanelHeader
         :title="t('panel.tabs.subagents')"
         :subtitle="`${subagentTasks.length}`"
-        :close-label="t('panel.close')"
-        @close="emit('close')"
+        :closable="false"
       />
       <div class="rpt-pane-body">
         <SubagentGrid
@@ -657,14 +658,13 @@ function openChangedFile(path: string): void {
 
     <section
       v-show="activeTab === 'todos' && drillStack.length === 0"
-      class="rpt-pane lg-frost"
+      class="rpt-pane"
       role="tabpanel"
     >
       <PanelHeader
         :title="t('panel.tabs.todos')"
         :subtitle="`${(todos ?? []).length}`"
-        :close-label="t('panel.close')"
-        @close="emit('close')"
+        :closable="false"
       />
       <div class="rpt-pane-body">
         <TodoCard :todos="todos ?? []" />
@@ -735,8 +735,12 @@ function openChangedFile(path: string): void {
 </template>
 
 <style scoped>
+/* The root is the flex column that stacks the bar over the current pane. It
+   carries no height of its own: as the floating card it is absolutely
+   positioned by ConversationPane's .right-panel insets, and a height:100% here
+   over-constrains top + bottom — the browser then drops `bottom` and the card
+   runs down behind the composer. */
 .rpt {
-  height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -745,7 +749,9 @@ function openChangedFile(path: string): void {
 /* Tab bar: glass strip pinned at the top. Rhythm mirrors the upstream
    PanelTabBar: 28px tabs (their --panel-tab-h) centred in the shared
    --panel-head-h (48px) header row, tight --space-1 gaps (upstream uses
-   2px between its labeled tabs; 4px keeps icon-only targets separable). */
+   2px between its labeled tabs; 4px keeps icon-only targets separable).
+   Transparent like the panes, so the root frost material runs through the
+   whole panel; the bottom hairline is the only separator. */
 .rpt-bar {
   flex: none;
   display: flex;
@@ -755,7 +761,6 @@ function openChangedFile(path: string): void {
   box-sizing: border-box;
   padding: 0 var(--space-3);
   border-bottom: 1px solid var(--color-line);
-  background: var(--color-surface);
 }
 
 .rpt-tab {
@@ -814,7 +819,13 @@ function openChangedFile(path: string): void {
 
 /* Each tab panel sits underneath the bar and fills the rest of the panel.
    Use v-show (not v-if) so the children preserve state across switches —
-   e.g. the terminal WebSocket and side chat draft stay alive. */
+   e.g. the terminal WebSocket and side chat draft stay alive. Panes and drill
+   views are transparent: the blur comes from the panel root's own frost
+   backdrop-filter, so the content area shows the same material as the frame
+   (a backdrop-filter of their own would nest inside the panel's and render
+   nothing). In the non-glass and opaque-demoted regimes the root carries a
+   solid background, which shows through the same way. The tab bar keeps its
+   bottom hairline, so the detail views need no separator of their own. */
 .rpt-pane {
   flex: 1;
   min-height: 0;
@@ -824,15 +835,6 @@ function openChangedFile(path: string): void {
   border: none;
   border-top: 0;
   overflow: hidden;
-}
-
-/* Drill views carry content (a subagent transcript, file text), not controls,
-   so they sit on the panel's own solid surface rather than the frost tier: the
-   panel root is already the frost layer, and a backdrop-filter nested inside a
-   backdrop-filter renders nothing. The tab bar keeps its bottom hairline, so
-   the detail view needs no separator of its own. */
-.rpt-drill {
-  background: var(--panel);
 }
 
 .rpt-pane-body {

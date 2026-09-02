@@ -531,8 +531,22 @@ const approvalBusy = computed<boolean>(() => {
 
 const panesRef = ref<HTMLElement | null>(null);
 const dockRef = ref<HTMLElement | null>(null);
+const chatLayoutRef = ref<HTMLElement | null>(null);
 const panesScrollbarWidth = ref(0);
 const dockHeight = ref(0);
+/** Distance from the bottom of .chat-layout up to the composer card's bottom
+ *  edge — the floating right panel shares the composer card's bottom margin, so
+ *  the card and the panel sit flush along the same line rather than the panel
+ *  hovering above the message box. -1 means "not measurable" (no composer
+ *  mounted — the question / approval card replaced it), which falls back to
+ *  --dock-height in the .right-panel rule. */
+const composerClearance = ref(-1);
+const chatLayoutStyle = computed(() => ({
+  '--dock-height': `${dockHeight.value}px`,
+  // -1 = not measurable (no composer card mounted): drop the property so the
+  // .right-panel rule falls back to --dock-height.
+  '--composer-clearance': composerClearance.value >= 0 ? `${composerClearance.value}px` : undefined,
+}));
 const chatDockStyle = computed(() => ({
   '--panes-scrollbar-width': `${panesScrollbarWidth.value}px`,
 }));
@@ -553,6 +567,25 @@ function updatePanesScrollbarWidth(): void {
   const el = panesRef.value;
   panesScrollbarWidth.value = el ? Math.max(0, el.offsetWidth - el.clientWidth) : 0;
   dockHeight.value = dockRef.value?.offsetHeight ?? 0;
+  updateComposerClearance();
+}
+
+/** The composer card lives inside the dock's nested Composer, which the dock
+ *  swaps out for a question / approval card — so the element comes and goes and
+ *  is looked up from the dock root rather than through a ref chain. */
+function currentComposerCard(): HTMLElement | null {
+  return dockRef.value?.querySelector<HTMLElement>('.composer-card') ?? null;
+}
+
+function updateComposerClearance(): void {
+  const layout = chatLayoutRef.value;
+  const card = ensureComposerCardObserved();
+  if (!layout || !card) {
+    composerClearance.value = -1;
+    return;
+  }
+  const gap = layout.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom;
+  composerClearance.value = Number.isFinite(gap) ? Math.max(0, Math.ceil(gap)) : -1;
 }
 
 function bindChatPane(el: RefArg): void {
@@ -581,6 +614,7 @@ function bindChatDock(el: RefArg): void {
     dockedComposerRef.value = null;
   }
   ensureDockObserved();
+  updateComposerClearance();
 }
 
 // Silence noUnusedLocals: both are used as :ref callbacks in the template.
@@ -979,6 +1013,15 @@ watch(scrollKey, async (next, prev) => {
 
 watch(dockRef, () => {
   ensureDockObserved();
+  updateComposerClearance();
+});
+
+// The dock swaps the composer card out for a question / approval card, which
+// changes what the floating right panel has to clear — re-measure once the
+// replacement (or the composer, on the way back) is in the DOM.
+watch([pendingQuestion, pendingApproval], async () => {
+  await nextTick();
+  updateComposerClearance();
 });
 
 watch(
@@ -1280,6 +1323,10 @@ let contentObserver: MutationObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let observedContent: Element | null = null;
 let observedDock: HTMLElement | null = null;
+// The composer card is a grandchild of the dock and unmounts when the dock swaps
+// it for a question / approval card, so it is tracked like the dock itself: the
+// floating right panel measures its bottom inset against the card's top edge.
+let observedComposerCard: HTMLElement | null = null;
 let lastObservedScrollHeight = 0;
 let lastObservedClientHeight = 0;
 let scrollRaf = 0;
@@ -1435,6 +1482,18 @@ function ensureDockObserved(): void {
   if (el) resizeObserver.observe(el);
 }
 
+/** Bind the shared observer to the composer card (it comes and goes when the
+ *  dock swaps the composer for a question / approval card) and hand back the
+ *  element the caller should measure. */
+function ensureComposerCardObserved(): HTMLElement | null {
+  const el = currentComposerCard();
+  if (!resizeObserver || el === observedComposerCard) return el;
+  if (observedComposerCard) resizeObserver.unobserve(observedComposerCard);
+  observedComposerCard = el;
+  if (el) resizeObserver.observe(el);
+  return el;
+}
+
 function rebindScrollObservers(): void {
   const el = panesRef.value;
   updatePanesScrollbarWidth();
@@ -1446,9 +1505,11 @@ function rebindScrollObservers(): void {
     resizeObserver.disconnect();
     observedContent = null;
     observedDock = null;
+    observedComposerCard = null;
     if (el) resizeObserver.observe(el);
     ensureContentObserved();
     ensureDockObserved();
+    ensureComposerCardObserved();
   }
   lastObservedScrollHeight = el?.scrollHeight ?? 0;
   lastObservedClientHeight = el?.clientHeight ?? 0;
@@ -1570,7 +1631,7 @@ defineExpose({ loadComposerForEdit, focusComposer });
 
 <template>
   <section class="con" :class="{ mobile }">
-    <div class="chat-layout" :style="{ '--dock-height': `${dockHeight}px` }">
+    <div ref="chatLayoutRef" class="chat-layout" :style="chatLayoutStyle">
       <!-- Chat column: header + transcript + dock. A sibling wrapper so the
            floating right panel (absolutely positioned over .chat-layout)
            never participates in the column's flex layout. -->
@@ -2055,15 +2116,19 @@ html[data-liquid-glass="on"] .panes.has-header {
 /* Right-side multi-tab panel — a floating card over the transcript: detached
    from the layout edges, rounded on all four corners, elevated with the lg
    drop shadow. It overlays instead of squeezing the chat column; the top
-   inset clears the 48px chat header row, the bottom inset clears the
-   composer dock (measured --dock-height on .chat-layout). Width matches the
-   upstream panel's --panel-default-w (460px). Tint-only controls inside (no
-   nested backdrop-filter in Firefox or Chromium). */
+   inset sits a --space-1 under the 48px chat header row (a full --space-2
+   read as a detached stripe under the commit pills), the bottom inset shares
+   the composer card's own bottom margin (measured --composer-clearance on
+   .chat-layout, falling back to --dock-height when no composer is mounted).
+   Width matches the upstream panel's --panel-default-w (460px). Tint-only
+   controls inside (no nested backdrop-filter in Firefox or Chromium). Width
+   is a layout property, so the drill-driven resize below eases with the
+   gentle spring (no overshoot). */
 .right-panel {
   position: absolute;
-  top: calc(var(--panel-head-h, 48px) + var(--space-2));
+  top: calc(var(--panel-head-h, 48px) + var(--space-1));
   right: var(--space-3);
-  bottom: calc(var(--dock-height, 0px) + var(--space-3));
+  bottom: var(--composer-clearance, var(--dock-height, 0px));
   z-index: calc(var(--z-modal) - 10);
   width: min(460px, calc(100% - var(--space-3) * 2));
   min-height: 0;
@@ -2073,6 +2138,18 @@ html[data-liquid-glass="on"] .panes.has-header {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transition: width var(--duration-spring-gentle) var(--spring-gentle);
+}
+
+/* Subagent drill: the detail transcript needs more room than a list, so the
+   panel takes the preview-pane width while an agent view sits on top of the
+   in-panel stack, and gives it back when the stack pops. Bound by
+   RightPanelTabs from the drill stack's top view (file drills stay narrow).
+   The max() keeps this strictly widening: --preview-w is viewport-clamped (it
+   drops below 460px in the mobile shell), where shrinking the card would be
+   the opposite of what the modifier is for. */
+.right-panel.right-panel-wide {
+  width: min(max(460px, var(--preview-w, 460px)), calc(100% - var(--space-3) * 2));
 }
 
 /* Glass on: the panel consumes the shared frost material straight from the
@@ -2091,11 +2168,17 @@ html:not([data-liquid-glass="on"]) .right-panel {
 }
 
 /* Mobile: no chat header row is rendered, so the card starts at the very
-   top with the tighter --space-2 insets it has always used. */
+   top with the tighter --space-2 insets it has always used; the bottom inset
+   still tracks the composer card's bottom margin. The wide (subagent drill)
+   modifier caps against those mobile insets, so it never grows past the card. */
 .con.mobile .right-panel {
   top: var(--space-2);
   right: var(--space-2);
-  bottom: calc(var(--dock-height, 0px) + var(--space-2));
+  bottom: var(--composer-clearance, var(--dock-height, 0px));
+}
+
+.con.mobile .right-panel.right-panel-wide {
+  width: min(max(460px, var(--preview-w, 460px)), calc(100% - var(--space-2) * 2));
 }
 .chat-scroll {
   flex: 1;

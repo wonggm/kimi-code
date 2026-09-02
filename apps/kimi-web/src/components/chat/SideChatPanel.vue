@@ -12,13 +12,18 @@ import type { ChatTurn } from '../../types';
 import PanelHeader from '../ui/PanelHeader.vue';
 import Tooltip from '../ui/Tooltip.vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   turns: ChatTurn[];
   running: boolean;
   sending: boolean;
   title?: string;
   subtitle?: string;
-}>();
+  /** Show the close button in the panel header. Inside the right tab panel the
+   *  tab bar owns closing, so the pane passes false. */
+  closable?: boolean;
+}>(), {
+  closable: true,
+});
 
 const emit = defineEmits<{
   send: [text: string];
@@ -114,6 +119,7 @@ function autosize(): void {
     <PanelHeader
       :title="panelTitle"
       :subtitle="panelSubtitle"
+      :closable="closable"
       :close-label="t('thinking.close')"
       @close="emit('close')"
     />
