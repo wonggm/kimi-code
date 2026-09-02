@@ -253,11 +253,20 @@ const {
   skills: () => props.skills,
 });
 
+// While the field itself has focus (keyboard up on touch) the composer takes
+// its comfortable height; see the `focused` class in the mobile block below.
+const focused = ref(false);
+
+function onBarFocus(): void {
+  focused.value = true;
+}
+
 // Close both popup menus when the composer loses focus — the menu items use
 // @mousedown.prevent (so clicking them never blurs the textarea), so a blur can
 // only come from interacting elsewhere. Without this the slash panel stayed
 // open after clicking into the chat.
 function onBarBlur(): void {
+  focused.value = false;
   closeSlashMenu();
   closeMentionMenu();
 }
@@ -806,10 +815,18 @@ function handleKeydown(e: KeyboardEvent): void {
 // ---------------------------------------------------------------------------
 
 // Send is always "send" — while running it enqueues (handled upstream by
-// sendPrompt). Interrupt lives on a separate Stop button so the two can never
-// be confused.
+// sendPrompt). On desktop the interrupt lives on its own Stop button beside it
+// so the two can never be confused; on mobile the pair shares a single slot and
+// cross-fades, so the toolbar keeps one footprint through a turn (see
+// .send-stop).
 const sendLabel = computed(() => t('composer.send'));
 const hasUpload = computed(() => !!props.uploadImage);
+
+// The mobile cross-fade keeps both buttons mounted, so the faded-out half has
+// to leave the tab order and the accessibility tree; on desktop the inactive
+// stop button is display:none, which already does that.
+const stopHidden = computed(() => isMobile.value && !props.running);
+const sendHidden = computed(() => isMobile.value && props.running);
 
 // ---------------------------------------------------------------------------
 // Bottom toolbar — split into individual controls
@@ -991,6 +1008,13 @@ function closeAdd(): void {
   document.removeEventListener('mousedown', onAddDocClick);
 }
 function onAddDocClick(e: MouseEvent): void {
+  // Same trap as the model sheet (see onDocClick): on mobile the add menu is a
+  // bottom sheet teleported to <body>, and `addMenuRef` is bound to the desktop
+  // panel only, so the tapped row never reads as "inside" the menu. Closing the
+  // menu on mousedown drops the row's click before its handler runs — Files /
+  // Plan / Swarm did nothing. The sheet dismisses itself instead (scrim / grab
+  // handle / Escape), which routes back through closeAdd().
+  if (isMobile.value && addOpen.value) return;
   const t = e.target as Node;
   if (addRef.value?.contains(t) || addMenuRef.value?.contains(t)) return;
   closeAdd();
@@ -1176,7 +1200,7 @@ function selectModel(modelId: string): void {
 <template>
   <div
     class="composer"
-    :class="{ 'drag-over': isDragOver, expanded }"
+    :class="{ 'drag-over': isDragOver, expanded, focused }"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
@@ -1303,6 +1327,7 @@ function selectModel(modelId: string): void {
             @compositionstart="handleCompositionStart"
             @compositionend="handleCompositionEnd"
             @input="handleInput"
+            @focus="onBarFocus"
             @blur="onBarBlur"
           />
           <Tooltip v-if="expanded || isGrown" :text="expanded ? t('composer.collapseTitle') : t('composer.expandTitle')">
@@ -1471,27 +1496,37 @@ function selectModel(modelId: string): void {
               <Icon class="cv" name="chevron-down" size="sm" />
             </span>
           </Tooltip>
-          <Tooltip v-if="running" :text="t('composer.interruptTitle')">
-            <button
-              class="stop"
-              :aria-label="t('composer.interrupt')"
-              @click="emit('interrupt')"
-            >
-              <Icon name="stop" size="sm" />
-            </button>
-          </Tooltip>
-          <Tooltip :text="sendLabel">
-            <button
-              class="send"
-              :class="{ 'is-starting': starting }"
-              :aria-label="sendLabel"
-              :disabled="starting"
-              @click="handleSubmit()"
-            >
-              <Spinner v-if="starting" size="sm" />
-              <Icon v-else name="send" size="sm" />
-            </button>
-          </Tooltip>
+          <!-- Send + stop — one toolbar slot. Desktop: `display: contents`, so
+               the two keep their own slots exactly as before (stop only visible
+               while running). Mobile: both stack in one cell and cross-fade. -->
+          <div class="send-stop">
+            <Tooltip :text="running ? t('composer.interruptTitle') : null">
+              <button
+                class="stop"
+                :class="{ 'is-off': !running }"
+                :aria-label="t('composer.interrupt')"
+                :aria-hidden="stopHidden ? 'true' : undefined"
+                :tabindex="stopHidden ? -1 : undefined"
+                @click="emit('interrupt')"
+              >
+                <Icon name="stop" size="sm" />
+              </button>
+            </Tooltip>
+            <Tooltip :text="sendLabel">
+              <button
+                class="send"
+                :class="{ 'is-starting': starting, 'is-off': running }"
+                :aria-label="sendLabel"
+                :aria-hidden="sendHidden ? 'true' : undefined"
+                :tabindex="sendHidden ? -1 : undefined"
+                :disabled="starting"
+                @click="handleSubmit()"
+              >
+                <Spinner v-if="starting" size="sm" />
+                <Icon v-else name="send" size="sm" />
+              </button>
+            </Tooltip>
+          </div>
         </div>
 
         <!-- Model dropdown — current provider models + controls + more. Positioned by
@@ -1739,15 +1774,25 @@ function selectModel(modelId: string): void {
   cursor: pointer;
 }
 
-/* Hidden file input */
+/* Hidden file input (no accept filter — any file type can be attached).
+   Kept laid out at 1x1 / opacity 0 instead of display:none: a display:none
+   input can be refused by a mobile browser's file picker (iOS Safari), while
+   pointer-events:none still takes it out of the touch order. */
 .file-input-hidden {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
-/* Wrapper that establishes a positioning context for the popup menus */
+/* Wrapper that establishes a positioning context for the popup menus.
+   The vertical inset is a variable so the mobile composer can rest tighter
+   while the keyboard is down (see the `focused` rules in the ≤640px block);
+   the fallbacks are the desktop values. */
 .cin-wrap {
   position: relative;
-  padding: 14px 16px 8px;
+  padding: var(--composer-inset-top, 14px) 16px var(--composer-inset-bottom, 8px);
 }
 
 /* Input row */
@@ -1803,11 +1848,14 @@ function selectModel(modelId: string): void {
      upstream's contenteditable has zero editor padding — the 9px here pushed
      both placeholder and typed text below the upstream text origin. */
   padding: 0 14px 0 0;
-  min-height: 36px;
+  /* The floor is a variable (fallback = today's comfortable height) so mobile
+     can rest tighter while the keyboard is down. autosize() still drives the
+     height from content: this only clamps it from below. */
+  min-height: var(--composer-input-min-height, 36px);
   max-height: calc(100vh / 4);
   overflow-y: auto;
   line-height: 1.5;
-  margin-bottom: 6px;
+  margin-bottom: var(--composer-input-gap, 6px);
 }
 
 /* The native placeholder attribute is kept for screen readers and CSS-disabled
@@ -1887,8 +1935,8 @@ function selectModel(modelId: string): void {
 .compact-chip:hover { background: var(--panel2); }
 
 /* Send button — circular accent icon. Always "send"; while running it enqueues
-   (handled upstream). Interrupt is a separate Stop button so the two are never
-   confused. */
+   (handled upstream). On desktop the interrupt is a separate Stop button so the
+   two are never confused; on mobile the two share one slot. */
 .send {
   width: var(--composer-send-size);
   height: var(--composer-send-size);
@@ -1973,6 +2021,18 @@ function selectModel(modelId: string): void {
   flex: none;
   width: var(--p-ic-lg);
   height: var(--p-ic-lg);
+}
+
+/* Send / stop live in one toolbar slot. On desktop the slot is `display:
+   contents`, so each button keeps its own flex item exactly as before, and the
+   idle stop button is removed with display:none (what its old v-if did).
+   Mobile (≤640px) instead stacks the pair in a single cell and cross-fades
+   them — see the .send-stop rules in the mobile block below. */
+.send-stop {
+  display: contents;
+}
+.send-stop .stop.is-off {
+  display: none;
 }
 
 /* Bottom toolbar */
@@ -2395,6 +2455,35 @@ function selectModel(modelId: string): void {
       var(--dock-inline-right, max(12px, var(--safe-right)))
       max(24px, var(--safe-bottom))
       var(--dock-inline-left, max(12px, var(--safe-left)));
+    /* Keyboard-down resting shape: a tighter editor and less inset around it,
+       so more of the transcript stays visible while reading. Focusing the
+       field (the keyboard is up then on touch) restores the comfortable inset
+       from the desktop values in the var() fallbacks. The editor floor stays
+       above one 16px line (24px), so the grown-state check in
+       restingHeightPx() cannot flip between the two states, and autosize()
+       keeps driving the height from content — a multi-line draft is never
+       squashed by this. */
+    --composer-inset-top: 9px;
+    --composer-inset-bottom: 4px;
+    --composer-input-min-height: 28px;
+    --composer-input-gap: 2px;
+  }
+  .composer.focused {
+    --composer-inset-top: 14px;
+    --composer-inset-bottom: 8px;
+    --composer-input-min-height: 36px;
+    --composer-input-gap: 6px;
+  }
+  /* Layout-affecting, so both ride the gentle preset. */
+  .cin-wrap {
+    transition:
+      padding-top var(--duration-spring-gentle) var(--spring-gentle),
+      padding-bottom var(--duration-spring-gentle) var(--spring-gentle);
+  }
+  .ph {
+    transition:
+      min-height var(--duration-spring-gentle) var(--spring-gentle),
+      margin-bottom var(--duration-spring-gentle) var(--spring-gentle);
   }
   .composer-card {
     --composer-send-size: 36px;
@@ -2450,6 +2539,40 @@ function selectModel(modelId: string): void {
     /* Same 22px size as the send glyph so the pair reads as one unit. */
     font-size: 22px;
     line-height: 1;
+  }
+  /* One send/stop slot: both buttons share a single cell and cross-fade, so
+     the toolbar keeps one footprint through a turn instead of growing a second
+     circle when the agent starts working. Opacity rides the gentle preset, the
+     scale the responsive one. `visibility` is held open for the fade-out (0s
+     + delay) so the leaving button stops taking taps and leaves the tab order
+     only once it is invisible. */
+  .send-stop {
+    display: grid;
+    margin-left: var(--space-2);
+  }
+  .send-stop .send,
+  .send-stop .stop,
+  .send-stop .stop.is-off {
+    display: flex;
+    grid-area: 1 / 1;
+    margin-left: 0;
+    transition:
+      opacity var(--duration-spring-gentle) var(--spring-gentle),
+      transform var(--duration-spring-responsive) var(--spring-responsive),
+      background var(--duration-spring-gentle) var(--spring-gentle),
+      visibility 0s;
+  }
+  .send-stop .send.is-off,
+  .send-stop .stop.is-off {
+    opacity: 0;
+    transform: scale(0.7);
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity var(--duration-spring-gentle) var(--spring-gentle),
+      transform var(--duration-spring-responsive) var(--spring-responsive),
+      background var(--duration-spring-gentle) var(--spring-gentle),
+      visibility 0s linear var(--duration-spring-gentle);
   }
 
   /* Mobile toolbar: hide secondary controls; the "+" add menu / context ring /
