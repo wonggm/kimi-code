@@ -491,6 +491,20 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --duration-fast: 120ms;
   --duration-base: 160ms;
   --duration-slow: 260ms;
+  /* Named spring presets (direction C, scoped to glass-adjacent motion).
+     Values here are the cubic-bezier approximations every engine can parse;
+     the @supports block below upgrades them to sampled `linear()` curves that
+     follow a real damped-spring response (M3 Expressive / Apple `.smooth`
+     converge on this: motion tokens by name, not per-call curves).
+     responsive  ~5% overshoot, quick settle — hover/press and menus.
+     gentle      ~1% overshoot, no visible bounce — fades and material lifts.
+     confident  ~10% overshoot, decisive landing — dialogs and sheets. */
+  --spring-responsive: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring-gentle: cubic-bezier(0.16, 1, 0.3, 1);
+  --spring-confident: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --duration-spring-responsive: 200ms;
+  --duration-spring-gentle: 420ms;
+  --duration-spring-confident: 320ms;
 
   /* -- type families ------------------------------------------------------- */
   /* UI/body use self-hosted Inter first. CJK and platform system UI families
@@ -539,6 +553,19 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --p-table-cell-max: 700px;
   --p-bp-sm: 640px;
   --p-bp-md: 980px;
+}
+
+/* Spring presets, upgraded. `linear()` easing is a sampled curve, so it can
+   carry a damped-spring response (overshoot and settle) that a cubic-bezier
+   cannot; engines without it keep the cubic-bezier approximations above and
+   nothing else changes. Curves are sampled from the standard second-order step
+   response at the damping ratios noted in the token block. */
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --spring-responsive: linear(0, 0.0354 5%, 0.2062 10%, 0.3756 15%, 0.5442 20%, 0.6941 25%, 0.8166 30%, 0.9095 35%, 0.9747 40%, 1.0163 45%, 1.0394 50%, 1.0489 55%, 1.0493 60%, 1.0442 65%, 1.0364 70%, 1.0278 75%, 1.0197 80%, 1.0127 85%, 1.0071 90%, 1.0031 95%, 1);
+    --spring-gentle: linear(0, 0.0844 5%, 0.2488 10%, 0.4306 15%, 0.5963 20%, 0.7319 25%, 0.8345 30%, 0.907 35%, 0.9551 40%, 0.9847 45%, 1.0013 50%, 1.0092 55%, 1.0119 60%, 1.0116 65%, 1.0099 70%, 1.0077 75%, 1.0056 80%, 1.0038 85%, 1.0024 90%, 1.0014 95%, 1);
+    --spring-confident: linear(0, 0.053 5%, 0.171 9%, 0.3233 13%, 0.4857 18%, 0.641 22%, 0.7779 26%, 0.8905 31%, 0.9767 35%, 1.0374 39%, 1.0755 44%, 1.095 48%, 1.1 52%, 1.0947 57%, 1.0829 61%, 1.0677 65%, 1.0514 70%, 1.0359 74%, 1.0222 78%, 1.011 83%, 1.0023 87%, 0.9963 91%, 0.9925 96%, 1);
+  }
 }
 
 /* Design tokens v2 — dark values (explicit choice). */
@@ -626,26 +653,33 @@ html[data-color-scheme="dark"] {
 }
 
 /* Liquid glass (feature-gated; off = no visual effect) — ONE shared
-   parametric glass system implementing the "D1 heavy refraction" recipe
-   (Apple Liquid Glass replica): a translucent tint over a strongly saturated
-   blurred backdrop (saturate 190%, brightness 1.04), a specular corner bloom
-   glancing off the top-right, an asymmetric edge rim lit from the top-left
-   (top 70% white, side-left 25% white, side-right 12% black, bottom 16%
-   black), a subtle chromatic double outer shadow (one warm copy offset
-   down-right, one cool copy offset up-left) and — on engines that accept an
-   SVG filter reference inside `backdrop-filter` — a visible rim refraction of
-   the content behind the panel (the lens chain lives in
-   components/ui/GlassDefs.vue and is appended in the @supports block below,
-   gated on the .lg-lens marker class rather than on the tiers).
+   parametric material system that paints in TWO regimes (design plan:
+   PLANS/design-language-catalogue.md §5 direction C).
+
+   Refractive regime (the default): a translucent tint over a strongly
+   saturated blurred backdrop (saturate 190%, brightness 1.04), an asymmetric
+   edge rim lit from the top-left key light (top white, side-left white,
+   side-right black, bottom black), the tier's resting drop shadow, and — on
+   engines that accept an SVG filter reference inside `backdrop-filter` — a
+   visible rim refraction of the content behind the panel (the lens chain lives
+   in components/ui/GlassDefs.vue and is selected in the @supports block below,
+   gated on the .lg-lens marker class rather than on the tiers). The face colour
+   is `--lg-face`: the theme surface pushed by the render-time ambient read of
+   what is actually behind that surface.
+
+   Opaque regime (the designed demotion, the Mica lesson): same hue family and
+   geometry, no blur, no refraction, no GL pane, one faint top-edge rim. Reached
+   per element (.lg-demoted), app-wide (html[data-glass-regime="opaque"], which
+   the frame-budget watchdog latches) and by the OS transparency contract.
 
    Architecture: the gate block declares every recipe constant as a custom
    property; the tier classes set the per-surface parameters (--lg-blur,
-   --lg-tint-a, --lg-drop-shadow), and ONE shared rule consumes the whole
-   family (background from --lg-tint / --lg-tint-top composed
-   into --lg-bg, the backdrop-filter chain, and the rim
-   box-shadow). Classless band surfaces (the chat-main blur bands) and the
-   sidebar column consume the same variable family instead of re-declaring
-   the recipe. With the toggle OFF, none of this applies.
+   --lg-tint-a, --lg-drop-shadow); ONE shared rule consumes the whole family and
+   reads its material through the --lg-optic-* slots with the refractive recipe
+   as each slot's fallback, so a regime change is a token retarget rather than a
+   cascade fight. Classless band surfaces (the chat-main blur bands) and the
+   sidebar column consume the same variable family instead of re-declaring the
+   recipe. With the toggle OFF, none of this applies.
 
    Doubled classes (.lg-glass.lg-glass etc.) raise specificity to (0,3,1) so
    these win over components that deliberately raise their own (e.g.
@@ -703,6 +737,34 @@ html[data-liquid-glass="on"] {
   --lg-drop-frost: var(--shadow-xl);
   --lg-drop-band: 0 0 0 0 transparent;
 
+  /* Specular strength of the rim band, consumed as a shader uniform by
+     gl-renderer (and mirrored by the SVG lens variant selection below). Dark
+     surfaces carry the bright edge; on a white surface a bright rim is
+     invisible, so the light-theme block drops the highlight strength, softens
+     the white top edge and deepens the shaded edges so the rim reads as a
+     darker contour, and routes the lens to the softer SVG variant. */
+  --lg-spec: 0.2;
+  --lg-lens-filter: url(#lg-refract);
+
+  /* Render-time ambient tint (direction C): the two per-surface channels the
+     engine writes — `--lg-amb-deepen` when the content behind the panel reads
+     darker than the rest of the page, `--lg-amb-lift` when it reads brighter
+     (never both). Both are 0% until the engine measures something, which is
+     also the no-engine state; the element-level `--lg-face` in the consuming
+     rule below is what mixes them into the surface colour. The reference is the
+     page's own measured luminance in the same pass (Rec. 709 on gamma-encoded
+     channels, the weights the shader uses), so there is no per-theme constant
+     to keep in step: an ordinary transcript frame leaves the tint untouched and
+     only a genuinely dark or bright region behind a surface moves it. */
+  --lg-amb-deepen: 0%;
+  --lg-amb-lift: 0%;
+
+  /* Demoted (opaque) regime — the Mica lesson. A designed resting state: the
+     same hue family and geometry as the glass, no optics. The faint top edge
+     keeps the surface readable as a raised plane rather than a hole. */
+  --lg-flat-top: color-mix(in srgb, var(--color-surface-raised) 96%, white);
+  --lg-flat-rim: color-mix(in srgb, #fff 26%, transparent);
+
   /* Default tier parameters = the glass tier, so the shared consuming rule
      below never resolves an undefined var() on classless surfaces (they
      retarget what they need: the sidebar / right panel step up to the frost
@@ -716,11 +778,44 @@ html[data-liquid-glass="on"] {
    20px smears it into clearly visible bokeh bands (test-page box D
    direction). Both tints drop so the frost reads as airy glass on white
    instead of an opaque card; the dark theme (explicit or system-dark) keeps
-   the denser values from the gate block. */
-html:not([data-color-scheme="dark"])[data-liquid-glass="on"] {
+   the denser values from the gate block.
+
+   The same block carries the theme-linked specular (direction C): a white rim
+   highlight has nowhere to read on a white face, so the light theme cuts the
+   highlight strength, keeps only a soft top edge and lets the shaded edges
+   carry the contour; the SVG lens and the GL shader both take the lower
+   number. */
+html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) {
   --lg-blur-glass: 20px;
   --lg-tint-glass-a: 34%;
   --lg-tint-frost-a: 66%;
+  --lg-spec: 0.08;
+  --lg-lens-filter: url(#lg-refract-soft);
+  --lg-rim-top: color-mix(in srgb, #fff 42%, transparent);
+  --lg-rim-side-l: color-mix(in srgb, #fff 12%, transparent);
+  --lg-rim-side-r: color-mix(in srgb, #000 16%, transparent);
+  --lg-rim-bottom: color-mix(in srgb, #000 20%, transparent);
+  --lg-flat-rim: color-mix(in srgb, #fff 55%, transparent);
+}
+/* `data-color-scheme="system"` follows the OS, so it has to be spelled out in
+   both directions like the `--color-*` layer above it: light when the OS is
+   light, and the gate's dark values when the OS is dark. (Keying the light
+   re-tune on `:not([data-color-scheme="dark"])` — as an earlier revision did —
+   silently gave a system-dark user the light blur/tint/spec numbers, because
+   `system` is not `dark`.) */
+@media (prefers-color-scheme: light) {
+  html[data-liquid-glass="on"][data-color-scheme="system"] {
+    --lg-blur-glass: 20px;
+    --lg-tint-glass-a: 34%;
+    --lg-tint-frost-a: 66%;
+    --lg-spec: 0.08;
+    --lg-lens-filter: url(#lg-refract-soft);
+    --lg-rim-top: color-mix(in srgb, #fff 42%, transparent);
+    --lg-rim-side-l: color-mix(in srgb, #fff 12%, transparent);
+    --lg-rim-side-r: color-mix(in srgb, #000 16%, transparent);
+    --lg-rim-bottom: color-mix(in srgb, #000 20%, transparent);
+    --lg-flat-rim: color-mix(in srgb, #fff 55%, transparent);
+  }
 }
 
 /* ---- Tier parameter rules — tiers only set parameters -------------------- */
@@ -753,7 +848,17 @@ html[data-liquid-glass="on"] .lg-band.lg-band {
    `background` shorthand recomputes from them). Surfaces without a template
    class (the sidebar column, the docked right panel, the new-messages pill)
    are appended to the selector list so they consume the material directly
-   instead of re-declaring it; components still retarget the parameters. */
+   instead of re-declaring it; components still retarget the parameters.
+
+   Direction C adds two things here. `--lg-face` is the theme surface pushed
+   toward white or black by the render-time ambient read (both channels are 0%
+   until the engine measures the content behind the panel, and stay 0% with no
+   engine at all), so every tier's tint derives from an ambient-aware surface
+   instead of a fixed theme colour. And the three `--lg-optic-*` slots are the
+   regime switch: the material reads each slot with the refractive recipe as
+   its fallback, so the demoted state retargets the slots and every surface —
+   including the ones whose tiers were set by a high-specificity component
+   rule — flips to the designed opaque face without a specificity fight. */
 html[data-liquid-glass="on"] :is(
   .lg-glass.lg-glass,
   .lg-frost.lg-frost,
@@ -762,32 +867,107 @@ html[data-liquid-glass="on"] :is(
   .right-panel,
   .newmsg-pill.newmsg-pill
 ) {
-  --lg-tint: color-mix(in srgb, var(--color-surface-raised) var(--lg-tint-a), transparent);
+  --lg-face: color-mix(
+    in srgb,
+    #000 var(--lg-amb-deepen),
+    color-mix(in srgb, #fff var(--lg-amb-lift), var(--color-surface-raised))
+  );
+  --lg-tint: color-mix(in srgb, var(--lg-face) var(--lg-tint-a), transparent);
   --lg-tint-top: color-mix(
     in srgb,
-    color-mix(in srgb, var(--color-surface-raised) 95%, white) var(--lg-tint-a),
+    color-mix(in srgb, var(--lg-face) 95%, white) var(--lg-tint-a),
     transparent
   );
-  --lg-bg: linear-gradient(
+  --lg-glass-bg: linear-gradient(
     to bottom,
     var(--lg-tint-top) 0%,
     var(--lg-tint) 30%
   ), var(--lg-tint);
-  background: var(--lg-bg);
-  border-color: color-mix(in srgb, var(--color-line-strong) 60%, transparent);
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
-  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
-  /* Refraction stack: the asymmetric rim insets and a faint inset edge-glow
-     (the CSS approximation of the SVG lens band), then the tier's resting
-     drop shadow. CSS replaces box-shadow wholesale, so every layer composes
-     here. */
-  box-shadow:
+  /* Demoted face: the same ambient-adjusted surface, painted solid with a
+     single lighter stop at the top edge — geometry kept, optics dropped. */
+  --lg-flat-bg: linear-gradient(
+    to bottom,
+    var(--lg-flat-top) 0%,
+    var(--lg-face) 26%
+  ), var(--lg-face);
+  /* `--lg-bg` keeps its historical name (component rules re-assert it per
+     state) and now carries the regime: it resolves through the optic slot, so
+     a surface that re-declares `background: var(--lg-bg)` still follows the
+     demotion instead of pinning itself to the glass face. */
+  --lg-bg: var(--lg-optic-bg, var(--lg-glass-bg));
+  --lg-glass-shadow:
     inset 0 1px 0 var(--lg-rim-top),
     inset 1px 0 0 var(--lg-rim-side-l),
     inset -1px 0 0 var(--lg-rim-side-r),
     inset 0 -1px 0 var(--lg-rim-bottom),
     inset 0 0 calc(var(--lg-edge-px) / 3) color-mix(in srgb, var(--color-surface-raised) 12%, transparent),
     var(--lg-drop-shadow);
+  --lg-glass-filter: blur(var(--lg-blur)) saturate(var(--lg-sat))
+    brightness(var(--lg-bright)) var(--lg-lens, );
+  background: var(--lg-optic-bg, var(--lg-glass-bg));
+  border-color: var(--lg-optic-border, color-mix(in srgb, var(--color-line-strong) 60%, transparent));
+  -webkit-backdrop-filter: var(--lg-optic-filter, var(--lg-glass-filter));
+  backdrop-filter: var(--lg-optic-filter, var(--lg-glass-filter));
+  box-shadow: var(--lg-optic-shadow, var(--lg-glass-shadow));
+}
+
+/* ---- Two-regime ambient: the demoted (opaque) state ---------------------
+   The perf fallback IS part of the design, so it gets one recipe here and
+   three ways in:
+   - `.lg-demoted` on any glass element — the per-element door: a component
+     that wants one panel out of the material, and the way the design-system
+     demo shows both regimes side by side;
+   - `html[data-glass-regime="opaque"]` set by the frame-budget watchdog in
+     gl-renderer, which demotes every surface and stops the loop;
+   - `prefers-reduced-transparency: reduce` in the accessibility block below,
+     which retargets the same slots from the root.
+   The switch works because the shared consuming rule reads its material
+   through the `--lg-optic-*` slots with the refractive recipe as the fallback
+   — a retarget at (0,4,1) reaches every tier without fighting the
+   component-level rules. Border and radius are deliberately untouched: the
+   demoted surface keeps the glass geometry and sheds only blur, refraction
+   and the GL pane, plus one faint top-edge rim so it still reads as a raised
+   plane. Band-family surfaces (the dock squares embedded in a frost slab)
+   lose the optics but keep their wash — their job is a tint, not a plane. */
+html[data-glass-regime="opaque"][data-liquid-glass="on"] :is(
+  .lg-glass.lg-glass,
+  .lg-frost.lg-frost,
+  .side .col,
+  .right-panel,
+  .newmsg-pill.newmsg-pill
+),
+html[data-liquid-glass="on"] :is(
+  .lg-glass.lg-glass,
+  .lg-frost.lg-frost,
+  .side .col,
+  .right-panel,
+  .newmsg-pill.newmsg-pill
+).lg-demoted.lg-demoted {
+  --lg-optic-filter: none;
+  --lg-optic-bg: var(--lg-flat-bg);
+  --lg-optic-shadow:
+    inset 0 1px 0 var(--lg-flat-rim),
+    var(--lg-drop-shadow);
+  --lg-optic-border: color-mix(in srgb, var(--color-line-strong) 80%, transparent);
+}
+html[data-glass-regime="opaque"][data-liquid-glass="on"] .lg-band.lg-band,
+html[data-liquid-glass="on"] .lg-band.lg-band.lg-demoted {
+  --lg-optic-filter: none;
+}
+/* The sidebar column collapses onto the sidebar background token rather than
+   the raised surface, so the frame stays one flat colour — the same special
+   case the reduced-transparency override below makes. It lands after the
+   recipe rule and ties with it on specificity, so source order decides. */
+html[data-glass-regime="opaque"][data-liquid-glass="on"] .side .col {
+  --lg-optic-bg: var(--color-sidebar-bg);
+}
+/* The blur bands are pseudo-element slabs with their own filter declaration
+   (they are not on the consuming rule's selector list), so the regime has to
+   reach them by name. */
+html[data-glass-regime="opaque"][data-liquid-glass="on"] :is(.chat-main, .bench-root .chat-layout)::before,
+html[data-glass-regime="opaque"][data-liquid-glass="on"] .chat-main::after {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* ---- Blur bands (band-family consumers) -----------------------------------
@@ -835,11 +1015,17 @@ html[data-liquid-glass="on"] .chat-main::after {
    Specificity: the doubled class puts this at (0,3,1), the same level as the
    tier rules it extends, so the WS-1B dialog/sheet stagger suppression
    further down this sheet — which adds `:not(.step-2)` on top of a doubled
-   class — still outranks it and wins. */
+   class — still outranks it and wins.
+
+   Direction C turns the lens into a TOKEN (`--lg-lens`) instead of a full
+   `backdrop-filter` re-declaration: the shared consuming rule composes the
+   whole chain once, so the regime switch and the demoted retarget below can
+   reach it. `--lg-lens-filter` carries the theme-selected filter (hard
+   variant in dark, soft variant in light — see the light re-tune block). The
+   `:not()` guards keep a demoted surface from re-adding the lens at all. */
 @supports (backdrop-filter: url(#lg-refract)) {
-  html[data-liquid-glass="on"] .lg-lens.lg-lens {
-    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright)) url(#lg-refract);
-    backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright)) url(#lg-refract);
+  html[data-liquid-glass="on"]:not([data-glass-regime="opaque"]) .lg-lens.lg-lens:not(.lg-demoted) {
+    --lg-lens: var(--lg-lens-filter);
   }
 }
 
@@ -847,11 +1033,10 @@ html[data-liquid-glass="on"] .chat-main::after {
    morphs it open on hover/focus). The clip hides it visually but does not
    stop backdrop rasterization, so while collapsed the lens chain would
    re-run on every transcript scroll frame over a card-sized region that
-   shows only a nine-pixel bar. Keep the plain blur chain (the sliver stays
-   frosted) and drop the lens until the card is actually revealed. */
+   shows only a nine-pixel bar. Drop the lens until the card is actually
+   revealed (the sliver stays frosted by the consuming rule's own chain). */
 html[data-liquid-glass="on"] .conversation-toc:not(:hover):not(:focus-within) .toc-card.toc-card {
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
-  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
+  --lg-lens: initial;
 }
 
 /* ---- WebGL fallback cooperation (additive hooks for src/lib/glass) --------
@@ -879,8 +1064,7 @@ html[data-glass-engine="webgl"] [data-lg-gl-rel] {
   position: relative;
 }
 html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  --lg-optic-filter: none;
 }
 .lg-gl-pane {
   /* Pane canvas slices: geometry/position set inline by the renderer each
@@ -889,41 +1073,139 @@ html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
   pointer-events: none;
 }
 
-/* ---- Accessibility collapses at the shared-system scope ------------------- */
-/* prefers-reduced-transparency: the OS asks for no translucency — every
-   glass tier collapses to the solid raised surface, backdrop filters (and
-   with them the bloom, the rim sheen and the refracted lens) are removed. */
+/* ---- Accessibility states as tokens --------------------------------------
+   Direction C treats the three media features as designed states of the same
+   material system, not as ad-hoc component fixes. Each one retargets the
+   `--lg-*` tokens the shared consuming rule reads, in one place:
+
+   - prefers-reduced-transparency → the demoted (opaque) regime everywhere.
+     Same slots the frame-budget watchdog and `.lg-demoted` use, so the OS
+     contract and the perf fallback are literally the same visual state, and
+     the ambient read is dropped (a surface that must not be translucent has
+     no business re-tinting itself from what is behind it).
+   - prefers-contrast: more → stronger edge: the rim hairlines thicken, the
+     inset edge-glow zone widens and the tints densify, so a panel separates
+     from its backdrop by its edge and its face opacity rather than by
+     translucency alone. Light faces take the same edge in the other direction
+     (black-alpha rims) — a white rim on a white surface carries no contrast.
+   - prefers-reduced-motion → no specular travel and no morph: the glass
+     material transitions snap, and the named spring presets collapse to a
+     still, single-step curve (see the motion block). */
 @media (prefers-reduced-transparency: reduce) {
+  /* Exactly the opaque regime's recipe — the same slots the frame-budget
+     watchdog retargets — plus the OS contract's extra strictness: the ambient
+     read is dropped (a surface that must not be translucent has no business
+     re-tinting itself from what sits behind it) and the border goes to the
+     full-strength hairline. */
   html[data-liquid-glass="on"] :is(
     .lg-glass.lg-glass,
     .lg-frost.lg-frost,
-    .lg-band.lg-band,
     .side .col,
     .right-panel,
     .newmsg-pill.newmsg-pill
   ) {
-    background: var(--color-surface-raised);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+    --lg-optic-filter: none;
+    --lg-optic-bg: var(--lg-flat-bg);
+    --lg-optic-shadow:
+      inset 0 1px 0 var(--lg-flat-rim),
+      var(--lg-drop-shadow);
+    --lg-optic-border: var(--color-line-strong);
+    --lg-amb-deepen: 0%;
+    --lg-amb-lift: 0%;
+  }
+  /* Band surfaces keep their faint wash (their job is a tint, not a plane) and
+     lose only the optics — the same split as the regime rule. */
+  html[data-liquid-glass="on"] .lg-band.lg-band {
+    --lg-optic-filter: none;
+    --lg-amb-deepen: 0%;
+    --lg-amb-lift: 0%;
+  }
+  /* The sidebar column collapses onto the sidebar background token (not the
+     raised surface) so the frame stays one flat color. */
+  html[data-liquid-glass="on"] .side .col {
+    --lg-optic-bg: var(--color-sidebar-bg);
   }
   html[data-liquid-glass="on"] :is(.chat-main, .bench-root .chat-layout)::before,
   html[data-liquid-glass="on"] .chat-main::after {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  /* The sidebar column collapses onto the sidebar background token (not the
-     raised surface) so the frame stays one flat color. */
-  html[data-liquid-glass="on"] .side .col {
-    background: var(--color-sidebar-bg);
+  html[data-liquid-glass="on"] .lg-scrim {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  html[data-liquid-glass="on"] {
+    /* Edge carries the separation instead of the blur. */
+    --lg-rim-top: color-mix(in srgb, #fff 92%, transparent);
+    --lg-rim-side-l: color-mix(in srgb, #fff 45%, transparent);
+    --lg-rim-side-r: color-mix(in srgb, #000 30%, transparent);
+    --lg-rim-bottom: color-mix(in srgb, #000 38%, transparent);
+    --lg-edge-px: 14px;
+    --lg-tint-glass-a: 56%;
+    --lg-tint-frost-a: 74%;
+    --lg-flat-rim: color-mix(in srgb, #fff 60%, transparent);
+  }
+  /* The same recipe has to DARKEN on light faces — a white rim on a white
+     surface is invisible — so there the contrast edge is carried by
+     black-alpha rims, deepened away from the top-left key light so the
+     direction of the shading survives the flip. Mirrors the keying of the
+     light re-tune (explicit light, plus the system branch under a light OS):
+     that block sits at (0,3,1) and outranks the (0,1,1) rule above, so without
+     these a light-theme contrast user got only --lg-edge-px. */
+  html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) {
+    --lg-rim-top: color-mix(in srgb, #000 46%, transparent);
+    --lg-rim-side-l: color-mix(in srgb, #000 55%, transparent);
+    --lg-rim-side-r: color-mix(in srgb, #000 68%, transparent);
+    --lg-rim-bottom: color-mix(in srgb, #000 76%, transparent);
+    --lg-tint-glass-a: 52%;
+    --lg-tint-frost-a: 80%;
+    --lg-flat-rim: color-mix(in srgb, #000 40%, transparent);
+  }
+  @media (prefers-color-scheme: light) {
+    html[data-liquid-glass="on"][data-color-scheme="system"] {
+      --lg-rim-top: color-mix(in srgb, #000 46%, transparent);
+      --lg-rim-side-l: color-mix(in srgb, #000 55%, transparent);
+      --lg-rim-side-r: color-mix(in srgb, #000 68%, transparent);
+      --lg-rim-bottom: color-mix(in srgb, #000 76%, transparent);
+      --lg-tint-glass-a: 52%;
+      --lg-tint-frost-a: 80%;
+      --lg-flat-rim: color-mix(in srgb, #000 40%, transparent);
+    }
   }
 }
 /* prefers-reduced-motion: glass never animates — the hover lift and the
-   material transitions snap instead of easing. (The global reduced-motion
-   kill-switch further down this sheet zeroes durations app-wide; this is the
-   explicit system-scope rule for glass.) */
+   material transitions snap instead of easing, and no spring curve is
+   selected (the presets collapse to a single step, so a menu/dialog that is
+   still transitioned by a component rule lands without travelling). (The
+   global reduced-motion kill-switch further down this sheet zeroes durations
+   app-wide; this is the explicit system-scope rule for glass.) */
 @media (prefers-reduced-motion: reduce) {
   html[data-liquid-glass="on"] :is(.lg-glass.lg-glass, .lg-frost.lg-frost, .lg-band.lg-band, .side .col, .right-panel, .newmsg-pill.newmsg-pill) {
     transition: none !important;
+  }
+  /* `!important` because the interactive-glass hover rule further down this
+     sheet carries the identical selector — source order alone would hand the
+     hover lift straight back to it. */
+  html[data-liquid-glass="on"] .lg-glass.lg-glass:is(button, [role="button"], a):hover {
+    transform: none !important;
+  }
+  /* Engines without `linear()` reject the substituted value at computed-value
+     time, which reverts `transition-property` to its `all` initial — so the
+     step curve is only substituted where it parses, and the fallback for the
+     rest is the plain `linear` keyword. */
+  :root {
+    --spring-responsive: linear;
+    --spring-gentle: linear;
+    --spring-confident: linear;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    :root {
+      --spring-responsive: linear(0, 1);
+      --spring-gentle: linear(0, 1);
+      --spring-confident: linear(0, 1);
+    }
   }
 }
 
@@ -955,10 +1237,13 @@ html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
    `background` and `box-shadow` on the shared rule recompute from them, so
    the lift is purely CSS-var driven (no re-declaration needed). */
 html[data-liquid-glass="on"] .lg-glass.lg-glass:is(button, [role="button"], a) {
+  /* The tint stop clamps at 100% alpha, so the responsive curve's overshoot
+     tail would be dead time on `background` — only the transform and the
+     shadow geometry can carry it (same split as WarningToasts). */
   transition:
-    background var(--duration-base),
-    box-shadow var(--duration-base),
-    transform var(--duration-base);
+    background var(--duration-spring-gentle) var(--spring-gentle),
+    box-shadow var(--duration-spring-responsive) var(--spring-responsive),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 html[data-liquid-glass="on"] .lg-glass.lg-glass:is(button, [role="button"], a):hover {
   --lg-tint-a: 50%;
@@ -1102,10 +1387,12 @@ html[data-liquid-glass="on"] .dock-workbar button.ui-pill.is-active {
    its backdrop unfiltered — pixel variance 2944 vs 2.5 for an unnested
    control). The card's own blur is invisible anyway while a menu is open
    (the menu covers it), so drop it in every engine and the nested menus blur
-   correctly. Doubled class to outrank the `.lg-frost.lg-frost` base rule. */
+   correctly. Doubled class to outrank the `.lg-frost.lg-frost` base rule.
+   Direction C routes this through the `--lg-optic-filter` slot rather than a
+   direct `backdrop-filter` declaration, so the demoted regime (which retargets
+   the same slot) is never outranked by it. */
 html[data-liquid-glass="on"] .composer-card.lg-frost.lg-frost {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  --lg-optic-filter: none;
 }
 
 /* …but only while a menu could suffer from it. On the SVG-lens path
@@ -1115,11 +1402,14 @@ html[data-liquid-glass="on"] .composer-card.lg-frost.lg-frost {
    suppression above (0,4,1) and the generic lens rule (0,3,1); being last
    in the sheet settles the tie with neither. The Firefox/Safari WebGL path
    never enters this @supports block: there the card's refraction is painted
-   by the canvas underneath and its backdrop-filter stays off. */
+   by the canvas underneath and its backdrop-filter stays off. The two
+   regime guards at the end keep a demoted card from re-lighting the optic
+   (the opaque regime is designed, so it must survive this re-enable). */
 @supports (backdrop-filter: url(#lg-refract)) {
-  html[data-liquid-glass="on"] .composer-card.lg-lens.lg-lens:not(:has(.slash-menu, .mention-menu, .perm-dropdown, .model-dropdown)) {
-    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright)) url(#lg-refract);
-    backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(var(--lg-bright)) url(#lg-refract);
+  @media (prefers-reduced-transparency: no-preference) {
+    html[data-liquid-glass="on"]:not([data-glass-regime="opaque"]) .composer-card.lg-lens.lg-lens:not(.lg-demoted):not(.lg-gl-refracted):not(:has(.slash-menu, .mention-menu, .perm-dropdown, .model-dropdown)) {
+      --lg-optic-filter: var(--lg-glass-filter);
+    }
   }
 }
 
@@ -1211,7 +1501,7 @@ body {
        drop shadow on a near-black page disappears. */
     border-top: 1px solid var(--line);
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.18);
-    animation: kimi-sheet-up 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: kimi-sheet-up var(--duration-spring-gentle) var(--spring-gentle);
   }
 }
 

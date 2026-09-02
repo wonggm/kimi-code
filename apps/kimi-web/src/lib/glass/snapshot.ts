@@ -13,6 +13,8 @@
 // Every failure path throws SnapshotError so the renderer can degrade the
 // frame to the plain CSS blur — nothing here may reject into the app.
 
+import { meanLuminance } from './ambient';
+
 export class SnapshotError extends Error {}
 
 export interface PageSnapshot {
@@ -25,6 +27,84 @@ export interface PageSnapshot {
   /** Viewport size the snapshot covers, in CSS px. */
   width: number;
   height: number;
+  /**
+   * Main-thread milliseconds this capture spent, summed over its synchronous
+   * segments (document clone + style serialization, then the rasterization
+   * draw). Deliberately NOT the wall time of the await: the SVG image decode
+   * runs off-thread, so wall time would blame the frame budget for work the
+   * user never waited on.
+   */
+  costMs: number;
+}
+
+/** Edge length of the scratch buffer a region is averaged down to: one
+ *  drawImage plus a 576-byte readback per surface, which is what keeps the
+ *  ambient read affordable at snapshot-regeneration cadence (never per frame). */
+const AMBIENT_SAMPLE_SIZE = 12;
+let ambientScratch: HTMLCanvasElement | null = null;
+
+/**
+ * Mean relative luminance (0…1) of the snapshot region behind a surface rect
+ * (CSS px, viewport space). Maps the rect the same way the shader does —
+ * viewport coords plus the scroll offsets baked at capture time — so the
+ * sampled patch is the one the pane actually refracts. Clamped to the canvas
+ * bounds; null when the region is empty or the readback fails, in which case
+ * the caller keeps its neutral tint.
+ */
+export function sampleRegionLuminance(
+  snapshot: PageSnapshot,
+  rect: { x: number; y: number; w: number; h: number },
+): number | null {
+  if (rect.w < 1 || rect.h < 1) return null;
+  const px = snapshot.scale;
+  const x0 = Math.max(0, Math.min((rect.x + snapshot.scrollX) * px, snapshot.canvas.width - 1));
+  const y0 = Math.max(0, Math.min((rect.y + snapshot.scrollY) * px, snapshot.canvas.height - 1));
+  const w = Math.max(1, Math.min(rect.w * px, snapshot.canvas.width - x0));
+  const h = Math.max(1, Math.min(rect.h * px, snapshot.canvas.height - y0));
+  return readDownscaledLuminance(snapshot.canvas, x0, y0, w, h);
+}
+
+/**
+ * The tint reference for a snapshot pass: the whole captured page, one 12×12
+ * resample. Measuring the region and the reference from the same rasterization
+ * is what makes the comparison mean something — the glass panes are hidden from
+ * the clone (see `applySurfaceFixups`), so neither sample is polluted by them.
+ */
+export function samplePageLuminance(snapshot: PageSnapshot): number | null {
+  return readDownscaledLuminance(
+    snapshot.canvas,
+    0,
+    0,
+    snapshot.canvas.width,
+    snapshot.canvas.height,
+  );
+}
+
+function readDownscaledLuminance(
+  source: HTMLCanvasElement,
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+): number | null {
+  if (!ambientScratch) {
+    ambientScratch = document.createElement('canvas');
+    ambientScratch.width = AMBIENT_SAMPLE_SIZE;
+    ambientScratch.height = AMBIENT_SAMPLE_SIZE;
+  }
+  const ctx = ambientScratch.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0, 0, AMBIENT_SAMPLE_SIZE, AMBIENT_SAMPLE_SIZE);
+  ctx.drawImage(source, x0, y0, w, h, 0, 0, AMBIENT_SAMPLE_SIZE, AMBIENT_SAMPLE_SIZE);
+  try {
+    const data = ctx.getImageData(0, 0, AMBIENT_SAMPLE_SIZE, AMBIENT_SAMPLE_SIZE).data;
+    const luma = meanLuminance(data, 4, 4);
+    return Number.isFinite(luma) ? luma : null;
+  } catch {
+    return null;
+  }
 }
 
 const XHTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -172,6 +252,10 @@ export async function capturePageSnapshot(scale: number, timeoutMs = 4000): Prom
   const height = Math.max(1, Math.ceil(window.innerHeight));
   let url: string;
   let cleanup: () => void;
+  // Segment 1 of the cost: the clone / serialize / style-collection work is
+  // synchronous main-thread time (the stylesheet awaits inside are cached after
+  // the first capture, and only that first pass inflates this number).
+  const serializeStart = performance.now();
   try {
     const built = await buildSvgDocument(width, height);
     url = built.url;
@@ -179,6 +263,7 @@ export async function capturePageSnapshot(scale: number, timeoutMs = 4000): Prom
   } catch (e) {
     throw new SnapshotError(`glass snapshot serialization failed: ${String(e)}`, { cause: e });
   }
+  const serializeMs = performance.now() - serializeStart;
 
   try {
     const img = new Image();
@@ -191,6 +276,8 @@ export async function capturePageSnapshot(scale: number, timeoutMs = 4000): Prom
     img.src = url;
     await loaded;
 
+    // Segment 2: everything from here is main-thread work the frame waits on.
+    const drawStart = performance.now();
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));
@@ -211,6 +298,7 @@ export async function capturePageSnapshot(scale: number, timeoutMs = 4000): Prom
       scale,
       width,
       height,
+      costMs: serializeMs + (performance.now() - drawStart),
     };
   } finally {
     cleanup();

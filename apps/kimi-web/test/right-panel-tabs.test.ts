@@ -4,10 +4,17 @@ import {
   DEFAULT_RIGHT_PANEL_TAB,
   isRightPanelTab,
   latestTurnDiffEntries,
+  normalizePanelPreviewPath,
+  popPanelDrill,
+  pushPanelDrill,
+  resolvePanelSubagentTaskId,
   RIGHT_PANEL_TABS,
+  samePanelDrill,
   turnFilesForTurn,
+  type PanelDrillView,
 } from '../src/lib/rightPanelTabs';
 import { STORAGE_KEYS, safeGetString, safeSetString } from '../src/lib/storage';
+import type { AppTask } from '../src/api/types';
 import type { ChatTurn, ToolCall } from '../src/types';
 
 function memoryStorage(): Storage {
@@ -184,5 +191,108 @@ describe('turnFilesForTurn', () => {
     ];
     const result = turnFilesForTurn(assistantTurn('a1', tools));
     expect(result.map((r) => r.path)).toEqual(['src/fp.ts', 'src/fP.ts', 'src/fn.ts']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// In-panel drill stack (RightPanelTabs list → detail navigation)
+// ---------------------------------------------------------------------------
+
+function agentView(taskId: string): PanelDrillView {
+  return { kind: 'agent', taskId };
+}
+
+function fileView(path: string, line?: number): PanelDrillView {
+  return { kind: 'file', path, line };
+}
+
+describe('panel drill stack transitions', () => {
+  it('pushes new views and pops one level at a time', () => {
+    let stack: PanelDrillView[] = [];
+    stack = pushPanelDrill(stack, agentView('a1'));
+    stack = pushPanelDrill(stack, fileView('src/x.ts'));
+    expect(stack).toEqual([agentView('a1'), fileView('src/x.ts')]);
+    stack = popPanelDrill(stack);
+    expect(stack).toEqual([agentView('a1')]);
+    stack = popPanelDrill(stack);
+    expect(stack).toEqual([]);
+    expect(popPanelDrill(stack)).toEqual([]);
+  });
+
+  it('ignores re-pushing the view already on top', () => {
+    const base = pushPanelDrill([], agentView('a1'));
+    expect(samePanelDrill(base[0]!, agentView('a1'))).toBe(true);
+    expect(pushPanelDrill(base, agentView('a1'))).toEqual(base);
+    // Same agent re-opened below the top still stacks; so does a different
+    // line of the same file.
+    const withFile = pushPanelDrill(base, fileView('src/x.ts', 3));
+    expect(pushPanelDrill(withFile, fileView('src/x.ts', 7))).toHaveLength(3);
+    expect(pushPanelDrill(withFile, fileView('src/x.ts', 3))).toEqual(withFile);
+  });
+});
+
+function appTask(overrides: Partial<AppTask> & { id: string }): AppTask {
+  return {
+    sessionId: 's1',
+    kind: 'subagent',
+    description: 'task',
+    status: 'running',
+    createdAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+describe('resolvePanelSubagentTaskId', () => {
+  const tasks: AppTask[] = [
+    appTask({ id: 'task-1', parentToolCallId: 'call-1' }),
+    appTask({ id: 'task-2', agentId: 'agent-0' }),
+    appTask({ id: 'task-3', kind: 'bash', parentToolCallId: undefined }),
+  ];
+
+  it('resolves by task id, wire agent id, then parent tool-call id', () => {
+    expect(resolvePanelSubagentTaskId(tasks, 'task-1')).toBe('task-1');
+    expect(resolvePanelSubagentTaskId(tasks, 'agent-0')).toBe('task-2');
+    expect(resolvePanelSubagentTaskId(tasks, 'call-1')).toBe('task-1');
+  });
+
+  it('falls back to the single unmapped subagent row', () => {
+    const withUnmapped = [...tasks, appTask({ id: 'orphan', parentToolCallId: undefined })];
+    expect(resolvePanelSubagentTaskId(withUnmapped, 'unknown')).toBeUndefined();
+    expect(
+      resolvePanelSubagentTaskId(
+        [appTask({ id: 'only', parentToolCallId: undefined })],
+        'unknown',
+      ),
+    ).toBe('only');
+  });
+
+  it('returns undefined when nothing matches', () => {
+    expect(resolvePanelSubagentTaskId([], 'anything')).toBeUndefined();
+  });
+});
+
+describe('normalizePanelPreviewPath', () => {
+  it('passes relative paths through, collapsing . and empty segments', () => {
+    expect(normalizePanelPreviewPath('src/a.ts')).toEqual({ path: 'src/a.ts' });
+    expect(normalizePanelPreviewPath('./src//a.ts')).toEqual({ path: 'src/a.ts' });
+    expect(normalizePanelPreviewPath('   ')).toEqual({ error: 'emptyPath' });
+  });
+
+  it('strips the workspace root from absolute paths', () => {
+    expect(normalizePanelPreviewPath('/w/root/src/a.ts', '/w/root')).toEqual({ path: 'src/a.ts' });
+    expect(normalizePanelPreviewPath('/w/root/src/a.ts', '/w/root/')).toEqual({ path: 'src/a.ts' });
+    expect(normalizePanelPreviewPath('/w/root', '/w/root')).toEqual({ error: 'isDirectory' });
+  });
+
+  it('rejects paths outside the workspace, URLs, and ~ homes', () => {
+    expect(normalizePanelPreviewPath('/etc/passwd', '/w/root')).toEqual({ error: 'outsideWorkspace' });
+    expect(normalizePanelPreviewPath('../escape.ts')).toEqual({ error: 'outsideWorkspace' });
+    expect(normalizePanelPreviewPath('src/../escape.ts')).toEqual({ error: 'outsideWorkspace' });
+    expect(normalizePanelPreviewPath('https://example.com/a.ts')).toEqual({ error: 'unsupportedPath' });
+    expect(normalizePanelPreviewPath('~/a.ts')).toEqual({ error: 'outsideWorkspace' });
+  });
+
+  it('lets absolute paths through unvalidated when no root is known', () => {
+    expect(normalizePanelPreviewPath('/abs/file.ts')).toEqual({ path: '/abs/file.ts' });
   });
 });

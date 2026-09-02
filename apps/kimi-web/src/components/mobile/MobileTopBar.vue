@@ -156,8 +156,14 @@ const statusText = computed<string>(() =>
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: max(9px, calc(var(--ui-font-size) - 3.5px));
-  color: var(--color-text-faint);
+  /* Floor at 11px: at the default UI font size the computed value was 10.5px,
+     the smallest text in the app, and unreadable on a phone at that contrast.
+     Muted, not faint: this line carries the status / branch / session-count
+     readout, so it is body text and has to clear 4.5:1 — faint measures 2.55:1
+     on the light bar and 3.91:1 on the dark one, muted clears both (4.83 /
+     7.18). The idle dot below keeps faint: it is redundant with the text. */
+  font-size: max(11px, calc(var(--ui-font-size) - 3.5px));
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

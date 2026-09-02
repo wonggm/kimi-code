@@ -54,4 +54,13 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 .ui-seg__item:hover:not(.is-on) { color: var(--color-text); }
 .ui-seg__item.is-on { background: var(--color-surface-raised); color: var(--color-text); box-shadow: var(--shadow-xs); }
 .ui-seg__item:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+
+/* Phone widths: both sizes land at 23-24px tall, under the touch target floor
+   the design system sets for touch surfaces. Every consumer at this width is a
+   phone surface (the mobile sheets), so the widening lives here rather than in
+   each caller; desktop sizing is untouched. */
+@media (max-width: 640px) {
+  .ui-seg--sm .ui-seg__item { height: 44px; }
+  .ui-seg--md .ui-seg__item { min-height: 44px; padding-block: 9px; }
+}
 </style>

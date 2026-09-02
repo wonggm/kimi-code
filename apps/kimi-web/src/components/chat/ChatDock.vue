@@ -428,8 +428,8 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
     background var(--duration-base) var(--ease-out),
     color var(--duration-base) var(--ease-out),
     border-color var(--duration-base) var(--ease-out),
-    box-shadow var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
+    box-shadow var(--duration-spring-responsive) var(--spring-responsive),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 
 /* Liquid-glass material for the squares — they carry .lg-band, so the shared
@@ -526,7 +526,9 @@ html[data-liquid-glass="on"] .dock-square.lg-band.is-on {
 
 .dock-popover-enter-active,
 .dock-popover-leave-active {
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition:
+    opacity var(--duration-spring-gentle) var(--spring-gentle),
+    transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 .dock-popover-enter-from,
 .dock-popover-leave-to {
