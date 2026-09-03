@@ -554,6 +554,8 @@ type ComposerHandle = {
   loadForEdit: (value: string) => boolean | void;
   loadAttachmentsForEdit: (atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string }[]) => void;
   focus: () => void;
+  openModelMenu: () => void;
+  openPermissionMenu: () => void;
 };
 type RefArg = Element | (ComponentPublicInstance & Partial<ComposerHandle>) | null;
 
@@ -609,6 +611,14 @@ function bindChatDock(el: RefArg): void {
           ? el.loadAttachmentsForEdit.bind(el)
           : () => {},
       focus: el.focus.bind(el),
+      openModelMenu:
+        'openModelMenu' in el && typeof el.openModelMenu === 'function'
+          ? el.openModelMenu.bind(el)
+          : () => {},
+      openPermissionMenu:
+        'openPermissionMenu' in el && typeof el.openPermissionMenu === 'function'
+          ? el.openPermissionMenu.bind(el)
+          : () => {},
     };
   } else {
     dockedComposerRef.value = null;
@@ -1626,7 +1636,18 @@ function focusComposer(): void {
   (dockedComposerRef.value ?? emptyComposerRef.value)?.focus();
 }
 
-defineExpose({ loadComposerForEdit, focusComposer });
+// Slash-command entry points (`/model`, `/effort`, `/permission`): open the
+// active composer's toolbar menus. No-op while the dock shows a question /
+// approval card instead of the composer, or before the first status lands.
+function openComposerModelMenu(): void {
+  (dockedComposerRef.value ?? emptyComposerRef.value)?.openModelMenu();
+}
+
+function openComposerPermissionMenu(): void {
+  (dockedComposerRef.value ?? emptyComposerRef.value)?.openPermissionMenu();
+}
+
+defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openComposerPermissionMenu });
 </script>
 
 <template>
@@ -2116,8 +2137,8 @@ html[data-liquid-glass="on"] .panes.has-header {
 /* Right-side multi-tab panel — a floating card over the transcript: detached
    from the layout edges, rounded on all four corners, elevated with the lg
    drop shadow. It overlays instead of squeezing the chat column; the top
-   inset sits a --space-1 under the 48px chat header row (a full --space-2
-   read as a detached stripe under the commit pills), the bottom inset shares
+   edge sits flush with the 48px chat header's bottom hairline (any gap read
+   as a detached stripe under the commit pills), the bottom inset shares
    the composer card's own bottom margin (measured --composer-clearance on
    .chat-layout, falling back to --dock-height when no composer is mounted).
    Width matches the upstream panel's --panel-default-w (460px). Tint-only
@@ -2126,11 +2147,11 @@ html[data-liquid-glass="on"] .panes.has-header {
    gentle spring (no overshoot). */
 .right-panel {
   position: absolute;
-  top: calc(var(--panel-head-h, 48px) + var(--space-1));
+  top: var(--panel-head-h, 48px);
   right: var(--space-3);
   bottom: var(--composer-clearance, var(--dock-height, 0px));
   z-index: calc(var(--z-modal) - 10);
-  width: min(460px, calc(100% - var(--space-3) * 2));
+  width: min(max(460px, 0px), calc(100% - var(--space-3) * 2));
   min-height: 0;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
@@ -2147,7 +2168,11 @@ html[data-liquid-glass="on"] .panes.has-header {
    RightPanelTabs from the drill stack's top view (file drills stay narrow).
    The max() keeps this strictly widening: --preview-w is viewport-clamped (it
    drops below 460px in the mobile shell), where shrinking the card would be
-   the opposite of what the modifier is for. */
+   the opposite of what the modifier is for. The base rule above wraps its
+   460px in a dummy max(460px, 0px) so both rules share the same min/max
+   argument structure — math functions only interpolate when the structure
+   matches, and a mismatch animates discretely (Firefox flips the width at
+   the transition midpoint: a visible pause, then a jump). */
 .right-panel.right-panel-wide {
   width: min(max(460px, var(--preview-w, 460px)), calc(100% - var(--space-3) * 2));
 }

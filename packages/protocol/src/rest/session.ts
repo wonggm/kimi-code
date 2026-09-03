@@ -10,6 +10,7 @@
  *   POST    /v1/sessions/{id}/children    body: SessionChild    data: Session
  *   GET     /v1/sessions/{id}/status      -                     data: SessionStatusResponse
  *   POST    /v1/sessions/{id}:compact     body: CompactSession  data: {}
+ *   POST    /v1/sessions/{id}:init        -                     data: {}
  *   POST    /v1/sessions/{id}:undo        body: UndoSession     data: UndoSession
  *   POST    /v1/sessions/{id}:archive     -                     data: { archived: true }
  *   POST    /v1/sessions/{id}:restore     -                     data: Session
@@ -176,6 +177,9 @@ export type CompactSessionRequest = z.infer<typeof compactSessionRequestSchema>;
 
 export const compactSessionResponseSchema = z.object({});
 export type CompactSessionResponse = z.infer<typeof compactSessionResponseSchema>;
+
+export const initSessionResponseSchema = z.object({});
+export type InitSessionResponse = z.infer<typeof initSessionResponseSchema>;
 
 export const undoSessionRequestSchema = z.preprocess(
   (value) => value === undefined ? {} : value,

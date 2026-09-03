@@ -11,7 +11,7 @@ import { useGlassRefraction } from '../../composables/useGlassRefraction';
 const { t } = useI18n();
 
 // Backdrop-filter warm-up: the scrim (blur 10px, full viewport) and the
-// frosted panel (blur 34px) are two large blur rasters; stagger them — scrim
+// frosted panel (blur 46px) are two large blur rasters; stagger them — scrim
 // on frame 2, panel on frame 3 — so no single frame pays both. The enter
 // transition starts at opacity 0, so both steps land while the sheet is still
 // nearly invisible (identical settled pixels, same animation). `step-1`

@@ -13,6 +13,7 @@ import {
   forkSessionRequestSchema,
   forkSessionResponseSchema,
   getSessionProfileResponseSchema,
+  initSessionResponseSchema,
   listSessionChildrenQuerySchema,
   listSessionChildrenResponseSchema,
   listSessionsQuerySchema,
@@ -506,6 +507,12 @@ describe('compactSessionRequestSchema', () => {
 describe('compactSessionResponseSchema', () => {
   it('accepts the empty success payload', () => {
     expect(compactSessionResponseSchema.parse({})).toEqual({});
+  });
+});
+
+describe('initSessionResponseSchema', () => {
+  it('accepts the empty success payload', () => {
+    expect(initSessionResponseSchema.parse({})).toEqual({});
   });
 });
 
