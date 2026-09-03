@@ -775,6 +775,18 @@ export class DaemonKimiWebApi implements KimiWebApi {
     );
   }
 
+  // POST /sessions/{id}:init — analyze the codebase and generate AGENTS.md.
+  // The server awaits the whole mirrored agent turn, so this call stays open
+  // for as long as the generation runs — it needs the fork-length timeout.
+  // Progress streams through the normal transcript events meanwhile.
+  async initSession(sessionId: string): Promise<void> {
+    await this.http.post(
+      `/sessions/${encodeURIComponent(sessionId)}:init`,
+      {},
+      { timeoutMs: FORK_TIMEOUT_MS },
+    );
+  }
+
   // POST /sessions/{id}:undo — remove the last `count` turns from history. The
   // response carries the resulting messages + status, but we re-sync the session
   // afterwards for the authoritative (un-paginated) transcript, so we only need

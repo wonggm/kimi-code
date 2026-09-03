@@ -139,6 +139,9 @@ export type CompactSessionRequest = z.infer<typeof compactSessionRequestSchema>;
 export const compactSessionResponseSchema = z.object({});
 export type CompactSessionResponse = z.infer<typeof compactSessionResponseSchema>;
 
+export const initSessionResponseSchema = z.object({});
+export type InitSessionResponse = z.infer<typeof initSessionResponseSchema>;
+
 export const addDirSessionRequestSchema = z.preprocess(
   (value) => value === undefined ? {} : value,
   z.object({

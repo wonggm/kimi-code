@@ -13,6 +13,7 @@ import {
   ISessionBtwService,
   ISessionContext,
   ISessionIndex,
+  ISessionInitService,
   ISessionMetadata,
   ISessionLegacyService,
   ISessionTitleService,
@@ -49,6 +50,7 @@ import {
   deleteSessionResponseSchema,
   forkSessionRequestSchema,
   getSessionGoalResponseSchema,
+  initSessionResponseSchema,
   listSessionChildrenResponseSchema,
   sessionAbortResponseSchema,
   sessionStatusResponseSchema,
@@ -610,6 +612,7 @@ export function registerSessionsRoutes(
         data: z.union([
           sessionSchema,
           compactSessionResponseSchema,
+          initSessionResponseSchema,
           undoSessionResponseSchema,
           sessionAbortResponseSchema,
           startBtwSessionResponseSchema,
@@ -867,6 +870,7 @@ export function registerSessionsRoutes(
 type SessionAction =
   | 'fork'
   | 'compact'
+  | 'init'
   | 'undo'
   | 'abort'
   | 'btw'
@@ -890,6 +894,7 @@ type SessionActionCtx<TBody = unknown> = SessionActionExtra & {
 const sessionActions: ActionTable<SessionAction, SessionActionExtra> = {
   fork: { body: forkSessionRequestSchema, handle: forkSessionAction },
   compact: { body: compactSessionRequestSchema, handle: compactSessionAction },
+  init: { handle: initSessionAction },
   undo: { body: undoSessionRequestSchema, handle: undoSessionAction },
   abort: { handle: abortSessionAction },
   btw: { handle: btwSessionAction },
@@ -940,6 +945,14 @@ async function compactSessionAction(
     .get(IAgentFullCompactionService)
     .begin({ source: 'manual', instruction: normalizeOptional(body.instruction) });
   requestLog(req)?.info({ session_id: id, action: 'compact' }, 'session action completed');
+  reply.send(okEnvelope({}, req.id));
+}
+
+async function initSessionAction(ctx: SessionActionCtx): Promise<void> {
+  const { core, req, reply, id } = ctx;
+  const agent = await resolveMainAgent(core, id);
+  await agent.accessor.get(ISessionInitService).generateAgentsMd();
+  requestLog(req)?.info({ session_id: id, action: 'init' }, 'session action completed');
   reply.send(okEnvelope({}, req.id));
 }
 

@@ -541,7 +541,16 @@ function focus(): void {
 function loadAttachmentsForEdit(atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string }[]): void {
   loadAttachments(atts);
 }
-defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
+// Slash-command entry points for the toolbar menus (`/model`, `/effort`,
+// `/permission`): same trigger as the pill clicks, idempotent when the menu
+// is already open. On mobile the model menu opens as its bottom sheet.
+function openModelMenu(): void {
+  if (!dropdownOpen.value) toggleDropdown();
+}
+function openPermissionMenu(): void {
+  if (!permDropdownOpen.value) togglePermDropdown();
+}
+defineExpose({ loadForEdit, loadAttachmentsForEdit, focus, openModelMenu, openPermissionMenu });
 
 // Build the wire-bound attachment payload: images/videos only need the fileId,
 // while file parts also carry name/mediaType/size for the daemon's file shape.

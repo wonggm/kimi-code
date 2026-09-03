@@ -3353,6 +3353,7 @@ export function useKimiWebClient() {
     doneSessionsHasMore: workspaceState.doneSessionsHasMore,
     ensureDoneSessions: workspaceState.ensureDoneSessions,
     compact: workspaceState.compact,
+    initSession: workspaceState.initSession,
     forkSession: workspaceState.forkSession,
     undo: workspaceState.undo,
     reload: workspaceState.reload,
