@@ -805,15 +805,18 @@ function openProviders(): void {
   line-height: 1;
 }
 
-/* Plan toggle (44×26 prototype) */
+/* Plan toggle (44×26 prototype) — display-only indicator inside the row
+   button (nesting ui/Switch's <button> here would be invalid HTML), so it
+   borrows the Switch primitive's motion instead: token duration/easing,
+   thumb slides on transform rather than left. */
 .toggle {
   flex: none;
   width: 44px;
   height: 26px;
   border-radius: var(--radius-full);
-  background: var(--color-line);
+  background: var(--color-line-strong);
   position: relative;
-  transition: background 0.18s;
+  transition: background var(--duration-base) var(--ease-out);
 }
 .toggle.on { background: var(--color-accent); }
 .toggle::after {
@@ -828,9 +831,9 @@ function openProviders(): void {
   background: var(--color-bg);
   border: 1px solid var(--color-line);
   box-shadow: var(--shadow-xs);
-  transition: left 0.18s;
+  transition: transform var(--duration-base) var(--ease-out);
 }
-.toggle.on::after { left: 21px; }
+.toggle.on::after { transform: translateX(18px); }
 
 /* App preference rows: segmented theme/color-scheme toggles + language switcher. */
 .srow.pref { cursor: default; }
