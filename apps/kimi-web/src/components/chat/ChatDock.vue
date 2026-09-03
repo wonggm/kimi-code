@@ -115,6 +115,8 @@ const composerRef = ref<{
   loadForEdit: (value: string) => boolean;
   loadAttachmentsForEdit: (atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string }[]) => void;
   focus: () => void;
+  openModelMenu: () => void;
+  openPermissionMenu: () => void;
 } | null>(null);
 const workbarRef = ref<HTMLElement | null>(null);
 const dockRef = ref<HTMLElement | null>(null);
@@ -134,6 +136,14 @@ function loadAttachmentsForEdit(atts: { fileId?: string; kind: 'image' | 'video'
 
 function focus(): void {
   composerRef.value?.focus();
+}
+
+function openModelMenu(): void {
+  composerRef.value?.openModelMenu();
+}
+
+function openPermissionMenu(): void {
+  composerRef.value?.openPermissionMenu();
 }
 
 // Plan is the one entry that has no matching right-panel tab today. Keep the
@@ -195,7 +205,7 @@ onUnmounted(() => {
   dockResizeObserver = null;
 });
 
-defineExpose({ loadForEdit, loadAttachmentsForEdit, focus });
+defineExpose({ loadForEdit, loadAttachmentsForEdit, focus, openModelMenu, openPermissionMenu });
 
 interface WorkbarEntry {
   id: RightPanelTab | 'plan';

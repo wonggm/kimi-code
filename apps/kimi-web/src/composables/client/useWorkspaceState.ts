@@ -2940,6 +2940,22 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
   }
 
   /**
+   * initSession() — analyze the codebase and generate AGENTS.md via
+   * POST /sessions/{id}:init (TUI /init parity). The daemon awaits the whole
+   * mirrored agent turn, so the request stays open while progress streams
+   * through the normal transcript events.
+   */
+  function initSession(): void {
+    const sid = rawState.activeSessionId;
+    if (!sid) return;
+    void getKimiWebApi()
+      .initSession(sid)
+      .catch((err) => {
+        pushOperationFailure('initSession', err, { sessionId: sid });
+      });
+  }
+
+  /**
    * forkSession() — fork the active session into a new child session via
    * POST /sessions/{id}:fork, then add it to the list and select it.
    */
@@ -3305,6 +3321,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     ensureDoneSessions,
     logout,
     compact,
+    initSession,
     forkSession,
     undo,
     reload,

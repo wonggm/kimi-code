@@ -10,7 +10,7 @@ import IconButton from './IconButton.vue';
 import Icon from './Icon.vue';
 
 // Backdrop-filter warm-up: the overlay scrim (blur 10px, full viewport) and
-// the frosted panel (blur 34px) are two large blur rasters. Rasterizing both
+// the frosted panel (blur 46px) are two large blur rasters. Rasterizing both
 // in the mount frame stacks them into one long frame, so stagger them instead
 // — scrim filter on frame 2, panel filter on frame 3. The entrance fade
 // starts at opacity 0, so both steps land while the overlay is still nearly
