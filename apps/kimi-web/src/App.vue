@@ -677,6 +677,15 @@ function handleCommand(cmd: string, attachments?: PromptAttachment[]): void {
     if (arg) void client.addDir(arg);
     return;
   }
+  // `/title <text>` renames the active session (TUI /title with an argument).
+  // A bare `/title` is a no-op — the web shows the title in the header and
+  // sidebar already.
+  if (cmd === '/title' || cmd.startsWith('/title ')) {
+    const arg = cmd.slice('/title'.length).trim();
+    const sid = client.activeSessionId.value;
+    if (arg && sid) void client.renameSession(sid, arg);
+    return;
+  }
   switch (cmd) {
     // `/new` and `/clear` are aliases: both open the onboarding composer. The
     // session is only created when the user sends the first message.
@@ -696,14 +705,43 @@ function handleCommand(cmd: string, attachments?: PromptAttachment[]): void {
     case '/reload':
       void client.reload();
       break;
+    case '/init':
+      client.initSession();
+      break;
     case '/plan':
       client.togglePlanArmed();
       break;
+    case '/model':
+    case '/effort':
+      conversationPaneRef.value?.openComposerModelMenu();
+      break;
+    case '/permission':
+      conversationPaneRef.value?.openComposerPermissionMenu();
+      break;
+    // `/yolo` jumps straight to YOLO (the pill menu's second row); the picker
+    // itself stays `/permission`.
+    case '/yolo':
+      client.setPermission('yolo');
+      break;
+    // `/usage` is the TUI's usage view — here the status panel carries tokens +
+    // context window, so it is an alias of `/status`.
     case '/status':
+    case '/usage':
       showStatusPanel.value = true;
       break;
     case '/login':
       openLogin();
+      break;
+    case '/logout':
+      void client.logout();
+      break;
+    case '/version':
+      client.pushNotice(t('commands.version.notice', { version: client.serverVersion.value }));
+      break;
+    // Desktop keeps the session list always visible in the sidebar, so the
+    // command only does something on mobile (opens the switcher sheet).
+    case '/sessions':
+      if (isMobile.value) showMobileSwitcher.value = true;
       break;
     default: {
       // Not a built-in command → treat it as a session skill activation

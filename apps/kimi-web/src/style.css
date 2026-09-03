@@ -696,22 +696,21 @@ html[data-liquid-glass="on"] {
      inset edge-glow below so non-supporting engines keep a hint of it. */
   --lg-edge-px: 10px;
 
-  /* Per-tier blur depths. glass 8px — deliberately closer to clear glass
-     than to a bokeh smear: text behind softens at the edges while staying
-     roughly readable. frost 34px — dialogs/sheets/composer sit on top of the
-     live transcript, so the backdrop has to be knocked out. band 14px — a
-     step stronger than glass: the chat blur bands and the dock squares
-     embedded in them are the one place the user asked to read as clearly
-     blurred. */
-  --lg-blur-glass: 8px;
-  --lg-blur-frost: 34px;
-  --lg-blur-band: 14px;
+  /* Per-tier blur depths. glass 12px — close to clear glass rather than a
+     bokeh smear: text behind softens at the edges while staying roughly
+     readable. frost 46px — dialogs/sheets/composer sit on top of the live
+     transcript, so the backdrop has to be knocked out. band 18px — a step
+     stronger than glass: the chat blur bands and the dock squares embedded
+     in them are the one place the user asked to read as clearly blurred. */
+  --lg-blur-glass: 12px;
+  --lg-blur-frost: 46px;
+  --lg-blur-band: 18px;
 
-  /* Per-tier tint alphas (~0.38 dark for small floating elements —
+  /* Per-tier tint alphas (~0.32 dark for small floating elements —
      translucent enough that the blurred text behind reads as bokeh bands
      rather than a flat wash; frost sits over live content and stays denser). */
-  --lg-tint-glass-a: 38%;
-  --lg-tint-frost-a: 58%;
+  --lg-tint-glass-a: 32%;
+  --lg-tint-frost-a: 50%;
   --lg-tint-band-a: 10%;
 
   /* (An earlier "specular corner bloom" radial gradient painted a static
@@ -743,7 +742,7 @@ html[data-liquid-glass="on"] {
      invisible, so the light-theme block drops the highlight strength, softens
      the white top edge and deepens the shaded edges so the rim reads as a
      darker contour, and routes the lens to the softer SVG variant. */
-  --lg-spec: 0.2;
+  --lg-spec: 0.26;
   --lg-lens-filter: url(#lg-refract);
 
   /* Render-time ambient tint (direction C): the two per-surface channels the
@@ -774,8 +773,8 @@ html[data-liquid-glass="on"] {
   --lg-drop-shadow: var(--lg-drop-glass);
 }
 /* Light-theme re-tune: much more blur on the glass tier than the dark-theme
-   8px — on a white surface an 8px blur of dark text is barely perceptible,
-   20px smears it into clearly visible bokeh bands (test-page box D
+   12px — on a white surface a 12px blur of dark text is barely perceptible,
+   26px smears it into clearly visible bokeh bands (test-page box D
    direction). Both tints drop so the frost reads as airy glass on white
    instead of an opaque card; the dark theme (explicit or system-dark) keeps
    the denser values from the gate block.
@@ -786,10 +785,10 @@ html[data-liquid-glass="on"] {
    carry the contour; the SVG lens and the GL shader both take the lower
    number. */
 html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) {
-  --lg-blur-glass: 20px;
-  --lg-tint-glass-a: 34%;
-  --lg-tint-frost-a: 66%;
-  --lg-spec: 0.08;
+  --lg-blur-glass: 26px;
+  --lg-tint-glass-a: 28%;
+  --lg-tint-frost-a: 58%;
+  --lg-spec: 0.11;
   --lg-lens-filter: url(#lg-refract-soft);
   --lg-rim-top: color-mix(in srgb, #fff 42%, transparent);
   --lg-rim-side-l: color-mix(in srgb, #fff 12%, transparent);
@@ -805,10 +804,10 @@ html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-sch
    `system` is not `dark`.) */
 @media (prefers-color-scheme: light) {
   html[data-liquid-glass="on"][data-color-scheme="system"] {
-    --lg-blur-glass: 20px;
-    --lg-tint-glass-a: 34%;
-    --lg-tint-frost-a: 66%;
-    --lg-spec: 0.08;
+    --lg-blur-glass: 26px;
+    --lg-tint-glass-a: 28%;
+    --lg-tint-frost-a: 58%;
+    --lg-spec: 0.11;
     --lg-lens-filter: url(#lg-refract-soft);
     --lg-rim-top: color-mix(in srgb, #fff 42%, transparent);
     --lg-rim-side-l: color-mix(in srgb, #fff 12%, transparent);
@@ -1743,7 +1742,7 @@ body {
 
 /* ---- perf: WS-1B ---- */
 /* Dialog / bottom-sheet open jank (dialog-storm). The frosted panels carry
-   `.lg-frost` (blur 34px); rasterizing the panel frost in the mount frame
+   `.lg-frost` (blur 46px); rasterizing the panel frost in the mount frame
    stacks it on top of the scrim's full-viewport blur. Dialog and BottomSheet
    stagger the two rasters instead — scrim filter on frame 2 (`step-1`),
    panel frost on frame 3 (`step-2`). Their entrance animations start at

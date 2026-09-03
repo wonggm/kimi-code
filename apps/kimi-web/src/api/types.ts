@@ -911,6 +911,10 @@ export interface KimiWebApi {
   /** Cancel whatever is running in the session, including skill activations. */
   abortSession(sessionId: string): Promise<{ aborted: boolean }>;
   compactSession(sessionId: string, instruction?: string): Promise<void>;
+  /** Analyze the codebase and generate AGENTS.md (TUI /init). The daemon
+   *  awaits the whole mirrored agent turn, so this resolves when the file is
+   *  written; progress streams through the transcript events meanwhile. */
+  initSession(sessionId: string): Promise<void>;
   undoSession(sessionId: string, count?: number): Promise<void>;
   /** Reload the session: server re-reads config.toml, rescans plugins, and
    *  close+resumes the session. Returns when the server has rebound. */
