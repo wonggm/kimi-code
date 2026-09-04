@@ -91,16 +91,16 @@ interface TierTexture {
 }
 
 // Mirrors of the GlassDefs.vue SVG lens parameters (primitiveUnits
-// objectBoundingBox): the ramps bend the outer 18% of the element and the
-// feDisplacementMap scale 0.5 peaks at 3.125% of the element size — the ramp
+// objectBoundingBox): the ramps bend the outer 24% of the element and the
+// feDisplacementMap scale 0.8 peaks at 5% of the element size — the ramp
 // channels only span 0x60…0xA0 (0.375…0.625) and the 0.25/0.5/0.75 table
 // remap compresses that to 0.4375…0.5625, i.e. ±0.0625 around neutral.
 // Fractions, so pane size changes cost nothing.
-const LENS_EDGE_FRACTION = 0.18;
-const LENS_PULL_FRACTION = 0.03125;
+const LENS_EDGE_FRACTION = 0.24;
+const LENS_PULL_FRACTION = 0.05;
 // Fallback for the token the shader consumes when a panel's computed style
 // cannot be parsed: --lg-spec (rim-band specular strength).
-const SPEC_STRENGTH = 0.26;
+const SPEC_STRENGTH = 0.42;
 const GRAIN_AMPLITUDE = 0.05; // feTurbulence+feColorMatrix grain analogue
 
 const MAX_ATTACHED = 10;

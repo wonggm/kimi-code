@@ -3,13 +3,14 @@
      Tabs: Changes / Side chat / Turn diff / Terminal / Bash / Sub agents /
      Todos. The tab bar is glass; the tab panes and the drill views are solid
      (content, not controls). The tab bar's ✕ is the panel's only close — the
-     panes render no close of their own, and a drill view's ✕ pops one level.
-     Active tab persists in localStorage via STORAGE_KEYS.rightPanelActiveTab.
+     panes and the drill views render no close of their own, and the tab bar's
+     back chevron (visible only while drilled in) is the only way to unwind a
+     drill. Active tab persists in localStorage via STORAGE_KEYS.rightPanelActiveTab.
      Drill-downs started inside the panel (subagent card, plan file link)
      push a detail view onto an in-panel stack instead of opening the
-     app-level right-side detail layer; the tab bar's back button, Escape while
-     focus is inside the panel, or the view's own close control pops one level,
-     and focus follows the stack in and back out. -->
+     app-level right-side detail layer; the tab bar's back chevron or Escape
+     while focus is inside the panel pops one level, and focus follows the
+     stack in and back out. -->
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -689,7 +690,7 @@ function openChangedFile(path: string): void {
 
     <!-- In-panel drill views: rendered on top of the tab panes (the panes'
          v-show goes off while the stack is non-empty). The tab bar's back
-         button pops one level; each view's own dismiss control pops too.
+         chevron (and Escape while focus is inside the panel) pops one level.
          Nested opens (file link / nested agent inside the subagent detail)
          push further entries onto the same stack. -->
     <section
@@ -704,7 +705,7 @@ function openChangedFile(path: string): void {
         :member="drillAgentMember"
         :session-id="sessionId"
         :tasks="appTasks"
-        @close="popDrill"
+        :closable="false"
         @open-file="openFileInPanel"
         @open-media="emit('open-media', $event)"
         @open-agent="openAgentInPanel"
@@ -725,10 +726,9 @@ function openChangedFile(path: string): void {
         :error="panelFileError"
         :line="drillFileView.line"
         :download-url="panelFileDownloadUrl"
-        closable
+        :closable="false"
         :external-actions="false"
         :open-file="openFileInPanel"
-        @close="popDrill"
       />
     </section>
   </div>

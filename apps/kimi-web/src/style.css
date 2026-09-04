@@ -690,28 +690,35 @@ html[data-color-scheme="dark"] {
 html[data-liquid-glass="on"] {
   /* saturate + a touch of brightness keep the backdrop luminous through the
      tint. */
-  --lg-sat: 190%;
+  --lg-sat: 220%;
   --lg-bright: 1.04;
   /* Refraction depth: the edge zone the SVG lens bends, mirrored by the CSS
      inset edge-glow below so non-supporting engines keep a hint of it. */
-  --lg-edge-px: 10px;
+  --lg-edge-px: 16px;
 
-  /* Per-tier blur depths. glass 12px — close to clear glass rather than a
-     bokeh smear: text behind softens at the edges while staying roughly
-     readable. frost 46px — dialogs/sheets/composer sit on top of the live
-     transcript, so the backdrop has to be knocked out. band 18px — a step
-     stronger than glass: the chat blur bands and the dock squares embedded
-     in them are the one place the user asked to read as clearly blurred. */
-  --lg-blur-glass: 12px;
-  --lg-blur-frost: 46px;
-  --lg-blur-band: 18px;
+  /* Per-tier blur depths. glass 20px — text behind smears into clearly
+     visible bokeh while the panel stays translucent. frost 64px —
+     dialogs/sheets/composer sit on top of the live transcript, so the
+     backdrop has to be knocked out. band 28px — a step stronger than glass:
+     the chat blur bands and the dock squares embedded in them are the one
+     place the user asked to read as clearly blurred. */
+  --lg-blur-glass: 20px;
+  --lg-blur-frost: 64px;
+  --lg-blur-band: 28px;
+  /* Menus/dropdowns sit over live transcript text and stay open while the
+     user reads them — a step above band so the text behind smears out
+     instead of ghosting through the item labels. */
+  --lg-blur-menu: 36px;
 
-  /* Per-tier tint alphas (~0.32 dark for small floating elements —
+  /* Per-tier tint alphas (~0.24 dark for small floating elements —
      translucent enough that the blurred text behind reads as bokeh bands
      rather than a flat wash; frost sits over live content and stays denser). */
-  --lg-tint-glass-a: 32%;
-  --lg-tint-frost-a: 50%;
-  --lg-tint-band-a: 10%;
+  --lg-tint-glass-a: 24%;
+  --lg-tint-frost-a: 40%;
+  --lg-tint-band-a: 6%;
+  /* A touch denser than glass so item labels keep their contrast against the
+     (now strongly blurred) content behind the menu. */
+  --lg-tint-menu-a: 28%;
 
   /* (An earlier "specular corner bloom" radial gradient painted a static
      white patch at the top-right of every panel — not how liquid glass
@@ -722,10 +729,10 @@ html[data-liquid-glass="on"] {
   /* Asymmetric edge rim — the glass edge catching a top-left key light:
      bright top specular, lit left hairline, shaded right hairline, bottom
      shade. Declared as color-mix values so tiers can soften per surface. */
-  --lg-rim-top: color-mix(in srgb, #fff 70%, transparent);
-  --lg-rim-side-l: color-mix(in srgb, #fff 25%, transparent);
-  --lg-rim-side-r: color-mix(in srgb, #000 12%, transparent);
-  --lg-rim-bottom: color-mix(in srgb, #000 16%, transparent);
+  --lg-rim-top: color-mix(in srgb, #fff 88%, transparent);
+  --lg-rim-side-l: color-mix(in srgb, #fff 38%, transparent);
+  --lg-rim-side-r: color-mix(in srgb, #000 18%, transparent);
+  --lg-rim-bottom: color-mix(in srgb, #000 24%, transparent);
 
   /* Per-tier resting drop shadow — menus / tooltips / toasts rest on
      shadow-sm, dialogs / sheets / the composer on shadow-xl, bands embed in
@@ -742,7 +749,7 @@ html[data-liquid-glass="on"] {
      invisible, so the light-theme block drops the highlight strength, softens
      the white top edge and deepens the shaded edges so the rim reads as a
      darker contour, and routes the lens to the softer SVG variant. */
-  --lg-spec: 0.26;
+  --lg-spec: 0.42;
   --lg-lens-filter: url(#lg-refract);
 
   /* Render-time ambient tint (direction C): the two per-surface channels the
@@ -773,8 +780,8 @@ html[data-liquid-glass="on"] {
   --lg-drop-shadow: var(--lg-drop-glass);
 }
 /* Light-theme re-tune: much more blur on the glass tier than the dark-theme
-   12px — on a white surface a 12px blur of dark text is barely perceptible,
-   26px smears it into clearly visible bokeh bands (test-page box D
+   20px — on a white surface a 20px blur of dark text is barely perceptible,
+   40px smears it into clearly visible bokeh bands (test-page box D
    direction). Both tints drop so the frost reads as airy glass on white
    instead of an opaque card; the dark theme (explicit or system-dark) keeps
    the denser values from the gate block.
@@ -785,15 +792,17 @@ html[data-liquid-glass="on"] {
    carry the contour; the SVG lens and the GL shader both take the lower
    number. */
 html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) {
-  --lg-blur-glass: 26px;
-  --lg-tint-glass-a: 28%;
-  --lg-tint-frost-a: 58%;
-  --lg-spec: 0.11;
+  --lg-blur-glass: 40px;
+  --lg-blur-menu: 52px;
+  --lg-tint-glass-a: 20%;
+  --lg-tint-frost-a: 46%;
+  --lg-tint-menu-a: 24%;
+  --lg-spec: 0.22;
   --lg-lens-filter: url(#lg-refract-soft);
-  --lg-rim-top: color-mix(in srgb, #fff 42%, transparent);
-  --lg-rim-side-l: color-mix(in srgb, #fff 12%, transparent);
-  --lg-rim-side-r: color-mix(in srgb, #000 16%, transparent);
-  --lg-rim-bottom: color-mix(in srgb, #000 20%, transparent);
+  --lg-rim-top: color-mix(in srgb, #fff 60%, transparent);
+  --lg-rim-side-l: color-mix(in srgb, #fff 20%, transparent);
+  --lg-rim-side-r: color-mix(in srgb, #000 24%, transparent);
+  --lg-rim-bottom: color-mix(in srgb, #000 30%, transparent);
   --lg-flat-rim: color-mix(in srgb, #fff 55%, transparent);
 }
 /* `data-color-scheme="system"` follows the OS, so it has to be spelled out in
@@ -804,16 +813,40 @@ html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-sch
    `system` is not `dark`.) */
 @media (prefers-color-scheme: light) {
   html[data-liquid-glass="on"][data-color-scheme="system"] {
-    --lg-blur-glass: 26px;
-    --lg-tint-glass-a: 28%;
-    --lg-tint-frost-a: 58%;
-    --lg-spec: 0.11;
+    --lg-blur-glass: 40px;
+    --lg-blur-menu: 52px;
+    --lg-tint-glass-a: 20%;
+    --lg-tint-frost-a: 46%;
+    --lg-tint-menu-a: 24%;
+    --lg-spec: 0.22;
     --lg-lens-filter: url(#lg-refract-soft);
-    --lg-rim-top: color-mix(in srgb, #fff 42%, transparent);
-    --lg-rim-side-l: color-mix(in srgb, #fff 12%, transparent);
-    --lg-rim-side-r: color-mix(in srgb, #000 16%, transparent);
-    --lg-rim-bottom: color-mix(in srgb, #000 20%, transparent);
+    --lg-rim-top: color-mix(in srgb, #fff 60%, transparent);
+    --lg-rim-side-l: color-mix(in srgb, #fff 20%, transparent);
+    --lg-rim-side-r: color-mix(in srgb, #000 24%, transparent);
+    --lg-rim-bottom: color-mix(in srgb, #000 30%, transparent);
     --lg-flat-rim: color-mix(in srgb, #fff 55%, transparent);
+  }
+}
+/* Sidebar rim softening (light only). The two light-theme shaded-edge tokens
+   (`--lg-rim-side-r` 24% black, `--lg-rim-bottom` 30% black) read as a hard
+   hairline along the sidebar column's right and bottom rims on a near-white
+   surface, while the other light-glass consumers (panels, dialogs, menus)
+   still rely on those same contours to read as floating planes. Scope the
+   softening to `.side .col` instead of touching the global tokens: the
+   column is already in the shared consuming rule's selector list, so a
+   higher-specificity re-declaration of the two vars cascades into its
+   box-shadow without a specificity fight. Halved values keep the soft
+   shaded contour (a step weaker than the dark gate's 18/24) without the
+   hard line. Mirrors the dual light-mode paths above (explicit light +
+   system-light) so the override tracks the same theme transitions. */
+html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) .side .col {
+  --lg-rim-side-r: color-mix(in srgb, #000 12%, transparent);
+  --lg-rim-bottom: color-mix(in srgb, #000 16%, transparent);
+}
+@media (prefers-color-scheme: light) {
+  html[data-liquid-glass="on"][data-color-scheme="system"] .side .col {
+    --lg-rim-side-r: color-mix(in srgb, #000 12%, transparent);
+    --lg-rim-bottom: color-mix(in srgb, #000 16%, transparent);
   }
 }
 
@@ -827,6 +860,29 @@ html[data-liquid-glass="on"] .lg-frost.lg-frost {
   --lg-blur: var(--lg-blur-frost);
   --lg-tint-a: var(--lg-tint-frost-a);
   --lg-drop-shadow: var(--lg-drop-frost);
+}
+/* Menu retarget — dropdown/popup menus keep the glass tier's rim and drop
+   shadow but take the stronger menu blur and a slightly denser tint, so the
+   transcript text behind an open menu smears out instead of ghosting through
+   the item labels. Listed by concrete class (they all carry .lg-glass, which
+   would otherwise win the parameter slots). The `--lg-optic-filter`
+   re-declaration is load-bearing, not redundancy: the composer card clears
+   that slot on ITSELF while a menu is open (the nested-backdrop-filter
+   suppression below), custom properties inherit, and the menus hang inside
+   the card in the DOM — so without this line the open menu inherits `none`
+   and renders with no blur at all. The demote/reduced-transparency rules
+   still win: they match the menu element directly at higher specificity. */
+html[data-liquid-glass="on"] :is(
+  .ui-menu.ui-menu,
+  .model-dropdown.model-dropdown,
+  .perm-dropdown.perm-dropdown,
+  .add-menu.add-menu,
+  .slash-menu.slash-menu,
+  .mention-menu.mention-menu
+) {
+  --lg-blur: var(--lg-blur-menu);
+  --lg-tint-a: var(--lg-tint-menu-a);
+  --lg-optic-filter: var(--lg-glass-filter);
 }
 /* Band tier — embedded blur surfaces, not floating ones: the dock squares
    ride inside the bottom frost slab, so they keep the 14px blur and a faint
@@ -1141,9 +1197,10 @@ html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
     --lg-rim-side-l: color-mix(in srgb, #fff 45%, transparent);
     --lg-rim-side-r: color-mix(in srgb, #000 30%, transparent);
     --lg-rim-bottom: color-mix(in srgb, #000 38%, transparent);
-    --lg-edge-px: 14px;
+    --lg-edge-px: 20px;
     --lg-tint-glass-a: 56%;
     --lg-tint-frost-a: 74%;
+    --lg-tint-menu-a: 62%;
     --lg-flat-rim: color-mix(in srgb, #fff 60%, transparent);
   }
   /* The same recipe has to DARKEN on light faces — a white rim on a white

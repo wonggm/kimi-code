@@ -21,8 +21,8 @@
 // on a white face is invisible, so the light variant drops the highlight to a
 // thin, tighter edge and lets the shaded CSS rim carry the contour.
 const LENS_VARIANTS = [
-  { id: 'lg-refract', specularConstant: 0.7, specularExponent: 22 },
-  { id: 'lg-refract-soft', specularConstant: 0.32, specularExponent: 30 },
+  { id: 'lg-refract', specularConstant: 0.95, specularExponent: 20 },
+  { id: 'lg-refract-soft', specularConstant: 0.5, specularExponent: 26 },
 ];
 </script>
 
@@ -31,19 +31,19 @@ const LENS_VARIANTS = [
     <defs>
       <!-- Edge-lens maps. feDisplacementMap shifts a pixel by
            scale * (channel - 0.5): 0x80 (128) is neutral, so each ramp runs
-           0x60 → 0x80 → 0xA0 within the outer ~18% of the element (the
+           0x60 → 0x80 → 0xA0 within the outer ~24% of the element (the
            CSS analogue of --lg-edge-px) and stays flat in the middle.
            One channel per image so they can be summed channel-wise. -->
       <linearGradient id="lg-lens-x-grad" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="#600000" />
-        <stop offset="0.18" stop-color="#800000" />
-        <stop offset="0.82" stop-color="#800000" />
+        <stop offset="0.24" stop-color="#800000" />
+        <stop offset="0.76" stop-color="#800000" />
         <stop offset="1" stop-color="#a00000" />
       </linearGradient>
       <linearGradient id="lg-lens-y-grad" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#006000" />
-        <stop offset="0.18" stop-color="#008000" />
-        <stop offset="0.82" stop-color="#008000" />
+        <stop offset="0.24" stop-color="#008000" />
+        <stop offset="0.76" stop-color="#008000" />
         <stop offset="1" stop-color="#00a000" />
       </linearGradient>
       <rect id="lg-lens-x-src" width="100" height="100" fill="url(#lg-lens-x-grad)" />
@@ -82,7 +82,7 @@ const LENS_VARIANTS = [
           <feFuncR type="table" tableValues="0.25 0.5 0.75" />
           <feFuncG type="table" tableValues="0.25 0.5 0.75" />
         </feComponentTransfer>
-        <feDisplacementMap in="SourceGraphic" in2="lens" scale="0.5" xChannelSelector="R" yChannelSelector="G" result="bent" />
+        <feDisplacementMap in="SourceGraphic" in2="lens" scale="0.8" xChannelSelector="R" yChannelSelector="G" result="bent" />
         <feGaussianBlur in="SourceAlpha" stdDeviation="0.015" result="bevel" />
         <feSpecularLighting
           in="bevel"

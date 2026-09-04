@@ -30,14 +30,20 @@ import Markdown from './Markdown.vue';
 import PanelHeader from '../ui/PanelHeader.vue';
 import Spinner from '../ui/Spinner.vue';
 
-const props = defineProps<{
-  member: AgentMember;
-  /** Active session id — the transcript REST read is per-session. */
-  sessionId?: string;
-  /** Live session tasks: resolve the member's wire agent id (`task.agentId`,
-   *  else the task id) for the transcript fetch. */
-  tasks?: AppTask[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    member: AgentMember;
+    /** Active session id — the transcript REST read is per-session. */
+    sessionId?: string;
+    /** Live session tasks: resolve the member's wire agent id (`task.agentId`,
+     *  else the task id) for the transcript fetch. */
+    tasks?: AppTask[];
+    /** Show the PanelHeader close button. The right-panel drill usage passes
+     *  `false` so the tab bar's back chevron / ✕ are the only controls. */
+    closable?: boolean;
+  }>(),
+  { closable: true },
+);
 
 const emit = defineEmits<{
   close: [];
@@ -440,6 +446,7 @@ watch(
     <PanelHeader
       :title="t('common.preview')"
       :subtitle="member.name"
+      :closable="closable"
       :close-label="t('thinking.close')"
       @close="emit('close')"
     >

@@ -1507,11 +1507,16 @@ function selectModel(modelId: string): void {
           </Tooltip>
           <!-- Send + stop — one toolbar slot. Desktop: `display: contents`, so
                the two keep their own slots exactly as before (stop only visible
-               while running). Mobile: both stack in one cell and cross-fade. -->
+               while running). Mobile: both stack in one cell and cross-fade.
+               Both buttons also carry `lg-glass` so they pick up the glass
+               material when the liquid-glass toggle is ON; the class is inert
+               with glass OFF (the consuming rule is gated on
+               html[data-liquid-glass="on"]), so the solid accent / danger fills
+               stay as the fallback. -->
           <div class="send-stop">
             <Tooltip :text="running ? t('composer.interruptTitle') : null">
               <button
-                class="stop"
+                class="stop lg-glass"
                 :class="{ 'is-off': !running }"
                 :aria-label="t('composer.interrupt')"
                 :aria-hidden="stopHidden ? 'true' : undefined"
@@ -1523,7 +1528,7 @@ function selectModel(modelId: string): void {
             </Tooltip>
             <Tooltip :text="sendLabel">
               <button
-                class="send"
+                class="send lg-glass"
                 :class="{ 'is-starting': starting, 'is-off': running }"
                 :aria-label="sendLabel"
                 :aria-hidden="sendHidden ? 'true' : undefined"
@@ -1945,7 +1950,20 @@ function selectModel(modelId: string): void {
 
 /* Send button — circular accent icon. Always "send"; while running it enqueues
    (handled upstream). On desktop the interrupt is a separate Stop button so the
-   two are never confused; on mobile the two share one slot. */
+   two are never confused; on mobile the two share one slot.
+
+   Glass split: the `lg-glass` class on the element is inert with the
+   liquid-glass toggle OFF — the consuming rule is gated on
+   html[data-liquid-glass="on"], so the solid accent fill above stays the
+   resting look. With glass ON, the shared consuming rule paints the glass
+   material (tint + backdrop blur + edge rim + drop shadow), and the scoped
+   .send.lg-glass.lg-glass rule below retargets --lg-tint / --lg-tint-top
+   toward var(--color-accent) so the wash reads as a blue-tinted glass
+   rather than the neutral text-tinted wash the other composer pills get via
+   the global composer-card rule. The icon drops to --color-text in glass
+   mode (see the shared glass-mode glyph colour rule below) because
+   --color-text-on-accent on a pale-blue wash collapses the contrast in light
+   mode; the blue identity is carried by the wash itself, not the icon. */
 .send {
   width: var(--composer-send-size);
   height: var(--composer-send-size);
@@ -1982,8 +2000,11 @@ function selectModel(modelId: string): void {
   transform: none;
 }
 
-/* Spinner-on-accent: recolor the ring so the arc reads on the accent fill.
-   Spinner.vue styles are scoped, so pierce them with :deep(). */
+/* Spinner-on-accent: recolor the ring so the arc reads on the accent fill
+   (solid mode). In glass mode the shared glass-mode glyph colour rule below
+   retargets these same properties to --color-text so the arc and track stay
+   high-contrast against the tinted wash. Spinner.vue styles are scoped, so
+   pierce them with :deep(). */
 .send.is-starting :deep(.ui-spinner) {
   color: var(--color-text-on-accent);
 }
@@ -1998,9 +2019,41 @@ function selectModel(modelId: string): void {
   height: var(--p-ic-lg);
 }
 
+/* Send in glass mode — retarget the tint vars from the neutral text-tinted
+   wash (set by the global `.composer-card .lg-glass.lg-glass:is(button,...)`
+   rule in style.css) toward the accent colour, mirroring the
+   `.dock-workbar button.ui-pill.is-active` pattern. Doubled `.lg-glass` plus
+   `.composer-card` outranks the global composer-card glass rule (0,6,1) so
+   the accent identity wins; the `--lg-bg` shorthand on the consuming rule
+   recomputes from these vars, so the `background` flip is implicit. The
+   global hover lift (--lg-tint-a: 50%, translateY(-1px)) still rides on
+   top — only the resting tint stops are retargeted here, so the hover
+   deepens them naturally. */
+html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass {
+  --lg-tint: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  --lg-tint-top: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+/* Hover bump — keeps the accent identity while deepening the glass tint, so
+   the user feels the click without losing the blue-glass read. The global
+   --lg-tint-a:50% hover lift is left to ride on top (it raises the alpha of
+   whatever tint we set here). */
+html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass:hover {
+  --lg-tint: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  --lg-tint-top: color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
 /* Stop button — sibling of Send, shown only while running. Red at rest so the
    destructive action is easy to spot; fills solid danger on hover. Kept softer
-   than the accent Send so Send stays the primary action. */
+   than the accent Send so Send stays the primary action.
+
+   Same glass split as Send: `lg-glass` is inert with the toggle OFF, so the
+   soft-danger fill + danger border stays as the resting look; with glass ON,
+   the consuming rule paints the glass material and the scoped rule below
+   retargets --lg-tint / --lg-tint-top toward var(--color-danger) so the wash
+   reads as a red-tinted glass. The icon colour drops to --color-text in
+   glass mode (see the shared glass-mode glyph colour rule further down)
+   because --color-danger on a red-tinted wash collapses the contrast — the
+   danger identity is carried by the wash itself, not the icon. */
 .stop {
   width: var(--composer-send-size);
   height: var(--composer-send-size);
@@ -2030,6 +2083,42 @@ function selectModel(modelId: string): void {
   flex: none;
   width: var(--p-ic-lg);
   height: var(--p-ic-lg);
+}
+
+/* Stop in glass mode — mirror of Send above, but retargeted toward the danger
+   colour. The 1px border keeps its width from the base rule (the consuming
+   rule overrides border-color to the glass line-strong tint, so the border
+   blends with the rim instead of fighting it). */
+html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass {
+  --lg-tint: color-mix(in srgb, var(--color-danger) 24%, transparent);
+  --lg-tint-top: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass:hover {
+  --lg-tint: color-mix(in srgb, var(--color-danger) 34%, transparent);
+  --lg-tint-top: color-mix(in srgb, var(--color-danger) 18%, transparent);
+}
+
+/* Glass-mode glyph colour — the resting `--color-text-on-accent` for send and
+   `--color-danger` for stop were tuned for the solid accent / soft-danger
+   fills, where the high-contrast color sat on top of an opaque saturated
+   background. On the translucent accent-tinted glass wash, that envelope
+   collapses: white on pale blue reads as low-contrast in light mode, and
+   red on red-tinted glass reads as low-contrast in any mode. Drop the icon
+   to the main text colour so the glyph stays high-contrast against the
+   tinted glass in both themes — the accent identity is carried by the wash
+   itself (see the .send / .stop retarget rules above), not the icon. The
+   :deep() pierces scoping so the Spinner's scoped rules below the base
+   `.send` block follow the same retarget on the `is-starting` state (the
+   arc and track agree with the resting icon, not the solid accent). */
+html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass,
+html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass {
+  color: var(--color-text);
+}
+html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-spinner) {
+  color: var(--color-text);
+}
+html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-spinner__track) {
+  stroke: color-mix(in srgb, var(--color-text) 32%, transparent);
 }
 
 /* Send / stop live in one toolbar slot. On desktop the slot is `display:

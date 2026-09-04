@@ -1706,6 +1706,15 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Narrow sidebar: the two kbd chips compete for the last ~50px of column
+   width and crowd the right edge before the search-input's flex+ellipsis
+   can absorb them. Hide them below this width — the chips are decorative,
+   the Cmd/Ctrl+K shortcut still works via the global keydown handler. Mirrors
+   the brand row's tiered collapse (320px drops the dev pill endpoint, 250px
+   drops the product name). */
+@container sidebar-col (max-width: 280px) {
+  .search .ui-kbd { display: none; }
+}
 
 /* Sessions — owns the vertical padding around the list (the 12px gap to the
    search row above and the bottom breathing room). Scrolled content passes
