@@ -5,12 +5,53 @@
      The KIMI wordmark is the official mark from kimi.com (viewBox added so it
      scales; paths use currentColor so we can ink it). -->
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Spinner from './ui/Spinner.vue';
-/** Last connection error from the first-load auth gate's retry loop, shown so
- *  a "cannot connect" state is diagnosable instead of a bare spinner. */
-defineProps<{ issue?: string | null }>();
+import { useKimiWebClient } from '../composables/useKimiWebClient';
+
+type LoadingStage = 'auth' | 'server' | 'config' | 'sessions' | 'session';
+
+const props = defineProps<{
+  /** Last connection error from the first-load auth gate's retry loop, shown so
+   *  a "cannot connect" state is diagnosable instead of a bare spinner. */
+  issue?: string | null;
+  /** The current startup stage, when the caller already tracks one. */
+  stage?: LoadingStage;
+  /** Consecutive failed connect attempts, appended to the stage line. */
+  retries?: number;
+}>();
+
 const { t } = useI18n();
+const client = useKimiWebClient();
+
+// Without an explicit stage, follow the connection state the client tracks:
+// auth check → server connect → loading configuration (the splash hides once
+// `initialized` flips true, so the later stages only apply when passed in).
+const activeStage = computed<LoadingStage | undefined>(() => {
+  if (props.stage !== undefined) return props.stage;
+  if (!client.authReady.value) return 'auth';
+  if (client.connection.value !== 'connected') return 'server';
+  return 'config';
+});
+
+const STAGE_KEYS: Record<LoadingStage, string> = {
+  auth: 'app.connectingStageAuth',
+  server: 'app.connectingStageServer',
+  config: 'app.connectingStageConfig',
+  sessions: 'app.connectingStageSessions',
+  session: 'app.connectingStageSession',
+};
+
+const stageText = computed(() => {
+  const stage = activeStage.value;
+  if (stage === undefined) return '';
+  let text = t(STAGE_KEYS[stage]);
+  if (props.retries !== undefined && props.retries > 0) {
+    text += t('app.connectingRetrySuffix', { n: props.retries });
+  }
+  return text;
+});
 </script>
 
 <template>
@@ -24,6 +65,7 @@ const { t } = useI18n();
       </svg>
       <Spinner size="md" :label="t('app.connecting')" />
       <div class="gload-text">{{ t('app.connecting') }}</div>
+      <div v-if="stageText" class="gload-stage">{{ stageText }}</div>
       <div v-if="issue" class="gload-issue">
         <div>{{ t('app.connectRetrying') }}</div>
         <div class="gload-issue-detail">{{ issue }}</div>
@@ -97,4 +139,11 @@ const { t } = useI18n();
 }
 
 .gload-text { font-family: var(--sans); }
+
+.gload-stage {
+  font-family: var(--sans);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  text-align: center;
+}
 </style>

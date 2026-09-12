@@ -6,6 +6,7 @@ import type { Terminal as XTerm, ITheme } from '@xterm/xterm';
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from 'vue';
 import { useIsDark } from '../composables/useIsDark';
 import { useTerminal } from '../composables/useTerminal';
+import { useSelectionCapture, type SelectionSource } from '../composables/useSelectionQuote';
 import Button from './ui/Button.vue';
 
 const props = defineProps<{ sessionId: string }>();
@@ -80,6 +81,39 @@ function scheduleFit(): void {
     fitAndResize();
   }, 100);
 }
+
+// xterm keeps its own selection (not the DOM Selection API), so the app-wide
+// quote bubble reads the text and an anchor rect straight from the terminal.
+// Selection positions are buffer rows; the viewport origin converts them to
+// pixels through the measured cell size.
+function terminalSelection(): SelectionSource | null {
+  const xterm = term;
+  const host = hostRef.value;
+  if (!xterm || !host || !xterm.hasSelection()) return null;
+  const text = xterm.getSelection();
+  if (text.trim() === '') return null;
+  const position = xterm.getSelectionPosition();
+  const screen = host.querySelector<HTMLElement>('.xterm-screen');
+  if (!position || !screen) return null;
+  const viewportY = xterm.buffer.active.viewportY;
+  const firstRow = position.start.y - viewportY;
+  const lastRow = position.end.y - viewportY;
+  if (lastRow < 0 || firstRow > xterm.rows - 1) return null;
+  const cellWidth = screen.clientWidth / Math.max(xterm.cols, 1);
+  const cellHeight = screen.clientHeight / Math.max(xterm.rows, 1);
+  if (cellWidth <= 0 || cellHeight <= 0) return null;
+  const bounds = screen.getBoundingClientRect();
+  const top = bounds.top + Math.max(firstRow, 0) * cellHeight;
+  const bottom = bounds.top + (Math.min(lastRow, xterm.rows - 1) + 1) * cellHeight;
+  const left = bounds.left + Math.min(position.start.x, position.end.x) * cellWidth;
+  const right = bounds.left + Math.min(Math.max(position.start.x, position.end.x), xterm.cols) * cellWidth;
+  return {
+    text,
+    rect: new DOMRect(left, top, Math.max(right - left, 1), Math.max(bottom - top, 1)),
+  };
+}
+
+useSelectionCapture(() => hostRef.value, terminalSelection);
 
 async function initTerminal(): Promise<void> {
   if (!hostRef.value || term) return;

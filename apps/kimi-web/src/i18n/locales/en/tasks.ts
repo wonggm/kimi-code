@@ -9,10 +9,17 @@ export default {
   dockSubagent: 'Background Agent',
   dockTodos: 'Todos',
   dockPlan: 'Plan',
+  dockProgress: 'Progress',
+  dockRunning: '{n} running',
   running: 'running',
   closePanel: 'Close panel',
+  openPanel: 'Open in the side panel',
   timingRunning: 'Running · {time}',
   timingDone: 'Done · {sec}s',
+  /** Units for the bare duration upstream's task rows show ("5m4s", "11h39m"). */
+  durationHour: 'h',
+  durationMinute: 'm',
+  durationSecond: 's',
   emptyTasks: 'No background tasks running',
   emptyBash: 'No bash tasks running',
   emptySubagent: 'No background agent tasks running',
@@ -20,6 +27,8 @@ export default {
   emptyRunning: 'No running tasks',
   emptyDone: 'No completed tasks',
   emptyTodo: 'No todos yet',
+  stateDone: 'Done',
+  stateFail: 'Failed',
   stateCancelled: 'Cancelled',
   // Subagent card grid: status filter tabs
   filterRecent: 'Recent',
@@ -38,6 +47,7 @@ export default {
   transcriptLoadError: 'Failed to load transcript',
   // Bash dock panel (master-detail view with status filtering)
   bash: {
+    filterRecent: 'Recent',
     filterAll: 'All',
     filterRunning: 'Running',
     filterDone: 'Done',

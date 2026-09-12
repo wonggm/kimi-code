@@ -32,7 +32,9 @@ const props = withDefaults(
 
 const GAP = 6;
 const MARGIN = 8;
-const SHOW_DELAY = 150;
+// Long enough that merely passing the mouse over a trigger does not pop the
+// hint — the hint is for a deliberate hover.
+const SHOW_DELAY = 400;
 
 const trigger = ref<HTMLElement>();
 const bubble = ref<HTMLElement>();

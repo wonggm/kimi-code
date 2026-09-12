@@ -9,12 +9,13 @@ import { useKimiWebClient } from '../../composables/useKimiWebClient';
 import type { AppSession } from '../../api/types';
 import { useDialogFocus } from '../../composables/useDialogFocus';
 import LanguageSwitcher from './LanguageSwitcher.vue';
+import PluginsPanel from './PluginsPanel.vue';
+import ProvidersPanel from './ProvidersPanel.vue';
 import { serverEndpointLabel } from '../../api/config';
 import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
 import type { Accent, ColorScheme } from '../../composables/useKimiWebClient';
 import type { AppConfig, AppModel } from '../../api/types';
 import { PERMISSION_MODES, useAgentDefaults } from '../../composables/useAgentDefaults';
-import { useCustomProviders } from '../../composables/useCustomProviders';
 import Dialog from '../ui/Dialog.vue';
 import Switch from '../ui/Switch.vue';
 import Button from '../ui/Button.vue';
@@ -24,7 +25,9 @@ import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
+import type { IconName } from '../../lib/icons';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { activityRunFolding, setActivityRunFolding } from '../../lib/conversationPrefs';
 import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from './AccountPlanUsage.vue';
 
 const { t } = useI18n();
@@ -88,17 +91,19 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-type SettingsTab = 'general' | 'agent' | 'account' | 'advanced' | 'archived' | 'lab';
+type SettingsTab = 'general' | 'agent' | 'account' | 'providers' | 'plugins' | 'advanced' | 'lab' | 'archived';
 
 const activeTab = ref<SettingsTab>('general');
 
-const tabs: { id: SettingsTab; labelKey: string }[] = [
-  { id: 'general', labelKey: 'settings.tabs.general' },
-  { id: 'agent', labelKey: 'settings.tabs.agent' },
-  { id: 'account', labelKey: 'settings.tabs.account' },
-  { id: 'advanced', labelKey: 'settings.tabs.advanced' },
-  { id: 'archived', labelKey: 'settings.tabs.archived' },
-  { id: 'lab', labelKey: 'settings.tabs.lab' },
+const tabs: { id: SettingsTab; labelKey: string; icon: IconName }[] = [
+  { id: 'general', labelKey: 'settings.tabs.general', icon: 'sliders' },
+  { id: 'agent', labelKey: 'settings.tabs.agent', icon: 'robot' },
+  { id: 'account', labelKey: 'settings.tabs.account', icon: 'user' },
+  { id: 'providers', labelKey: 'settings.tabs.providers', icon: 'bolt' },
+  { id: 'plugins', labelKey: 'settings.tabs.plugins', icon: 'sparkles' },
+  { id: 'advanced', labelKey: 'settings.tabs.advanced', icon: 'microscope' },
+  { id: 'lab', labelKey: 'settings.tabs.lab', icon: 'flask' },
+  { id: 'archived', labelKey: 'settings.tabs.archived', icon: 'archive' },
 ];
 
 const daemonEndpoint = serverEndpointLabel();
@@ -136,10 +141,6 @@ const {
   config: () => props.config,
   models: () => props.models,
   backend: () => props.backend,
-  updateConfig: (patch) => emit('updateConfig', patch),
-});
-const customProviders = useCustomProviders({
-  config: () => props.config,
   updateConfig: (patch) => emit('updateConfig', patch),
 });
 
@@ -305,30 +306,46 @@ function archiveTime(iso: string): string {
 </script>
 
 <template>
-  <Dialog :open="true" :close-on-esc="false" :title="t('settings.title')" size="xl" height="fixed" :padded="false" @close="emit('close')">
+  <Dialog :open="true" :close-on-esc="false" :aria-label="t('settings.title')" grouped size="xl" height="fixed" :padded="false" @close="emit('close')">
     <div ref="dialogRef" class="sd">
       <nav class="settings-tabs" role="tablist" :aria-label="t('settings.title')">
-        <button
-          v-for="tb in tabs"
-          :key="tb.id"
-          type="button"
-          class="tab"
-          role="tab"
-          :aria-selected="activeTab === tb.id"
-          :class="{ on: activeTab === tb.id }"
-          @click="setTab(tb.id)"
-        >
-          {{ t(tb.labelKey) }}
-        </button>
+        <header class="settings-tabs-header">
+          <h2 class="settings-dialog-title">{{ t('settings.title') }}</h2>
+        </header>
+        <div class="settings-tab-list">
+          <button
+            v-for="tb in tabs"
+            :key="tb.id"
+            type="button"
+            class="tab"
+            role="tab"
+            :aria-selected="activeTab === tb.id"
+            :class="{ on: activeTab === tb.id }"
+            @click="setTab(tb.id)"
+          >
+            <Icon :name="tb.icon" size="sm" />
+            <span>{{ t(tb.labelKey) }}</span>
+          </button>
+        </div>
       </nav>
 
-      <div class="body">
+      <section class="settings-region">
+        <header class="settings-region-header">
+          <IconButton size="sm" :label="t('settings.close')" @click="emit('close')">
+            <Icon name="close" size="md" />
+          </IconButton>
+        </header>
+        <div class="body">
         <!-- General: Appearance + Notifications -->
         <section v-show="activeTab === 'general'" class="panel">
           <section class="sec">
             <h3 class="sec-title">{{ t('settings.appearance') }}</h3>
+            <div class="settings-group">
             <div class="row">
-              <span class="rlabel">{{ t('theme.colorSchemeLabel') }}</span>
+              <span class="rlabel">
+                {{ t('theme.colorSchemeLabel') }}
+                <span class="hint">{{ t('settings.colorSchemeHint') }}</span>
+              </span>
               <SegmentedControl
                 :model-value="colorScheme"
                 :options="[
@@ -350,8 +367,11 @@ function archiveTime(iso: string): string {
                 @update:model-value="emit('setAccent', $event as Accent)"
               />
             </div>
-            <div class="row">
-              <span class="rlabel">{{ t('settings.uiFontSize') }}</span>
+            <div class="row font-size-row">
+              <span class="rlabel">
+                {{ t('settings.uiFontSize') }}
+                <span class="hint">{{ t('settings.uiFontSizeHint') }}</span>
+              </span>
               <label class="num-field">
                 <input
                   class="num-input"
@@ -366,8 +386,11 @@ function archiveTime(iso: string): string {
                 <span class="num-unit">px</span>
               </label>
             </div>
-            <div class="row">
-              <span class="rlabel">{{ t('sidebar.language') }}</span>
+            <div class="row language-row">
+              <span class="rlabel">
+                {{ t('sidebar.language') }}
+                <span class="hint">{{ t('settings.languageHint') }}</span>
+              </span>
               <LanguageSwitcher />
             </div>
             <div class="row">
@@ -403,10 +426,12 @@ function archiveTime(iso: string): string {
                 @update:model-value="emit('setWideMode', $event)"
               />
             </div>
+            </div>
           </section>
 
-          <section class="sec">
+          <section class="sec notification-settings">
             <h3 class="sec-title">{{ t('settings.notifications') }}</h3>
+            <div class="settings-group">
             <div class="row">
               <span class="rlabel">
                 {{ t('settings.notifyOnComplete') }}
@@ -444,12 +469,16 @@ function archiveTime(iso: string): string {
               />
             </div>
             <div class="row">
-              <span class="rlabel">{{ t('settings.soundOnComplete') }}</span>
+              <span class="rlabel">
+                {{ t('settings.soundOnComplete') }}
+                <span class="hint">{{ t('settings.soundOnCompleteHint') }}</span>
+              </span>
               <Switch
                 :model-value="sound"
                 :label="t('settings.soundOnComplete')"
                 @update:model-value="emit('setSound', $event)"
               />
+            </div>
             </div>
           </section>
         </section>
@@ -476,6 +505,16 @@ function archiveTime(iso: string): string {
               :loading="planUsageLoading"
             />
           </section>
+        </section>
+
+        <!-- Providers -->
+        <section v-show="activeTab === 'providers'" class="panel">
+          <ProvidersPanel :config="config" :config-saving="configSaving" @update-config="emit('updateConfig', $event)" />
+        </section>
+
+        <!-- Plugins -->
+        <section v-show="activeTab === 'plugins'" class="panel">
+          <PluginsPanel />
         </section>
 
         <!-- Agent defaults -->
@@ -648,47 +687,6 @@ function archiveTime(iso: string): string {
               {{ t('settings.configUnavailable') }}
             </div>
           </section>
-          <section class="sec">
-            <div class="sec-head">
-              <h3 class="sec-title">{{ t('settings.customProviders') }}</h3>
-              <Button variant="primary" size="sm" :disabled="configSaving" @click="customProviders.openAdd">{{ t('settings.customProviderAdd') }}</Button>
-            </div>
-            <p class="hint provider-desc">{{ t('settings.customProvidersHint') }}</p>
-            <div v-if="!config" class="empty-config">{{ t('settings.configUnavailable') }}</div>
-            <div v-else-if="customProviders.providers.length === 0 && !customProviders.adding" class="provider-empty">{{ t('settings.customProvidersEmpty') }}</div>
-            <div v-else class="provider-list">
-              <div v-for="[id, provider] in customProviders.providers" :key="id" class="provider-card">
-                <div class="provider-card-main">
-                  <strong>{{ id }}</strong>
-                  <span class="hint">{{ provider.type }} · {{ provider.baseUrl || t('settings.customProviderNoUrl') }}</span>
-                  <span class="hint">{{ provider.hasApiKey ? t('settings.customProviderKeySet') : t('settings.customProviderKeyMissing') }}<template v-if="provider.models?.length"> · {{ t('settings.customProviderModelCount', { count: provider.models.length }) }}</template></span>
-                </div>
-                <div class="actions">
-                  <Button variant="secondary" size="sm" :disabled="configSaving" @click="customProviders.openEdit(id, provider)">{{ t('settings.customProviderEdit') }}</Button>
-                  <Button variant="danger-soft" size="sm" :disabled="configSaving" @click="customProviders.remove(id)">{{ t('settings.customProviderRemove') }}</Button>
-                </div>
-                <form v-if="customProviders.editingId === id" class="provider-form" @submit.prevent="customProviders.save">
-                  <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" disabled autocomplete="off" /></label>
-                  <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
-                  <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
-                  <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" placeholder="••••••••" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
-                  <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
-                  <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
-                  <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
-                </form>
-              </div>
-            </div>
-            <span v-if="customProviders.error && !customProviders.adding && customProviders.editingId === null" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
-            <form v-if="customProviders.adding" class="provider-form" @submit.prevent="customProviders.save">
-              <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" :disabled="configSaving" autocomplete="off" /></label>
-              <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
-              <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
-              <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
-              <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
-              <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
-              <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
-            </form>
-          </section>
         </section>
 
         <!-- Advanced: diagnostics + data/privacy -->
@@ -750,6 +748,23 @@ function archiveTime(iso: string): string {
                 <span v-if="!isTraceEnabled()" class="hint">{{ t('settings.logHint') }}</span>
               </span>
               <Button variant="secondary" size="sm" @click="exportLog">{{ t('settings.exportLogBtn') }}</Button>
+            </div>
+          </section>
+
+          <section class="sec">
+            <h3 class="sec-title">{{ t('settings.messageFolding') }}</h3>
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.toolCallSummary') }}
+                  <span class="hint">{{ t('settings.toolCallSummaryHint') }}</span>
+                </span>
+                <Switch
+                  :model-value="activityRunFolding"
+                  :label="t('settings.toolCallSummary')"
+                  @update:model-value="setActivityRunFolding($event)"
+                />
+              </div>
             </div>
           </section>
         </section>
@@ -833,24 +848,55 @@ function archiveTime(iso: string): string {
           </section>
         </section>
 
-      </div>
+        </div>
+      </section>
     </div>
   </Dialog>
 </template>
 
 <style scoped>
-.sd { display: flex; flex-direction: row; min-height: 0; height: 100%; }
+.sd {
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  grid-template-areas: "tabs region";
+  min-height: 0;
+  height: 100%;
+  user-select: none;
+}
+.sd :is(input, textarea, [contenteditable="true"]) { user-select: text; }
 
 .settings-tabs {
   display: flex;
   flex-direction: column;
-  flex: none;
   width: 148px;
-  padding: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
   gap: 2px;
   overflow-y: auto;
+  border-right: 1px solid var(--color-line);
+  grid-area: tabs;
 }
+.settings-tabs-header,
+.settings-region-header {
+  display: flex;
+  align-items: center;
+  height: calc(var(--space-4) + var(--icon-button-sm) + var(--space-2));
+  box-sizing: border-box;
+}
+.settings-tabs-header { padding-inline: var(--space-3); }
+.settings-region-header { justify-content: flex-end; padding-right: var(--space-5); }
+.settings-dialog-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  color: var(--color-text);
+}
+.settings-tab-list { display: flex; flex-direction: column; gap: 2px; }
 .tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   text-align: left;
   padding: 8px 10px;
   border: none;
@@ -858,18 +904,20 @@ function archiveTime(iso: string): string {
   background: transparent;
   color: var(--color-text-muted);
   font-family: var(--font-ui);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-ui-strong);
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.tab:hover { background: var(--color-surface-sunken); color: var(--color-text); }
-.tab.on { background: var(--color-accent-soft); color: var(--color-accent); font-weight: var(--weight-medium); }
+.tab:hover { background: var(--color-hover); color: var(--color-text-strong); }
+.tab.on { background: var(--color-hover); color: var(--color-text); }
 .tab:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 
-.body { display: flex; flex-direction: column; overflow-y: auto; padding: var(--space-2) var(--space-5) var(--space-5) var(--space-6); flex: 1; min-width: 0; }
+.settings-region { display: flex; min-width: 0; min-height: 0; flex-direction: column; grid-area: region; }
+.body { display: flex; flex-direction: column; overflow-y: auto; padding: var(--space-2) 32px var(--space-5); flex: 1; min-width: 0; }
 .panel { display: block; }
-.sec { padding: var(--space-4) 0; border-bottom: 1px solid var(--color-line); }
-.sec:last-child { border-bottom: none; }
+.panel > .sec:first-child { padding-top: 0; }
+.sec { padding: var(--space-4) 0; }
 .sec-head {
   display: flex;
   align-items: center;
@@ -880,12 +928,23 @@ function archiveTime(iso: string): string {
 .sec-title {
   margin: 0 0 var(--space-3);
   font-family: var(--font-ui);
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   font-weight: var(--weight-medium);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+  letter-spacing: 0;
+  color: var(--color-text);
 }
+.settings-group {
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+}
+.settings-group > .row {
+  min-height: 52px;
+  padding: var(--space-4);
+  border-top: 1px solid var(--color-line);
+}
+.settings-group > .row:first-child { border-top: none; }
+.settings-group > .empty-config { padding: var(--space-3); }
 .sec-head .sec-title { margin-bottom: 0; }
 .saving {
   flex: none;
@@ -903,15 +962,16 @@ function archiveTime(iso: string): string {
 }
 .rlabel {
   font-family: var(--font-ui);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   color: var(--color-text);
+  font-weight: var(--weight-option-label);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 0;
 }
 .rvalue {
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--color-text-muted);
   max-width: 60%;
   overflow: hidden;
@@ -990,18 +1050,6 @@ function archiveTime(iso: string): string {
 }
 
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.provider-desc { margin: calc(var(--space-3) * -1) 0 var(--space-3); }
-.provider-empty { padding: var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-md); color: var(--color-text-faint); text-align: center; }
-.provider-list { display: flex; flex-direction: column; gap: var(--space-2); }
-.provider-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
-.provider-card-main { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow: hidden; }
-.provider-card-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.provider-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
-.provider-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--color-text-muted); }
-.provider-field input { height: 36px; padding: 0 var(--space-2); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface-raised); color: var(--color-text); font: inherit; }
-.provider-field input:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
-.provider-error { color: var(--color-danger); font-size: var(--text-sm); }
-.provider-form .actions { grid-column: 1 / -1; }
 
 @media (max-width: 640px) {
   .sd { flex-direction: column; }

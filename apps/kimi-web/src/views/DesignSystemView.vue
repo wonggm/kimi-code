@@ -204,6 +204,7 @@ onUnmounted(() => {
                 <tr><td class="tk">--color-text-muted</td><td class="val"><span class="swatch" style="background:#6b7280"></span>#6b7280</td><td class="val"><span class="swatch" style="background:#9aa0a8"></span>#9aa0a8</td><td>Secondary text / placeholder</td></tr>
                 <tr><td class="tk">--color-line</td><td class="val"><span class="swatch" style="background:#e7eaee"></span>#e7eaee</td><td class="val"><span class="swatch" style="background:#2d333b"></span>#2d333b</td><td>Divider / card border</td></tr>
                 <tr><td class="tk">--color-selected</td><td class="val"><span class="swatch" style="background:#00000014"></span>#00000014</td><td class="val"><span class="swatch" style="background:#ffffff14"></span>#ffffff14</td><td>Neutral selected fill (sidebar rows, list pickers) — translucent, never accent-tinted</td></tr>
+                <tr><td class="tk">--color-selected-hover</td><td class="val"><span class="swatch" style="background:#00000014"></span>#00000014</td><td class="val"><span class="swatch" style="background:#ffffff24"></span>#ffffff24</td><td>Pressed-button hover fill (code-block header toggles) — upstream <code>rgba(0, 0, 0, .08)</code> light / <code>rgba(255, 255, 255, .14)</code> dark</td></tr>
                 <tr><td class="tk">--color-hover</td><td class="val"><span class="swatch" style="background:#0000000d"></span>#0000000d</td><td class="val"><span class="swatch" style="background:#ffffff0d"></span>#ffffff0d</td><td>Row hover wash — lighter than the selected fill (hover &lt; selected); translucent, sits on any surface</td></tr>
                 <tr><td class="tk">--color-media-alpha-bg-1</td><td class="val"><span class="swatch" style="background:#858585"></span>≈#858585</td><td class="val"><span class="swatch" style="background:#676b72"></span>≈#676b72</td><td>Checkerboard square A of the <code>&lt;img&gt;</code> alpha canvas — color-mix of <code>--color-bg</code>/<code>--color-text</code> (52/48); applied via <code>--media-alpha-canvas</code> (16px period)</td></tr>
                 <tr><td class="tk">--color-media-alpha-bg-2</td><td class="val"><span class="swatch" style="background:#6b6b6b"></span>≈#6b6b6b</td><td class="val"><span class="swatch" style="background:#7a7e85"></span>≈#7a7e85</td><td>Checkerboard square B (42/58) — both squares stay ≥3:1 against white and black; opaque images cover the canvas</td></tr>
@@ -305,7 +306,7 @@ onUnmounted(() => {
                 <tr><td class="tk">--base-ui-font-size</td><td class="val">14px user preference</td><td>root setting that drives UI, reading body, and sidebar font sizes</td></tr>
                 <tr><td class="tk">--content-font-size</td><td class="val">calc(base + 1px)</td><td>chat Markdown, message bubbles, composer</td></tr>
                 <tr><td class="tk">--leading-tight/normal/relaxed</td><td class="val">1.25 / 1.5 / 1.7</td><td>headings / UI / long text</td></tr>
-                <tr><td class="tk">--weight-regular/medium</td><td class="val">400 / 500</td><td>body / emphasis</td></tr>
+                <tr><td class="tk">--weight-regular/caption/medium</td><td class="val">400 / 450 / 500</td><td>body / captions and menu descriptions / emphasis</td></tr>
               </tbody>
             </table>
 
@@ -378,9 +379,10 @@ onUnmounted(() => {
                 <tr><td class="tk">--radius-sm</td><td class="val">6px</td><td>small button, icon button, menu item</td><td class="val">5/6px →</td></tr>
                 <tr><td class="tk">--radius-md</td><td class="val">8px</td><td>button, input, badge, card</td><td class="val">7/8/9px →</td></tr>
                 <tr><td class="tk">--radius-lg</td><td class="val">12px</td><td>dropdown panel</td><td class="val">10/12px →</td></tr>
-                <tr><td class="tk">--radius-xl</td><td class="val">16px</td><td>dialog, bottom Sheet, Composer</td><td class="val">14/16px →</td></tr>
+                <tr><td class="tk">--radius-xl</td><td class="val">16px</td><td>dialog, bottom Sheet</td><td class="val">14/16px →</td></tr>
                 <tr><td class="tk">--radius-2xl</td><td class="val">20px</td><td>accent container / large panel</td><td class="val">20px</td></tr>
                 <tr><td class="tk">--radius-full</td><td class="val">999px</td><td>pill badge, avatar, send button</td><td class="val">999px / 50%</td></tr>
+                <tr><td class="tk">--radius-dropdown-row</td><td class="val">7.5px</td><td>permission-menu row corner (inside the dropdown panel)</td><td class="val">lg − 4 − 0.5 →</td></tr>
               </tbody>
             </table>
 
@@ -1236,7 +1238,7 @@ onUnmounted(() => {
             </div>
 
             <h3 class="sub">Composer</h3>
-            <p>Unified into a single rounded container: <code>--radius-xl</code>, with the whole border turning blue + a soft focus ring on focus. Toolbar controls all use the Pill / IconButton primitives, and the send button is a 32px circle.</p>
+            <p>One 32px-radius card on <code>--color-composer-bg</code>, with a 1px hairline (<code>--color-text</code> at 14% — upstream's <code>rgba(255,255,255,.12)</code> in dark), the <code>0 5px 16px -4px rgba(0,0,0,.07)</code> shadow, and a <code>14px 16px 8px</code> text inset over an 8px-gap input row; the whole border turns blue + a soft focus ring on focus. Toolbar controls all use the Pill / IconButton primitives, and the send button is a 32px circle.</p>
             <div class="stage-wrap">
               <div class="stage-bar"><span class="st">Composer</span></div>
               <div class="stage p col" style="align-items:center;background:#fff">
@@ -1257,7 +1259,7 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="callout info"><span class="ico">i</span><div>
-              <b>Site-wide consistency</b>: the composer has only one radius (<code>--radius-xl</code> · 16px) and one height; toolbar controls all use the Pill / IconButton primitives, and the send button is a 32px circle — it no longer drifts with the theme.
+              <b>Site-wide consistency</b>: the composer has only one radius (32px, a local <code>--composer-card-radius</code> outside the <code>--radius-*</code> scale) and one height; toolbar controls all use the Pill / IconButton primitives, and the send button is a 32px circle — it no longer drifts with the theme.
             </div></div>
 
             <h3 class="sub">Responsive</h3>
@@ -1434,7 +1436,7 @@ onUnmounted(() => {
             </ul>
 
             <h3 class="sub">Sidebar alignment system (<code>--sb-*</code>)</h3>
-            <p>All sidebar rows (group head, session row, New chat button) share 4 custom properties, so the "session title" aligns precisely under the "workspace name".</p>
+            <p>All sidebar rows (group head, session row, New session button) share 4 custom properties, so the "session title" aligns precisely under the "workspace name".</p>
             <table class="dt">
               <thead><tr><th>Token</th><th>Value</th><th>Usage</th></tr></thead>
               <tbody>
@@ -1449,24 +1451,24 @@ onUnmounted(() => {
             </div></div>
 
             <h3 class="sub">Sidebar structure</h3>
-            <p>The sidebar from top to bottom: brand header → New chat → search → grouped list (workspace head + session rows) → settings footer. Controls reuse the §03 primitives as much as possible. The sidebar sits on <code>--color-sidebar-bg</code> (one step off <code>--color-bg</code>: warm off-white in light, near-black in dark — the session column reads as its own plane; the hairline still separates it from the conversation pane). Vertical rhythm: the brand header keeps 12px padding (on macOS desktop the left padding grows to 80px to clear the traffic lights); rows inside the actions group (New chat + search) stack flush (0 gap, same rhythm as the list rows); adjacent groups are separated by 12px. Row hover uses <code>--sb-hover</code> (= the global <code>--color-hover</code> wash); the selected row uses <code>--color-selected</code> — neutral, never the accent.</p>
+            <p>The sidebar from top to bottom: brand header → New session → search → section head → pinned rows (only while something is pinned) → grouped list (workspace head + session rows) → account row + settings. Controls reuse the §03 primitives as much as possible. The sidebar sits on <code>--color-sidebar-bg</code> (one step off <code>--color-bg</code>: warm off-white in light, near-black in dark — the session column reads as its own plane; the hairline still separates it from the conversation pane). Vertical rhythm: the brand header keeps 12px padding (on macOS desktop the left padding grows to 80px to clear the traffic lights); rows inside the actions group (New session + search) stack flush (0 gap, same rhythm as the list rows); adjacent groups are separated by 12px. Row hover uses <code>--sb-hover</code> (= the global <code>--color-hover</code> wash); the selected row uses <code>--color-selected</code> — neutral, never the accent.</p>
             <table class="dt">
               <thead><tr><th>Block</th><th>Use</th><th>Note</th></tr></thead>
               <tbody>
                 <tr><td>Brand header</td><td>logo + name + collapse IconButton (right-aligned)</td><td>on Windows / web the brand is left and the collapse IconButton sm is right-aligned inside the header; the logo is animated (a blinking eye). On macOS desktop the header is a bare drag strip (brand hidden, traffic lights + resident floating toggle over it)</td></tr>
-                <tr><td>New chat</td><td>full-width left-aligned button (custom)</td><td>same rhythm as the session rows in the list (left-aligned, hover = <code>--sb-hover</code>). <b>Do not</b> use Button (centered, breaks the rhythm)</td></tr>
-                <tr><td>Search</td><td>bare search row (custom)</td><td>no border, hover/focus shows a sunken background; icon + label, with the <code>Kbd</code> keycaps (⌘K / Ctrl K) pushed to the trailing edge — label and shortcut are justified apart. <b>Do not</b> use Input (the 38px bordered version is too heavy). Last fixed row above the list — its wrapper carries the scroll-linked seam</td></tr>
-                <tr><td>Section label</td><td><code>.p-section-label</code></td><td>uppercase muted small titles like "Workspaces"</td></tr>
+                <tr><td>New session</td><td>full-width left-aligned button (custom)</td><td>same rhythm as the session rows in the list (left-aligned, hover = <code>--sb-hover</code>), with the <code>Kbd</code> keycaps (⌘⇧O / Ctrl Shift O) pushed to the trailing edge. <b>Do not</b> use Button (centered, breaks the rhythm)</td></tr>
+                <tr><td>Search</td><td>bare search row (custom)</td><td>no border, hover/focus shows a sunken background; icon + label, with the <code>Kbd</code> keycaps (⌘K / Ctrl K) pushed to the trailing edge — label and shortcut are justified apart. <b>Do not</b> use Input (the 38px bordered version is too heavy). The two rows stack flush inside one actions block, which is the last fixed block above the list — it carries the scroll-linked seam</td></tr>
+                <tr><td>Section head</td><td><code>.sessions-head &gt; .side-section-label</code></td><td>uppercase muted small titles like "sessions"; fixed above the scroll container (it does not scroll away with the rows). The head wraps the label — upstream nests the two, so keep them as separate elements rather than one element carrying both classes. Trailing actions: the collapse-all / expand-all IconButton sm (only while a collapsible group list is on screen) and the list-options IconButton sm, which opens the <code>Menu</code> holding the view mode (grouped / flat) and the workspace sort order. Both are hover/focus-revealed</td></tr>
                 <tr><td>Workspace head / session row</td><td>see next two sections</td><td>share <code>--sb-*</code> alignment</td></tr>
-                <tr><td>Settings footer</td><td>full-width left-aligned button (custom)</td><td>pinned row under the session list, separated by a 1px <code>--line</code> top border; icon + label, same list-style family as New chat</td></tr>
+                <tr><td>Account footer</td><td>account row (custom) + settings <code>IconButton</code></td><td>pinned row under the session list, separated by a 1px <code>--line</code> top border; the row shows a user icon + the account name ("Not signed in" without a credential) and opens the settings surface — no auth flow starts here; the settings button sits on the row's trailing edge</td></tr>
               </tbody>
             </table>
             <div class="callout warn"><span class="ico">!</span><div>
-              <b>Why New chat / search / inline rename don't use Button / Input:</b> they are "list-style" controls (full-width, left-aligned, compact, borderless), while Button is centered and Input is a 38px bordered control — forcing them in would break the sidebar's visual density and alignment. This is an intentional custom exception, not an oversight.
+              <b>Why New session / search / inline rename don't use Button / Input:</b> they are "list-style" controls (full-width, left-aligned, compact, borderless), while Button is centered and Input is a 38px bordered control — forcing them in would break the sidebar's visual density and alignment. This is an intentional custom exception, not an oversight.
             </div></div>
 
             <h3 class="sub">Session row</h3>
-            <p>A session row is an inset rounded pill, structured as: <code>status slot → title → time → attention Badge → kebab</code>.</p>
+            <p>A session row is an inset rounded pill, structured as: <code>status slot → title → time → attention Badge → kebab</code>, with the hover-revealed pin / archive actions floating over the trailing slot's left edge.</p>
             <table class="dt">
               <thead><tr><th>Part</th><th>Rule</th></tr></thead>
               <tbody>
@@ -1475,7 +1477,8 @@ onUnmounted(() => {
                 <tr><td>Title</td><td>flex:1 with truncation; double-click enters inline rename (compact input, not Input)</td></tr>
                 <tr><td>Time</td><td>mono xs, <code>fg-faint</code>; yields to the kebab on hover</td></tr>
                 <tr><td>Attention Badge</td><td><code>Badge</code> sm: info (needs answer) / warning (needs approval) / danger (aborted)</td></tr>
-                <tr><td>kebab</td><td><code>IconButton</code> sm, shown on hover; dropdown uses <code>Menu/MenuItem</code></td></tr>
+                <tr><td>Inline actions</td><td>pin + archive <code>IconButton</code> sm, absolutely positioned immediately left of the kebab and revealed with it (Done rows read as reopen). The layer backs itself with the row's own background — the sidebar surface plus the row wash, or the neutral selected fill — so the overlapped title tail and badges don't bleed through. Hovering the row changes neither its height nor the title's available width</td></tr>
+                <tr><td>kebab</td><td><code>IconButton</code> sm, shown on hover; keeps the full menu (copy id, rename, emoji, pin, fork, export, archive / reopen, last-active); dropdown uses <code>Menu/MenuItem</code></td></tr>
                 <tr><td>Archive confirmation</td><td>replaces the title area, <code>Button</code> sm (danger confirm / secondary cancel)</td></tr>
               </tbody>
             </table>
@@ -1490,7 +1493,7 @@ onUnmounted(() => {
             </ul>
 
             <h3 class="sub">Show more &amp; collapse</h3>
-            <p>The "load more / show less" control at the bottom of each workspace group is a session-row-shaped compact list control (same family as search, New chat, inline rename — not a Button). It doubles as the pagination trigger and the in-group expand / collapse toggle.</p>
+            <p>The "load more / show less" control at the bottom of each workspace group is a session-row-shaped compact list control (same family as search, New session, inline rename — not a Button). It doubles as the pagination trigger and the in-group expand / collapse toggle.</p>
             <table class="dt">
               <thead><tr><th>Part</th><th>Rule</th></tr></thead>
               <tbody>
@@ -1523,7 +1526,7 @@ onUnmounted(() => {
             </ul>
 
             <div class="callout info"><span class="ico">i</span><div>
-              <b>One-sentence principle:</b> the sidebar / shell is a "list + grid" skeleton that reuses the §02 tokens and §03 primitives (Button / IconButton / Badge / Kbd / Menu / Spinner / PanelHeader); compact list controls that don't fit a primitive (search, New chat, inline rename, show-more) keep their custom form, governed by this section.
+              <b>One-sentence principle:</b> the sidebar / shell is a "list + grid" skeleton that reuses the §02 tokens and §03 primitives (Button / IconButton / Badge / Kbd / Menu / Spinner / PanelHeader); compact list controls that don't fit a primitive (search, New session, inline rename, show-more) keep their custom form, governed by this section.
             </div></div>
           </section>
 
@@ -2215,8 +2218,8 @@ onUnmounted(() => {
   .p-tool-detail .p-code { margin-top: 10px; }
 
   /* ===== Chat: Composer ===== */
-  .p-composer { background: var(--p-surface-raised); border: 1px solid var(--p-line); border-radius: var(--p-r-xl); box-shadow: var(--p-sh-md); overflow: hidden; }
-  .p-composer:focus-within { border-color: var(--p-accent); box-shadow: var(--p-sh-md), 0 0 0 3px var(--p-accent-soft); }
+  .p-composer { background: var(--color-composer-bg); border: 1px solid color-mix(in srgb, var(--p-text) 14%, transparent); border-radius: 32px; box-shadow: 0 5px 16px -4px rgba(0,0,0,.07); overflow: hidden; }
+  .p-composer:focus-within { border-color: var(--p-accent); box-shadow: 0 5px 16px -4px rgba(0,0,0,.07), 0 0 0 3px var(--p-accent-soft); }
   .p-composer-ta { padding: 14px 16px 8px; font-family: var(--p-font-sans); font-size: var(--p-font-size-md); color: var(--p-text); line-height: var(--p-leading-normal); }
   .p-composer-ta.ph { color: var(--p-text-faint); }
   .p-composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 8px; }

@@ -333,6 +333,57 @@ export function toolSummary(name: string, arg: string, full = false): string {
   }
 }
 
+/** Head parts for upstream's tool line: a file button, the faint directory it
+ *  sits in, or a mono subject (the command, the search pattern). Tools without a
+ *  specific shape fall back to the plain `dim` summary string. */
+export interface ToolHeadParts {
+  file?: string;
+  dir?: string;
+  mono?: string;
+  dim?: string;
+}
+
+export function toolHeadParts(name: string, arg: string): ToolHeadParts {
+  const d = parseArg(arg);
+  if (!d) return { dim: toolSummary(name, arg) };
+  switch (normalizeToolName(name)) {
+    case 'read':
+    case 'write':
+    case 'edit':
+    case 'multi_edit': {
+      const path = filePath(d);
+      if (!path) return { dim: toolSummary(name, arg) };
+      const cut = path.lastIndexOf('/');
+      return cut > 0 ? { file: path.slice(cut + 1), dir: path.slice(0, cut) } : { file: path };
+    }
+    case 'bash': {
+      const cmd = str(d.command) ?? str(d.cmd) ?? str(d.script);
+      return cmd ? { mono: cmd } : { dim: toolSummary(name, arg) };
+    }
+    case 'grep':
+    case 'search': {
+      const pattern = str(d.pattern) ?? str(d.query) ?? str(d.regex);
+      const path = str(d.path) ?? str(d.glob) ?? str(d.include);
+      return pattern && path ? { mono: pattern, dir: path } : pattern ? { mono: pattern } : { dim: toolSummary(name, arg) };
+    }
+    case 'glob': {
+      const pattern = str(d.pattern) ?? str(d.glob) ?? str(d.query);
+      const path = str(d.path) ?? str(d.cwd);
+      return pattern && path ? { mono: pattern, dir: path } : pattern ? { mono: pattern } : { dim: toolSummary(name, arg) };
+    }
+    case 'ls': {
+      const dir = str(d.path) ?? str(d.dir) ?? str(d.directory) ?? str(d.cwd);
+      return dir ? { dir } : { dim: toolSummary(name, arg) };
+    }
+    case 'web_fetch': {
+      const url = str(d.url) ?? str(d.uri);
+      return url ? { mono: urlHost(url) } : { dim: toolSummary(name, arg) };
+    }
+    default:
+      return { dim: toolSummary(name, arg) };
+  }
+}
+
 export function toolChip(tool: ToolChipInput): string {
   try {
     switch (normalizeToolName(tool.name)) {

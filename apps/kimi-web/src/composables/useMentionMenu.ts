@@ -1,5 +1,5 @@
 // apps/kimi-web/src/composables/useMentionMenu.ts
-import { nextTick, ref, type Ref } from 'vue';
+import { nextTick, ref, watch, type Ref } from 'vue';
 import type { FileItem } from '../types';
 import type { AppSkill } from '../api/types';
 import { mentionToText, type MentionInsert } from '../lib/mentionTokens';
@@ -73,11 +73,13 @@ function itemForSkill(skill: AppSkill): MentionItem {
  * `@` file/skill mention menu: token detection, debounced search, keyboard
  * navigation state, and insertion.
  *
- * The composer keeps the keydown orchestration (arrow keys, Enter/Tab, Escape)
+ * The composer keeps the keydown orchestration (arrow keys, Enter, Escape)
  * because it also juggles the slash menu and history recall; this composable
  * owns the menu's open/items/active/loading state, the search/insert logic,
  * and the shared `insertMention` used by both the menu pick and the
- * paste-a-folder flow.
+ * paste-a-folder flow. Tab is the exception: it is intercepted on the textarea
+ * in the capture phase here, so it can complete the active candidate in place
+ * while the composer's handler keeps Enter's select-and-close.
  *
  * File rows arrive ranked by the engine's fs:suggest score (fuzzy name +
  * path-fragment matches); skills get a synthetic score from their prefix /
@@ -227,5 +229,78 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     close();
   }
 
-  return { open, items, active, loading, query, update, select, close, insertMention };
+  /**
+   * Tab completion: rewrite the active `@token` to the candidate's path
+   * (files/folders; folders keep a trailing slash) or name (skills), leaving
+   * the `@` in place and keeping the menu open so the query can be narrowed
+   * further. A candidate whose text cannot live in a bare `@token` (spaces,
+   * brackets, backslash) falls back to a full mention insert.
+   */
+  function complete(item: MentionItem): void {
+    const mt = getMentionToken();
+    if (mt === null) return;
+    const completion =
+      item.kind === 'skill'
+        ? item.name
+        : item.path.replace(/\/+$/, '') + (item.kind === 'folder' ? '/' : '');
+    if (/[\s[\]\\]/u.test(completion)) {
+      select(item);
+      return;
+    }
+    const alreadyComplete =
+      item.kind === 'skill'
+        ? completion === mt.token
+        : completion.replace(/\/+$/, '') === mt.token.replace(/\/+$/, '') &&
+          (item.kind !== 'folder' || mt.token.endsWith('/'));
+    if (alreadyComplete) return;
+
+    // Replace only the text after the '@' so the token stays live; the debounced
+    // update() then re-searches with the completed query and the menu stays open.
+    const start = mt.start + 1;
+    text.value = text.value.slice(0, start) + completion + text.value.slice(mt.end);
+    const caret = start + completion.length;
+    void nextTick(() => {
+      const el = textareaRef.value;
+      if (!el) return;
+      el.setSelectionRange(caret, caret);
+      el.focus();
+      autosize();
+      update();
+    });
+  }
+
+  // The composer owns keydown orchestration but routes Tab through the same
+  // select() as Enter. Intercept Tab in the capture phase while this menu is
+  // open so Tab completes in place (menu stays open) and Enter keeps its
+  // select-and-close behaviour.
+  function onTabKeydown(e: KeyboardEvent): void {
+    if (e.key !== 'Tab' || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return;
+    if (!open.value || loading.value) return;
+    const item = items.value[active.value];
+    if (!item) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    complete(item);
+  }
+
+  let tabBoundEl: HTMLTextAreaElement | null = null;
+  function unbindTabKeydown(): void {
+    if (tabBoundEl !== null) {
+      tabBoundEl.removeEventListener('keydown', onTabKeydown, true);
+      tabBoundEl = null;
+    }
+  }
+  watch(
+    textareaRef,
+    (el) => {
+      unbindTabKeydown();
+      if (el && typeof el.addEventListener === 'function') {
+        el.addEventListener('keydown', onTabKeydown, true);
+        tabBoundEl = el;
+      }
+    },
+    { immediate: true },
+  );
+
+  return { open, items, active, loading, query, update, select, complete, close, insertMention };
 }

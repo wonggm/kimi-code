@@ -900,6 +900,27 @@ export function messagesToTurns(
     // User messages flush the pending group and start a new user turn
     if (msg.role === 'user') {
       const cronKind = cronOriginKind(msg);
+      // A background task completion injects a `<notification>` user message
+      // (origin kind 'task' / 'background_task' / 'task_notification'). While an
+      // assistant run is open — agent-core injects it at a step boundary, so it
+      // lands between two assistant messages — it folds into that run's ordered
+      // block list and keeps its chronological place; without an open run (idle
+      // session) it is its own lightweight notice turn. The raw XML stays as
+      // `text` so the notice is derived from it at render time.
+      if (isTaskNotificationMessage(msg)) {
+        const text = msg.content
+          .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+          .map((c) => c.text)
+          .join('\n');
+        const openGroup = pendingGroup;
+        if (openGroup !== null) {
+          openGroup.blocks.push({ kind: 'task', text, createdAt: msg.createdAt });
+          continue;
+        }
+        flushGroup();
+        turns.push({ id: msg.id, role: 'task', no: no++, text, createdAt: msg.createdAt });
+        continue;
+      }
       // A cron injection always renders as its own standalone turn: agent-core
       // buffers steer input while a turn is in flight and only injects it at the
       // turn boundary, so the cron message does not land between a tool use and
@@ -907,23 +928,6 @@ export function messagesToTurns(
       flushGroup();
       if (cronKind !== undefined) {
         turns.push(buildCronTurn(msg, no++, cronKind));
-        continue;
-      }
-      // A background task completion injects a `<notification>` user message
-      // (origin kind 'task' / 'background_task' / 'task_notification'); it
-      // renders as its own lightweight notice turn, not a user bubble. The raw
-      // XML stays as `text` so the notice can be derived from it at render time.
-      if (isTaskNotificationMessage(msg)) {
-        turns.push({
-          id: msg.id,
-          role: 'task',
-          no: no++,
-          text: msg.content
-            .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-            .map((c) => c.text)
-            .join('\n'),
-          createdAt: msg.createdAt,
-        });
         continue;
       }
       // Hide system-injected user turns (TUI parity) — they end the previous

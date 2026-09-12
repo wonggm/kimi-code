@@ -2,13 +2,30 @@
 // File preview: download / path normalization / request-sequence guard. Claims
 // the 'file' slot of the shared right-side detail layer.
 
-import { computed, ref, watch, type Ref } from 'vue';
+import { computed, provide, ref, watch, type InjectionKey, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getKimiWebApi } from '../api';
+import { turnFilesForTurn } from '../lib/rightPanelTabs';
 import type { FileData, FilePreviewRequest, ToolMedia } from '../types';
 import type { useKimiWebClient } from './useKimiWebClient';
 
 type KimiWebClient = ReturnType<typeof useKimiWebClient>;
+
+/** Refresh handle published by useFilePreview so the preview component can show
+ *  a refresh control when the file changed after it was loaded. Injected rather
+ *  than prop-drilled because the preview is rendered from more than one pane. */
+export interface FilePreviewRefreshHandle {
+  /** Normalized path of the currently-open preview, null when none. */
+  path: Ref<string | null>;
+  /** Whether the loaded content is behind a change made in the session. */
+  stale: Ref<boolean>;
+  /** Whether a refresh request is in flight. */
+  refreshing: Ref<boolean>;
+  refresh: () => void;
+}
+
+export const FILE_PREVIEW_REFRESH_KEY: InjectionKey<FilePreviewRefreshHandle> =
+  Symbol('kimi-web:file-preview-refresh');
 
 /** Which occupant currently owns the shared right-side detail layer. */
 export type DetailTarget = 'file' | 'diff' | 'thinking' | 'compaction' | 'agent' | 'toolDiff' | 'btw' | 'tabs';
@@ -36,6 +53,13 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
   // the download URL so it matches the server's relative-path contract even when
   // the user opened the preview from an absolute path in the chat.
   const previewNormalizedPath = ref<string | null>(null);
+  // Set when the previewed file was edited (Edit/Write tool) after the content
+  // was loaded; the preview then offers a refresh instead of showing stale text.
+  const previewStale = ref(false);
+  const previewRefreshing = ref(false);
+  // Number of Edit/Write tool entries for the previewed path at load time. Any
+  // later change to that count means the on-screen content is behind.
+  let loadedEditCount: number | null = null;
   // Incremented on every openFilePreview call so a slower earlier request can't
   // overwrite the result of a later one (request-sequence guard).
   let previewRequestSeq = 0;
@@ -104,6 +128,68 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     return path ? { path } : { error: t('filePreview.errors.emptyPath') };
   }
 
+  /** Compare two workspace paths tolerantly: tool args may carry an absolute
+   *  path (or a leading `./`), while the preview holds the normalized relative
+   *  one, so a suffix match on the final segments is also accepted. */
+  function samePreviewPath(a: string, b: string): boolean {
+    const left = a.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
+    const right = b.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
+    if (left === '' || right === '') return false;
+    return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+  }
+
+  /** How many Edit/Write tool entries in the active session touch `path`. */
+  function editCountForPath(path: string): number {
+    let count = 0;
+    for (const turn of client.turns.value) {
+      if (turn.role !== 'assistant') continue;
+      for (const entry of turnFilesForTurn(turn)) {
+        if (samePreviewPath(entry.path, path)) count += 1;
+      }
+    }
+    return count;
+  }
+
+  function markPreviewLoaded(path: string): void {
+    loadedEditCount = editCountForPath(path);
+    previewStale.value = false;
+  }
+
+  // A later turn editing the previewed file flips the refresh affordance on.
+  watch(
+    () => [previewNormalizedPath.value, client.turns.value] as const,
+    () => {
+      const path = previewNormalizedPath.value;
+      if (path === null || loadedEditCount === null) {
+        previewStale.value = false;
+        return;
+      }
+      previewStale.value = editCountForPath(path) !== loadedEditCount;
+    },
+  );
+
+  async function refreshPreview(): Promise<void> {
+    const path = previewNormalizedPath.value;
+    if (path === null || previewRefreshing.value) return;
+    const requestSeq = ++previewRequestSeq;
+    previewRefreshing.value = true;
+    try {
+      const result = await client.readFileContent(path);
+      if (requestSeq !== previewRequestSeq) return;
+      if (result) {
+        previewFile.value = { ...result, path: result.path || path };
+        markPreviewLoaded(path);
+      } else {
+        previewError.value = t('filePreview.errors.loadFailed');
+      }
+    } catch (err) {
+      if (requestSeq !== previewRequestSeq) return;
+      previewError.value = err instanceof Error ? err.message : t('filePreview.errors.loadFailed');
+    } finally {
+      if (requestSeq === previewRequestSeq) previewRefreshing.value = false;
+    }
+  }
+
   async function openFilePreview(target: FilePreviewRequest): Promise<void> {
     // Clicking the link for the already-open file toggles the panel closed.
     const current = previewTarget.value;
@@ -124,6 +210,9 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     previewLoading.value = true;
     previewTarget.value = target;
     previewNormalizedPath.value = null;
+    previewStale.value = false;
+    previewRefreshing.value = false;
+    loadedEditCount = null;
 
     const normalized = normalizePreviewPath(target.path);
     if ('error' in normalized) {
@@ -140,6 +229,7 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
       if (requestSeq !== previewRequestSeq) return;
       if (result) {
         previewFile.value = { ...result, path: result.path || normalized.path };
+        markPreviewLoaded(normalized.path);
       } else {
         // readFileContent swallows daemon failures into null — show the error
         // state instead of a misleading 0-byte "empty file" (the cause is
@@ -231,6 +321,9 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     previewFile.value = null;
     previewError.value = null;
     previewLoading.value = false;
+    previewStale.value = false;
+    previewRefreshing.value = false;
+    loadedEditCount = null;
     revokeMediaObjectUrl();
   }
 
@@ -259,16 +352,28 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     void client.revealWorkspaceFile(path);
   }
 
+  provide(FILE_PREVIEW_REFRESH_KEY, {
+    path: previewNormalizedPath,
+    stale: previewStale,
+    refreshing: previewRefreshing,
+    refresh: () => {
+      void refreshPreview();
+    },
+  });
+
   return {
     previewTarget,
     previewFile,
     previewLoading,
     previewError,
+    previewStale,
+    previewRefreshing,
     previewDownloadUrl,
     previewExternalActions,
     openFilePreview,
     openMediaPreview,
     closeFilePreview,
+    refreshPreview,
     openPreviewInEditor,
     revealPreviewFile,
   };

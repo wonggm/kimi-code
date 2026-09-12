@@ -1,0 +1,687 @@
+{
+  "blockers": [
+    {
+      "id": "*::*::missing-text::x-d34db9bc67",
+      "reason": "Jump-to-latest pill visibility, not the affordance: the pill is the same element (BUTTON.newmsg-pill, already allowlisted) with a byte-identical label (the fork's conversation.newMessages = '最新消息'). Chinese counterpart of the allowlisted English entry; which side shows the pill in a given capture depends on the scroll state, which is not established."
+    },
+    {
+      "id": "*::*::missing-text::x-94b7513ead",
+      "reason": "Notifications granularity is a fork feature: the fork labels the section 通知 and splits it into three switches, upstream has one master switch labelled 系统通知. Chinese counterpart of the allowlisted missing-text::system-notifications entry, widened from the scene-scoped entries to every walk scene."
+    },
+    {
+      "id": "*::*::missing-text::x-2094b7994d",
+      "reason": "Same notifications divergence as the allowlisted missing-text::x-94b7513ead: this is the hint line under upstream's master switch (回合完成、待回答或待审批时发送系统通知). Chinese counterpart of the allowlisted English entry, widened from the scene-scoped entries to every walk scene."
+    },
+    {
+      "id": "*::*::missing-text::not-signed-in",
+      "reason": "Account label source differs by design: the fork derives it from its own stored credential ('Signed in'), upstream asks the server for managed-auth status ('Not signed in' when the server reports no user). The fork keeps token-paste auth, so the label stays fork-side."
+    },
+    {
+      "id": "*::*::missing-text::changes",
+      "reason": "Right-panel mount model differs: the fork mounts RightPanelTabs on demand (v-if=\"activePanelTab !== null\") and its panes fetch on mount, so a closed panel renders nothing; upstream keeps the aside in the DOM when closed (aria-hidden + inert) and renders a Quick-open group in its body, which is where this string lives. Both panels exist in the fork (lib/rightPanelTabs.ts). Open item, not a settled divergence - see PLANS/web-port-0.41.md."
+    },
+    {
+      "id": "*::*::missing-text::side-chat",
+      "reason": "Same right-panel mount model as 'changes': upstream's closed-panel body carries the Quick-open group whose second row is this string; the fork's panel is unmounted when closed. Open item, not a settled divergence - see PLANS/web-port-0.41.md."
+    },
+    {
+      "id": "*::*::missing-text::s",
+      "reason": "Font size control is a fork feature: the fork edits a numeric px value (12-20, num-field in SettingsDialog), upstream offers a four-step S/M/L/XL segmented control. The single letter labels have no fork counterpart."
+    },
+    {
+      "id": "*::*::missing-text::m",
+      "reason": "Same font-size divergence as 's' - the M step of upstream's segmented control."
+    },
+    {
+      "id": "*::*::missing-text::l",
+      "reason": "Same font-size divergence as 's' - the L step of upstream's segmented control."
+    },
+    {
+      "id": "*::*::missing-text::xl",
+      "reason": "Same font-size divergence as 's' - the XL step of upstream's segmented control."
+    },
+    {
+      "id": "*::*::missing-text::system-notifications",
+      "reason": "Notifications granularity is a fork feature: the fork has three independent switches (turn complete / question / approval) and no master switch, upstream has one master switch. The master label and its hint line have no fork counterpart."
+    },
+    {
+      "id": "*::*::missing-text::send-a-system-notification-when-a-turn-completes-needs-an-an",
+      "reason": "Same notifications divergence as 'system-notifications' - the hint under upstream's master switch."
+    },
+    {
+      "id": "*::*::missing-text::auto-fold-messages",
+      "reason": "Turn folding is a permanently rejected fork decision (0.36.1 round, recorded in PLANS/web-port-0.39.md and in ToolFoldRow.vue): hiding a finished turn's work behind a summary is not implemented, so the 'Auto-fold messages' toggle upstream pairs with 'Tool call summary' has nothing to switch. The tool-call summary toggle itself is ported and wired."
+    },
+    {
+      "id": "*::*::missing-text::when-a-turn-ends-the-work-folds-away-automatically-leaving-o",
+      "reason": "Same rejected turn-folding decision as 'auto-fold-messages' - the hint under upstream's Auto-fold messages toggle."
+    },
+    {
+      "id": "*::*::missing-text::x-582a8e42e4",
+      "reason": "Changes (zh) - the same right-panel mount-model divergence already recorded for 'missing-text::changes': upstream's parked closed panel carries the Quick-open row labelled 改动, the fork unmounts the panel. Digest id because the text has no ASCII characters."
+    },
+    {
+      "id": "*::*::missing-text::x-7b1347c4de",
+      "reason": "Side chat (zh) - the same right-panel mount-model divergence already recorded for 'missing-text::side-chat'."
+    },
+    {
+      "id": "*::*::missing-text::x-c1f6583730",
+      "reason": "Not signed in (zh) - the same account-label divergence already recorded for 'missing-text::not-signed-in': the fork derives the label from its own stored credential."
+    },
+    {
+      "id": "desktop-dark-zh::settings::missing-text::x-2094b7994d",
+      "reason": "Notifications granularity is a fork feature: the fork splits it into three switches, upstream has one master switch with this hint line. The zh equivalent of the allowlisted en entries."
+    },
+    {
+      "id": "desktop-light-zh::settings::missing-text::x-2094b7994d",
+      "reason": "Notifications granularity is a fork feature: the fork splits it into three switches, upstream has one master switch with this hint line. The zh equivalent of the allowlisted en entries."
+    },
+    {
+      "id": "desktop-dark-zh::settings::missing-text::x-94b7513ead",
+      "reason": "Notifications granularity is a fork feature: the fork labels the section 通知 and splits it into three switches, upstream labels it 系统通知 under one master switch with a hint line. Same divergence as the allowlisted notification-hint entries."
+    },
+    {
+      "id": "desktop-light-zh::settings::missing-text::x-94b7513ead",
+      "reason": "Notifications granularity is a fork feature: the fork labels the section 通知 and splits it into three switches, upstream labels it 系统通知 under one master switch with a hint line. Same divergence as the allowlisted notification-hint entries."
+    },
+    {
+      "id": "*::*::missing-text::always-ask",
+      "reason": "Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-dark-zh::main::missing-text::x-a9147daaf5",
+      "reason": "Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it. zh equivalent of the allowlisted en entry."
+    },
+    {
+      "id": "mobile-dark-zh::settings::missing-text::x-a9147daaf5",
+      "reason": "Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it. zh equivalent of the allowlisted en entry."
+    },
+    {
+      "id": "mobile-light-zh::main::missing-text::x-a9147daaf5",
+      "reason": "Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it. zh equivalent of the allowlisted en entry."
+    },
+    {
+      "id": "mobile-light-zh::settings::missing-text::x-a9147daaf5",
+      "reason": "Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it. zh equivalent of the allowlisted en entry."
+    },
+    {
+      "id": "mobile-dark-en::settings::missing-text::app-preferences",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-en::settings::missing-text::current-session",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-zh::settings::missing-text::x-1e2df9c307",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-en::settings::missing-text::app-preferences",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-en::settings::missing-text::current-session",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-zh::settings::missing-text::x-1e2df9c307",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-en::settings::missing-text::account",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-en::settings::missing-text::sign-in",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-en::settings::missing-text::manual-auto-read-only-everything-else-needs-your-approval-fi",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-zh::settings::missing-text::manual",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-zh::settings::missing-text::x-013ee9dc60",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-zh::settings::missing-text::token",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-zh::settings::missing-text::x-d696e50022",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-dark-zh::settings::missing-text::x-311bb313fd",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-en::settings::missing-text::account",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-en::settings::missing-text::sign-in",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-en::settings::missing-text::manual-auto-read-only-everything-else-needs-your-approval-fi",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-zh::settings::missing-text::manual",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-zh::settings::missing-text::x-013ee9dc60",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-zh::settings::missing-text::token",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-zh::settings::missing-text::x-d696e50022",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-light-zh::settings::missing-text::x-311bb313fd",
+      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
+    },
+    {
+      "id": "mobile-*::*::missing-text::account",
+      "reason": "Group-title case: the fork's mobile settings sheet renders its group headings uppercase (MobileSettingsSheet.vue `.group-title` carries `text-transform: uppercase`, the fork's group-title idiom per DesignSystemView sec.03), and innerText reports the transformed text. The source string is byte-identical to upstream's (`settings.tabs.account` = 'Account'), so this is CSS case, not wording."
+    },
+    {
+      "id": "mobile-*::*::missing-text::app-preferences",
+      "reason": "Same group-title case as 'account': the source string is byte-identical to upstream's (`mobile.groupApp` = 'App preferences'), and the sheet's `.group-title` uppercases it in the rendered text."
+    },
+    {
+      "id": "mobile-*::*::missing-text::current-session",
+      "reason": "Same group-title case as 'account': the source string is byte-identical to upstream's (`mobile.groupSession` = 'Current session'), and the sheet's `.group-title` uppercases it in the rendered text."
+    },
+    {
+      "id": "mobile-*::*::missing-text::ask-when-needed",
+      "reason": "Permission menu is unreachable on mobile by design: the fork moves permission control into the MobileSettingsSheet and hides the composer pill under the mobile media query (Composer.vue `.perm-pill, .wm-pill { display: none }`), so upstream's permission menu never opens on a phone. Same fork choice as the allowlisted *perm-pill* / SPAN.wm-pill element entries."
+    },
+    {
+      "id": "mobile-*::*::missing-text::never-ask",
+      "reason": "Same unreachable permission menu on mobile as 'ask-when-needed' — the composer permission pill is hidden under the mobile media query by design."
+    },
+    {
+      "id": "mobile-*::*::missing-text::auto-read-only-everything-else-needs-your-approval-first",
+      "reason": "Same unreachable permission menu on mobile as 'ask-when-needed'; the fork's `status.permissionManualDesc` carries this exact wording, so it is a reachability difference, not wording."
+    },
+    {
+      "id": "mobile-*::*::missing-text::never-interrupts-you-everything-runs-and-is-decided-automati",
+      "reason": "Same unreachable permission menu on mobile as 'ask-when-needed'; the fork's `status.permissionAutoDesc` carries this exact wording."
+    },
+    {
+      "id": "mobile-*::*::missing-text::routine-edits-and-commands-run-automatically-risky-actions-q",
+      "reason": "Same unreachable permission menu on mobile as 'ask-when-needed'; the fork's `status.permissionYoloDesc` carries this exact wording."
+    },
+    {
+      "id": "mobile-*::*::missing-text::show-line-numbers",
+      "reason": "Tooltip host text: the string is the content of upstream's shared code-block tip element (DIV.md-code-tip, already allowlisted), which upstream keeps mounted at the end of the document; the fork renders code-block tooltips through its own ui/Tooltip portal, so the label exists only while a tooltip is open."
+    },
+    {
+      "id": "mobile-*::*::missing-text::enable-word-wrap",
+      "reason": "Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - not a visible button label on either side."
+    },
+    {
+      "id": "mobile-*::*::missing-text::copy",
+      "reason": "Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - the code-block copy button's tip."
+    },
+    {
+      "id": "mobile-*::*::missing-text::copy-code",
+      "reason": "Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted); verified in the capture as the md-code-tip element's content."
+    },
+    {
+      "id": "mobile-*::*::missing-text::commands",
+      "reason": "Mobile add menu: upstream's mobile sheet offers Commands and Mention rows beside Files/Goal/Plan/Swarm, while the fork's shared ComposerAddMenu carries the four rows its desktop popover needs - and the desktop popover matches upstream row for row (checked in .tmp/popovers/). The two mobile-only rows are an open port item, not a settled divergence."
+    },
+    {
+      "id": "mobile-*::*::missing-text::mention",
+      "reason": "Same mobile-only add-menu row as 'commands': upstream reaches its mention picker from the sheet row; the fork opens the mention menu from the editor's '@' trigger (useMentionMenu). Open port item."
+    },
+    {
+      "id": "mobile-*::*::missing-text::built-in-commands-or-skills",
+      "reason": "Same mobile-only add-menu row as 'commands' - the Commands row's description line."
+    },
+    {
+      "id": "desktop-*::*::missing-text::latest-messages",
+      "reason": "Jump-to-latest pill visibility, not the affordance: the pill is the same element (BUTTON.newmsg-pill, already allowlisted) with a byte-identical label (the fork's `conversation.newMessages` = 'Latest messages'), and both apps hide it on the `main` scene. Upstream's capture still shows it behind the open settings dialog while the fork's does not, so the difference is the visibility gate - the fork's `showPill` requires the transcript to be scrolled up (ConversationPane.vue 'only visible when scrolled up and new content arrives'), and upstream's gate survives the modal. Which side is behind the modal in that capture is not established."
+    },
+    {
+      "id": "mobile-*::*::missing-text::mention-attachments-project-files-or-skills",
+      "reason": "Same mobile-only add-menu row as 'commands' - the Mention row's description line."
+    },
+    {
+      "id": "mobile-*::*::missing-text::flat",
+      "reason": "Switcher-sheet view modes: upstream's mobile switcher offers Flat (default) / By workspace and renders flat rows (srow srow-flat); the fork's MobileSwitcherSheet offers By workspace / Recent and renders grouped rows (mgroup). The option sets are a product decision, so 'Flat' has no counterpart - recorded as an open item, not a port gap."
+    },
+    {
+      "id": "mobile-*::*::missing-text::mock-workspace",
+      "reason": "Same switcher sheet, same divergence: upstream's flat list labels the row with the workspace's full name ('mock-workspace'), the fork's grouped list labels the group with the short name ('mock') and adds '1 conversations pinned'."
+    },
+    {
+      "id": "*::*::missing-text::sign-in",
+      "reason": "Account row source differs by design (mirror of the allowlisted 'not-signed-in' entry): the fork derives the label from its own stored credential, so it renders 'Signed in' / 'Sign out' where upstream's server-reported state renders 'Sign in'."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-1a771f1563",
+      "reason": "Chinese counterpart (permissionManualDesc) of the allowlisted English entry: Same unreachable permission menu on mobile as 'ask-when-needed'; the fork's `status.permissionManualDesc` carries this exact wording, so it is a reachability difference, not wording."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-928f87d450",
+      "reason": "Chinese counterpart (slashSheetTitle) of the allowlisted English entry: Mobile add menu: upstream's mobile sheet offers Commands and Mention rows beside Files/Goal/Plan/Swarm, while the fork's shared ComposerAddMenu carries the four rows its desktop popover needs - and the desktop popover matches upstream row for row (checked in .tmp/popovers/). The two mobile-only rows are an open port item, not a settled divergence."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-63d90d9773",
+      "reason": "Chinese counterpart (copy) of the allowlisted English entry: Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - the code-block copy button's tip."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-8e173a1145",
+      "reason": "Chinese counterpart (permissionAutoDesc) of the allowlisted English entry: Same unreachable permission menu on mobile as 'ask-when-needed'; the fork's `status.permissionAutoDesc` carries this exact wording."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-a431135528",
+      "reason": "Chinese counterpart (permissionAuto) of the allowlisted English entry: Same unreachable permission menu on mobile as 'ask-when-needed' — the composer permission pill is hidden under the mobile media query by design."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-e3aac547e6",
+      "reason": "Chinese counterpart (permissionYolo) of the allowlisted English entry: Permission menu is unreachable on mobile by design: the fork moves permission control into the MobileSettingsSheet and hides the composer pill under the mobile media query (Composer.vue `.perm-pill, .wm-pill { display: none }`), so upstream's permission menu never opens on a phone. Same fork choice as the allowlisted *perm-pill* / SPAN.wm-pill element entries."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-f7cfa333b5",
+      "reason": "Chinese counterpart (showLineNumbers) of the allowlisted English entry: Tooltip host text: the string is the content of upstream's shared code-block tip element (DIV.md-code-tip, already allowlisted), which upstream keeps mounted at the end of the document; the fork renders code-block tooltips through its own ui/Tooltip portal, so the label exists only while a tooltip is open."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-1e2df9c307",
+      "reason": "Chinese counterpart (authBannerLogin) of the allowlisted English entry: Account row source differs by design (mirror of the allowlisted 'not-signed-in' entry): the fork derives the label from its own stored credential, so it renders 'Signed in' / 'Sign out' where upstream's server-reported state renders 'Sign in'."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-26a313880f",
+      "reason": "Chinese counterpart (permissionYoloDesc) of the allowlisted English entry: Same unreachable permission menu on mobile as 'ask-when-needed'; the fork's `status.permissionYoloDesc` carries this exact wording."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-420c20dd9f",
+      "reason": "Chinese counterpart (copyCode) of the allowlisted English entry: Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted); verified in the capture as the md-code-tip element's content."
+    },
+    {
+      "id": "mobile-*::walk::missing-text::x-567146d668",
+      "reason": "Chinese counterpart (wrapCode) of the allowlisted English entry: Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - not a visible button label on either side."
+    },
+    {
+      "id": "mobile-*::walk-main-click-00-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-main-click-01-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-main-click-02-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-main-click-02-button::missing-text::x-f7cfa333b5",
+      "reason": "Chinese counterpart (showLineNumbers) of the allowlisted English entry: Tooltip host text: the string is the content of upstream's shared code-block tip element (DIV.md-code-tip, already allowlisted), which upstream keeps mounted at the end of the document; the fork renders code-block tooltips through its own ui/Tooltip portal, so the label exists only while a tooltip is open."
+    },
+    {
+      "id": "mobile-*::walk-main-click-03-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-main-click-05-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-main-click-06-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-main-click-11-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-main-click-12-button::missing-text::x-928f87d450",
+      "reason": "Chinese counterpart (slashSheetTitle) of the allowlisted English entry: Mobile add menu: upstream's mobile sheet offers Commands and Mention rows beside Files/Goal/Plan/Swarm, while the fork's shared ComposerAddMenu carries the four rows its desktop popover needs - and the desktop popover matches upstream row for row (checked in .tmp/popovers/). The two mobile-only rows are an open port item, not a settled divergence."
+    },
+    {
+      "id": "mobile-*::walk-main-click-12-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-00-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-01-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-18-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-19-button::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart (permissionManual) of the allowlisted English entry: Same mobile layout choice: the permission pill's label lives in the MobileSettingsSheet on phones, not on the composer where upstream renders it."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-19-button::missing-text::x-b3b9697138",
+      "reason": "Chinese counterpart (groupApp) of the allowlisted English entry: Same group-title case as 'account': the source string is byte-identical to upstream's (`mobile.groupApp` = 'App preferences'), and the sheet's `.group-title` uppercases it in the rendered text."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-19-button::missing-text::x-9800a458c1",
+      "reason": "Chinese counterpart (groupSession) of the allowlisted English entry: Same group-title case as 'account': the source string is byte-identical to upstream's (`mobile.groupSession` = 'Current session'), and the sheet's `.group-title` uppercases it in the rendered text."
+    },
+    {
+      "id": "mobile-*::walk-main-click-03-button::missing-text::x-567146d668",
+      "reason": "Chinese counterpart (wrapCode) of the allowlisted English entry: Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - not a visible button label on either side."
+    },
+    {
+      "id": "desktop-*::walk::missing-text::x-63d90d9773",
+      "reason": "Chinese counterpart (copy) of the allowlisted English entry: Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - the code-block copy button's tip."
+    },
+    {
+      "id": "desktop-*::walk::missing-text::x-1e2df9c307",
+      "reason": "Chinese counterpart (authBannerLogin) of the allowlisted English entry: Account row source differs by design (mirror of the allowlisted 'not-signed-in' entry): the fork derives the label from its own stored credential, so it renders 'Signed in' / 'Sign out' where upstream's server-reported state renders 'Sign in'."
+    },
+    {
+      "id": "desktop-*::walk-main-click-09-button::missing-text::x-1e2df9c307",
+      "reason": "Chinese counterpart (authBannerLogin) of the allowlisted English entry: Account row source differs by design (mirror of the allowlisted 'not-signed-in' entry): the fork derives the label from its own stored credential, so it renders 'Signed in' / 'Sign out' where upstream's server-reported state renders 'Sign in'."
+    },
+    {
+      "id": "desktop-*::walk-main-click-16-button::missing-text::x-63d90d9773",
+      "reason": "Chinese counterpart (copy) of the allowlisted English entry: Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - the code-block copy button's tip."
+    },
+    {
+      "id": "mobile-*::walk-main-click-01-button::missing-text::x-1e2df9c307",
+      "reason": "Chinese counterpart (authBannerLogin) of the allowlisted English entry: Account row source differs by design (mirror of the allowlisted 'not-signed-in' entry): the fork derives the label from its own stored credential, so it renders 'Signed in' / 'Sign out' where upstream's server-reported state renders 'Sign in'."
+    },
+    {
+      "id": "mobile-*::walk-main-click-05-button::missing-text::x-63d90d9773",
+      "reason": "Chinese counterpart (copy) of the allowlisted English entry: Same tooltip host text as 'show-line-numbers' (DIV.md-code-tip, already allowlisted) - the code-block copy button's tip."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-18-button::missing-text::x-1e2df9c307",
+      "reason": "Chinese counterpart (authBannerLogin) of the allowlisted English entry: Account row source differs by design (mirror of the allowlisted 'not-signed-in' entry): the fork derives the label from its own stored credential, so it renders 'Signed in' / 'Sign out' where upstream's server-reported state renders 'Sign in'."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-19-button::missing-text::x-1e2df9c307",
+      "reason": "Chinese counterpart (authBannerLogin) of the allowlisted English entry: Account row source differs by design (mirror of the allowlisted 'not-signed-in' entry): the fork derives the label from its own stored credential, so it renders 'Signed in' / 'Sign out' where upstream's server-reported state renders 'Sign in'."
+    },
+    {
+      "id": "*::*::missing-text::example-undefined-ctx",
+      "reason": "Mock artefact, not a port gap: upstream composes its model-pill tooltip as '<provider> · <ctx> ctx' and the mock's model entry carries no ctx field, so upstream renders the literal word 'undefined'; the fork's pill omits the field instead. Fixing this belongs in the mock's model payload, not in the fork's markup."
+    },
+    {
+      "id": "mobile-*::*::missing-text::manual-auto-read-only-everything-else-needs-your-approval-fi",
+      "reason": "Permission pill label on a phone: the fork moves permission control into the MobileSettingsSheet and hides the composer pill under the mobile media query (Composer.vue), so upstream's pill label - the mode name plus its description sentence - has no fork counterpart there. Same choice as the allowlisted 'always-ask' entry and the *perm-pill* element patterns."
+    },
+    {
+      "id": "mobile-*::*::missing-text::manual",
+      "reason": "Permission pill label on a phone: the fork moves permission control into the MobileSettingsSheet and hides the composer pill under the mobile media query (Composer.vue), so upstream's pill label - the mode name plus its description sentence - has no fork counterpart there. Same choice as the allowlisted 'always-ask' entry and the *perm-pill* element patterns."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-02*::dom-elements-missing",
+      "reason": "Mobile settings-phase sheet, open on one side only: the phase opens the settings sheet and the walk then clicks whatever that sheet exposes. The two sheets carry different rows (the recorded mobile-settings-sheet divergence), so on some surfaces upstream's sheet is still open while the fork's has already been dismissed - upstream keeps it on 8 of 11 such surfaces, the fork on 5 of 12 - and the sheet elements then read as missing. Same open item as the sheet-architecture note; not a markup gap."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-03*::dom-elements-missing",
+      "reason": "Mobile settings-phase sheet, open on one side only: the phase opens the settings sheet and the walk then clicks whatever that sheet exposes. The two sheets carry different rows (the recorded mobile-settings-sheet divergence), so on some surfaces upstream's sheet is still open while the fork's has already been dismissed - upstream keeps it on 8 of 11 such surfaces, the fork on 5 of 12 - and the sheet elements then read as missing. Same open item as the sheet-architecture note; not a markup gap."
+    },
+    {
+      "id": "mobile-*::walk-settings-click-04*::dom-elements-missing",
+      "reason": "Mobile settings-phase sheet, open on one side only: the phase opens the settings sheet and the walk then clicks whatever that sheet exposes. The two sheets carry different rows (the recorded mobile-settings-sheet divergence), so on some surfaces upstream's sheet is still open while the fork's has already been dismissed - upstream keeps it on 8 of 11 such surfaces, the fork on 5 of 12 - and the sheet elements then read as missing. Same open item as the sheet-architecture note; not a markup gap."
+    },
+    {
+      "id": "mobile-*::walk-main-click-00-button-switch-session-workspace::dom-elements-missing",
+      "reason": "Switcher-sheet row innards: upstream's session rows carry srow-main > span.t plus span.srow-sub and span.time; the fork's list is mgroup-based with its own row markup (the recorded switcher-sheet divergence, see DIV.cur.srow.srow-flat). Exactly three upstream elements are missing on this scene and nothing else, measured; SPAN.t cannot be an element pattern because a bare `t` class is too generic to suppress globally."
+    },
+    {
+      "id": "mobile-*::walk-main-click-00-button::dom-elements-missing",
+      "reason": "Switcher-sheet row innards: upstream's session rows carry srow-main > span.t plus span.srow-sub and span.time; the fork's list is mgroup-based with its own row markup (the recorded switcher-sheet divergence, see DIV.cur.srow.srow-flat). Exactly three upstream elements are missing on this scene and nothing else, measured; SPAN.t cannot be an element pattern because a bare `t` class is too generic to suppress globally."
+    },
+    {
+      "id": "desktop-*-zh::walk-main-click-06*::dom-elements-missing",
+      "reason": "Sidebar group collapse state, not markup: both apps render the same group header (DIV.gh > DIV.gh-top > svg.gh-folder + SPAN.gh-name) and the fork has a collapse-all control of its own. On these zh runs upstream's groups are folded (DIV.collapsed.gh, DIV.collapsed.group-sessions) while the fork's are open (DIV.gh.on) - the two apps' collapse-all control sits at a different position in each walk's discovery order, so only one side was collapsed. Same class of per-run state divergence as `is-following`, which the comparator already normalises."
+    },
+    {
+      "id": "*::*::missing-text::x-01d70f8715",
+      "reason": "Chinese counterpart of the switcher's Flat view option - the same recorded option-set divergence as the allowlisted \"flat\" entry (upstream Flat / By workspace, the fork By workspace / Recent)."
+    },
+    {
+      "id": "*::*::missing-text::x-013ee9dc60",
+      "reason": "Chinese counterpart of the auto-fold setting's description line; the fork's mobile settings sheet carries its own row set (recorded architecture divergence)."
+    },
+    {
+      "id": "*::*::missing-text::x-d696e50022",
+      "reason": "Chinese counterpart of the auto-fold setting's row label - same mobile-sheet divergence as the line above."
+    },
+    {
+      "id": "*::*::missing-text::x-a9147daaf5",
+      "reason": "Chinese counterpart of the permission pill's label: the pill lives in the MobileSettingsSheet on phones (allowlisted), so upstream's pill label has no fork counterpart there."
+    },
+    {
+      "id": "desktop-*::walk-main-click-01*::dom-elements-missing",
+      "reason": "New-session icon count: upstream's captured empty state carries 30 `svg.kw-icon` in its page source against the fork's 24 (20 vs 18 after the digest drops hidden subtrees), while the fork carries svg.ctx-ring and svg.glass-defs in the same state. The digest's signature for these is a bare `svg.kw-icon` with no per-icon class, and the composer-card counts (6 vs 7), the chat-header marker and the empty-panel-btn all match, so WHICH glyphs differ is NOT recoverable from the capture - the cause is not established. Scoped to this scene only; the empty-tail class difference that also lived here is fixed in source."
+    }
+  ],
+  "warnings": [],
+  "elements": [
+    {
+      "pattern": "svg.kw-icon.srow-chevron",
+      "reason": "The settings sheet's Goal row: upstream swaps its toggle for a chevron that opens its goal panel (`.dock-work-panel.panel-goal` in the bundle CSS) once a goal is running, and the chevron is absent otherwise — verified by probing the sheet on a 430x844 viewport, which showed no chevron while no goal ran and the walk's own captures showing it once one did. The fork's goal surface is the strip above the dock (its `focusGoal` expands it) and it has no goal panel, so its row keeps the toggle form that both starts and stops the goal. Open item, not a settled divergence — see PLANS/web-port-0.41.md."
+    },
+    {
+      "pattern": "*ProseMirror*",
+      "reason": "Composer input implementation: upstream mounts a ProseMirror contenteditable (its trailing-break <br> included), the fork uses a plain <textarea>. Settled fork choice, not drift."
+    },
+    {
+      "pattern": "SPAN.composer-text",
+      "reason": "Same composer editor: the styled text run ProseMirror renders inside its contenteditable."
+    },
+    {
+      "pattern": "SPAN.composer-placeholder-overlay",
+      "reason": "Same composer editor: upstream paints the placeholder as an overlay element; the fork uses the textarea's own placeholder attribute."
+    },
+    {
+      "pattern": "DIV.u-text-wrap",
+      "reason": "Same composer editor: ProseMirror's text-wrap wrapper inside the contenteditable."
+    },
+    {
+      "pattern": "DIV.ph",
+      "reason": "Same composer editor: the placeholder host, which exists only because the placeholder is a rendered element upstream."
+    },
+    {
+      "pattern": "DIV.pt*",
+      "reason": "Right-panel shell: upstream's pt-shell / pt-body / ptb-* tab bar. The fork's RightPanelTabs.vue is its own component with an rpt-* vocabulary and mounts on demand instead of staying parked in the DOM. Settled divergence; the panel is compared by its own surfaces."
+    },
+    {
+      "pattern": "DIV.panel-tab-bar",
+      "reason": "Right-panel shell: upstream's tab-bar container (see DIV.pt*)."
+    },
+    {
+      "pattern": "DIV.pfc-host",
+      "reason": "Right-panel shell: upstream's preview-host placeholder for the floating card layer (see DIV.pt*)."
+    },
+    {
+      "pattern": "DIV.pl",
+      "reason": "Right-panel shell: upstream's closed-panel Quick-open group (see DIV.pt*); the fork reaches the same panels from its tab strip."
+    },
+    {
+      "pattern": "BUTTON.ptb-hide*",
+      "reason": "Right-panel shell: upstream's Close-right-panel control in the tab bar's tail (see DIV.pt*)."
+    },
+    {
+      "pattern": "BUTTON.ui-menu-item.ui-menu-item--md",
+      "reason": "Right-panel shell: the Quick-open rows inside the parked panel body (see DIV.pt*); their text is allowlisted separately."
+    },
+    {
+      "pattern": "DIFFS-CONTAINER*",
+      "reason": "Code-block body internals: upstream's stream-diffs renderer mounts a <diffs-container> custom element, the fork's markstream version renders its shell directly. The block is compared by its own computed styles and geometry."
+    },
+    {
+      "pattern": "DIV.md-code-tip",
+      "reason": "Code-block tooltip host: upstream keeps a shared tip element mounted at the end of the document; the fork renders tooltips through its own ui/Tooltip portal."
+    },
+    {
+      "pattern": "DIV.border.code-block-container*",
+      "reason": "Inert state class, and the two toggle states: the fork's stream-diffs build leaves is-rendering on the settled container where upstream drops it (it only gates the shimmer .code-height-placeholder, which neither app renders once settled), and upstream marks line numbers / word wrap with md-code-nums / md-code-wrap on the container while the fork's markstream element marks the same two states on its own host (mdcb-lines-off, mdcb--nowrap) - see DIFFS-CONTAINER*."
+    },
+    {
+      "pattern": "DIV.stream-diffs-shell",
+      "reason": "Code-block body plumbing: upstream's stream-diffs renderer wraps the body in a shell div; the fork's markstream element fills that role instead - see DIFFS-CONTAINER*."
+    },
+    {
+      "pattern": "DIV.stream-diffs-surface",
+      "reason": "Same code-block body plumbing as DIV.stream-diffs-shell - the surface div inside upstream's renderer - see DIFFS-CONTAINER*."
+    },
+    {
+      "pattern": "P",
+      "reason": "Composer editor: the paragraph node ProseMirror renders inside its contenteditable (see the other ProseMirror entries)."
+    },
+    {
+      "pattern": "g",
+      "reason": "Icon internals: upstream wraps some glyph groups in an extra svg <g>; the fork's icon set draws the same marks with a different group structure. The glyphs themselves are compared through the class inventory and the rendered screenshots."
+    },
+    {
+      "pattern": "SPAN.msg-time",
+      "reason": "Message timestamp element type: the fork renders it as a click-to-expand <button class=msg-time> (MessageTime.vue) in both the user and assistant footers; upstream uses a plain <span>. The time is shown in both apps at the same place - only the element type and the expand interaction differ, and the interaction is fork behaviour."
+    },
+    {
+      "pattern": "SPAN.a-time",
+      "reason": "Same timestamp divergence, assistant footer: upstream uses a second class (.a-time) for the assistant footer, the fork reuses .msg-time in both footers."
+    },
+    {
+      "pattern": "BUTTON.ui-seg__item",
+      "reason": "Segmented-control item count: upstream drives the Language row and the Font-size row with segmented controls (2 + 4 items, each with an icon); the fork's LanguageSwitcher and numeric px input are fork controls, so upstream's extra items have no counterpart. The control itself (sliding indicator, states, sizing) is shared and compared."
+    },
+    {
+      "pattern": "BUTTON.is-on.ui-seg__item",
+      "reason": "Same segmented-control divergence as BUTTON.ui-seg__item - this is the selected item of one of upstream's extra segmented controls."
+    },
+    {
+      "pattern": "svg.kw-icon.ui-seg__icon",
+      "reason": "Same segmented-control divergence: the icons inside upstream's Language and Font-size segmented items."
+    },
+    {
+      "pattern": "path",
+      "reason": "Icon internals: upstream and the fork draw different numbers of <path> nodes for the same intents (the fork's icon set draws several shapes as single paths, and upstream's extra segmented items contribute their own). Glyphs are compared through the rendered screenshots and the class inventory."
+    },
+    {
+      "pattern": "circle",
+      "reason": "Same icon-internals divergence as 'path': upstream draws some glyph details as <circle> nodes (the sliders icon), the fork's equivalent uses paths."
+    },
+    {
+      "pattern": "BUTTON.newmsg-pill",
+      "reason": "Jump-to-latest pill: rendered only while the transcript is scrolled away from the end. It is present in the fork (ConversationPane) but the settings capture catches the two apps in different scroll states, so it appears upstream-only here. Captured and compared on the main surface."
+    },
+    {
+      "pattern": "svg.kw-icon.pill-chevron",
+      "reason": "Same jump-to-latest pill as BUTTON.newmsg-pill - the chevron inside it."
+    },
+    {
+      "pattern": "DIV.pinned",
+      "reason": "Pinned area shell: the fork's pinned block is its own resizable region (DIV.pinned-wrap with an inline height, DIV.pinned-scroll for the rows, DIV.pinned-resize for the divider) because the user can drag its height; upstream's DIV.pinned is a fixed collapsible block. Fork behaviour kept; the rows inside are compared."
+    },
+    {
+      "pattern": "DIV.pinned-rows-wrap",
+      "reason": "Same pinned-area shell divergence as DIV.pinned - upstream's rows wrapper; the fork scrolls them in DIV.pinned-scroll."
+    },
+    {
+      "pattern": "DIV.pinned-rows",
+      "reason": "Same pinned-area shell divergence as DIV.pinned."
+    },
+    {
+      "pattern": "DIV.pin-row",
+      "reason": "Same pinned-area shell divergence: upstream wraps each pinned session in DIV.pin-row; the fork mounts SessionRow directly, so the row itself is the unit."
+    },
+    {
+      "pattern": "SPAN.pinned-title",
+      "reason": "Same pinned-area shell divergence: upstream labels the block with SPAN.pinned-title, the fork reuses the sidebar section label (SPAN.side-section-title) inside DIV.pinned-label."
+    },
+    {
+      "pattern": "BUTTON.pinned-toggle*",
+      "reason": "Pinned-area affordance: upstream collapses the block from a chevron button, the fork resizes it with a drag handle (DIV.pinned-resize). Fork behaviour kept."
+    },
+    {
+      "pattern": "SPAN.perm-pill.perm-undefined",
+      "reason": "Permission-pill state, not markup: the same SPAN.perm-pill exists in both apps with the same label and icon; upstream's modifier is perm-undefined (its config carries no default permission) while the fork resolves the same state to perm-manual. Data-dependent, same as on the main surface."
+    },
+    {
+      "pattern": "SPAN.wm-pill",
+      "reason": "Mobile layout is a fork choice: a mobile media query hides the permission and work-mode pills and moves those controls into the MobileSettingsSheet (Composer.vue), where upstream keeps them on the composer. Desktop renders these elements and is verified separately at the same key."
+    },
+    {
+      "pattern": "SPAN.wm-icon",
+      "reason": "Mobile layout is a fork choice: a mobile media query hides the permission and work-mode pills and moves those controls into the MobileSettingsSheet (Composer.vue), where upstream keeps them on the composer. Desktop renders these elements and is verified separately at the same key."
+    },
+    {
+      "pattern": "BUTTON.wm-x",
+      "reason": "Mobile layout is a fork choice: a mobile media query hides the permission and work-mode pills and moves those controls into the MobileSettingsSheet (Composer.vue), where upstream keeps them on the composer. Desktop renders these elements and is verified separately at the same key."
+    },
+    {
+      "pattern": "*perm-pill*",
+      "reason": "Mobile layout is a fork choice: a mobile media query hides the permission and work-mode pills and moves those controls into the MobileSettingsSheet (Composer.vue), where upstream keeps them on the composer. Desktop renders these elements and is verified separately at the same key."
+    },
+    {
+      "pattern": "BUTTON.acct.in.srow",
+      "reason": "Account row source differs by design: upstream shows the SIGN-IN row because its server reports no managed user, while the fork's stored token signs it in and it renders the sign-out row. Same divergence as the allowlisted 'Not signed in' label, seen as an element instead of text."
+    },
+    {
+      "pattern": "DIV.ui-seg.ui-seg--md",
+      "reason": "Appearance controls differ by design: upstream's sheet shows Appearance, Language and Font size as three ui-seg controls, while the fork uses a segmented theme control plus its LanguageSwitcher and a numeric font-size field (the font-size divergence is already allowlisted as missing-text 's'). One surplus ui-seg instance follows from that, and the signatures are identical across segments, so it cannot be scoped to one of them."
+    },
+    {
+      "pattern": "SPAN.is-ready.ui-seg__indicator",
+      "reason": "Appearance controls differ by design: upstream's sheet shows Appearance, Language and Font size as three ui-seg controls, while the fork uses a segmented theme control plus its LanguageSwitcher and a numeric font-size field (the font-size divergence is already allowlisted as missing-text 's'). One surplus ui-seg instance follows from that, and the signatures are identical across segments, so it cannot be scoped to one of them."
+    },
+    {
+      "pattern": "DIV.actions",
+      "reason": "Mobile switcher sheet vocabulary: upstream wraps the sheet's action row, its view control and its list-options row in bare DIV.actions / DIV.view-tabs, while the fork's MobileSwitcherSheet names those slots its own way (mview and its own action row). The slot is the same; the wrapper names differ."
+    },
+    {
+      "pattern": "DIV.view-tabs",
+      "reason": "Same mobile switcher sheet as DIV.actions: this is the wrapper upstream puts around the view segment (Flat / By workspace). The fork puts its own wrapper (mview) around the same segment - see the 'flat' blocker entry for the option-set difference."
+    },
+    {
+      "pattern": "DIV.ui-seg.ui-seg--sm",
+      "reason": "Switcher-sheet segment size: upstream's switcher view control is the small segment (24px), the fork uses its medium segment (DIV.ui-seg.ui-seg--md, 44px) at that spot for touch. Same divergence family as the allowlisted DIV.ui-seg.ui-seg--md entry."
+    },
+    {
+      "pattern": "*ui-tip__bubble*",
+      "reason": "Tooltip bubble: upstream renders every tooltip's text into a shared bubble element positioned per hover; the fork renders tooltips through its own ui/Tooltip portal. Same family as the allowlisted DIV.md-code-tip host."
+    },
+    {
+      "pattern": "DIV.cur.srow.srow-flat",
+      "reason": "Switcher flat rows: upstream's mobile switcher renders flat session rows (srow srow-flat cur); the fork's grouped list renders mgroup rows - same split as the missing-text 'flat' entry."
+    },
+    {
+      "pattern": "SPAN.srow-main",
+      "reason": "Same switcher flat rows as DIV.cur.srow.srow-flat - the row's main cell."
+    },
+    {
+      "pattern": "DIV.pinned-label",
+      "reason": "Pinned-group label: upstream labels its pinned block with DIV.pinned-label / DIV.flat.on.se / DIV.sub; the fork's pinned block is its own region with SPAN.pinned-title (already allowlisted) and its own label markup."
+    },
+    {
+      "pattern": "BUTTON.new-chat-btn.ui-icon-button.ui-icon-button--sm",
+      "reason": "Sidebar collapse model: upstream shrinks the sidebar to a rail whose header holds the collapse toggle plus this New Session icon button; the fork hides the sidebar when collapsed (App.vue v-show) and floats a separate expand control, so no rail and no second icon button. Fork choice, recorded not ported."
+    },
+    {
+      "pattern": "CANVAS.doodle-canvas",
+      "reason": "New-session doodle implementation: upstream draws its doodle into a canvas that is visible in the captured state; the fork's EmptyDoodle uses Rive with a fallback, and in the harness its canvas sits in a hidden subtree when no frame has been produced, so the digest excludes it while the element is still in the page source. Both apps render the same wordmark."
+    }
+  ]
+}
