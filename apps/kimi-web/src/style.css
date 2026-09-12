@@ -519,6 +519,9 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.07), 0 2px 4px rgba(16, 24, 40, 0.05);
   --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12), 0 4px 10px rgba(16, 24, 40, 0.08);
   --shadow-xl: 0 24px 64px rgba(16, 24, 40, 0.18), 0 8px 20px rgba(16, 24, 40, 0.1);
+  /* Upstream's own menu shadow — its dropdown menus and its dock work panel
+     share it, so the panel can take upstream's recipe whole. */
+  --shadow-menu: 0 6px 18px rgba(0, 0, 0, 0.02), 0 3px 9px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.04);
 
   /* -- motion -------------------------------------------------------------- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -575,6 +578,12 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   /* -- focus ring (design-system §02) -------------------------------------- */
   --p-focus-ring: 0 0 0 3px var(--color-accent-soft);
   --p-focus-ring-strong: 0 0 0 3px var(--color-accent-soft), 0 0 0 1px var(--color-accent);
+
+  /* -- frosted surfaces (design-system §02) --------------------------------
+     Upstream's menu blur, which its menus, its dock work panel and its workbar
+     pills all share. Kept as its own token so those surfaces can take upstream's
+     material verbatim, rather than approximating it with a glass tier. */
+  --p-menu-backdrop: blur(24px) saturate(1.8);
 
   /* -- selection (design-system §02) --------------------------------------- */
   --p-selection: rgba(23, 131, 255, 0.18);
@@ -665,6 +674,7 @@ html[data-color-scheme="dark"] {
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.24);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.34), 0 4px 10px rgba(0, 0, 0, 0.28);
   --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.42), 0 8px 20px rgba(0, 0, 0, 0.32);
+  --shadow-menu: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
 }
 
 /* Design tokens v2 — dark values (follow OS preference). */
@@ -726,6 +736,7 @@ html[data-color-scheme="dark"] {
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.24);
     --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.34), 0 4px 10px rgba(0, 0, 0, 0.28);
     --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.42), 0 8px 20px rgba(0, 0, 0, 0.32);
+    --shadow-menu: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
   }
 }
 
@@ -1252,6 +1263,16 @@ html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
     --lg-amb-deepen: 0%;
     --lg-amb-lift: 0%;
   }
+  /* The dock work panel and its pills take upstream's menu material directly
+     (its `--color-menu-bg-frost` fill behind `--p-menu-backdrop`) rather than a
+     tier, so the OS contract is restated for them: a solid raised face, no
+     blur. */
+  .dock-work-panel,
+  .dock-workbar .ui-pill {
+    background: var(--color-surface-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   /* The sidebar column collapses onto the sidebar background token (not the
      raised surface) so the frame stays one flat color. */
   html[data-liquid-glass="on"] .side .col {
@@ -1504,31 +1525,6 @@ html[data-liquid-glass="on"] .sd .ui-select {
 html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button, .ui-select):hover:not(:disabled) {
   --lg-tint: color-mix(in srgb, var(--color-text) 13%, transparent);
   --lg-tint-top: color-mix(in srgb, var(--color-text) 8%, transparent);
-}
-
-/* Dock work chips (Bash / Sub Agent / Todos) — they carry .lg-glass in the
-   template, so the base glass stack (tint, 8px backdrop blur, rim, hover
-   lift) applies. These rules only adapt the Pill component to it: capsule
-   shape and a hairline-free edge (the refraction rim stays via the glass
-   box-shadow insets, so the chips read as borderless rounded glass), plus
-   keep the glass background on hover / active where the component's own
-   scoped rules would otherwise paint an opaque fill. The external drop
-   shadow is dropped: the chips sit embedded in the shared frost slab, and
-   their shadow-sm paints onto it as a dark underline under each chip. */
-html[data-liquid-glass="on"] .dock-workbar button.ui-pill {
-  border-radius: 999px;
-  border-color: transparent;
-  /* The chips sit embedded in the shared frost slab — drop the resting shadow
-     (it paints onto the slab as a dark underline under each chip). */
-  --lg-drop-shadow: 0 0 0 0 transparent;
-}
-html[data-liquid-glass="on"] .dock-workbar button.ui-pill:hover:not(:disabled),
-html[data-liquid-glass="on"] .dock-workbar button.ui-pill.is-active {
-  background: var(--lg-bg);
-}
-html[data-liquid-glass="on"] .dock-workbar button.ui-pill.is-active {
-  --lg-tint: color-mix(in srgb, var(--color-accent) 20%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
 /* A backdrop-filter nested inside another backdrop-filter element silently

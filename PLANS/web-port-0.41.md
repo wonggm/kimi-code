@@ -1622,3 +1622,23 @@ That pairing immediately paid for itself. Four blocker-grade findings appeared o
 - `apps/kimi-web/webdiff/allowlist.json`: 119 blockers, 0 warnings, 51 elements. The only entry whose reason names the dock family is `svg.kw-icon.srow-chevron`, which carries its own evidence; the mobile model-dropdown entry the dock round added is gone.
 - Gauntlet on the tree: `vue-tsc` 0 errors, `check:style` 51 (the baseline), vitest 1011/1011, heap-capped `vite build` and `copy-web-assets` green.
 - Changesets for what a user can perceive: `web-mobile-model-dropdown`, `web-task-bare-duration`, `web-agent-card-ordinal`, `web-dock-filter-control`, `web-dock-state-glyphs` (all patch). Nothing is committed.
+
+#### The dock material, ported rather than approximated (2026-09-12, after the closing run)
+
+Item 6 above recorded the pill's material as a deliberate fork divergence ("the fork's glass band, upstream's `--p-menu-backdrop`"). Side-by-side screenshots of the dock panels showed that reading was wrong: the fork's panel and pills read visibly denser and glossier than upstream's. Measured on both served builds (`.tmp/probe-panel-material.mjs`, `.tmp/probe-panel-material2.mjs`), light and dark:
+
+| | upstream | fork, before |
+|---|---|---|
+| panel fill | `--color-menu-bg-frost` (bg @ 70%) | tier tint from `--color-surface-raised` @ 20% + a gradient |
+| panel blur | `blur(24px) saturate(1.8)` | `blur(40px) saturate(2.2) brightness(1.04) url(#lg-refract-soft)` |
+| panel edge | 1px `--color-line` + `--shadow-menu` | bright inset rims + dispersion |
+| panel with glass off | unchanged | fill and blur both gone |
+
+Upstream's panel recipe turned out to be exactly its *menu* material — `background: var(--color-menu-bg-frost)` + `backdrop-filter: var(--p-menu-backdrop)` — and its workbar pill the same backdrop over `--color-selected`. The fork had the fill token but never used it, had no `--p-menu-backdrop`, and no `--shadow-menu`.
+
+- Added `--p-menu-backdrop: blur(24px) saturate(1.8)` and `--shadow-menu` (upstream's own three-layer shadow, per theme) to the token sheet.
+- `DockWorkPanel` and the workbar pills now use that recipe instead of a glass tier (`lg-glass lg-lens` / `lg-band` dropped). Measured after: fill, blur, radius, border and shadow equal upstream's, in both themes — e.g. the panel's fill resolves to the same `color(srgb …/0.7)` and its blur to `blur(24px) saturate(1.8)`.
+- Two by-catches, both real bugs found by the measurement: the fork's panel asked for a `--shadow-menu` token that did not exist (so it had *no* shadow of its own — the glass composition had been hiding it), and a stale global block from the icon-square workbar (`html[data-liquid-glass="on"] .dock-workbar button.ui-pill { border-radius: 999px; … }`, style.css) still forced a capsule radius and glass hover fills onto the labelled pills. Both are gone.
+- `prefers-reduced-transparency: reduce` restated for these two surfaces (solid raised face, no blur), since they no longer ride the tier slots that rule retargets.
+- Two token divergences stay, and are not this round's to change: the light `--color-line` hairline (fork `#e7eaee` against upstream `rgba(0,0,0,.13)`) and the pill fill (`--color-selected`: `#00000014`/`#ffffff14` against upstream's `.05`/`.1`) — both are app-wide tokens.
+- Verified: a four-control walk over the same pill surfaces on both apps (`.tmp/walkmat`) reports **blocker 0**, exit 0, and `typecheck` / `check:style` 51 / vitest 1011 are green. Screenshots: `.tmp/dockmat-{upstream,fork}-{dark,light}.png`.
