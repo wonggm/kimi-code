@@ -247,7 +247,11 @@ export interface CronTurnData {
 export type TurnBlock =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; thinking: string }
-  | { kind: 'tool'; tool: ToolCall };
+  | { kind: 'tool'; tool: ToolCall }
+  /** Inline background-task notification, folded into the assistant run at the
+      position it arrived so it renders in order instead of trailing the turn.
+      `text` is the raw `<notification>` payload (parsed at render time). */
+  | { kind: 'task'; text: string; createdAt?: string };
 
 /** One attachment on a user turn: an uploaded file, image or video. Images
     and pasted media carry no name; the chip falls back to a generic label.
@@ -317,6 +321,10 @@ export interface TaskItem {
   kind: string; // 'subagent' | 'task'
   state: TaskState;
   timing: string;
+  /** Bare elapsed time ("5m4s"), the form upstream's task rows show; `timing`
+   *  carries the state word too and is what the side-panel panes render. Empty
+   *  under a second, which is how upstream's rows come to show no time at all. */
+  duration?: string;
   meta?: string;
   output?: string[];
   /** Background subagents only — the dock lists these; foreground subagents

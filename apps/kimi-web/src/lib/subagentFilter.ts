@@ -9,6 +9,15 @@ import type { TaskItem } from '../types';
 
 export type SubagentFilter = 'active' | 'running' | 'done' | 'all';
 
+/** Upstream's dropdown entries for the dock panel's head; labels come from the
+ *  `tasks.filter*` keys. */
+export const SUBAGENT_FILTERS: { value: SubagentFilter; labelKey: string; icon: 'clock' | 'play' | 'check' | 'list' }[] = [
+  { value: 'active', labelKey: 'tasks.filterRecent', icon: 'clock' },
+  { value: 'running', labelKey: 'tasks.filterRunning', icon: 'play' },
+  { value: 'done', labelKey: 'tasks.filterDone', icon: 'check' },
+  { value: 'all', labelKey: 'tasks.filterAll', icon: 'list' },
+];
+
 /** How many finished subagents the "recent" filter keeps alongside the
  *  in-progress ones. */
 export const RECENT_FINISHED_CAP = 5;

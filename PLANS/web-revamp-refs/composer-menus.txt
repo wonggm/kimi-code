@@ -1,0 +1,67 @@
+
+########## upstream
+-- model: trigger {"x":1006,"y":851,"w":133,"h":21} mp-name
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-1006 dy=-872 bg=rgb(18, 18, 18) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls= | Kimi Code New Session Ctrl Shift O Search Ctrl K SESSIONS mock Code bl
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-1006 dy=-872 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls=app-shell | Kimi Code New Session Ctrl Shift O Search Ctrl K SESSIONS mock Code bl
+     menu {"x":471,"y":769,"w":768,"h":131} dx=-535 dy=-103 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px 8px 0px 0px z=200
+       shadow=
+       cls=chat-dock align-center has-popup |  Type a message… example/test-model EXAMPLE example/test-model Thinkin
+     menu {"x":970,"y":594,"w":200,"h":243} dx=-36 dy=-278 bg=rgba(41, 41, 41, 0.95) backdrop=blur(24px) saturate(1.8) radius=12px border=1px rgba(255, 255, 255, 0.12) pad=4px z=200
+       shadow=rgba(0, 0, 0, 0.2) 0px 6px 18px 0px, rgba(0, 0, 0, 0.24) 0px 3px 9px 0
+       cls=ui-menu model-dropdown | EXAMPLE example/test-model Thinking Not supported Note: Switching mode
+-- permission: TRIGGER NOT FOUND
+-- add: trigger {"x":496,"y":845,"w":32,"h":32} ui-icon-button ui-icon-button--md compos
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-496 dy=-877 bg=rgb(18, 18, 18) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls= | Kimi Code New Session Ctrl Shift O Search Ctrl K SESSIONS mock Code bl
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-496 dy=-877 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls=app-shell | Kimi Code New Session Ctrl Shift O Search Ctrl K SESSIONS mock Code bl
+     menu {"x":471,"y":769,"w":768,"h":131} dx=-25 dy=-108 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px 8px 0px 0px z=200
+       shadow=
+       cls=chat-dock align-center has-popup | Files Upload files Goal Set a goal to keep pursuing Plan Turn plan mod
+     menu {"x":488,"y":574,"w":726,"h":195} dx=-8 dy=-303 bg=color(srgb 0.0705882 0.0705882 0.0705882 / 0.7) backdrop=blur(24px) saturate(1.8) radius=12px border=1px rgba(255, 255, 255, 0.12) pad=6px 12px z=200
+       shadow=rgba(0, 0, 0, 0.2) 0px 6px 18px 0px, rgba(0, 0, 0, 0.24) 0px 3px 9px 0
+       cls=add-menu | Files Upload files Goal Set a goal to keep pursuing Plan Turn plan mod
+
+########## fork
+-- model: trigger {"x":970,"y":846,"w":185,"h":30} model-pill lg-glass
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-970 dy=-876 bg=rgb(18, 18, 18) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls= | Kimi Code New Session Search SESSIONS mock Code block header probe 19m
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-970 dy=-876 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls=app-shell | Kimi Code New Session Search SESSIONS mock Code block header probe 19m
+     menu {"x":501,"y":789,"w":694,"h":42} dx=-469 dy=-87 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgb(114, 121, 131) pad=0px 14px 0px 0px z=0
+       shadow=
+       cls=ph-overlay | Type a message…
+     menu {"x":1002,"y":563,"w":200,"h":272} dx=32 dy=-313 bg=rgb(41, 41, 41) backdrop= radius=12px border=1px rgba(255, 255, 255, 0.12) pad=5px z=200
+       shadow=rgba(0, 0, 0, 0.22) 0px 1px 2px 0px, rgba(0, 0, 0, 0.18) 0px 1px 3px 0
+       cls=model-dropdown lg-glass | EXAMPLE example/test-model Thinking Not supported Note: Switching mode
+-- permission: trigger {"x":573,"y":845,"w":103,"h":32} perm-pill lg-glass perm-manual
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-573 dy=-877 bg=rgb(18, 18, 18) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls= | Kimi Code New Session Search SESSIONS mock Code block header probe 19m
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-573 dy=-877 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls=app-shell | Kimi Code New Session Search SESSIONS mock Code block header probe 19m
+     menu {"x":501,"y":789,"w":694,"h":42} dx=-72 dy=-88 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgb(114, 121, 131) pad=0px 14px 0px 0px z=0
+       shadow=
+       cls=ph-overlay | Type a message…
+     menu {"x":495,"y":635,"w":529,"h":200} dx=-78 dy=-242 bg=rgb(41, 41, 41) backdrop= radius=12px border=1px rgba(255, 255, 255, 0.12) pad=5px z=200
+       shadow=rgba(0, 0, 0, 0.22) 0px 1px 2px 0px, rgba(0, 0, 0, 0.18) 0px 1px 3px 0
+       cls=perm-dropdown lg-glass | Always Ask Auto-read only; everything else needs your approval first A
+-- add: trigger {"x":533,"y":845,"w":32,"h":32} ui-icon-button ui-icon-button--md attach
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-533 dy=-877 bg=rgb(18, 18, 18) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls= | Kimi Code New Session Search SESSIONS mock Code block header probe 19m
+     menu {"x":0,"y":0,"w":1440,"h":900} dx=-533 dy=-877 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgba(255, 255, 255, 0.84) pad=0px z=auto
+       shadow=
+       cls=app-shell | Kimi Code New Session Search SESSIONS mock Code block header probe 19m
+     menu {"x":501,"y":789,"w":694,"h":42} dx=-32 dy=-88 bg=rgba(0, 0, 0, 0) backdrop= radius=0px border=0px rgb(114, 121, 131) pad=0px 14px 0px 0px z=0
+       shadow=
+       cls=ph-overlay | Type a message…

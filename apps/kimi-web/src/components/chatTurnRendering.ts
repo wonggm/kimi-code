@@ -39,7 +39,8 @@ export type AssistantRenderBlock =
   | { kind: 'thinking'; thinking: string; sourceIndex: number }
   | { kind: 'text'; text: string; sourceIndex: number }
   | { kind: 'tool'; tool: ToolStackItem['tool']; sourceIndex: number }
-  | { kind: 'tool-stack'; tools: ToolStackItem[] };
+  | { kind: 'tool-stack'; tools: ToolStackItem[] }
+  | { kind: 'task'; text: string; createdAt?: string; sourceIndex: number };
 
 export function rendersToolCard(block: Extract<TurnBlock, { kind: 'tool' }>): boolean {
   return !(block.tool.status === 'ok' && block.tool.media);
@@ -83,6 +84,8 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
       rendered.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
     } else if (block.kind === 'text') {
       rendered.push({ kind: 'text', text: block.text, sourceIndex });
+    } else if (block.kind === 'task') {
+      rendered.push({ kind: 'task', text: block.text, createdAt: block.createdAt, sourceIndex });
     }
   });
 

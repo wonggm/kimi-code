@@ -32,6 +32,7 @@ import Input from '../ui/Input.vue';
 import MenuSelect from '../ui/MenuSelect.vue';
 import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
+import { activityRunFolding, setActivityRunFolding } from '../../lib/conversationPrefs';
 import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from '../settings/AccountPlanUsage.vue';
 
 const { t } = useI18n();
@@ -42,6 +43,8 @@ const props = withDefaults(
     status: ConversationStatus;
     thinking?: ThinkingLevel;
     planMode?: boolean;
+    /** Goal mode for the next message — the client's per-session staging flag. */
+    goalMode?: boolean;
     swarmMode?: boolean;
     colorScheme?: ColorScheme;
     uiFontSize?: number;
@@ -78,6 +81,7 @@ const emit = defineEmits<{
   pickModel: [];
   setThinking: [level: ThinkingLevel];
   togglePlan: [];
+  toggleGoal: [];
   toggleSwarm: [];
   setPermission: [mode: PermissionMode];
   setColorScheme: [colorScheme: ColorScheme];
@@ -116,6 +120,7 @@ const thinkingOptions = computed(() =>
 );
 const planOn = computed<boolean>(() => props.planMode === true);
 const swarmOn = computed<boolean>(() => props.swarmMode === true);
+const goalOn = computed<boolean>(() => props.goalMode === true);
 
 // Risk progression matches the Composer: yolo = warning, auto = danger.
 const permColor = computed<string>(() => {
@@ -310,11 +315,12 @@ function openProviders(): void {
 <template>
   <BottomSheet
     :model-value="modelValue"
-    :title="t('mobile.settingsTitle')"
+    :title="t('settings.title')"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template v-if="view === 'main'">
     <div class="group-title">{{ t('mobile.groupSession') }}</div>
+    <div class="card">
 
     <!-- Model → opens ModelPicker -->
     <button type="button" class="srow" @click="onPickModel">
@@ -361,13 +367,31 @@ function openProviders(): void {
       <span class="toggle" :class="{ on: planOn }" role="switch" :aria-checked="planOn" />
     </button>
 
-    <!-- Swarm mode → real toggle switch -->
-    <button type="button" class="srow" @click="emit('toggleSwarm')">
+    <!-- Goal mode. Upstream swaps this row for a chevron into the goal once one
+         is running; the fork has no focus-goal target (its composer's own
+         focusGoal emit is unwired too), so the toggle form is what ships and
+         the chevron form is recorded as an open item. Goal and plan are
+         mutually exclusive; the client's setGoalMode clears a staged plan, so
+         the sheet just emits. -->
+    <button type="button" class="srow" role="switch" :aria-checked="goalOn" @click="emit('toggleGoal')">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('status.goalLabel') }}</span>
+        <span class="srow-sub">{{ t('mobile.goalModeSub') }}</span>
+      </span>
+      <span class="toggle" :class="{ on: goalOn }" aria-hidden="true" />
+    </button>
+
+    <!-- Swarm mode → real toggle switch. Upstream puts `role="switch"` on the
+         row button and hides the inner track from assistive tech; the fork's
+         goal row above already does that, so the swarm row matches both. The
+         confirmation is the client's (`toggleSwarmMode`), shared with every
+         other swarm entry point, so the row only emits. -->
+    <button type="button" class="srow" role="switch" :aria-checked="swarmOn" @click="emit('toggleSwarm')">
       <span class="srow-main">
         <span class="srow-label">{{ t('status.statusSwarmMode') }}</span>
         <span class="srow-sub">{{ t('mobile.swarmModeSub') }}</span>
       </span>
-      <span class="toggle" :class="{ on: swarmOn }" role="switch" :aria-checked="swarmOn" />
+      <span class="toggle" :class="{ on: swarmOn }" aria-hidden="true" />
     </button>
 
     <!-- Permission → cycle (sub-line + chevron) -->
@@ -390,7 +414,10 @@ function openProviders(): void {
       </span>
     </div>
 
+    </div>
+
     <div class="group-title">{{ t('mobile.groupApp') }}</div>
+    <div class="card">
 
     <!-- Agent defaults → opens the agent sub-view (desktop Settings "Agent" tab) -->
     <button type="button" class="srow" @click="openAgent">
@@ -460,6 +487,17 @@ function openProviders(): void {
       </label>
     </div>
 
+    <!-- Message folding: upstream's tool-call summary toggle. The companion
+         "Auto-fold messages" preference is not implemented — the fork rejected
+         turn folding in the 0.36.1 round (see lib/conversationPrefs.ts). -->
+    <button type="button" class="srow" @click="setActivityRunFolding(!activityRunFolding)">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('settings.toolCallSummary') }}</span>
+        <span class="srow-sub">{{ t('settings.toolCallSummaryHint') }}</span>
+      </span>
+      <span class="toggle" :class="{ on: activityRunFolding }" role="switch" :aria-checked="activityRunFolding" />
+    </button>
+
     <button type="button" class="srow" @click="emit('setConversationToc', !conversationToc)">
       <span class="srow-main">
         <span class="srow-label">{{ t('settings.conversationToc') }}</span>
@@ -467,6 +505,11 @@ function openProviders(): void {
       </span>
       <span class="toggle" :class="{ on: conversationToc }" role="switch" :aria-checked="conversationToc" />
     </button>
+
+    </div>
+
+    <div class="group-title">{{ t('mobile.groupAccount') }}</div>
+    <div class="card">
 
     <!-- Account: sign in / out -->
     <button v-if="authReady" type="button" class="srow acct out" @click="onLogout">
@@ -493,6 +536,7 @@ function openProviders(): void {
         <span class="srow-label">{{ t('settings.serverVersion') }}</span>
       </span>
       <span class="srow-val dim">{{ serverVersion }}</span>
+    </div>
     </div>
     </template>
 
@@ -734,6 +778,12 @@ function openProviders(): void {
 </template>
 
 <style scoped>
+.card {
+  margin: 0 max(var(--space-4), var(--safe-right)) 0 max(var(--space-4), var(--safe-left));
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
 .group-title {
   padding: var(--space-3) var(--space-3) var(--space-1);
   font-family: var(--font-ui);

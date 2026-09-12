@@ -840,6 +840,38 @@ export interface AppSkill {
   path: string;
 }
 
+/** Installed plugin, as the settings Plugins panel consumes it. */
+export interface AppPlugin {
+  id: string;
+  displayName: string;
+  version?: string;
+  enabled: boolean;
+  state: 'ok' | 'error';
+  skillCount: number;
+  mcpServerCount: number;
+  enabledMcpServerCount: number;
+  hookCount: number;
+  commandCount: number;
+  hasErrors: boolean;
+  source: 'local-path' | 'zip-url' | 'github';
+  originalSource?: string;
+}
+
+/** Catalogue entry from the plugin marketplace. */
+export interface AppPluginMarketplaceEntry {
+  id: string;
+  tier: 'official' | 'curated' | 'third-party';
+  displayName: string;
+  description?: string;
+  homepage?: string;
+  keywords?: string[];
+  version?: string;
+  source: string;
+  installed?: { version?: string; enabled: boolean };
+  updateAvailable?: boolean;
+  capabilityId?: string;
+}
+
 // ---------------------------------------------------------------------------
 // KimiWebApi — the app-facing interface
 // ---------------------------------------------------------------------------
@@ -1003,6 +1035,13 @@ export interface KimiWebApi {
    *  (`/sessions/{id}/media/{fileId}`) — the generic `/files/{fileId}` does not
    *  resolve `session_media` ids. */
   getSessionMediaBlob(sessionId: string, fileId: string): Promise<Blob>;
+
+  // Plugins — REAL endpoints
+  listPlugins(): Promise<AppPlugin[]>;
+  listPluginMarketplace(): Promise<AppPluginMarketplaceEntry[]>;
+  installPlugin(source: string): Promise<AppPlugin>;
+  setPluginEnabled(id: string, enabled: boolean): Promise<void>;
+  removePlugin(id: string): Promise<void>;
 
   // Config — REAL endpoints
   getConfig(): Promise<AppConfig>;

@@ -339,8 +339,28 @@ defineExpose({ closeMenu });
       <!-- Trailing action slot: the relative time and the kebab share one grid
            cell and swap via `visibility` (never display:none), so the slot
            width is identical in hover and rest. The badges and title therefore
-           don't reflow on hover — see design-system §07 "Session row". -->
+           don't reflow on hover — see design-system §07 "Session row". The
+           inline pin / archive actions float over the slot's left edge the same
+           way (Done rows read as reopen — the same actions the kebab carries). -->
       <span class="act">
+        <span v-if="!renaming" class="ha">
+          <IconButton
+            size="sm"
+            class="pin-btn"
+            :label="session.pinned ? t('sidebar.unpin') : t('sidebar.pin')"
+            @click.stop="togglePinned"
+          >
+            <Icon :name="session.pinned ? 'star' : 'star-outline'" />
+          </IconButton>
+          <IconButton
+            size="sm"
+            class="archive-btn"
+            :label="archived ? t('sidebar.reopen') : t('sidebar.archive')"
+            @click.stop="startArchive"
+          >
+            <Icon :name="archived ? 'undo' : 'archive'" />
+          </IconButton>
+        </span>
         <span class="ts">{{ session.time }}</span>
         <IconButton
           ref="kebabRef"
@@ -508,6 +528,49 @@ defineExpose({ closeMenu });
 .se:hover .act .ts,
 .act:has(.kebab.open) .ts { visibility: hidden; }
 .kebab.open { color: var(--color-text); background: var(--sb-hover, var(--color-surface-sunken)); }
+
+/* Inline row actions (pin / archive) — absolutely positioned immediately left
+   of the kebab and revealed with it, so neither the row height nor the title's
+   available width changes on hover. The layer backs itself with the row's own
+   background (the sidebar surface plus the row wash, or the neutral selected
+   fill), so the overlapped title tail and badges don't bleed through. */
+.ha {
+  position: absolute;
+  right: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  isolation: isolate;
+  background: var(--color-sidebar-bg);
+  visibility: hidden;
+}
+.ha::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+.se:hover .ha::after {
+  background: var(--sb-hover, var(--color-surface-sunken));
+}
+/* Selected rows keep their neutral fill on hover (see .se.on above), so the
+   backing must match that instead of the wash. Declared after the hover rule —
+   equal specificity, so source order decides. */
+.se.on .ha::after {
+  background: var(--color-selected);
+}
+.ha > * {
+  position: relative;
+  z-index: 1;
+}
+.se:hover .ha,
+.act:has(.kebab.open) .ha { visibility: visible; }
 
 /* Fixed + anchored to the ⋯ button via inline style (see positionMenu); the menu
    is teleported to <body> so the collapsing list's `overflow: hidden` can't clip it. */

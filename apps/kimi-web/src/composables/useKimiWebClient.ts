@@ -1962,6 +1962,30 @@ function findBashCommandForTask(task: AppTask): string | undefined {
 }
 
 /** Map AppTask to UI TaskItem */
+/**
+ * Bare elapsed time in upstream's units ("5m4s", "11h39m", "9s") — the form its
+ * task rows show, taken from the same `timeUnit*` strings its bundle carries.
+ * Upstream's rule (`Oc` in its bundle): a zero component is dropped ("5m", not
+ * "5m0s"), and anything under a second formats to nothing at all, which is how
+ * its rows come to show no time. The composite `timing` strings stay for the
+ * side-panel panes.
+ */
+function bareDuration(seconds: number): string {
+  const hour = i18n.global.t('tasks.durationHour');
+  const minute = i18n.global.t('tasks.durationMinute');
+  const second = i18n.global.t('tasks.durationSecond');
+  const total = Math.max(0, Math.floor(seconds));
+  if (total < 60) return total === 0 ? '' : `${total}${second}`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) {
+    const s = total % 60;
+    return s === 0 ? `${minutes}${minute}` : `${minutes}${minute}${s}${second}`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${hours}${hour}` : `${hours}${hour}${m}${minute}`;
+}
+
 function toUiTask(task: AppTask): TaskItem {
   let state: TaskState;
   if (task.status === 'running') {
@@ -1974,16 +1998,19 @@ function toUiTask(task: AppTask): TaskItem {
     state = 'fail';
   }
 
-  // Compute timing string
+  // Compute timing string, plus the bare duration upstream's rows show.
   let timing = '';
+  let duration: string | undefined;
   if (task.status === 'running' && task.startedAt) {
     const elapsed = Math.round((Date.now() - new Date(task.startedAt).getTime()) / 1000);
     const m = Math.floor(elapsed / 60);
     const s = elapsed % 60;
     timing = i18n.global.t('tasks.timingRunning', { time: `${m}:${String(s).padStart(2, '0')}` });
+    duration = bareDuration(elapsed);
   } else if (task.completedAt && task.startedAt) {
     const elapsed = Math.round((new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) / 1000);
     timing = i18n.global.t('tasks.timingDone', { sec: elapsed });
+    duration = bareDuration(elapsed);
   } else {
     timing = task.status;
   }
@@ -2007,6 +2034,7 @@ function toUiTask(task: AppTask): TaskItem {
     kind: task.kind,
     state,
     timing,
+    duration,
     meta,
     output,
     runInBackground: task.runInBackground,

@@ -265,10 +265,10 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
     :model-value="modelValue"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <!-- + New chat (mirrors the sidebar's top button) -->
+    <!-- + New session (mirrors the sidebar's top button) -->
     <button type="button" class="newrow" @click="onCreate">
       <Icon name="message" size="sm" />
-      {{ t('sidebar.newChat') }}
+      {{ t('sidebar.newSession') }}
     </button>
     <button type="button" class="newrow secondary" @click="onAddWorkspace">
       <Icon name="folder" size="sm" />
@@ -443,7 +443,7 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
 </template>
 
 <style scoped>
-/* ---- + New chat / workspace rows ---- */
+/* ---- + New session / workspace rows ---- */
 .newrow {
   display: flex;
   align-items: center;

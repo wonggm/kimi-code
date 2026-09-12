@@ -85,17 +85,17 @@ function thinkingSegmentLabel(segment: string): string {
 
 <template>
   <!-- Scrollable region: starred models from other providers, then the current
-       provider's models. The thinking row + cache note + "more models" live in
-       the pinned footer below, so a provider with many models never pushes
-       them out of reach. -->
+       provider's models. The thinking row + cache note + "more models" are
+       pinned siblings below the list (upstream's layout), so a provider with
+       many models never pushes them out of reach. -->
   <div class="md-list">
     <!-- Starred models from other providers -->
     <div v-if="starredOtherModels.length > 0" class="md-section">{{ t('status.starredModels') }}</div>
     <button
       v-for="m in starredOtherModels"
       :key="m.id"
-      class="md-row"
-      :class="{ 'is-current': m.id === status?.modelId }"
+      class="ui-menu-item ui-menu-item--md md-row"
+      :class="{ 'is-current': m.id === status?.modelId, 'is-active': m.id === status?.modelId }"
       role="menuitem"
       @click="emit('select', m.id)"
     >
@@ -112,8 +112,8 @@ function thinkingSegmentLabel(segment: string): string {
     <button
       v-for="m in providerModels"
       :key="m.id"
-      class="md-row"
-      :class="{ 'is-current': m.id === status?.modelId }"
+      class="ui-menu-item ui-menu-item--md md-row"
+      :class="{ 'is-current': m.id === status?.modelId, 'is-active': m.id === status?.modelId }"
       role="menuitem"
       @click="emit('select', m.id)"
     >
@@ -123,66 +123,69 @@ function thinkingSegmentLabel(segment: string): string {
     </button>
   </div>
 
-  <div class="md-footer">
-    <div class="md-divider" />
+  <div class="md-divider" />
 
-    <!-- Thinking level — segmented control. Effort models show every declared
-         level; boolean models show On/Off; unsupported shows a note. -->
-    <div class="md-thinking" :class="{ 'is-readonly': thinkingReadonly }">
-      <span class="md-name">{{ t('status.thinkingLabel') }}</span>
-      <span
-        v-if="thinkingAvailability === 'unsupported'"
-        class="md-note"
-      >{{ t('status.modeNotSupported') }}</span>
-      <div
-        v-else
-        class="effort-segments"
-        role="group"
-        :aria-label="t('status.thinkingLabel')"
-      >
-        <button
-          v-for="seg in thinkingSegments"
-          :key="seg"
-          type="button"
-          class="effort-seg"
-          :class="{ 'is-active': seg === activeThinkingSegment }"
-          :disabled="thinkingReadonly"
-          @click="setThinkingSegment(seg)"
-        >{{ thinkingSegmentLabel(seg) }}</button>
-      </div>
+  <!-- Thinking level — segmented control. Effort models show every declared
+       level; boolean models show On/Off; unsupported shows a note. -->
+  <div class="md-thinking" :class="{ 'is-readonly': thinkingReadonly }">
+    <span class="md-name">{{ t('status.thinkingLabel') }}</span>
+    <span
+      v-if="thinkingAvailability === 'unsupported'"
+      class="md-note"
+    >{{ t('status.modeNotSupported') }}</span>
+    <div
+      v-else
+      class="effort-segments"
+      role="group"
+      :aria-label="t('status.thinkingLabel')"
+    >
+      <button
+        v-for="seg in thinkingSegments"
+        :key="seg"
+        type="button"
+        class="effort-seg"
+        :class="{ 'is-active': seg === activeThinkingSegment }"
+        :disabled="thinkingReadonly"
+        @click="setThinkingSegment(seg)"
+      >{{ thinkingSegmentLabel(seg) }}</button>
     </div>
-
-    <div class="md-divider" />
-    <div class="md-cache-note">{{ t('status.cacheNote') }}</div>
-
-    <div class="md-divider" />
-
-    <!-- More models → open full picker -->
-    <button class="md-row md-row-more" role="menuitem" @click="emit('more')">
-      <span class="md-name">{{ t('status.moreModels') }}</span>
-    </button>
   </div>
+
+  <div class="md-divider" />
+  <div class="md-cache-note">{{ t('status.cacheNote') }}</div>
+
+  <div class="md-divider" />
+
+  <!-- More models → open full picker. Upstream's row leads with the list glyph
+       (the row leaves this menu rather than switching in place). -->
+  <button class="ui-menu-item ui-menu-item--md md-row md-row-more" role="menuitem" @click="emit('more')">
+    <span class="md-check md-more-icon"><Icon name="list-lines" size="sm" /></span>
+    <span class="md-name">{{ t('status.moreModels') }}</span>
+    <Icon class="md-chevron md-more-arrow" name="chevron-right" size="sm" />
+  </button>
 </template>
 
 <style scoped>
-/* The list scrolls while the footer (thinking + note + more) stays pinned.
-   min-height:0 lets the list shrink inside the dropdown's flex column; on the
-   mobile sheet (no height constraint) nothing scrolls and the sheet grows as
-   before. */
+/* The list scrolls (upstream caps it at min(320px, 40vh)); the thinking row,
+   note and "more models" row are pinned siblings below it. min-height:0 lets
+   the list shrink inside the dropdown's flex column; on the mobile sheet (no
+   height constraint) nothing scrolls and the sheet grows as before. */
 .md-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   min-height: 0;
+  max-height: min(320px, 40vh);
   overflow-y: auto;
-}
-.md-footer {
-  flex: none;
+  overscroll-behavior: contain;
 }
 
 .md-section {
-  padding: 4px 7px 2px;
+  padding: 4px 9px 2px;
   font-size: var(--text-xs);
-  color: var(--muted);
+  color: var(--color-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   font-weight: var(--weight-semibold);
 }
 
@@ -196,31 +199,45 @@ function thinkingSegmentLabel(segment: string): string {
   cursor: pointer;
   font-family: var(--font-ui);
   font-size: var(--ui-font-size);
+  line-height: var(--leading-tight);
   color: var(--color-text);
-  padding: 5px 7px;
-  border-radius: 6px;
+  padding: 5px 9px;
+  border-radius: var(--radius-md);
   text-align: left;
 }
-.md-row:hover { background: var(--color-surface-sunken); }
+.md-row:hover { background: var(--color-hover); }
+.md-row:hover .md-name { color: var(--color-text-strong); }
 .md-row:disabled {
   cursor: default;
   opacity: 0.58;
 }
 .md-row:disabled:hover { background: none; }
-.md-row.is-current { color: var(--color-text); background: var(--color-accent-soft); }
+.md-row.is-current { color: var(--color-text); background: var(--color-selected); }
 .md-row.is-on { color: var(--color-accent); }
 .md-note {
   margin-left: auto;
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-size: var(--ui-font-size-xs);
 }
 
+/* "More models…" leaves this menu for the full picker. Upstream's row leads
+   with the list glyph and keeps the default text colour; only the chevron on
+   the right steps its colour on hover. */
 .md-row-more {
-  color: var(--color-accent);
-  font-weight: 500;
+  --md-more-arrow-color: var(--faint);
 }
 .md-row-more:hover {
-  background: var(--color-accent-soft);
+  --md-more-arrow-color: var(--dim);
+}
+/* compound selector: `.md-check` (below) also sets a colour, and single-class
+   rules resolve by source order — the more-row glyph must stay neutral grey. */
+.md-check.md-more-icon {
+  color: var(--dim);
+}
+.md-chevron {
+  color: var(--md-more-arrow-color, var(--faint));
+  flex: none;
+  transition: color var(--duration-base) var(--ease-out);
 }
 
 .md-check {
@@ -231,12 +248,17 @@ function thinkingSegmentLabel(segment: string): string {
   display: flex;
   justify-content: center;
 }
+.md-check :deep(svg) {
+  width: var(--p-ic-sm);
+  height: var(--p-ic-sm);
+  color: inherit;
+}
 
 .md-name {
   flex: 1;
 }
 .md-provider {
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-size: var(--ui-font-size-xs);
   flex: none;
 }
@@ -248,7 +270,7 @@ function thinkingSegmentLabel(segment: string): string {
 
 .md-divider {
   height: 1px;
-  background: var(--line);
+  background: var(--color-line);
   margin: 3px 0;
 }
 
@@ -257,8 +279,8 @@ function thinkingSegmentLabel(segment: string): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 7px;
-  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+  border-radius: var(--radius-md);
 }
 .md-thinking .md-name {
   font-family: var(--font-ui);
@@ -319,7 +341,7 @@ function thinkingSegmentLabel(segment: string): string {
   width: 0;
   min-width: 100%;
   padding: 2px 7px 4px;
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-size: var(--ui-font-size-xs);
   line-height: 1.4;
 }
@@ -333,9 +355,13 @@ function thinkingSegmentLabel(segment: string): string {
    segment fonts, and let the thinking segments stretch across the row
    (same flex treatment the composer's docked menu got). */
 @media (max-width: 640px) {
+  /* The sheet owns the height on touch (it scrolls as a whole), so drop the
+     desktop list cap here and keep the previous sheet behaviour. */
+  .md-list {
+    max-height: none;
+  }
   .md-row {
-    /* Sheet rows follow the + menu's mobile rule (ComposerAddMenu): a 44px tap
-       height. They render at 32px here, under the touch floor. */
+    /* Sheet rows render at 32px, under the 44px touch floor. */
     min-height: 44px;
     font-size: var(--ui-font-size);
   }

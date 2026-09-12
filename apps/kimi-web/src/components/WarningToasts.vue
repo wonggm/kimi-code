@@ -5,6 +5,7 @@ import { onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { AppNotice, AppWarning } from '../api/types';
 import { copyTextToClipboard } from '../lib/clipboard';
+import { openDialogCount } from '../composables/dialogStack';
 import Toast from './ui/Toast.vue';
 
 const props = defineProps<{ warnings: AppWarning[] }>();
@@ -189,7 +190,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <TransitionGroup name="toast" tag="div" class="toasts" role="status" aria-live="polite">
+  <TransitionGroup name="toast" tag="div" class="toasts" :class="{ 'below-overlay': openDialogCount > 0 }" role="status" aria-live="polite">
     <Toast
       v-for="toast in toasts"
       :key="toast.id"
@@ -232,6 +233,9 @@ onUnmounted(() => {
   max-height: 56vh;
   overflow-y: auto;
 }
+/* While a dialog is open the stack drops below the overlay, so a modal is never
+   covered by a toast; with no overlay in the way it stays on top. */
+.toasts.below-overlay { z-index: var(--z-dropdown); }
 
 /* Toast enter/leave/move: new toasts slide in from the right and fade; dismissed
    toasts fade + slide out in place, then the remaining stack glides up via

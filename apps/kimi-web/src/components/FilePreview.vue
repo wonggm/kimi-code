@@ -6,12 +6,14 @@ import { useI18n } from 'vue-i18n';
 import Markdown from './chat/Markdown.vue';
 import type { FileData, FilePreviewRequest } from '../types';
 import { copyTextToClipboard } from '../lib/clipboard';
+import { useSelectionCapture } from '../composables/useSelectionQuote';
 import SegmentedControl from './ui/SegmentedControl.vue';
 import Button from './ui/Button.vue';
 import IconButton from './ui/IconButton.vue';
 import Icon from './ui/Icon.vue';
 import PanelHeader from './ui/PanelHeader.vue';
 import Tooltip from './ui/Tooltip.vue';
+import { FILE_PREVIEW_REFRESH_KEY } from '../composables/useFilePreview';
 
 const { t } = useI18n();
 
@@ -88,11 +90,39 @@ const emit = defineEmits<{
   reveal: [];
 }>();
 
+// Staleness rides on the injected refresh handle (published by useFilePreview)
+// rather than a prop: the same preview component is rendered by more than one
+// pane, and only the pane owning the open preview should advertise a refresh.
+const refreshHandle = inject(FILE_PREVIEW_REFRESH_KEY, null);
+
+function samePreviewPath(a: string, b: string): boolean {
+  const left = a.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
+  const right = b.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
+  if (left === '' || right === '') return false;
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+}
+
+const showRefresh = computed(() => {
+  const handle = refreshHandle;
+  const path = props.file?.path;
+  if (!handle || !handle.stale.value || !path || handle.path.value === null) return false;
+  return samePreviewPath(handle.path.value, path);
+});
+
+const refreshBusy = computed(() => refreshHandle?.refreshing.value ?? false);
+
+function onRefresh(): void {
+  refreshHandle?.refresh();
+}
+
 function handleMarkdownOpenFile(target: { path: string; line?: number }): void {
   props.openFile?.(resolveMarkdownFileTarget(target));
 }
 
 const rootRef = ref<HTMLElement | null>(null);
+// Text selections in the preview (code / json / markdown / text) open the
+// app-wide quote bubble, so a preview can be quoted into the chat.
+useSelectionCapture(() => rootRef.value);
 
 // ---------------------------------------------------------------------------
 // Content type detection
@@ -500,6 +530,16 @@ function truncatePath(path: string, maxLen = 55): string {
         </div>
         <!-- Icon actions: text labels made the header wrap to two rows at the
              default panel width — icon-only buttons keep it single-line. -->
+        <IconButton
+          v-if="showRefresh"
+          size="sm"
+          class="fp-refresh"
+          :disabled="refreshBusy"
+          :label="t('app.refreshPreview')"
+          @click="onRefresh"
+        >
+          <Icon name="undo" size="md" />
+        </IconButton>
         <IconButton size="sm" :class="{ copied: copiedPath }" :label="copiedPath ? t('filePreview.copied') : t('filePreview.copyPath')" @click="copyPath">
           <Icon v-if="!copiedPath" name="link" size="md" />
           <Icon v-else class="fp-check" name="check" size="md" />
@@ -804,6 +844,12 @@ function truncatePath(path: string, maxLen = 55): string {
 /* "Copied" confirmation: tint the check glyph green. */
 .fp-check {
   color: var(--color-success);
+}
+
+/* Refresh affordance for a file changed mid-turn: tinted so it reads as an
+   action rather than a passive header control. */
+.fp-refresh {
+  color: var(--color-accent);
 }
 
 /* ---- Body ---- */

@@ -29,21 +29,40 @@ import type { Component } from 'vue';
 import KimiAddConversation from '~icons/kimi/add-conversation';
 import KimiFolder from '~icons/kimi/folder';
 import KimiFolderOpen from '~icons/kimi/folder-open';
+import KimiHand from '~icons/kimi/hand';
+import KimiListLines from '~icons/kimi/list-lines';
+import KimiChevronDown from '~icons/kimi/chevron-down';
+import KimiCircleCheck from '~icons/kimi/circle-check';
 import KimiMore from '~icons/kimi/more';
+import KimiPlus from '~icons/kimi/plus';
+import KimiFlask from '~icons/kimi/flask';
+import KimiMicroscope from '~icons/kimi/microscope';
+import KimiRobot from '~icons/kimi/robot';
 import KimiSearch from '~icons/kimi/search';
+import KimiSend from '~icons/kimi/send';
+import KimiPencilFilled from '~icons/kimi/pencil-filled';
+import KimiTerminalFilled from '~icons/kimi/terminal-filled';
+import KimiAgentFilled from '~icons/kimi/agent-filled';
 import KimiSetting from '~icons/kimi/setting';
+import KimiShieldExclamation from '~icons/kimi/shield-exclamation';
+import KimiShieldQuestion from '~icons/kimi/shield-question';
+import KimiTrash from '~icons/kimi/trash';
+import KimiViewFlat from '~icons/kimi/view-flat';
+import KimiViewGrouped from '~icons/kimi/view-grouped';
 
 // Components (Tabler) ---------------------------------------------------------
 import TablerSidebarLeftCollapse from '~icons/tabler/layout-sidebar-left-collapse';
 import TablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand';
+import TablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand';
 import TablerPaperclip from '~icons/tabler/paperclip';
+import TablerListNumbers from '~icons/tabler/list-numbers';
+import TablerTextWrap from '~icons/tabler/text-wrap';
+import TablerTextWrapDisabled from '~icons/tabler/text-wrap-disabled';
 
 // Components (Remix) ---------------------------------------------------------
-import RiAddLine from '~icons/ri/add-line';
 import RiAlertLine from '~icons/ri/alert-line';
 import RiArchiveLine from '~icons/ri/archive-line';
 import RiArrowDownLine from '~icons/ri/arrow-down-line';
-import RiArrowDownSLine from '~icons/ri/arrow-down-s-line';
 import RiArrowGoBackLine from '~icons/ri/arrow-go-back-line';
 import RiArrowLeftSLine from '~icons/ri/arrow-left-s-line';
 import RiArrowRightLine from '~icons/ri/arrow-right-line';
@@ -100,23 +119,42 @@ import RiUserLine from '~icons/ri/user-line';
 
 // Raw SVG strings (Kimi collection) -----------------------------------------
 import RawKimiAddConversation from '~icons/kimi/add-conversation?raw';
+import RawKimiChevronDown from '~icons/kimi/chevron-down?raw';
+import RawKimiCircleCheck from '~icons/kimi/circle-check?raw';
 import RawKimiFolder from '~icons/kimi/folder?raw';
 import RawKimiFolderOpen from '~icons/kimi/folder-open?raw';
+import RawKimiHand from '~icons/kimi/hand?raw';
+import RawKimiListLines from '~icons/kimi/list-lines?raw';
 import RawKimiMore from '~icons/kimi/more?raw';
+import RawKimiPlus from '~icons/kimi/plus?raw';
+import RawKimiFlask from '~icons/kimi/flask?raw';
+import RawKimiMicroscope from '~icons/kimi/microscope?raw';
+import RawKimiRobot from '~icons/kimi/robot?raw';
 import RawKimiSearch from '~icons/kimi/search?raw';
+import RawKimiSend from '~icons/kimi/send?raw';
+import RawKimiPencilFilled from '~icons/kimi/pencil-filled?raw';
+import RawKimiTerminalFilled from '~icons/kimi/terminal-filled?raw';
+import RawKimiAgentFilled from '~icons/kimi/agent-filled?raw';
 import RawKimiSetting from '~icons/kimi/setting?raw';
+import RawKimiShieldExclamation from '~icons/kimi/shield-exclamation?raw';
+import RawKimiShieldQuestion from '~icons/kimi/shield-question?raw';
+import RawKimiTrash from '~icons/kimi/trash?raw';
+import RawKimiViewFlat from '~icons/kimi/view-flat?raw';
+import RawKimiViewGrouped from '~icons/kimi/view-grouped?raw';
 
 // Raw SVG strings (Tabler) ----------------------------------------------------
 import RawTablerSidebarLeftCollapse from '~icons/tabler/layout-sidebar-left-collapse?raw';
 import RawTablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand?raw';
+import RawTablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand?raw';
 import RawTablerPaperclip from '~icons/tabler/paperclip?raw';
+import RawTablerListNumbers from '~icons/tabler/list-numbers?raw';
+import RawTablerTextWrap from '~icons/tabler/text-wrap?raw';
+import RawTablerTextWrapDisabled from '~icons/tabler/text-wrap-disabled?raw';
 
 // Raw SVG strings (Remix) ----------------------------------------------------
-import RawAddLine from '~icons/ri/add-line?raw';
 import RawAlertLine from '~icons/ri/alert-line?raw';
 import RawArchiveLine from '~icons/ri/archive-line?raw';
 import RawArrowDownLine from '~icons/ri/arrow-down-line?raw';
-import RawArrowDownSLine from '~icons/ri/arrow-down-s-line?raw';
 import RawArrowGoBackLine from '~icons/ri/arrow-go-back-line?raw';
 import RawArrowLeftSLine from '~icons/ri/arrow-left-s-line?raw';
 import RawArrowRightLine from '~icons/ri/arrow-right-line?raw';
@@ -152,8 +190,6 @@ import RawInformationLine from '~icons/ri/information-line?raw';
 import RawLinksLine from '~icons/ri/links-line?raw';
 import RawListCheck from '~icons/ri/list-check?raw';
 import RawListUnordered from '~icons/ri/list-unordered?raw';
-import RiTextWrapLine from '~icons/ri/text-wrap';
-import RawTextWrapLine from '~icons/ri/text-wrap?raw';
 import RawLoginBoxLine from '~icons/ri/login-box-line?raw';
 import RawMailLine from '~icons/ri/mail-line?raw';
 import RawMessageLine from '~icons/ri/message-line?raw';
@@ -182,6 +218,7 @@ export type IconName =
   | 'calendar-todo'
   | 'close'
   | 'check'
+  | 'circle-check'
   | 'archive'
   | 'search'
   | 'copy'
@@ -204,10 +241,13 @@ export type IconName =
   | 'minus'
   | 'panel-collapse'
   | 'panel-expand'
+  | 'panel-right'
   | 'expand'
   | 'collapse'
   | 'list'
+  | 'list-numbers'
   | 'text-wrap'
+  | 'text-wrap-disabled'
   | 'sort'
   | 'grip'
   | 'folder'
@@ -237,9 +277,22 @@ export type IconName =
   | 'info'
   | 'help-circle'
   | 'alert-triangle'
+  | 'hand'
+  | 'shield-question'
+  | 'shield-exclamation'
+  | 'trash'
+  | 'robot'
+  | 'microscope'
+  | 'flask'
+  | 'view-flat'
+  | 'view-grouped'
+  | 'list-lines'
   | 'clock'
   | 'sparkles'
   | 'target'
+  | 'pencil-filled'
+  | 'terminal-filled'
+  | 'agent-filled'
   | 'pause'
   | 'play'
   | 'stop'
@@ -263,13 +316,14 @@ function entry(component: Component, svg: string): IconEntry {
 }
 
 export const ICONS: Record<IconName, IconEntry> = {
-  plus: entry(RiAddLine, RawAddLine),
+  plus: entry(KimiPlus, RawKimiPlus),
   'chat-new': entry(KimiAddConversation, RawKimiAddConversation),
   'calendar-close': entry(RiCalendarCloseLine, RawCalendarCloseLine),
   'calendar-schedule': entry(RiCalendarScheduleLine, RawCalendarScheduleLine),
   'calendar-todo': entry(RiCalendarTodoLine, RawCalendarTodoLine),
   close: entry(RiCloseLine, RawCloseLine),
   check: entry(RiCheckLine, RawCheckLine),
+  'circle-check': entry(KimiCircleCheck, RawKimiCircleCheck),
   archive: entry(RiArchiveLine, RawArchiveLine),
   search: entry(KimiSearch, RawKimiSearch),
   copy: entry(RiFileCopyLine, RawFileCopyLine),
@@ -277,12 +331,12 @@ export const ICONS: Record<IconName, IconEntry> = {
   'external-link': entry(RiExternalLinkLine, RawExternalLinkLine),
   download: entry(RiDownloadLine, RawDownloadLine),
   undo: entry(RiArrowGoBackLine, RawArrowGoBackLine),
-  send: entry(RiArrowUpLine, RawArrowUpLine),
+  send: entry(KimiSend, RawKimiSend),
   image: entry(RiImageLine, RawImageLine),
   settings: entry(KimiSetting, RawKimiSetting),
   sliders: entry(RiEqualizerLine, RawEqualizerLine),
   'log-in': entry(RiLoginBoxLine, RawLoginBoxLine),
-  'chevron-down': entry(RiArrowDownSLine, RawArrowDownSLine),
+  'chevron-down': entry(KimiChevronDown, RawKimiChevronDown),
   'chevron-left': entry(RiArrowLeftSLine, RawArrowLeftSLine),
   'chevron-right': entry(RiArrowRightSLine, RawArrowRightSLine),
   'chevron-up': entry(RiArrowUpSLine, RawArrowUpSLine),
@@ -292,10 +346,13 @@ export const ICONS: Record<IconName, IconEntry> = {
   minus: entry(RiSubtractLine, RawSubtractLine),
   'panel-collapse': entry(TablerSidebarLeftCollapse, RawTablerSidebarLeftCollapse),
   'panel-expand': entry(TablerSidebarLeftExpand, RawTablerSidebarLeftExpand),
+  'panel-right': entry(TablerSidebarRightExpand, RawTablerSidebarRightExpand),
   expand: entry(RiExpandDiagonalLine, RawExpandDiagonalLine),
   collapse: entry(RiCollapseDiagonalLine, RawCollapseDiagonalLine),
   list: entry(RiListUnordered, RawListUnordered),
-  'text-wrap': entry(RiTextWrapLine, RawTextWrapLine),
+  'list-numbers': entry(TablerListNumbers, RawTablerListNumbers),
+  'text-wrap': entry(TablerTextWrap, RawTablerTextWrap),
+  'text-wrap-disabled': entry(TablerTextWrapDisabled, RawTablerTextWrapDisabled),
   sort: entry(RiSortDesc, RawSortDesc),
   grip: entry(RiDraggable, RawDraggable),
   folder: entry(KimiFolderOpen, RawKimiFolderOpen),
@@ -325,6 +382,19 @@ export const ICONS: Record<IconName, IconEntry> = {
   info: entry(RiInformationLine, RawInformationLine),
   'help-circle': entry(RiQuestionLine, RawQuestionLine),
   'alert-triangle': entry(RiAlertLine, RawAlertLine),
+  hand: entry(KimiHand, RawKimiHand),
+  'shield-question': entry(KimiShieldQuestion, RawKimiShieldQuestion),
+  'shield-exclamation': entry(KimiShieldExclamation, RawKimiShieldExclamation),
+  trash: entry(KimiTrash, RawKimiTrash),
+  robot: entry(KimiRobot, RawKimiRobot),
+  'pencil-filled': entry(KimiPencilFilled, RawKimiPencilFilled),
+  'terminal-filled': entry(KimiTerminalFilled, RawKimiTerminalFilled),
+  'agent-filled': entry(KimiAgentFilled, RawKimiAgentFilled),
+  microscope: entry(KimiMicroscope, RawKimiMicroscope),
+  flask: entry(KimiFlask, RawKimiFlask),
+  'view-flat': entry(KimiViewFlat, RawKimiViewFlat),
+  'view-grouped': entry(KimiViewGrouped, RawKimiViewGrouped),
+  'list-lines': entry(KimiListLines, RawKimiListLines),
   clock: entry(RiTimeLine, RawTimeLine),
   sparkles: entry(RiSparklingLine, RawSparklingLine),
   target: entry(RiTargetLine, RawTargetLine),
@@ -366,6 +436,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'attachment',
       'chat-new',
       'close',
+      'trash',
       'check',
       'search',
       'copy',
@@ -377,6 +448,11 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'image',
       'settings',
       'sliders',
+      'robot',
+      'microscope',
+      'flask',
+      'view-flat',
+      'view-grouped',
       'log-in',
     ],
   ],
@@ -393,9 +469,11 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'minus',
       'panel-collapse',
       'panel-expand',
+      'panel-right',
       'expand',
       'collapse',
       'list',
+      'list-lines',
       'sort',
       'grip',
     ],
@@ -437,6 +515,9 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'info',
       'help-circle',
       'alert-triangle',
+      'hand',
+      'shield-question',
+      'shield-exclamation',
       'clock',
       'sparkles',
       'pause',

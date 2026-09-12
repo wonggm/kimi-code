@@ -2,9 +2,11 @@
 <!-- Bottom dock that belongs to the chat tab: goal strip, running-task chips,
      pending question/approval cards, and the composer. Only rendered inside a
      chat-pane group so it never leaks into files/tasks/preview/btw panes. -->
-<!-- Workbar (above the composer) is now an icon-only square row that opens a
-     tab in the right-side multi-tab panel (RightPanelTabs). Tabs that have no
-     matching panel (e.g. plan) still pop over a dock-style inline panel. -->
+<!-- Workbar (above the composer) is upstream's labelled pill row; each pill
+     toggles the floating panel for its kind (DockWorkPanel), which carries the
+     kind's body, its filter control and its own actions. The right-side
+     multi-tab panel keeps its own strip and is reached from a panel's
+     "Open in the side panel" action. -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -20,8 +22,15 @@ import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import PlanPanel from './PlanPanel.vue';
+import DockTaskList from './DockTaskList.vue';
+import DockAgentGrid from './DockAgentGrid.vue';
+import TodoCard from './TodoCard.vue';
+import DockWorkPanel, { type DockPanelKind } from './DockWorkPanel.vue';
 import Icon from '../ui/Icon.vue';
-import Tooltip from '../ui/Tooltip.vue';
+import SegmentedControl from '../ui/SegmentedControl.vue';
+import IconButton from '../ui/IconButton.vue';
+import { BASH_FILTERS, type BashFilter } from '../../lib/bashTaskFilter';
+import { SUBAGENT_FILTERS, type SubagentFilter } from '../../lib/subagentFilter';
 
 const props = defineProps<{
   sessionId?: string;
@@ -46,9 +55,6 @@ const props = defineProps<{
   goal?: AppGoal | null;
   goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number } | null;
   goalExpandSignal?: number;
-  /** Active right-panel tab (when the panel is open); the workbar mirrors it
-   *  for its `is-active` styling. */
-  activePanelTab?: RightPanelTab | null;
   bashTasks: TaskItem[];
   subagentTasks: TaskItem[];
   /** Latest ExitPlanMode plan entry of the active session — the plan viewer
@@ -60,7 +66,6 @@ const props = defineProps<{
   subagentRunning: number;
   todoDoneCount: number;
   hasDockWork: boolean;
-  changedFiles: string[];
   todos?: TodoView[];
   pendingQuestion?: UIQuestion;
   /** Action kind in flight for the visible question (drives loading state). */
@@ -149,30 +154,42 @@ function openPermissionMenu(): void {
 // Plan is the one entry that has no matching right-panel tab today. Keep the
 // popover panel for it; the rest of the chips have a corresponding right-panel
 // tab and toggle it open via `open-right-panel`.
-const showPlanPopover = ref(false);
-const planPopoverRef = ref<HTMLElement | null>(null);
+const openPanel = ref<DockPanelKind | null>(null);
+const panelOriginX = ref(0);
+const panelRef = ref<HTMLElement | null>(null);
+// Upstream's `has-popup` marks the dock while any of its popups is up, the
+// composer's own menus included.
+const composerPopup = ref(false);
 // WebGL rim-refraction fallback (Firefox/Safari). Registered transient (the
-// composable's default, like ui/Menu): this pop closes on any outside
-// mousedown, so freezing the shared page snapshot while it is up is exactly
-// the menu behaviour the flag exists for. The element is v-if'd, so its ref
+// composable's default, like ui/Menu): the panel closes on any outside
+// mousedown, so freezing the shared page snapshot while it is up is exactly the
+// menu behaviour the flag exists for. The element is v-if'd, so its ref
 // appearing/disappearing is the mount signal.
-useGlassRefraction(planPopoverRef);
+useGlassRefraction(panelRef);
 
-function togglePlanPopover(): void {
-  showPlanPopover.value = !showPlanPopover.value;
+/** The same pill toggles its panel shut; another pill swaps the body. The panel
+ *  grows from the clicked pill, so its centre is read off the button here —
+ *  upstream's `transform-origin`. */
+function togglePanel(kind: DockPanelKind, event?: MouseEvent): void {
+  if (openPanel.value === kind) {
+    openPanel.value = null;
+    return;
+  }
+  const pill = (event?.currentTarget ?? null) as HTMLElement | null;
+  if (pill) panelOriginX.value = pill.offsetLeft + pill.offsetWidth / 2;
+  openPanel.value = kind;
 }
-
 
 function onDocumentMouseDown(event: MouseEvent): void {
   const target = event.target as Node | null;
   if (!target) return;
-  if (planPopoverRef.value?.contains(target)) return;
+  if (panelRef.value?.contains(target)) return;
   if (workbarRef.value?.contains(target)) return;
-  showPlanPopover.value = false;
+  openPanel.value = null;
 }
 
 watch(
-  () => showPlanPopover.value,
+  () => openPanel.value,
   (open) => {
     if (typeof document === 'undefined') return;
     document.removeEventListener('mousedown', onDocumentMouseDown, true);
@@ -208,74 +225,113 @@ onUnmounted(() => {
 defineExpose({ loadForEdit, loadAttachmentsForEdit, focus, openModelMenu, openPermissionMenu });
 
 interface WorkbarEntry {
-  id: RightPanelTab | 'plan';
-  icon: 'clock' | 'sparkles' | 'check-list' | 'file-edit' | 'file-text' | 'target';
-  labelKey: string;
+  id: DockPanelKind;
+  /** Upstream's own glyphs: a filled pencil for Plan, a terminal-in-a-box for
+      Bash, its agent mark for Background Agent, and the shared list-lines for
+      Progress. */
+  icon: 'pencil-filled' | 'terminal-filled' | 'agent-filled' | 'list-lines';
+  /** Visible pill text. Upstream spells the pill out and repeats the string in
+      its aria-label with the chip appended ("Bash 1 running"), so the label is
+      the accessible name rather than an "Open …" verb. */
+  label: string;
   ariaLabel: string;
   visible: boolean;
   active: boolean;
-  badge?: string;
+  /** `running` renders the accent dot beside the count; `count` is plain text
+      (todo progress, "1/3"). A pill with neither shows only its label. */
+  chip?: { kind: 'running' | 'count'; text: string };
+  /** The panel head's state text ("1 running", "1/3", "Pending review"); the
+      pill carries the same state as its numeric chip. */
+  meta?: string;
 }
 
 const workbarEntries = computed<WorkbarEntry[]>(() => [
   {
+    id: 'plan',
+    icon: 'pencil-filled',
+    label: t('tasks.dockPlan'),
+    ariaLabel: t('tasks.dockPlan'),
+    visible: props.planMode || !!props.planEntry,
+    active: openPanel.value === 'plan',
+    meta: planReviewLabel.value || undefined,
+  },
+  {
     id: 'bash',
-    icon: 'clock',
-    labelKey: 'panel.tabs.bash',
-    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.bash') }),
+    icon: 'terminal-filled',
+    label: t('tasks.dockBash'),
+    ariaLabel: props.bashRunning > 0
+      ? `${t('tasks.dockBash')} ${t('tasks.dockRunning', { n: props.bashRunning })}`
+      : t('tasks.dockBash'),
     visible: props.bashTasks.length > 0,
-    active: props.activePanelTab === 'bash',
-    badge: props.bashTasks.length > 0 ? `${props.bashTasks.length}` : undefined,
+    active: openPanel.value === 'bash',
+    chip: props.bashRunning > 0 ? { kind: 'running', text: `${props.bashRunning}` } : undefined,
+    meta: props.bashRunning > 0 ? t('tasks.dockRunning', { n: props.bashRunning }) : undefined,
   },
   {
     id: 'subagents',
-    icon: 'sparkles',
-    labelKey: 'panel.tabs.subagents',
-    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.subagents') }),
+    icon: 'agent-filled',
+    label: t('tasks.dockSubagent'),
+    ariaLabel: props.subagentRunning > 0
+      ? `${t('tasks.dockSubagent')} ${t('tasks.dockRunning', { n: props.subagentRunning })}`
+      : t('tasks.dockSubagent'),
     visible: props.subagentTasks.length > 0,
-    active: props.activePanelTab === 'subagents',
-    badge: props.subagentTasks.length > 0 ? `${props.subagentTasks.length}` : undefined,
+    active: openPanel.value === 'subagents',
+    chip: props.subagentRunning > 0 ? { kind: 'running', text: `${props.subagentRunning}` } : undefined,
+    meta: props.subagentRunning > 0 ? t('tasks.dockRunning', { n: props.subagentRunning }) : undefined,
   },
   {
     id: 'todos',
-    icon: 'check-list',
-    labelKey: 'panel.tabs.todos',
-    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.todos') }),
+    icon: 'list-lines',
+    label: t('tasks.dockProgress'),
+    ariaLabel: `${t('tasks.dockProgress')} ${props.todoDoneCount}/${props.todos?.length ?? 0}`,
     visible: (props.todos?.length ?? 0) > 0,
-    active: props.activePanelTab === 'todos',
-    badge: (props.todos?.length ?? 0) > 0 ? `${props.todoDoneCount}/${props.todos?.length ?? 0}` : undefined,
-  },
-  {
-    id: 'plan',
-    icon: 'target',
-    labelKey: 'panel.tabs.todos',
-    ariaLabel: t('panel.workbarLabel', { name: t('tasks.dockPlan') }),
-    visible: props.planMode || !!props.planEntry,
-    active: false,
-    badge: planReviewLabel.value ? `· ${planReviewLabel.value}` : undefined,
-  },
-  {
-    id: 'changes',
-    icon: 'file-text',
-    labelKey: 'panel.tabs.changes',
-    ariaLabel: t('panel.workbarLabel', { name: t('panel.tabs.changes') }),
-    visible: props.changedFiles.length > 0,
-    active: props.activePanelTab === 'changes',
-    badge: props.changedFiles.length > 0 ? `${props.changedFiles.length}` : undefined,
+    active: openPanel.value === 'todos',
+    chip: { kind: 'count', text: `${props.todoDoneCount}/${props.todos?.length ?? 0}` },
+    meta: `${props.todoDoneCount}/${props.todos?.length ?? 0}`,
   },
 ]);
 
-function clickWorkbar(id: RightPanelTab | 'plan'): void {
-  if (id === 'plan') {
-    togglePlanPopover();
-    return;
-  }
-  emit('open-right-panel', id);
+const panelEntry = computed(() => workbarEntries.value.find((entry) => entry.id === openPanel.value));
+
+// The head's Recent / Running / Done / All control — upstream keeps it in the
+// panel head and hides the pane's own copy.
+const bashFilter = ref<BashFilter>('recent');const bashFilterOptions = computed(() =>
+  BASH_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey), icon: filter.icon })),
+);
+
+// Both kinds carry the same control upstream; only its shape changes, and that
+// follows the space the panel has, not the kind: a segmented control while the
+// panel is wide, the same options behind a dropdown trigger when it is compact.
+const subagentFilter = ref<SubagentFilter>('active');
+const subagentFilterOptions = computed(() =>
+  SUBAGENT_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey), icon: filter.icon })),
+);
+
+const filterCompact = computed(() => props.mobile === true);
+const panelFilter = computed(() => {
+  if (!filterCompact.value) return undefined;
+  if (openPanel.value === 'bash') return { value: bashFilter.value, options: bashFilterOptions.value };
+  if (openPanel.value === 'subagents') return { value: subagentFilter.value, options: subagentFilterOptions.value };
+  return undefined;
+});
+
+function setPanelFilter(value: string): void {
+  if (openPanel.value === 'bash') bashFilter.value = value as BashFilter;
+  else if (openPanel.value === 'subagents') subagentFilter.value = value as SubagentFilter;
+}
+
+function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
+  togglePanel(id, event);
 }
 </script>
 
 <template>
-  <div ref="dockRef" class="chat-dock" :class="[mobile ? 'align-mobile' : 'align-center']" @click.stop>
+  <div
+    ref="dockRef"
+    class="chat-dock"
+    :class="[mobile ? ['align-mobile', 'pills-compact'] : 'align-center', { 'has-popup': openPanel !== null || composerPopup }]"
+    @click.stop
+  >
     <GoalStrip
       v-if="goal"
       :goal="goal"
@@ -284,42 +340,74 @@ function clickWorkbar(id: RightPanelTab | 'plan'): void {
       @control-goal="emit('controlGoal', $event)"
     />
     <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">
-      <Tooltip
+      <button
         v-for="entry in workbarEntries"
         v-show="entry.visible"
         :key="entry.id"
-        :text="entry.ariaLabel"
+        type="button"
+        class="ui-pill lg-band"
+        :class="{ 'is-active': entry.active }"
+        :aria-label="entry.ariaLabel"
+        :aria-pressed="entry.active"
+        @click="clickWorkbar(entry.id, $event)"
       >
-        <button
-          type="button"
-          class="ptb- dock-square lg-band"
-          :class="{ 'is-on': entry.active }"
-          :aria-label="entry.ariaLabel"
-          :aria-pressed="entry.active"
-          @click="clickWorkbar(entry.id)"
-        >
-          <Icon :name="entry.icon" size="md" />
-          <span v-if="entry.badge" class="dw-count">{{ entry.badge }}</span>
-        </button>
-      </Tooltip>
-      <Transition name="dock-popover">
-        <div
-          v-if="showPlanPopover"
-          ref="planPopoverRef"
-          class="dock-plan-pop lg-glass lg-lens"
+        <Icon :name="entry.icon" size="md" />
+        <span>{{ entry.label }} </span>
+        <span v-if="entry.chip" :class="entry.chip.kind === 'running' ? 'dw-running' : 'dw-count'">
+          <span v-if="entry.chip.kind === 'running'" class="kw-dot kw-dot--running" aria-hidden="true" />
+          {{ entry.chip.text }}
+        </span>
+      </button>
+      <Transition name="dock-panel">
+        <DockWorkPanel
+          v-if="openPanel && panelEntry"
+          ref="panelRef"
+          :kind="openPanel"
+          :title="panelEntry.label"
+          :icon="panelEntry.icon"
+          :meta="panelEntry.meta"
+          :origin-x="panelOriginX"
+          :dropdown="panelFilter"
+          @update:dropdown="setPanelFilter"
           @click.stop
         >
-          <div class="dock-plan-head">
-            <span class="dock-plan-title">{{ t('tasks.dockPlan') }}<template v-if="planReviewLabel"> · {{ planReviewLabel }}</template></span>
-          </div>
-          <div class="dock-plan-body">
-            <PlanPanel
-              :plan="planEntry ?? null"
-              :plan-mode="planMode"
-              :open-file="openFile"
-            />
-          </div>
-        </div>
+          <template v-if="openPanel === 'bash' && !filterCompact" #filter>
+            <SegmentedControl v-model="bashFilter" :options="bashFilterOptions" size="md" />
+          </template>
+          <template v-else-if="openPanel === 'subagents' && !filterCompact" #filter>
+            <SegmentedControl v-model="subagentFilter" :options="subagentFilterOptions" size="md" />
+          </template>
+          <template v-else-if="openPanel === 'plan'" #actions>
+            <IconButton size="sm" :label="t('tasks.openPanel')" @click="emit('open-right-panel', 'todos')">
+              <Icon name="panel-right" size="sm" />
+            </IconButton>
+            <IconButton size="sm" :label="t('tasks.closePanel')" @click="openPanel = null">
+              <Icon name="close" size="sm" />
+            </IconButton>
+          </template>
+
+          <DockTaskList
+            v-if="openPanel === 'bash'"
+            :tasks="bashTasks"
+            :filter="bashFilter"
+            @open="emit('open-right-panel', 'bash')"
+            @stop="emit('cancelTask', $event)"
+          />
+          <DockAgentGrid
+            v-else-if="openPanel === 'subagents'"
+            :tasks="subagentTasks"
+            :filter="subagentFilter"
+            @cancel="emit('cancelTask', $event)"
+            @open="emit('open-right-panel', 'subagents')"
+          />
+          <TodoCard v-else-if="openPanel === 'todos'" :todos="todos ?? []" />
+          <PlanPanel
+            v-else
+            :plan="planEntry ?? null"
+            :plan-mode="planMode"
+            :open-file="openFile"
+          />
+        </DockWorkPanel>
       </Transition>
     </div>
 
@@ -379,6 +467,7 @@ function clickWorkbar(id: RightPanelTab | 'plan'): void {
       @compact="emit('compact')"
       @pick-model="emit('pickModel')"
       @select-model="emit('selectModel', $event)"
+      @popup="composerPopup = $event"
     />
   </div>
 </template>
@@ -420,128 +509,124 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
   padding: 4px var(--dock-inline-right) 2px var(--dock-inline-left);
 }
 
-.dock-square {
+/* Dock pills. Upstream's container is the same `dock-workbar`, but its children
+   are labelled `button.ui-pill`s, not icon squares: the label is visible text and
+   the state is a chip beside it (`dw-running` with the accent dot for a running
+   count, `dw-count` for plain text such as "1/3"). Geometry and typography are
+   upstream's own: radius `--radius-lg`, padding `--space-2` / `--space-3`, base
+   font size, a `--color-hover` overlay for hover and the active pill, and the
+   icon at 1.5em. The material stays the fork's band (`.lg-band`), which is what
+   upstream's `--p-menu-backdrop` does for its own pill. */
+.dock-workbar .ui-pill {
   position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
-  color: var(--color-text-muted);
+  gap: 6px;
+  padding: var(--space-2) calc(var(--space-3) + var(--space-05)) var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-selected);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
   cursor: pointer;
   transition:
-    background var(--duration-base) var(--ease-out),
     color var(--duration-base) var(--ease-out),
-    border-color var(--duration-base) var(--ease-out),
-    box-shadow var(--duration-spring-responsive) var(--spring-responsive),
     transform var(--duration-spring-responsive) var(--spring-responsive);
 }
-
-/* Liquid-glass material for the squares — they carry .lg-band, so the shared
-   band tier (14px blur + faint tint, no rim / dispersion / drop — they ride
-   embedded in the chat-main::after frost slab) is painted by the consuming
-   rule in style.css. These blocks only retarget the tint parameters per
-   state; the solid look above still applies when the toggle is off. */
-html[data-liquid-glass="on"] .dock-square.lg-band {
-  --lg-tint-a: 10%;
-  border-color: color-mix(in srgb, var(--color-line) 72%, transparent);
+.dock-workbar .ui-pill > svg {
+  width: 1.5em;
+  height: 1.5em;
+  color: inherit;
 }
-html[data-liquid-glass="on"] .dock-square.lg-band:hover:not(.is-on) {
-  --lg-tint-a: 22%;
-  /* re-assert the glass background over the solid :hover fallback below */
-  background: var(--lg-bg);
-  color: var(--color-text);
-  transform: translateY(-1px);
+/* Phone: upstream keeps the same pills and hides the text, leaving a 37px icon
+   button whose label survives in the aria-label. */
+.chat-dock.pills-compact .dock-workbar .ui-pill {
+  padding: var(--space-2);
 }
-.dock-square:hover:not(.is-on) {
-  background: var(--color-surface-sunken);
-  color: var(--color-text);
+.chat-dock.pills-compact .dock-workbar .ui-pill > span {
+  display: none;
 }
-.dock-square.is-on {
-  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+.dock-workbar .ui-pill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-hover);
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+  pointer-events: none;
+}
+.dock-workbar .ui-pill:hover:not(:disabled)::after,
+.dock-workbar .ui-pill.is-active::after {
+  opacity: 1;
+}
+.dock-workbar .ui-pill.is-active {
   color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
 }
-html[data-liquid-glass="on"] .dock-square.lg-band.is-on {
-  --lg-tint: color-mix(in srgb, var(--color-accent) 22%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-accent) 16%, transparent);
-  /* Re-assert the glass background: the solid .is-on rule above is a
-     specificity tie against the shared consuming rule and would otherwise
-     mask it. */
-  background: var(--lg-bg);
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
-}
-.dock-square:focus-visible {
+.dock-workbar .ui-pill:focus-visible {
   outline: none;
   box-shadow: var(--p-focus-ring);
 }
-.dock-square .dw-count {
-  position: absolute;
-  bottom: -3px;
-  right: -3px;
-  font-size: 9px;
-  line-height: 1;
-  color: var(--color-text);
-  font-variant-numeric: tabular-nums;
-  padding: 2px 4px;
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-  border: 1px solid var(--color-line);
-  border-radius: 7px;
-}
-.dock-square.is-on .dw-count {
-  color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-line));
-}
-
-/* Plan popover: only the plan chip lacks a matching right-panel tab today,
-   so it pops a small glass card over the workbar instead of toggling a tab. */
-.dock-plan-pop {
-  position: absolute;
-  left: var(--dock-inline-left);
-  right: var(--dock-inline-right);
-  bottom: calc(100% + 6px);
-  z-index: var(--z-overlay);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  padding: 8px 10px;
-  max-height: min(280px, 50vh);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.dock-plan-head {
-  display: flex;
+.dock-workbar .ui-pill .dw-running {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 0 6px 0;
-  border-bottom: 1px solid var(--color-line);
+  gap: var(--space-1);
+  color: var(--color-text-muted);
 }
-.dock-plan-title {
-  font-size: var(--text-base);
-  font-weight: var(--weight-medium);
-  color: var(--color-text);
+.dock-workbar .ui-pill .dw-count {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
-.dock-plan-body {
-  padding-top: 6px;
-  overflow-y: auto;
-  min-height: 0;
+.dock-workbar .ui-pill.is-active .dw-running,
+.dock-workbar .ui-pill.is-active .dw-count {
+  color: inherit;
+}
+.kw-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-faint);
+}
+.kw-dot--running {
+  position: relative;
+  background: var(--color-accent);
+}
+.kw-dot--running::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  animation: kw-dot-pulse 1.4s var(--ease-out) infinite;
+}
+@keyframes kw-dot-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  to {
+    transform: scale(2.7);
+    opacity: 0;
+  }
 }
 
-.dock-popover-enter-active,
-.dock-popover-leave-active {
+/* The dock panel animates in from its pill: upstream names the transition
+   `dock-panel` and captures it mid-flight as `dock-panel-enter-from`. */
+.dock-panel-enter-active,
+.dock-panel-leave-active {
   transition:
     opacity var(--duration-spring-gentle) var(--spring-gentle),
     transform var(--duration-spring-responsive) var(--spring-responsive);
 }
-.dock-popover-enter-from,
-.dock-popover-leave-to {
+.dock-panel-enter-from,
+.dock-panel-leave-to {
   opacity: 0;
   transform: translateY(8px);
 }
@@ -574,14 +659,5 @@ html[data-liquid-glass="on"] .dock-square.lg-band.is-on {
 
 .chat-dock:not(.align-mobile) :deep(.composer) {
   padding-bottom: 14px;
-}
-
-/* The plan chip's popover sits above the workbar like the old dock-work-panel,
-   so on mobile we let it span the full dock width. */
-@media (max-width: 640px) {
-  .dock-plan-pop {
-    left: 10px;
-    right: calc(10px + var(--panes-scrollbar-width, 0px));
-  }
 }
 </style>

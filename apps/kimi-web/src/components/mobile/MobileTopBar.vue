@@ -55,17 +55,17 @@ const statusText = computed<string>(() =>
 
     <button
       type="button"
-      class="tb-mid"
+      class="tb-main"
       :aria-label="t('mobile.openSwitcher')"
       @click="emit('openSwitcher')"
     >
-      <span class="tb-path">
-        <span class="ws">{{ wsName }}</span>
+      <span class="tb-line">
+        <span class="dir">{{ wsName }}</span>
         <template v-if="sessionTitle">
           <span class="sl">/</span>
-          <span class="se">{{ sessionTitle }}</span>
+          <span class="tt">{{ sessionTitle }}</span>
         </template>
-        <span class="cv">⌄</span>
+        <Icon class="cv" name="chevron-down" size="sm" />
       </span>
       <span class="tb-sub">
         <span class="rd" :class="{ on: running }" />
@@ -117,7 +117,7 @@ const statusText = computed<string>(() =>
 }
 
 /* Middle tappable zone */
-.tb-mid {
+.tb-main {
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -132,7 +132,7 @@ const statusText = computed<string>(() =>
   text-align: left;
 }
 
-.tb-path {
+.tb-line {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -141,16 +141,16 @@ const statusText = computed<string>(() =>
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tb-path .ws { color: var(--color-text); }
-.tb-path .sl { color: var(--color-text-faint); }
-.tb-path .se {
+.tb-line .dir { color: var(--color-text); }
+.tb-line .sl { color: var(--color-text-faint); }
+.tb-line .tt {
   color: var(--color-text);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tb-path .cv { color: var(--color-text-faint); flex: none; }
+.tb-line .cv { color: var(--color-text-faint); flex: none; }
 
 .tb-sub {
   display: flex;
@@ -177,5 +177,5 @@ const statusText = computed<string>(() =>
 }
 .tb-sub .rd.on { background: var(--color-success); }
 
-.topbar .tb-path { font-family: var(--sans); }
+.topbar .tb-line { font-family: var(--sans); }
 </style>

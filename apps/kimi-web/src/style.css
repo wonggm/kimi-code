@@ -271,15 +271,15 @@ html[data-color-scheme="dark"] {
   --faint: #525960;
   --line: #2d333b;
   --line2: #22272e;
-  --panel: #1c2128;
-  --panel2: #161b22;
-  --bg: #0d1117;
+  --panel: #1f1f1f;
+  --panel2: #121212;
+  --bg: #121212;
   --blue: #58a6ff;
   --blue2: #79b8ff;
   --soft: #1f2937;
   --bd: #1f6feb;
   --logo: #58a6ff;
-  --bluebg: #1c2a3a;
+  --bluebg: #292929;
   --blueln: #1f4f7a;
   --ok: #3fb950;
   --warn: #d29922;
@@ -298,15 +298,15 @@ html[data-color-scheme="dark"] {
     --faint: #525960;
     --line: #2d333b;
     --line2: #22272e;
-    --panel: #1c2128;
-    --panel2: #161b22;
-    --bg: #0d1117;
+    --panel: #1f1f1f;
+    --panel2: #121212;
+    --bg: #121212;
     --blue: #58a6ff;
     --blue2: #79b8ff;
     --soft: #1f2937;
     --bd: #1f6feb;
     --logo: #58a6ff;
-    --bluebg: #1c2a3a;
+    --bluebg: #292929;
     --blueln: #1f4f7a;
     --ok: #3fb950;
     --warn: #d29922;
@@ -397,6 +397,9 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-surface: #fafbfc;
   --color-surface-raised: #ffffff;
   --color-surface-sunken: #f3f5f8;
+  /* Output wells (tool output, match lists): upstream's own surface, one step
+     lighter than sunken in dark mode. */
+  --color-well: #f5f5f5;
   /* Checkerboard canvas behind <img> so transparent PNGs keep white/black
      content visible and read as transparent. Squares are mixed from the
      theme's bg/text (≈#858585/#6b6b6b light, ≈#676b72/#7a7e85 dark), each
@@ -421,6 +424,10 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   /* Neutral selected fill (sidebar rows, list pickers) — deliberately NOT
      accent-tinted, so selection reads as "where I am", not as an action. */
   --color-selected: #00000014;
+  /* Pressed-toggle hover (code-block header buttons) — upstream's
+     --color-selected-hover is rgba(0, 0, 0, .08), which is this block's 0.08
+     selected fill, so in light mode the hover step is a no-op. */
+  --color-selected-hover: #00000014;
   /* Row hover wash — lighter than the selected fill (hover < selected); both
      are translucent black so they sit naturally on any light surface. */
   --color-hover: #0000000d;
@@ -445,12 +452,37 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-done-soft: #f3e8ff;
   --color-done-bd: #e0ccff;
   --color-info: var(--accent-primary);
+  /* Composer / menu / diff surfaces + foregrounds (light). The dark palette
+     is upstream's; these keep the fork's blue-grey light character rather than
+     copying upstream's neutral greys. --color-text-muted / --color-text-faint
+     already carry light values above. */
+  --color-composer-bg: var(--color-surface-raised);
+  --color-menu-bg: rgba(255, 255, 255, 0.95);
+  --color-menu-bg-frost: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  --color-user-bubble-bg: var(--color-surface-sunken);
+  --color-inline-code-bg: var(--color-surface-sunken);
+  --color-surface-overlay: var(--color-surface-raised);
+  --color-diff-add-bg: var(--color-success-soft);
+  --color-diff-del-bg: var(--color-danger-soft);
+  --color-topbar-bg-frost: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  --color-text-strong: #000000;
+  --color-text-on-scrim: #ffffff;
+  /* Send disc: the fork's light send is the blue accent (the dark block keeps
+     upstream's near-white disc); disabled is a faint black wash on the page. */
+  --color-send-bg: var(--color-accent);
+  --color-send-bg-hover: var(--color-accent-hover);
+  --color-send-bg-disabled: rgba(0, 0, 0, 0.05);
+  /* Disabled send glyph. Light keeps the faint-text grey the fork already
+     painted here (#9aa3af through --color-text-faint); the dark blocks below
+     take upstream's measured rgba(255, 255, 255, 0.28) instead. */
+  --color-send-icon-disabled: var(--color-text-faint);
   /* Dev-only brand tint: recolors the logo mark golden-yellow so a `pnpm dev:web`
      tab is visually distinct from production. Referenced by Sidebar's
      `.ch-logo.is-dev` override of `--logo`. Scheme-independent on purpose. */
   --color-logo-dev: #f5b301;
 
   /* -- spacing (4px grid) -------------------------------------------------- */
+  --space-05: 2px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -467,6 +499,9 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --radius-xl: 16px;
   --radius-2xl: 20px;
   --radius-full: 999px;
+  /* Derived menu-row radius (upstream: calc(--radius-lg - --space-1 -
+     --p-hairline) = 12 - 4 - 0.5 = 7.5px). */
+  --radius-dropdown-row: 7.5px;
 
   /* -- elevation / z-index ------------------------------------------------- */
   --z-base: 0;
@@ -530,8 +565,12 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --leading-normal: 1.5;
   --leading-relaxed: 1.7;
   --weight-regular: 400;
+  --weight-caption: 450;
   --weight-medium: 500;
+  --weight-option-label: 475;
+  --weight-ui-strong: 525;
   --weight-semibold: 700;
+  --icon-button-sm: 26px;
 
   /* -- focus ring (design-system §02) -------------------------------------- */
   --p-focus-ring: 0 0 0 3px var(--color-accent-soft);
@@ -571,23 +610,28 @@ html[data-color-scheme="dark"][data-accent="mono"] {
 /* Design tokens v2 — dark values (explicit choice). */
 html[data-color-scheme="dark"] {
   --accent-primary: #58a6ff;
-  --color-bg: #0d1117;
-  --color-surface: #161b22;
-  --color-surface-raised: #1c2128;
-  --color-surface-sunken: #0d1117;
-  --color-text: #c9cdd4;
-  --color-text-muted: #9aa0a8;
-  --color-text-faint: #6b7280;
-  --color-line: #2d333b;
+  --color-bg: #121212;
+  --color-surface: #1f1f1f;
+  --color-surface-raised: #292929;
+  --color-surface-sunken: #121212;
+  --color-well: #1f1f1f;
+  --color-text: rgba(255, 255, 255, 0.84);
+  --color-text-muted: rgba(255, 255, 255, 0.56);
+  --color-text-faint: rgba(255, 255, 255, 0.42);
+  --color-text-strong: #ffffff;
+  --color-text-on-accent: #ffffff;
+  --color-text-on-scrim: #ffffff;
+  --color-line: rgba(255, 255, 255, 0.12);
   --color-line-strong: #3d444d;
   --color-selected: #ffffff14;
+  --color-selected-hover: #ffffff24;
   --color-hover: #ffffff0d;
-  --color-sidebar-bg: #181817;
-  --color-accent: #58a6ff;
-  --color-accent-hover: #79b8ff;
-  --color-accent-soft: rgba(88, 166, 255, 0.14);
+  --color-sidebar-bg: #0d0d0d;
+  --color-accent: #1a88ff;
+  --color-accent-hover: #258eff;
+  --color-accent-soft: rgba(26, 136, 255, 0.1);
   --p-selection: rgba(88, 166, 255, 0.32);
-  --color-accent-bd: rgba(88, 166, 255, 0.28);
+  --color-accent-bd: rgba(26, 136, 255, 0.28);
   --color-success: #3fb950;
   --color-success-soft: rgba(63, 185, 80, 0.14);
   --color-success-bd: rgba(63, 185, 80, 0.28);
@@ -602,6 +646,20 @@ html[data-color-scheme="dark"] {
   --color-done-soft: rgba(163, 113, 247, 0.14);
   --color-done-bd: rgba(163, 113, 247, 0.28);
   --color-info: #58a6ff;
+  /* Composer / menu / diff surfaces + foregrounds (upstream dark). */
+  --color-composer-bg: #1f1f1f;
+  --color-menu-bg: rgba(41, 41, 41, 0.95);
+  --color-menu-bg-frost: color-mix(in srgb, #121212 70%, transparent);
+  --color-user-bubble-bg: #292929;
+  --color-inline-code-bg: rgba(255, 255, 255, 0.1);
+  --color-surface-overlay: rgba(255, 255, 255, 0.1);
+  --color-diff-add-bg: rgba(63, 185, 80, 0.14);
+  --color-diff-del-bg: rgba(248, 81, 73, 0.14);
+  --color-topbar-bg-frost: color-mix(in srgb, #1f1f1f 78%, transparent);
+  --color-send-bg: rgba(255, 255, 255, 0.84);
+  --color-send-bg-hover: rgba(255, 255, 255, 0.848);
+  --color-send-bg-disabled: rgba(255, 255, 255, 0.1);
+  --color-send-icon-disabled: rgba(255, 255, 255, 0.28);
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.24);
@@ -613,23 +671,28 @@ html[data-color-scheme="dark"] {
 @media (prefers-color-scheme: dark) {
   html[data-color-scheme="system"] {
     --accent-primary: #58a6ff;
-    --color-bg: #0d1117;
-    --color-surface: #161b22;
-    --color-surface-raised: #1c2128;
-    --color-surface-sunken: #0d1117;
-    --color-text: #c9cdd4;
-    --color-text-muted: #9aa0a8;
-    --color-text-faint: #6b7280;
-    --color-line: #2d333b;
+    --color-bg: #121212;
+    --color-surface: #1f1f1f;
+    --color-surface-raised: #292929;
+    --color-surface-sunken: #121212;
+    --color-well: #1f1f1f;
+    --color-text: rgba(255, 255, 255, 0.84);
+    --color-text-muted: rgba(255, 255, 255, 0.56);
+    --color-text-faint: rgba(255, 255, 255, 0.42);
+    --color-text-strong: #ffffff;
+    --color-text-on-accent: #ffffff;
+    --color-text-on-scrim: #ffffff;
+    --color-line: rgba(255, 255, 255, 0.12);
     --color-line-strong: #3d444d;
     --color-selected: #ffffff14;
+    --color-selected-hover: #ffffff24;
     --color-hover: #ffffff0d;
-    --color-sidebar-bg: #181817;
-    --color-accent: #58a6ff;
-    --color-accent-hover: #79b8ff;
-    --color-accent-soft: rgba(88, 166, 255, 0.14);
+    --color-sidebar-bg: #0d0d0d;
+    --color-accent: #1a88ff;
+    --color-accent-hover: #258eff;
+    --color-accent-soft: rgba(26, 136, 255, 0.1);
   --p-selection: rgba(88, 166, 255, 0.32);
-    --color-accent-bd: rgba(88, 166, 255, 0.28);
+    --color-accent-bd: rgba(26, 136, 255, 0.28);
     --color-success: #3fb950;
     --color-success-soft: rgba(63, 185, 80, 0.14);
     --color-success-bd: rgba(63, 185, 80, 0.28);
@@ -644,6 +707,20 @@ html[data-color-scheme="dark"] {
     --color-done-soft: rgba(163, 113, 247, 0.14);
     --color-done-bd: rgba(163, 113, 247, 0.28);
     --color-info: #58a6ff;
+    /* Composer / menu / diff surfaces + foregrounds (upstream dark). */
+    --color-composer-bg: #1f1f1f;
+    --color-menu-bg: rgba(41, 41, 41, 0.95);
+    --color-menu-bg-frost: color-mix(in srgb, #121212 70%, transparent);
+    --color-user-bubble-bg: #292929;
+    --color-inline-code-bg: rgba(255, 255, 255, 0.1);
+    --color-surface-overlay: rgba(255, 255, 255, 0.1);
+    --color-diff-add-bg: rgba(63, 185, 80, 0.14);
+    --color-diff-del-bg: rgba(248, 81, 73, 0.14);
+    --color-topbar-bg-frost: color-mix(in srgb, #1f1f1f 78%, transparent);
+    --color-send-bg: rgba(255, 255, 255, 0.84);
+    --color-send-bg-hover: rgba(255, 255, 255, 0.848);
+    --color-send-bg-disabled: rgba(255, 255, 255, 0.1);
+    --color-send-icon-disabled: rgba(255, 255, 255, 0.28);
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.24);
@@ -1186,6 +1263,24 @@ html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
     backdrop-filter: none;
   }
   html[data-liquid-glass="on"] .lg-scrim {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* The composer's three ported dropdowns declare `backdrop-filter: blur(24px)`
+     unconditionally in Composer.vue's scoped styles, so the recipes above only
+     cover them on the glass path (where `--lg-optic-filter: none` already
+     reaches them through the shared consuming rule). This guard covers the
+     glass-off path and is not gated on the toggle. `:root` lifts the pair to
+     (0,3,0), outranking the scoped `.x[data-v-…]` rule at (0,2,0). The face is
+     the same menu token each panel declares — `--color-menu-bg` for the two
+     anchored panels, the frosted ink for the wide dock menu. */
+  :root :is(.model-dropdown.model-dropdown, .perm-dropdown.perm-dropdown) {
+    background: var(--color-menu-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root .add-menu.add-menu {
+    background: var(--color-menu-bg-frost);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Icon from '../ui/Icon.vue';
+import { useSelectionCapture } from '../../composables/useSelectionQuote';
 
 const props = defineProps<{
   /** File paths changed during the turn, in display order. */
@@ -13,6 +14,11 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const expanded = ref(false);
+
+// Selecting a changed path opens the app-wide quote bubble, so the per-turn
+// changes panel can be quoted into the chat.
+const rootRef = ref<HTMLElement | null>(null);
+useSelectionCapture(() => rootRef.value);
 const collapsedLimit = computed(() => props.collapsedLimit ?? 5);
 const canExpand = computed(() => props.files.length > collapsedLimit.value);
 const visibleFiles = computed(() =>
@@ -38,7 +44,7 @@ function displayPath(path: string): string {
 </script>
 
 <template>
-  <section v-if="props.files.length > 0" class="changed-files-card lg-glass lg-frost">
+  <section v-if="props.files.length > 0" ref="rootRef" class="changed-files-card lg-glass lg-frost">
     <div class="changed-files-heading">
       <Icon name="file-edit" size="sm" />
       <span>{{ t('conversation.changedFiles.title') }}</span>

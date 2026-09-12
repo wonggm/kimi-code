@@ -41,6 +41,8 @@ const emit = defineEmits<{
   copyAll: [];
   copyFinalSummary: [];
   openChanges: [];
+  /** Open the right-side panel (header affordance; the panel owns its close). */
+  openPanel: [];
   openPr: [url: string];
   renameSession: [id: string, title: string];
   forkSession: [id: string];
@@ -323,6 +325,7 @@ function togglePin(): void {
       class="ch-git"
       @click="emit('openChanges')"
     >
+      <Icon class="ch-branch-icon" name="git-fork" size="sm" />
       <span
         class="ch-branch"
         :class="{ 'ch-detached': !branch }"
@@ -350,6 +353,15 @@ function togglePin(): void {
       <Icon name="git-pull-request" size="sm" />
       <span>PR #{{ pr.number }} · {{ prStateLabel(pr.state) }}</span>
     </button>
+
+    <!-- Open right panel — the panel's own close button handles the reverse. -->
+    <IconButton
+      class="ch-panel"
+      :label="t('panel.openPanel')"
+      @click="emit('openPanel')"
+    >
+      <Icon name="panel-right" size="sm" />
+    </IconButton>
 
   </header>
 </template>

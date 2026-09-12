@@ -9,7 +9,8 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { TodoView } from '../../types';
-import StatusGlyph, { type StatusGlyphStatus } from './StatusGlyph.vue';
+import Icon from '../ui/Icon.vue';
+import Spinner from '../ui/Spinner.vue';
 
 const props = defineProps<{
   todos: TodoView[];
@@ -23,10 +24,6 @@ const donePct = computed(() => {
   if (total === 0) return 0;
   return Math.round((doneCount.value / total) * 100);
 });
-
-function glyphStatus(status: TodoView['status']): StatusGlyphStatus {
-  return status === 'in_progress' ? 'run' : status;
-}
 </script>
 
 <template>
@@ -47,8 +44,11 @@ function glyphStatus(status: TodoView['status']): StatusGlyphStatus {
         </span>
       </div>
 
-      <div v-for="(td, i) in props.todos" :key="i" class="tc-row lg-frost" :class="`s-${td.status}`">
-        <StatusGlyph :status="glyphStatus(td.status)" />
+      <div v-for="(td, i) in props.todos" :key="i" class="tc-row" :class="`s-${td.status}`">
+        <span class="tc-glyph" :class="`g-${td.status}`" aria-hidden="true">
+          <Icon v-if="td.status === 'done'" name="check" size="sm" />
+          <Spinner v-else-if="td.status === 'in_progress'" class="tc-spin" size="xs" />
+        </span>
         <span class="tc-name">{{ td.title }}</span>
       </div>
     </template>
@@ -91,28 +91,31 @@ function glyphStatus(status: TodoView['status']): StatusGlyphStatus {
   transition: width var(--duration-base) var(--ease-out);
 }
 
-/* Frosted row cards. With liquid glass on, .lg-frost supplies the tint +
-   blur; the base surface/line rules below are the fallback (toggle off) and
-   the card chrome that the frost overrides. */
+/* Upstream's rows are plain: the panel supplies the surface, so a row carries
+   no background, border or radius of its own, and a settled row is not struck
+   through — the glyph shows the state. */
 .tc-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
   color: var(--color-text);
 }
-.tc-name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
+.tc-name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: var(--leading-normal); }
 .tc-row.s-in_progress .tc-name { font-weight: var(--weight-medium); }
-.tc-row.s-in_progress {
-  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-line));
+.tc-row.s-pending .tc-name { color: var(--color-text-muted); }
+.tc-glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--p-ic-md);
+  height: var(--p-ic-md);
+  border-radius: var(--radius-full);
 }
-.tc-row.s-done .tc-name {
-  color: var(--color-text-faint);
-  text-decoration: line-through;
-}
+.tc-glyph.g-done { color: var(--color-success); }
+.tc-glyph.g-pending { border: 1px solid var(--color-line-strong); }
+.tc-glyph .tc-spin { color: var(--color-text); }
 
 .tc-empty {
   display: flex;

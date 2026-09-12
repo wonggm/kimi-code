@@ -100,7 +100,7 @@ const tip = ref<TipState | null>(null);
 let showTimer: ReturnType<typeof setTimeout> | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
-const SHOW_DELAY_MS = 120;
+const SHOW_DELAY_MS = 400;
 const HIDE_DELAY_MS = 140;
 
 function clearTimers(): void {

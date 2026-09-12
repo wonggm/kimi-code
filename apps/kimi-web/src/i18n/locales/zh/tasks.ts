@@ -9,10 +9,17 @@ export default {
   dockSubagent: '后台 Agent',
   dockTodos: '待办',
   dockPlan: '计划',
+  dockProgress: '当前进度',
+  dockRunning: '{n} 运行中',
   running: '运行中',
   closePanel: '关闭面板',
+  openPanel: '在侧边栏打开',
   timingRunning: '运行中 · {time}',
   timingDone: '完成 · {sec}s',
+  /** Upstream's units for the bare duration its task rows show. */
+  durationHour: '小时',
+  durationMinute: '分',
+  durationSecond: '秒',
   emptyTasks: '暂无后台任务',
   emptyBash: '暂无后台 Bash 任务',
   emptySubagent: '没有正在运行的后台 Agent 任务',
@@ -20,6 +27,8 @@ export default {
   emptyRunning: '没有正在运行的任务',
   emptyDone: '没有已完成的任务',
   emptyTodo: '暂无待办事项',
+  stateDone: '完成',
+  stateFail: '失败',
   stateCancelled: '已取消',
   // 子 Agent 卡片网格：状态筛选标签
   filterRecent: '最近',
@@ -38,6 +47,7 @@ export default {
   transcriptLoadError: '转录内容加载失败',
   // 后台 Bash 面板（带状态筛选的主-从视图）
   bash: {
+    filterRecent: '最近',
     filterAll: '全部',
     filterRunning: '运行中',
     filterDone: '已完成',

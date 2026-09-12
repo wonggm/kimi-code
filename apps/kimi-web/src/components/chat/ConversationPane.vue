@@ -12,15 +12,19 @@ import ChatHeader from './ChatHeader.vue';
 import Composer from './Composer.vue';
 import ChatDock from './ChatDock.vue';
 import RightPanelTabs from './RightPanelTabs.vue';
-import type { RightPanelTab } from '../../lib/rightPanelTabs';
+import { coerceRightPanelTab, type RightPanelTab } from '../../lib/rightPanelTabs';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import EmptyDoodle from './EmptyDoodle.vue';
+import SelectionQuoteBubble from './SelectionQuoteBubble.vue';
 import Icon from '../ui/Icon.vue';
+import IconButton from '../ui/IconButton.vue';
 import Spinner from '../ui/Spinner.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import { isMacosDesktop } from '../../lib/desktopFlag';
 import { getVisibleWorkspaces } from '../../lib/workspacePicker';
-import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
+import { safeGetString, safeRemove, STORAGE_KEYS } from '../../lib/storage';
 import { normalizeToolName } from '../../lib/toolMeta';
+import { useComposerQuoteRequest } from '../../composables/useSelectionQuote';
 
 const { t } = useI18n();
 
@@ -326,7 +330,6 @@ const hasDockWork = computed(() =>
   bashTasks.value.length > 0 ||
   subagentTasks.value.length > 0 ||
   (props.todos?.length ?? 0) > 0 ||
-  changedFiles.value.length > 0 ||
   (props.queued?.length ?? 0) > 0 ||
   props.planMode === true ||
   (props.plans?.length ?? 0) > 0,
@@ -347,6 +350,13 @@ function openRightPanel(tab: RightPanelTab): void {
 
 function closeRightPanel(): void {
   activePanelTab.value = null;
+}
+
+/** Header affordance: open the panel on the last-used tab (persisted by
+ *  RightPanelTabs), keeping the current tab when the panel is already open. */
+function openPanelFromHeader(): void {
+  if (activePanelTab.value !== null) return;
+  activePanelTab.value = coerceRightPanelTab(safeGetString(STORAGE_KEYS.rightPanelActiveTab));
 }
 
 function tocTitle(turn: ChatTurn): string {
@@ -1290,6 +1300,16 @@ function handleQuote(text: string): void {
   composer.focus();
 }
 
+// Selection quoting (messages, file preview, diff panels, terminal) goes
+// through the same handler as the outline rail's quote button: the shared
+// SelectionQuoteBubble recomposes the selection as a markdown blockquote and
+// asks here for insertion, so both sources share one composer path.
+const composerQuoteRequest = useComposerQuoteRequest();
+watch(composerQuoteRequest, (request) => {
+  if (request === null) return;
+  handleQuote(request.text);
+});
+
 function handleEditMessage(payload: {
   text: string;
   attachments?: TurnAttachment[];
@@ -1652,6 +1672,19 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
 
 <template>
   <section class="con" :class="{ mobile }">
+    <!-- Empty session: the chat header carries both the macOS window-drag region
+         and the right-panel opener, and it is not rendered here — upstream ships
+         the two counterparts below, outside `.chat-layout`. -->
+    <template v-if="!mobile && turns.length === 0 && !sessionLoading">
+      <div class="empty-drag" :class="{ 'macos-desktop': isMacosDesktop }" />
+      <IconButton
+        class="empty-panel-btn"
+        :label="t('panel.openPanel')"
+        @click="openPanelFromHeader"
+      >
+        <Icon name="panel-right" size="sm" />
+      </IconButton>
+    </template>
     <div ref="chatLayoutRef" class="chat-layout" :style="chatLayoutStyle">
       <!-- Chat column: header + transcript + dock. A sibling wrapper so the
            floating right panel (absolutely positioned over .chat-layout)
@@ -1675,6 +1708,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
       :pr="pr"
       :copied="copyConversationCopied"
       @open-changes="emit('openChanges')"
+      @open-panel="openPanelFromHeader"
       @copy-all="chatPaneRef?.copyConversation()"
       @copy-final-summary="chatPaneRef?.copyFinalSummary()"
       @open-pr="pr && emit('openPr', pr.url)"
@@ -1721,48 +1755,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
                 <EmptyDoodle v-else />
               </span>
               <span v-if="!starting" class="empty-hint-text">{{ t('composer.emptyConversation') }}</span>
-              <!-- Workspace picker: choose where this new conversation starts.
-                   Hidden while starting — a workspace is already committed. -->
-              <div v-if="hasWorkspaces && !starting" class="ws-pick">
-                <Tooltip :text="t('conversation.switchWorkspace')">
-                  <button type="button" class="ws-pick-btn" @click.stop="wsPickOpen = !wsPickOpen">
-                    <Icon name="folder" size="sm" />
-                    <span class="ws-pick-name">{{ activeWorkspaceLabel }}</span>
-                    <Icon class="ws-pick-chev" :class="{ open: wsPickOpen }" name="chevron-down" size="sm" />
-                  </button>
-                </Tooltip>
-                <div v-if="wsPickOpen" class="ws-pick-backdrop" @click="wsPickOpen = false" />
-                <div v-if="wsPickOpen" class="ws-pick-menu">
-                  <button
-                    v-for="w in visibleWorkspaces"
-                    :key="w.id"
-                    type="button"
-                    class="ws-pick-item"
-                    :class="{ on: w.id === activeWorkspaceId }"
-                    @click.stop="pickWorkspace(w.id)"
-                  >
-                    <span class="ws-pick-item-name">{{ w.name }}</span>
-                    <span class="ws-pick-item-path">{{ w.shortPath }}</span>
-                  </button>
-                  <button
-                    v-if="hiddenWorkspaceCount > 0"
-                    type="button"
-                    class="ws-pick-item ws-pick-more"
-                    @click.stop="wsPickExpanded = !wsPickExpanded"
-                  >
-                    <span>{{ t('conversation.moreWorkspaces', { count: hiddenWorkspaceCount }) }}</span>
-                  </button>
-                  <div class="ws-pick-divider" />
-                  <button
-                    type="button"
-                    class="ws-pick-action"
-                    @click.stop="wsPickOpen = false; emit('addWorkspace')"
-                  >
-                    <Icon name="plus" size="sm" />
-                    <span>{{ t('conversation.addWorkspace') }}</span>
-                  </button>
-                </div>
-              </div>
               <button
                 v-else-if="!starting"
                 type="button"
@@ -1812,8 +1804,62 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
               @compact="emit('compact')"
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
-            />
-            <div class="empty-spacer" />
+            >
+              <template #footer>
+                <div v-if="hasWorkspaces && !starting" class="ws-bar">
+                  <div class="ws-anchor">
+                    <Tooltip :text="t('conversation.switchWorkspace')">
+                      <button
+                        type="button"
+                        class="ws-chip"
+                        :class="{ open: wsPickOpen }"
+                        :aria-expanded="wsPickOpen"
+                        @click.stop="wsPickOpen = !wsPickOpen"
+                      >
+                        <Icon name="folder" size="sm" />
+                        <span class="ws-chip-name">{{ activeWorkspaceLabel }}</span>
+                        <Icon class="ws-chip-chev" :class="{ open: wsPickOpen }" name="chevron-down" size="sm" />
+                      </button>
+                    </Tooltip>
+<div v-if="wsPickOpen" class="ws-pick-backdrop" @click="wsPickOpen = false" />
+                <div v-if="wsPickOpen" class="ws-pick-menu">
+                  <button
+                    v-for="w in visibleWorkspaces"
+                    :key="w.id"
+                    type="button"
+                    class="ws-pick-item"
+                    :class="{ on: w.id === activeWorkspaceId }"
+                    @click.stop="pickWorkspace(w.id)"
+                  >
+                    <span class="ws-pick-item-name">{{ w.name }}</span>
+                    <span class="ws-pick-item-path">{{ w.shortPath }}</span>
+                  </button>
+                  <button
+                    v-if="hiddenWorkspaceCount > 0"
+                    type="button"
+                    class="ws-pick-item ws-pick-more"
+                    @click.stop="wsPickExpanded = !wsPickExpanded"
+                  >
+                    <span>{{ t('conversation.moreWorkspaces', { count: hiddenWorkspaceCount }) }}</span>
+                  </button>
+                  <div class="ws-pick-divider" />
+                  <button
+                    type="button"
+                    class="ws-pick-action"
+                    @click.stop="wsPickOpen = false; emit('addWorkspace')"
+                  >
+                    <Icon name="plus" size="sm" />
+                    <span>{{ t('conversation.addWorkspace') }}</span>
+                  </button>
+                </div>
+              </div>
+                </div>
+              </template>
+            </Composer>
+            <!-- Trailing spacer: upstream marks the tail one with `empty-tail`
+                 (the head spacer stays plain); the fork had the element but not the
+                 class, so the walk read it as an extra upstream element. -->
+            <div class="empty-spacer empty-tail" />
           </template>
           <template v-else>
             <ChatPane
@@ -1882,7 +1928,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
         :goal="goal"
         :goal-live="goalLive"
         :goal-expand-signal="goalExpandSignal"
-        :active-panel-tab="activePanelTab"
         :bash-tasks="bashTasks"
         :subagent-tasks="subagentTasks"
         :plan-entry="latestPlan"
@@ -1891,7 +1936,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
         :subagent-running="subagentRunning"
         :todo-done-count="todoDoneCount"
         :has-dock-work="hasDockWork"
-        :changed-files="changedFiles"
         :todos="todos"
         :pending-question="pendingQuestion"
         :question-busy-kind="questionBusyKind"
@@ -1986,6 +2030,10 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
         />
       </Transition>
     </div>
+
+    <!-- Single app-wide selection popover (comment + quote-to-chat) for every
+         surface that registers a selection via useSelectionCapture. -->
+    <SelectionQuoteBubble />
   </section>
 </template>
 
@@ -2242,6 +2290,34 @@ html:not([data-liquid-glass="on"]) .right-panel {
 /* Empty-workspace spacers: push the centred Composer to the vertical middle. */
 .empty-spacer { flex: 1; }
 
+/* Empty-session counterparts of the header. With no header there is nothing to
+   drag the macOS window by and no header control to open the right panel with,
+   so both live directly under `.con` (offsets and sizes are upstream's). */
+.empty-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--panel-head-h, 48px);
+}
+.empty-drag.macos-desktop {
+  -webkit-app-region: drag;
+}
+.empty-panel-btn {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+  z-index: var(--z-sticky);
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-sm);
+  -webkit-app-region: no-drag;
+}
+.empty-panel-btn svg {
+  width: var(--p-ic-sm);
+  height: var(--p-ic-sm);
+}
+
 /* Empty-session hint above the centred composer */
 .empty-hint {
   flex: none;
@@ -2303,29 +2379,45 @@ html:not([data-liquid-glass="on"]) .right-panel {
 }
 
 /* Empty-composer workspace picker */
-.ws-pick {
-  position: relative;
+/* Workspace chip — upstream's rules verbatim (ws-bar / ws-anchor / ws-chip and
+   its name and chevron), so the new-session footer matches upstream's markup and
+   geometry. The dropdown below it is the fork's own panel. */
+.ws-bar {
+  margin-top: calc(-1 * var(--space-4));
+  padding: calc(var(--space-4) + var(--space-2)) var(--space-2) var(--space-2);
+  background: color-mix(in srgb, var(--color-hover) 60%, transparent);
+  border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
   font-family: var(--font-ui);
 }
-.ws-pick-btn {
+.ws-anchor { position: relative; }
+.ws-chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  width: max-content;
-  max-width: min(100%, calc(100vw - var(--space-8)));
-  padding: 5px 10px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--dim);
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
   font-family: inherit;
   font-size: var(--ui-font-size-sm);
   cursor: pointer;
+  transition: background var(--duration-base) var(--ease-out);
 }
-.ws-pick-btn:hover { border-color: var(--color-accent-bd); color: var(--color-text); }
-.ws-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-pick-chev { flex: none; color: var(--muted); transition: transform 0.15s; }
-.ws-pick-chev.open { transform: rotate(180deg); }
+.ws-chip:hover,
+.ws-chip.open { background: var(--color-selected); color: var(--color-text); }
+.ws-chip:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.ws-chip > .kw-icon { flex: none; }
+.ws-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-option-label);
+}
+.ws-chip-chev { flex: none; transition: transform var(--duration-base) var(--ease-out); }
+.ws-chip-chev.open { transform: rotate(180deg); }
 .ws-pick-backdrop {
   position: fixed;
   inset: 0;

@@ -1,6 +1,11 @@
-<!-- apps/kimi-web/src/components/chat/ToolRow.vue -->
+<!-- apps/kimi-web/src/components/chat/ToolRow.vue
+     One tool call as upstream renders it: a `tool-line` row with a `tl-head`
+     (glyph, name, per-tool detail, the expand chevron) over a `tl-body` that
+     stays mounted and goes `inert` while closed. No card chrome — upstream's
+     rows are borderless lines, grouped by the activity run above them. -->
 <script setup lang="ts">
 import { inject, nextTick, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import StatusDot from '../ui/StatusDot.vue';
@@ -11,70 +16,89 @@ withDefaults(
     /** Inline-SVG glyph string (toolGlyph), or empty for none. */
     icon?: string;
     name: string;
+    /** Head detail, upstream's per-kind shape: a file button, the faint
+     *  directory, or a mono subject. `arg` is the plain fallback. */
+    file?: string;
+    dir?: string;
+    mono?: string;
+    /** Edit stats: the +A / −A pair and their proportion bar. */
+    diff?: { add: number; del: number };
     arg?: string;
     time?: string;
     open?: boolean;
     expandable?: boolean;
-    stacked?: boolean;
-    stackPosition?: 'single' | 'first' | 'middle' | 'last';
   }>(),
   {
     icon: '',
+    file: '',
+    dir: '',
+    mono: '',
     arg: '',
     time: '',
     open: false,
     expandable: false,
-    stacked: false,
-    stackPosition: 'single',
   },
 );
 
 const emit = defineEmits<{ toggle: [] }>();
 
+const { t } = useI18n();
+
 const pinScroll = inject<(el: HTMLElement, ms?: number) => void>('pinScroll', () => {});
-const bhEl = ref<HTMLElement | null>(null);
+const bodyEl = ref<HTMLElement | null>(null);
 
 function onHeadClick(): void {
   emit('toggle');
-  const el = bhEl.value;
+  const el = bodyEl.value;
   if (el) nextTick(() => pinScroll(el));
 }
 </script>
 
 <template>
-  <div
-    class="box"
-    :class="{
-      open,
-      stacked,
-      err: status === 'error',
-      'stack-first': stackPosition === 'first',
-      'stack-middle': stackPosition === 'middle',
-      'stack-last': stackPosition === 'last',
-    }"
-  >
-    <div class="bh" ref="bhEl" @click="onHeadClick">
-      <span v-if="icon" class="gl" v-html="icon" aria-hidden="true" />
-      <span class="bh-text">
-        <span class="a">{{ name }}</span>
-        <Tooltip :text="arg">
-          <span v-if="arg" class="p">{{ arg }}</span>
+  <div class="tool-line" :class="{ expandable, open }">
+    <div class="tl-head" :class="{ clickable: expandable }" @click="onHeadClick">
+      <span v-if="icon" class="tl-ic" aria-hidden="true" v-html="icon" />
+      <span class="tl-main">
+        <span class="tl-name">{{ name }}</span>
+        <button v-if="file" type="button" class="tl-file">{{ file }}</button>
+        <span v-if="dir" class="tl-faint">{{ dir }}</span>
+        <span v-if="mono" class="tl-mono">{{ mono }}</span>
+        <Tooltip v-if="!file && !mono" :text="arg">
+          <span v-if="arg" class="tl-dim">{{ arg }}</span>
         </Tooltip>
+        <span v-if="expandable" class="ui-tip">
+          <button
+            type="button"
+            class="tl-car"
+            :aria-expanded="open"
+            :aria-label="t('tools.disclosure.expand')"
+            @click.stop="onHeadClick"
+          >
+            <Icon class="tl-car-ic" name="chevron-right" size="sm" />
+          </button>
+        </span>
       </span>
-      <span class="rt">
-        <span class="status" :class="status" role="status" :aria-label="status">
+      <span class="tl-tail">
+        <template v-if="diff">
+          <span class="tl-add">+{{ diff.add }}</span>
+          <span class="tl-del">−{{ diff.del }}</span>
+          <span class="diffbar" aria-hidden="true">
+            <span class="seg-add" :style="{ flexGrow: Math.max(diff.add, 1) }" />
+            <span class="seg-del" :style="{ flexGrow: Math.max(diff.del, 1) }" />
+          </span>
+        </template>
+        <slot name="trailing" />
+        <span v-if="time" class="tl-time">{{ time }}</span>
+        <span class="tl-status" :class="status === 'ok' ? 'ok' : status === 'error' ? 'err' : 'run'" role="status" :aria-label="status">
           <Icon v-if="status === 'ok'" name="check" size="sm" />
           <Icon v-else-if="status === 'error'" name="close" size="sm" />
           <StatusDot v-else-if="status === 'suspended'" status="suspended" />
           <StatusDot v-else status="running" />
         </span>
-        <slot name="trailing" />
-        <span v-if="time" class="tm">{{ time }}</span>
       </span>
-      <Icon v-if="expandable" class="car" :name="open ? 'chevron-down' : 'chevron-right'" size="sm" />
     </div>
-    <div class="bb" :class="{ open }" :inert="!open">
-      <div class="bb-pad">
+    <div ref="bodyEl" class="tl-body" :class="{ open }" :inert="!open">
+      <div class="tl-body-inner">
         <slot />
       </div>
     </div>
@@ -82,154 +106,143 @@ function onHeadClick(): void {
 </template>
 
 <style scoped>
-.box {
-  margin: 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  transition: border-color var(--duration-base) var(--ease-out);
-}
-.box.err {
-  border-color: color-mix(in srgb, var(--color-danger) 25%, var(--bg));
-}
-
-/* Stacked calls: the group owns the outer border + radius, so each row is flat
-   and separated only by a top hairline. */
-.box.stacked {
-  border: none;
-  border-radius: 0;
-}
-.box.stacked .bh {
-  border-radius: 0;
-}
-.box.stack-middle,
-.box.stack-last {
-  border-top: 1px solid var(--color-line);
-}
-
-.bh {
+.tool-line { display: block; }
+.tl-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 11px;
-  cursor: pointer;
-  font: var(--text-sm) var(--font-mono);
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-sm);
   color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
 }
-.box.open .bh,
-.bh:hover {
-  background: var(--color-surface-sunken);
-}
-.box.err .bh {
-  background: color-mix(in srgb, var(--color-danger) 4%, var(--bg));
-}
-.box.err .bh:hover {
-  background: color-mix(in srgb, var(--color-danger) 7%, var(--bg));
-}
-
-.gl {
+.tl-head.clickable { cursor: pointer; user-select: none; }
+.tl-ic {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
+  flex: none;
   color: var(--color-text-faint);
-  flex: none;
 }
-.bh-text {
-  display: flex;
-  align-items: baseline;
-  gap: inherit;
-  flex: 1;
-  min-width: 0;
-}
-.a {
-  color: var(--color-text);
-  font-weight: var(--weight-medium);
-  flex: none;
-}
-.p {
+.tl-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-1); }
+.tl-name { font-weight: var(--weight-regular); color: var(--color-text-muted); flex: none; }
+.tl-dim {
   color: var(--color-text-muted);
-  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
-  min-width: 0;
 }
-.rt {
-  margin-left: auto;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-.tm {
-  color: var(--color-text-faint);
-}
-:slotted(.chip) {
-  color: var(--color-text-muted);
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  flex: none;
-}
-
-/* Status indicator at the right edge of the row: done = green ✓, error = red ✗,
-   running = pulsing accent dot. */
-.status {
+.tl-tail { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); flex: none; }
+.tl-time { color: var(--color-text-faint); font-size: var(--text-xs); }
+.tl-status { display: inline-flex; align-items: center; flex: none; }
+.tl-status.ok { color: var(--color-success); }
+.tl-status.err { color: var(--color-danger); }
+.tl-status.run { color: var(--color-text-muted); }
+.tl-car {
   display: inline-flex;
   align-items: center;
-  flex: none;
+  justify-content: center;
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-faint);
+  cursor: pointer;
 }
-.status.ok {
-  color: var(--color-success);
-}
-.status.error {
-  color: var(--color-danger);
-}
+.tl-car:hover { color: var(--color-text); }
+.tl-car:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.tl-car-ic { transition: transform var(--duration-base) var(--ease-out); }
+.tool-line.open .tl-car-ic { transform: rotate(90deg); }
 
-/* Expanded detail: sunken panel under the row. Opens downward / collapses upward
-   via a `grid-template-rows` transition (0fr ↔ 1fr), which animates smoothly in
-   every modern browser — unlike `height: auto`, which only interpolates in
-   Chromium (via `interpolate-size`) and snaps everywhere else. The inner
-   `.bb-pad` needs `min-height: 0` + `overflow: hidden` so the 0fr track can
-   collapse fully. */
-.bb {
+/* Expanded detail: `grid-template-rows` 0fr ↔ 1fr animates in every modern
+   browser, unlike `height: auto`. The inner needs min-height 0 + overflow
+   hidden so the 0fr track collapses fully. */
+.tl-body {
   display: grid;
   grid-template-rows: minmax(0, 0fr);
   overflow: hidden;
   transition: grid-template-rows var(--duration-base) var(--ease-out);
 }
-.bb.open {
-  grid-template-rows: minmax(0, 1fr);
-}
-.bb-pad {
+.tl-body.open { grid-template-rows: minmax(0, 1fr); }
+.tl-body-inner {
   min-height: 0;
   overflow: hidden;
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  background: var(--color-surface-sunken);
-  border-top: 1px solid var(--color-line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1) 0 var(--space-2);
   color: var(--color-text);
-  font: var(--text-sm)/1.65 var(--font-mono);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* Mobile bubble layout: no left gutter indent, softer corners. */
-.box.mob {
-  margin: 0;
+/* Chip slot (line counts, result counts): upstream's tl-chip. */
+.tl-file {
+  font-weight: var(--weight-regular);
+  color: var(--color-text);
+  line-height: var(--leading-tight);
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.tl-file:hover { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
+.tl-file:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.tl-faint {
+  color: var(--color-text-faint);
+  line-height: var(--leading-tight);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-ligatures: none;
+  color: var(--color-text-muted);
+  line-height: normal;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Mobile: unify every tool-call row to the compact 30px head height. The head
-   content is single-line by construction (name/arg truncate, status + time are
-   fixed-size), so any row that outgrew 30px did so through font/metrics drift
-   — pinning the height stops standalone and stacked cards from alternating
-   between 30px and a taller content-driven row on phones. */
-@media (max-width: 640px) {
-  .bh {
-    min-height: 30px;
-    height: 30px;
-  }
+.tl-add { color: var(--color-success); font-family: var(--font-mono); font-size: var(--text-xs); flex: none; }
+.tl-del { color: var(--color-danger); font-family: var(--font-mono); font-size: var(--text-xs); flex: none; }
+.diffbar {
+  display: inline-flex;
+  width: 36px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  gap: 1px;
+  flex: none;
+}
+.seg-add { background: var(--color-success); }
+.seg-del { background: var(--color-danger); }
+
+/* Chip slot (line counts, result counts): upstream's tl-chip. */
+:slotted(.chip) {
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  flex: none;
+  white-space: nowrap;
 }
 </style>

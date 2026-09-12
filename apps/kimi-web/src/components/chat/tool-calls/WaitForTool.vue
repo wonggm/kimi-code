@@ -18,10 +18,9 @@ const props = withDefaults(
   defineProps<{
     tool: ToolCall;
     mobile?: boolean;
-    stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
   }>(),
-  { mobile: false, stackPosition: 'single', toolDiffPanel: false },
+  { mobile: false, toolDiffPanel: false },
 );
 
 const { t } = useI18n();
@@ -184,8 +183,6 @@ watch(
     :time="time"
     :open="open"
     :expandable="canExpand"
-    :stacked="stackPosition !== 'single'"
-    :stack-position="stackPosition"
     @toggle="toggle"
   >
     <template #trailing>

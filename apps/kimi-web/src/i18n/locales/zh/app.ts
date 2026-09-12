@@ -5,6 +5,13 @@ export default {
   authPageMessage: '先连接 Kimi Code 账号，然后再开始或继续对话。',
   authPageLogin: '登录',
   connecting: '连接中…',
+  connectingStageAuth: '正在检查登录状态…',
+  connectingStageServer: '正在连接服务器…',
+  connectingStageConfig: '正在加载配置…',
+  connectingStageSessions: '正在加载会话列表…',
+  connectingStageSession: '正在打开会话…',
+  connectingRetrySuffix: '（第 {n} 次重试）',
   connectRetrying: '无法连接服务器，正在重试…',
+  refreshPreview: '刷新预览',
   internalBuildBanner: '仅供内部测试',
 } as const;

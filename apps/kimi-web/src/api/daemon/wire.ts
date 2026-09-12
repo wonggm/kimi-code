@@ -165,6 +165,38 @@ export interface WireWorkspace {
   session_count: number;
 }
 
+/** Plugin list entry — mirrors kap-server's pluginSummarySchema (rest-plugin). */
+export interface WirePluginSummary {
+  id: string;
+  displayName: string;
+  version?: string;
+  enabled: boolean;
+  state: 'ok' | 'error';
+  skillCount: number;
+  mcpServerCount: number;
+  enabledMcpServerCount: number;
+  hookCount: number;
+  commandCount: number;
+  hasErrors: boolean;
+  source: 'local-path' | 'zip-url' | 'github';
+  originalSource?: string;
+}
+
+/** Marketplace entry — mirrors kap-server's pluginMarketplaceEntrySchema. */
+export interface WirePluginMarketplaceEntry {
+  id: string;
+  tier: 'official' | 'curated' | 'third-party';
+  displayName: string;
+  description?: string;
+  homepage?: string;
+  keywords?: string[];
+  version?: string;
+  source: string;
+  installed?: { version?: string; enabled: boolean };
+  updateAvailable?: boolean;
+  capabilityId?: string;
+}
+
 export interface WireFsBrowseEntry {
   name: string;
   path: string;

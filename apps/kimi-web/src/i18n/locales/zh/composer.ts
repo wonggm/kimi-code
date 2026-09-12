@@ -40,9 +40,13 @@ export default {
   /** 主占位符下方的副提示行，镜像上游的富占位符样式，展示快捷键与简短提示。 */
   /** 输入框的可访问标签（向屏幕阅读器宣告为聊天输入框）。 */
   inputLabel: '消息输入',
-  attachFile: '添加附件',
   addMenu: '添加',
   addFiles: '文件',
+  addFilesDesc: '上传文件',
+  addCommands: '命令',
+  addCommandsDesc: '内置命令或技能',
+  addMention: '提及',
+  addMentionDesc: '提及附件、项目文件或技能',
   addGoalDesc: '设定目标并持续推进',
   addPlanDesc: '启用计划模式',
   addSwarmDesc: '启用 swarm 模式',

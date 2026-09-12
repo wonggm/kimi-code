@@ -7,7 +7,7 @@
 import { computed, nextTick, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { TaskItem } from '../../types';
-import { filterBashTasks, type BashFilter } from '../../lib/bashTaskFilter';
+import { BASH_FILTERS, filterBashTasks, type BashFilter } from '../../lib/bashTaskFilter';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { composeTaskCopyPayload, type TaskCopyKind } from '../../lib/taskCopy';
 import SegmentedControl from '../ui/SegmentedControl.vue';
@@ -28,13 +28,13 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-const filters = computed<{ value: BashFilter; label: string }[]>(() => [
-  { value: 'all', label: t('tasks.bash.filterAll') },
-  { value: 'running', label: t('tasks.bash.filterRunning') },
-  { value: 'done', label: t('tasks.bash.filterDone') },
-]);
+const filters = computed(() =>
+  BASH_FILTERS.map((filter) => ({ value: filter.value, label: t(filter.labelKey), icon: filter.icon })),
+);
 
-const activeFilter = ref<BashFilter>('running');
+// Upstream's default segment is Recent; the pane owns this state in the right
+// panel (the dock panel's head drives its own list instead).
+const activeFilter = ref<BashFilter>('recent');
 
 const visibleTasks = computed(() => filterBashTasks(props.tasks, activeFilter.value));
 
@@ -46,6 +46,7 @@ const selectedId = ref<string | null>(null);
 const selected = computed(() => visibleTasks.value.find((task) => task.id === selectedId.value) ?? null);
 
 const EMPTY_BY_FILTER: Record<BashFilter, string> = {
+  recent: 'tasks.emptyRecent',
   all: 'tasks.emptyBash',
   running: 'tasks.bash.emptyRunning',
   done: 'tasks.bash.emptyDone',

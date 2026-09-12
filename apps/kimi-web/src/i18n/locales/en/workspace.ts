@@ -13,7 +13,8 @@ export default {
   deleteHasSessions: 'This workspace still has sessions — archive them before deleting it',
   // Secondary confirmation (modal)
   removeWorkspaceConfirm: 'Remove workspace "{name}"?',
-  swarmEnableConfirm: 'Enable swarm mode? The agent will run multiple sub-agents in parallel.',
+  swarmEnableTitle: 'Enable swarm mode?',
+  swarmEnableBody: 'The agent will run multiple sub-agents in parallel.',
   goalStartConfirm: 'Start goal: "{objective}"? The agent will run autonomously toward it.',
   // Column-header scope toggle
   scopeCurrent: 'this workspace',

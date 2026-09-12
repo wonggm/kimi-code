@@ -1,9 +1,11 @@
 export default {
   openSwitcher: '切换会话 / 工作区',
   openSettings: '会话设置',
-  settingsTitle: '会话设置',
   groupSession: '当前会话',
   groupApp: '应用偏好',
+  // The sheet's account group heading. Upstream's desktop settings say 账户 and
+  // its mobile sheet says 账号, so the two surfaces cannot share settings.tabs.account.
+  groupAccount: '账号',
   sheetLabel: '面板',
   closeSheet: '关闭',
   tapToCycle: '点击切换',
@@ -14,6 +16,7 @@ export default {
   permManualSub: '每个工具都确认',
   permAutoSub: '完全自主，不再提问',
   permYoloSub: '自动批准工具，仍可能提问',
+  goalModeSub: '目标模式',
   planModeSub: '计划模式',
   swarmModeSub: 'Swarm 模式',
   archivedSessions: '已归档会话',

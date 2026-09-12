@@ -4,6 +4,7 @@
      Includes focus trap, Esc-to-close, and optional overlay-click-to-close. -->
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { openDialogCount } from '../../composables/dialogStack';
 import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import IconButton from './IconButton.vue';
@@ -19,6 +20,8 @@ import Icon from './Icon.vue';
 // gates the panel's `.lg-frost` filter via the WS-1B override in style.css.
 const settleStep = ref(0);
 let settleRaf = 0;
+
+const { t } = useI18n();
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -37,6 +40,12 @@ const props = withDefaults(defineProps<{
   /** Element (or selector / resolver) to receive focus when the dialog opens.
    *  Falls back to the first focusable element, then the dialog panel. */
   initialFocus?: HTMLElement | string | (() => HTMLElement | null | undefined);
+  /** Paint the panel with the app background instead of the raised surface —
+   *  the settings dialog's own chrome (nav header + region header) fills the
+   *  top edge, so a raised card behind it would show as a seam. */
+  grouped?: boolean;
+  /** Accessible name for the dialog when no visible title is rendered. */
+  ariaLabel?: string;
 }>(), {
   closeOnOverlay: true,
   closeOnEsc: true,
@@ -176,9 +185,10 @@ onBeforeUnmount(() => {
       <div
         ref="panel"
         class="ui-dialog lg-frost lg-lens"
-        :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed' }, { 'step-2': settleStep >= 2 }]"
+        :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed', 'ui-dialog--grouped': grouped }, { 'step-2': settleStep >= 2 }]"
         role="dialog"
         aria-modal="true"
+        :aria-label="ariaLabel ?? title"
         tabindex="-1"
       >
         <div v-if="title || $slots.head" class="ui-dialog__head">
@@ -188,7 +198,7 @@ onBeforeUnmount(() => {
               <div v-if="description" class="ui-dialog__desc">{{ description }}</div>
             </div>
           </slot>
-          <IconButton class="ui-dialog__close" size="sm" label="Close" @click="close">
+          <IconButton class="ui-dialog__close" size="sm" :label="t('common.close')" @click="close">
             <Icon name="close" size="md" />
           </IconButton>
         </div>
@@ -239,6 +249,7 @@ onBeforeUnmount(() => {
 .ui-dialog--lg { width: min(640px, 100%); }
 .ui-dialog--xl { width: min(var(--p-content-max), 100%); }
 .ui-dialog--fixed-height { height: min(680px, calc(100vh - var(--space-8) * 2)); }
+.ui-dialog--grouped { background: var(--color-bg); }
 .ui-dialog--flush .ui-dialog__body { padding: 0; }
 .ui-dialog__head {
   display: flex;

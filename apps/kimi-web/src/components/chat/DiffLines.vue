@@ -3,11 +3,19 @@
      inline tool-call edit previews (ToolCall). Owns only the rows + their
      styling; the parent controls the surrounding height / scroll. -->
 <script setup lang="ts">
+import { ref } from 'vue';
 import type { DiffViewLine } from '../../types';
+import { useSelectionCapture } from '../../composables/useSelectionQuote';
 
 defineProps<{
   lines: DiffViewLine[];
 }>();
+
+// Diff text selections open the app-wide quote bubble — one mount covers the
+// changes panel, the per-turn diff tab and the tool-diff preview, all of which
+// render through this component.
+const rootRef = ref<HTMLElement | null>(null);
+useSelectionCapture(() => rootRef.value);
 
 function oldGutter(line: DiffViewLine): string {
   return line.oldNo !== undefined ? String(line.oldNo) : '';
@@ -21,7 +29,7 @@ function rowClass(line: DiffViewLine): string {
 </script>
 
 <template>
-  <div class="diff-lines">
+  <div ref="rootRef" class="diff-lines">
     <div v-for="(line, i) in lines" :key="i" class="dl" :class="rowClass(line)">
       <template v-if="line.type === 'hunk'">
         <span class="hunk-text">{{ line.text }}</span>

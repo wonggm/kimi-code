@@ -1,5 +1,11 @@
 export default {
   quote: 'Quote',
+  selection: {
+    label: 'Selection actions',
+    placeholder: 'Add a comment… (optional)',
+    cancel: 'Cancel',
+    addToChat: 'Add to chat',
+  },
   jumpToLatestAria: 'Jump to latest message',
   toc: 'Conversation outline',
   newMessages: 'Latest messages',
@@ -17,19 +23,25 @@ export default {
   summaryTitle: 'Compaction summary',
   manuallyAborted: 'Manually stopped',
   undo: 'Undo',
+  undoEdit: 'Undo edit',
   undoTooltip: 'Undoing the conversation will not roll back code changes',
   undoConfirm: 'Undo last message?',
   undone: 'Undone — the message is back in the composer',
   notification: {
-    kindTask: 'Background task',
-    kindSubagent: 'Subagent',
-    title: {
-      completed: '{kind} completed',
-      failed: '{kind} failed',
-      timed_out: '{kind} timed out',
-      killed: '{kind} killed',
-      lost: '{kind} lost',
-      info: '{kind} notification',
+    sentBy: {
+      task: 'From background (Bash)',
+      subagent: 'From background (Agent)',
+    },
+    bodyLine: '{status}: {description}',
+    reason: 'Reason: {reason}',
+    userStopped: 'Stopped by user',
+    statusTitle: {
+      completed: 'Completed',
+      failed: 'Failed',
+      timed_out: 'Timed out',
+      killed: 'Stopped',
+      lost: 'Lost',
+      info: 'Notification',
     },
     status: {
       completed: 'completed',

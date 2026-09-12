@@ -7,6 +7,7 @@
 import { onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useGlassRefraction } from '../../composables/useGlassRefraction';
+import { openDialogCount } from '../../composables/dialogStack';
 
 const { t } = useI18n();
 
@@ -47,6 +48,22 @@ function close(): void {
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape') close();
 }
+
+// A sheet is an overlay like the dialog, and the toast host anchors below an
+// open overlay: WarningToasts reads this count to decide its `below-overlay`
+// class. Upstream's toasts carry that class while the mobile settings sheet is
+// open, so the sheet registers here the same way Dialog does.
+watch(
+  () => props.modelValue,
+  (open, wasOpen) => {
+    if (open === wasOpen) return;
+    openDialogCount.value = Math.max(0, openDialogCount.value + (open ? 1 : -1));
+  },
+  { immediate: true },
+);
+onUnmounted(() => {
+  if (props.modelValue) openDialogCount.value = Math.max(0, openDialogCount.value - 1);
+});
 
 watch(
   () => props.modelValue,

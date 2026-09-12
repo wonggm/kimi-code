@@ -1,17 +1,24 @@
 <!-- apps/kimi-web/src/components/chat/TaskNotice.vue -->
 <!-- In-transcript notice for a background task completion: the daemon injects
      a user message whose text is a `<notification>` XML block (origin kind
-     `task`). Rendered as a light notice — summary title + body, an output-file
-     row with a copy-path action, and a small output-preview snippet — rather
-     than a user bubble. Renders either as a standalone turn (pass turnId for
-     the scroll anchor) or embedded in an assistant turn's blocks. -->
+     `task`). Rendered as a light notice — a "From background (Bash)" sender
+     line plus one status body line, an output-file row with a copy-path
+     action, and a small output-preview snippet — rather than a user bubble.
+     Renders either as a standalone turn (pass turnId for the scroll anchor) or
+     embedded in an assistant turn's blocks. -->
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Icon from '../ui/Icon.vue';
 import MessageTime from './MessageTime.vue';
 import { copyTextToClipboard } from '../../lib/clipboard';
-import { parseTaskNotification, type TaskNotification } from '../../lib/taskNotification';
+import {
+  isBackgroundTaskTitle,
+  parseTaskNotification,
+  parseTaskNotificationBody,
+  taskStatusFromType,
+  type TaskNotification,
+} from '../../lib/taskNotification';
 
 const props = defineProps<{
   text: string;
@@ -27,36 +34,44 @@ const { t } = useI18n();
 const notice = computed<TaskNotification | null>(() => parseTaskNotification(props.text));
 
 // Fall back to the raw text when the payload is not a parseable notification.
-const body = computed(() => notice.value?.body?.trim() || props.text.trim());
+const rawBody = computed(() => notice.value?.body?.trim() || props.text.trim());
 
-const KIND_LABEL_KEYS: Record<string, string> = {
-  subagent: 'conversation.notification.kindSubagent',
-};
+/** The sender line: "From background (Bash)" / "From background (Agent)". */
+const title = computed(() =>
+  notice.value?.agentId
+    ? t('conversation.notification.sentBy.subagent')
+    : t('conversation.notification.sentBy.task'),
+);
 
-const TITLE_KEYS: Record<string, string> = {
-  completed: 'conversation.notification.title.completed',
-  failed: 'conversation.notification.title.failed',
-  timed_out: 'conversation.notification.title.timed_out',
-  killed: 'conversation.notification.title.killed',
-  lost: 'conversation.notification.title.lost',
-};
-
-function statusSuffix(type: string | undefined): string {
-  for (const key of ['completed', 'failed', 'timed_out', 'killed', 'lost']) {
-    if (type?.endsWith(`.${key}`)) return key;
-  }
-  return 'info';
-}
-
-/** "Background subagent failed" — from the payload's own Title: line when the
-    engine sent one, else rebuilt from source kind + task status. */
-const title = computed(() => {
-  if (notice.value?.title && notice.value.title.length > 0) return notice.value.title;
-  const kindKey = KIND_LABEL_KEYS[notice.value?.sourceKind ?? ''];
-  const kind = kindKey ? t(kindKey) : t('conversation.notification.kindTask');
-  const suffix = statusSuffix(notice.value?.type);
-  return t(TITLE_KEYS[suffix] ?? TITLE_KEYS['info']!, { kind });
+/** The engine's boilerplate `<description> <status>.` first line, split so the
+    card can show a single "Completed: <description>" body line. Null for
+    meaning-carrying bodies (a background-question outcome) and for payloads
+    that are not parseable notifications — those fall back to the raw body. */
+const parsedBody = computed(() => {
+  const n = notice.value;
+  if (!n || !isBackgroundTaskTitle(n.title)) return null;
+  const parsed = parseTaskNotificationBody(n.body);
+  if (parsed === null || parsed.status !== taskStatusFromType(n.type)) return null;
+  return parsed;
 });
+
+const bodyLine = computed(() => {
+  const parsed = parsedBody.value;
+  if (!parsed) return rawBody.value;
+  const status = parsed.userStopped
+    ? t('conversation.notification.userStopped')
+    : t(`conversation.notification.statusTitle.${parsed.status}`);
+  return parsed.description === ''
+    ? status
+    : t('conversation.notification.bodyLine', { status, description: parsed.description });
+});
+
+const reasonLine = computed(() => {
+  const reason = parsedBody.value?.reason;
+  return reason ? t('conversation.notification.reason', { reason }) : '';
+});
+
+const restLine = computed(() => parsedBody.value?.rest ?? '');
 
 type NoticeTone = 'info' | 'success' | 'warn' | 'err';
 
@@ -118,7 +133,9 @@ const previewText = computed(() => outputPreview.value?.text ?? '');
       </span>
       <div class="tn-main">
         <div class="tn-title">{{ title }}</div>
-        <div v-if="body" class="tn-body">{{ body }}</div>
+        <div v-if="bodyLine" class="tn-body">{{ bodyLine }}</div>
+        <div v-if="reasonLine" class="tn-body tn-reason">{{ reasonLine }}</div>
+        <div v-if="restLine" class="tn-body tn-rest">{{ restLine }}</div>
         <div v-if="outputFile" class="tn-file">
           <span class="tn-path" :title="outputFile.path">{{ outputFile.path }}</span>
           <span v-if="outputFile.bytes !== undefined" class="tn-bytes">
@@ -199,6 +216,11 @@ const previewText = computed(() => outputPreview.value?.text ?? '');
   color: var(--color-text-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* Failure reason and the subagent recovery hint are secondary to the status line. */
+.tn-reason,
+.tn-rest {
+  font-size: var(--text-xs);
 }
 
 .tn-file {

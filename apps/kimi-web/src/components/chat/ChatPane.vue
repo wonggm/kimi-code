@@ -7,7 +7,7 @@ import type { DetachTaskTarget } from '../../lib/detachTarget';
 import type { AppSkill } from '../../api/types';
 import ToolCall from './ToolCall.vue';
 import ToolGroup from './ToolGroup.vue';
-import ToolFoldRow from './ToolFoldRow.vue';
+import ActivityRun from './ActivityRun.vue';
 import Markdown from './Markdown.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import ActivityNotice from './ActivityNotice.vue';
@@ -22,6 +22,7 @@ import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
+import { toQuoteBlock, useSelectionCapture } from '../../composables/useSelectionQuote';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import { getKimiWebApi } from '../../api';
@@ -35,6 +36,7 @@ import {
   turnToMarkdown,
 } from '../chatTurnRendering';
 import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX } from '../../lib/toolFold';
+import { activityRunFolding } from '../../lib/conversationPrefs';
 
 const { t, locale } = useI18n();
 const { confirm } = useConfirmDialog();
@@ -163,6 +165,10 @@ const props = withDefaults(
 const topSentinelRef = ref<HTMLElement | null>(null);
 let topSentinelObserver: IntersectionObserver | null = null;
 
+// Text selections inside the transcript open the app-wide quote bubble.
+const chatRootRef = ref<HTMLElement | null>(null);
+useSelectionCapture(() => chatRootRef.value);
+
 function observeTopSentinel(): void {
   if (!topSentinelRef.value || typeof IntersectionObserver === 'undefined') return;
   topSentinelObserver?.disconnect();
@@ -227,9 +233,11 @@ const expandedFolds = computed<Set<string>>(() => {
   return set;
 });
 
-function onFoldToggle(foldKey: string): void {
-  const next = !toolExpandState.get(foldKey);
-  toolExpandState.set(foldKey, next);
+/** ActivityRun owns the open state and reports the value it wants, so the write
+ *  to the shared fold map stays here (a second writer would flip the key twice
+ *  and the run would never open). */
+function onFoldToggle2(foldKey: string, open: boolean): void {
+  toolExpandState.set(foldKey, open);
   foldTick.value++;
 }
 
@@ -242,7 +250,9 @@ function foldKeyForBlock(block: { tools: { tool: { id?: string }; sourceIndex: n
  *  the lib helper; lives here so the row template can call it inline without
  *  re-importing. */
 function renderBlocksFor(turn: ChatTurn) {
-  return foldRenderBlocks(assistantRenderBlocks(turn), expandedFolds.value);
+  // No expandedFolds here: the run's cards render inside ActivityRun, so the
+  // fold helper must not also emit a follow-up tool-stack for an open run.
+  return foldRenderBlocks(assistantRenderBlocks(turn), new Set(), activityRunFolding.value);
 }
 
 function renderBlockKeyFor(block: ReturnType<typeof renderBlocksFor>[number], index: number): string {
@@ -833,13 +843,8 @@ function copyAssistantRun(index: number): void {
   }).catch(() => {/* ignore */});
 }
 
-// Format a turn's text as a markdown blockquote for quote-to-chat.
-function toQuoteBlock(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => `> ${line}`)
-    .join('\n');
-}
+// Format a turn's text as a markdown blockquote for quote-to-chat (the shared
+// formatter is also used by selection quoting).
 function quoteTurn(text: string): void {
   emit('quote', toQuoteBlock(text));
 }
@@ -944,7 +949,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
   <!-- Chat bubbles: user turns are right-aligned soft-blue bubbles; assistant
        turns are left-aligned plain text with no role/name label, in order:
        thinking → message text → tool cards. -->
-  <div class="chat">
+  <div ref="chatRootRef" class="chat">
     <div v-if="sessionLoading" class="chat-loading">
       <Spinner size="sm" />
       <span class="chat-loading-text">{{ t('conversation.loading') }}</span>
@@ -1037,34 +1042,38 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
           </div>
           <div v-if="turn.createdAt || canEditTurn(turn)" class="u-meta">
             <div v-if="canEditTurn(turn)" class="u-edit-wrap" :class="{ undoing: undoingTurnId === turn.id }">
+              <Tooltip :text="t('conversation.undoTooltip')">
+                <button
+                  type="button"
+                  class="u-edit"
+                  :aria-label="t('conversation.undoEdit')"
+                  @click="onUndo(turn)"
+                >
+                  <Icon name="undo" size="sm" />
+                </button>
+              </Tooltip>
+            </div>
+            <Tooltip v-if="turn.text.trim().length > 0" :text="t('conversation.quote')">
               <button
                 type="button"
-                class="u-edit"
-                :aria-label="t('conversation.undoTooltip')"
-                @click="onUndo(turn)"
+                class="u-copy"
+                :aria-label="t('conversation.quote')"
+                @click.stop="quoteTurn(turn.text)"
               >
-                <Icon name="undo" size="sm" />
+                <Icon name="message" size="sm" />
               </button>
-            </div>
-            <button
-              v-if="turn.text.trim().length > 0"
-              type="button"
-              class="u-copy"
-              :aria-label="t('conversation.quote')"
-              @click.stop="quoteTurn(turn.text)"
-            >
-              <Icon name="message" size="sm" />
-            </button>
-            <button
-              v-if="turn.text.trim().length > 0"
-              type="button"
-              class="u-copy"
-              :aria-label="t('filePreview.copy')"
-              @click.stop="copyUserMessage(turn)"
-            >
-              <Icon v-if="copiedTurn !== turn.id" name="copy" size="sm" />
-              <Icon v-else name="check" size="sm" />
-            </button>
+            </Tooltip>
+            <Tooltip v-if="turn.text.trim().length > 0" :text="t('filePreview.copy')">
+              <button
+                type="button"
+                class="u-copy"
+                :aria-label="t('filePreview.copy')"
+                @click.stop="copyUserMessage(turn)"
+              >
+                <Icon v-if="copiedTurn !== turn.id" name="copy" size="sm" />
+                <Icon v-else name="check" size="sm" />
+              </button>
+            </Tooltip>
             <MessageTime v-if="turn.createdAt" :time="turn.createdAt" />
           </div>
         </div>
@@ -1120,13 +1129,28 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
               @detach-task="emit('detachTask', $event)"
             />
             <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
-            <ToolFoldRow
+            <!-- Upstream's activity run: one head row over the run's tool
+                 cards. The cards are always mounted inside and inert while the
+                 run is closed, exactly as upstream renders it. -->
+            <ActivityRun
               v-else-if="blk.kind === 'tool-fold'"
-              :tools="blk.tools"
-              :source-index="blk.sourceIndex"
+              :items="blk.tools"
+              :run-key="foldKeyForBlock(blk)"
               :expanded="expandedFolds.has(foldKeyForBlock(blk))"
-              @toggle="onFoldToggle(foldKeyForBlock(blk))"
-            />
+              @toggle-fold="onFoldToggle2"
+            >
+              <ToolGroup
+                :tools="blk.tools"
+                mobile
+                :tool-diff-panel="toolDiffPanel"
+                @open-media="emit('openMedia', $event)"
+                @open-file="emit('openFile', $event)"
+                @open-tool-diff="emit('openToolDiff', $event)"
+                @open-agent="emit('openAgent', $event)"
+                @detach-task="emit('detachTask', $event)"
+              />
+            </ActivityRun>
+            <TaskNotice v-else-if="blk.kind === 'task'" :text="blk.text" :created-at="blk.createdAt" />
           </template>
         </template>
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />

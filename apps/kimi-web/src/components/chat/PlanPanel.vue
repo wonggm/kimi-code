@@ -35,7 +35,7 @@ function openPlanFile(path: string): void {
 </script>
 
 <template>
-  <div class="pp">
+  <div class="pp plan-panel">
     <template v-if="plan">
       <div v-if="plan.review?.selectedOption" class="pp-row">
         <span class="pp-label">{{ t('tools.plan.selectedOption') }}</span>

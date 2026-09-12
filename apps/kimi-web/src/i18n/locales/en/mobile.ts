@@ -1,9 +1,9 @@
 export default {
   openSwitcher: 'Switch session / workspace',
   openSettings: 'Session settings',
-  settingsTitle: 'Session settings',
   groupSession: 'Current session',
   groupApp: 'App preferences',
+  groupAccount: 'Account',
   sheetLabel: 'Sheet',
   closeSheet: 'Close',
   tapToCycle: 'tap to cycle',
@@ -14,6 +14,7 @@ export default {
   permManualSub: 'confirm every tool',
   permAutoSub: 'fully autonomous, never asks',
   permYoloSub: 'auto-approve tools, may still ask',
+  goalModeSub: 'Goal mode',
   planModeSub: 'Plan mode',
   swarmModeSub: 'Swarm mode',
   archivedSessions: 'Archived sessions',

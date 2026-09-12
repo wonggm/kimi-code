@@ -34,6 +34,9 @@ const props = defineProps<{
   /** Experimental `auto_session_title` flag — row rename shows the gen-title
    *  button. */
   autoSessionTitle?: boolean;
+  /** Pinned rows belonging to this workspace; when every session of the group
+   *  is pinned the group renders upstream's summary instead of the empty state. */
+  pinnedCount?: number;
 }>();
 
 const emit = defineEmits<{
@@ -228,7 +231,11 @@ function onHeaderDragStart(event: DragEvent): void {
             : t('sidebar.showAll', { count: showAllCount() })
         }}</span>
       </button>
-      <div v-if="group.sessions.length === 0" class="group-empty">{{ t('sidebar.noSessions') }}</div>
+      <div v-if="group.sessions.length === 0" class="group-empty">{{
+        (pinnedCount ?? 0) > 0
+          ? t('sidebar.allPinned', { count: pinnedCount })
+          : t('sidebar.noSessions')
+      }}</div>
     </div>
   </div>
 </template>
@@ -361,7 +368,7 @@ function onHeaderDragStart(event: DragEvent): void {
    empty lead slot mirrors a session row's status gutter, so the label text lands
    at the exact same x as the session titles (--sb-pad-x + --sb-gutter + --sb-gap
    from the sidebar edge). Hover washes the row in the shared row hover fill,
-   matching New chat / session rows; no text recolor. */
+   matching New session / session rows; no text recolor. */
 .show-more {
   display: flex;
   align-items: center;

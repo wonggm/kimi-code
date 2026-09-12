@@ -91,6 +91,8 @@ import type {
   WireSessionRuntimeStatus,
   WireSessionSnapshot,
   WireWorkspace,
+  WirePluginSummary,
+  WirePluginMarketplaceEntry,
   WireLogoutResult,
   WirePlanResponse,
   WireTranscriptPage,
@@ -1330,6 +1332,42 @@ export class DaemonKimiWebApi implements KimiWebApi {
     if (input.name !== undefined) body['name'] = input.name;
     const data = await this.http.post<WireWorkspace>('/workspaces', body);
     return toAppWorkspace(data);
+  }
+
+  /** Installed plugins. GET /api/v1/plugins → { plugins }. */
+  async listPlugins(): Promise<WirePluginSummary[]> {
+    const data = await this.http.get<{ plugins: WirePluginSummary[] }>('/plugins');
+    return data.plugins ?? [];
+  }
+
+  /** Marketplace entries. GET /api/v1/plugins/marketplace → { entries }. */
+  async listPluginMarketplace(): Promise<WirePluginMarketplaceEntry[]> {
+    const data = await this.http.get<{ entries: WirePluginMarketplaceEntry[] }>(
+      '/plugins/marketplace',
+    );
+    return data.entries ?? [];
+  }
+
+  /**
+   * Install a plugin from a local path, a zip URL or a GitHub repo.
+   * POST /api/v1/plugins { source }. Throws on a rejected source.
+   */
+  async installPlugin(source: string): Promise<WirePluginSummary> {
+    return this.http.post<WirePluginSummary>('/plugins', { source });
+  }
+
+  /**
+   * Enable or disable an installed plugin. The server routes actions through
+   * its action-suffix dispatcher, so the verb rides on the path:
+   * POST /api/v1/plugins/{id}:enable|disable.
+   */
+  async setPluginEnabled(id: string, enabled: boolean): Promise<void> {
+    await this.http.post(`/plugins/${encodeURIComponent(id)}:${enabled ? 'enable' : 'disable'}`, {});
+  }
+
+  /** Remove an installed plugin. POST /api/v1/plugins/{id}:remove. */
+  async removePlugin(id: string): Promise<void> {
+    await this.http.post(`/plugins/${encodeURIComponent(id)}:remove`, {});
   }
 
   /**

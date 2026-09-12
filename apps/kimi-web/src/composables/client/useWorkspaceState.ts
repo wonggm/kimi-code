@@ -2458,7 +2458,8 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     const on = !current;
     if (on && rawState.permission === 'manual') {
       const ok = await confirm({
-        title: t('workspace.swarmEnableConfirm'),
+        title: t('workspace.swarmEnableTitle'),
+        message: t('workspace.swarmEnableBody'),
         variant: 'primary',
       });
       if (!ok) return;

@@ -10,6 +10,7 @@ import ComposerModelMenu from './ComposerModelMenu.vue';
 import { buildSlashItems, parseSlash, SKILL_COMMAND_PREFIX } from '../../lib/slashCommands';
 import { formatTokens } from '../../lib/formatTokens';
 import type { FileItem } from './MentionMenu.vue';
+import type { IconName } from '../../lib/icons';
 import type { ActivationBadges, ConversationStatus, PermissionMode, QueuedPromptView } from '../../types';
 import type { AppGoal, AppModel, AppSkill, ThinkingLevel } from '../../api/types';
 import {
@@ -48,7 +49,7 @@ const props = withDefaults(defineProps<{
   sessionId?: string;
   queued?: QueuedPromptView[];
   searchFiles?: (q: string) => Promise<FileItem[]>;
-  /** If undefined, attach button is hidden and paste/drag are no-ops. */
+  /** If undefined, the add menu's Files row is hidden and paste/drag are no-ops. */
   uploadImage?: (file: Blob, name?: string) => Promise<{ fileId: string; name: string; mediaType: string } | null>;
   /** Status data (model, context, permission) — drives the bottom toolbar. */
   status?: ConversationStatus;
@@ -80,6 +81,11 @@ const props = withDefaults(defineProps<{
   skills: () => [],
 });
 
+// Upstream switches the placeholder with the armed work mode, and gives plan its
+// own wording ("What should the agent plan for?"); the fork only had the goal
+// case, so an armed plan kept the default "Type a message…". Precedence follows
+// the work-mode pill below (goal over plan); props are read directly so this
+// computed does not depend on declarations further down the file.
 const placeholder = computed(() =>
   props.starting
     ? t('composer.starting')
@@ -87,7 +93,9 @@ const placeholder = computed(() =>
       ? t('composer.placeholderRunning')
       : props.goalMode
         ? t('status.goalPlaceholder')
-        : t('composer.placeholder'),
+        : props.planMode || props.planArmed
+          ? t('status.planPlaceholder')
+          : t('composer.placeholder'),
 );
 
 // Hide the overlay placeholder when the textarea has content. Native
@@ -116,6 +124,9 @@ const emit = defineEmits<{
   compact: [];
   pickModel: [];
   selectModel: [modelId: string];
+  /** Any dock-anchored popup opened or closed — the dock root carries upstream's
+      `has-popup` while one is up. */
+  popup: [open: boolean];
 }>();
 
 const { t, locale } = useI18n();
@@ -363,32 +374,33 @@ useGlassRefraction(cardRef, { transient: false });
 const modelDropdownStyle = ref<Record<string, string>>({});
 
 function positionModelDropdown(): void {
-  if (isMobile.value) return;
   const bar = toolbarRef.value;
   const menu = modelDropdownRef.value;
   if (!bar || !menu) return;
   const barRect = bar.getBoundingClientRect();
   const width = menu.offsetWidth;
   const height = menu.offsetHeight;
-  const rightInset = 10;
-  const anchor = new DOMRect(barRect.right - rightInset - width, barRect.top, width, barRect.height);
-  const { top, left, placement } = clampMenuPlacement(anchor, width, height, 'above', { gap: 4, margin: 8 });
+  // Upstream centres the model dropdown on its trigger pill (measured: pill
+  // centre 1072.5, menu centre 1070) and leaves a 14px gap above it. The fork
+  // right-aligned the menu to the toolbar, which read as "not aligned".
+  const pillRect = bar.querySelector('.model-pill')?.getBoundingClientRect() ?? barRect;
+  const anchor = new DOMRect(pillRect.left + pillRect.width / 2 - width / 2, pillRect.top, width, pillRect.height);
+  const { top, left, placement } = clampMenuPlacement(anchor, width, height, 'above', { gap: 14, margin: 8 });
   const style: Record<string, string> = {
     top: `${Math.round(top - barRect.top)}px`,
     bottom: 'auto',
     left: `${Math.round(left - barRect.left)}px`,
   };
-  if (placement === 'above' && top > barRect.top - 4 - height + 0.5) {
+  if (placement === 'above' && top > pillRect.top - 14 - height + 0.5) {
     // The helper relaxed the top clamp (space above was smaller than the
-    // margin) — keep the panel glued to the toolbar edge instead of drifting.
-    style.top = `${Math.round(-4 - height)}px`;
+    // margin) — keep the panel glued to the pill's edge instead of drifting.
+    style.top = `${Math.round(pillRect.top - barRect.top - 14 - height)}px`;
   }
   modelDropdownStyle.value = style;
 }
 
 let modelDropdownObserver: ResizeObserver | null = null;
 function syncModelDropdownViewport(): void {
-  if (isMobile.value) return;
   const menu = modelDropdownRef.value;
   if (dropdownOpen.value && menu) {
     if (!modelDropdownObserver) {
@@ -831,6 +843,14 @@ function handleKeydown(e: KeyboardEvent): void {
 const sendLabel = computed(() => t('composer.send'));
 const hasUpload = computed(() => !!props.uploadImage);
 
+// Upstream greys the send disc out while there is nothing to submit. This
+// mirrors the handleSubmit guard (text or at least one ready attachment); the
+// guard itself is unchanged, so the button is only painted, never re-wired.
+const canSubmit = computed(() =>
+  text.value.trim().length > 0
+    || attachments.value.some((a) => !a.uploading && !a.error && a.fileId),
+);
+
 // The mobile cross-fade keeps both buttons mounted, so the faded-out half has
 // to leave the tab order and the accessibility tree; on desktop the inactive
 // stop button is display:none, which already does that.
@@ -993,6 +1013,15 @@ function dismissWmPill(): void {
 
 // Add menu ("+" next to the input) — Files / Goal / Plan / Swarm.
 const addOpen = ref(false);
+
+// Upstream marks the dock with `has-popup` while any popup anchored to it is up
+// — the two dropdowns, the add menu, and the slash/mention menus. Declared here,
+// after every flag, because `watch` reads the source during setup. The dock root
+// owns the class, so the state is reported up.
+const anyPopupOpen = computed(
+  () => dropdownOpen.value || permDropdownOpen.value || addOpen.value || slashOpen.value || mentionOpen.value,
+);
+watch(anyPopupOpen, (open) => emit('popup', open));
 const addRef = ref<HTMLElement | null>(null);
 const addMenuRef = ref<HTMLElement | null>(null);
 // The menu is position:fixed (so no composer stacking context can paint over
@@ -1041,22 +1070,29 @@ function toggleAddMenu(): void {
   if (!isMobile.value) {
     const r = addRef.value?.getBoundingClientRect();
     if (r) {
-      addMenuStyle.value = {
-        left: `${Math.round(r.left)}px`,
+      // Upstream's add menu spans the composer card's *content* box (`left: 0;
+      // right: 0` inside the card, whose box is border-box with a 1px border) —
+      // so the panel copies the card's content-box left edge and width, not its
+      // border box, which would be 2px wider.
+      const cardEl = cardRef.value;
+      const card = cardEl?.getBoundingClientRect();
+      const style: Record<string, string> = {
+        left: `${Math.round((card?.left ?? r.left) + (cardEl?.clientLeft ?? 0))}px`,
         bottom: `${Math.round(window.innerHeight - r.top + 8)}px`,
       };
+      if (cardEl) style.width = `${Math.round(cardEl.clientWidth)}px`;
+      addMenuStyle.value = style;
     }
   }
   addOpen.value = true;
   setTimeout(() => document.addEventListener('mousedown', onAddDocClick), 0);
   void nextTick(() => {
-    (addMenuRef.value?.querySelector<HTMLElement>('.am-row, .am-row-main') ?? undefined)?.focus();
+    (addMenuRef.value?.querySelector<HTMLElement>('.am-row') ?? undefined)?.focus();
   });
 }
 // Keyboard nav inside the add menu: arrows cycle the rows, Escape/Tab dismiss.
-// The goal row is a container with a focusable main button, so rows = focusable
-// row primaries: the plain rows plus the goal main button.
-const ADD_ROW_SELECTOR = '.am-row:not(.am-row-goal), .am-row-main';
+// Every row is a focusable button.
+const ADD_ROW_SELECTOR = '.am-row';
 function onAddKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -1089,6 +1125,26 @@ function runAddRow(action: () => void): void {
   action();
   textareaRef.value?.focus();
 }
+/**
+ * Swarm turns on behind a confirmation, as upstream has it: its Swarm row opens
+ * a dialog ("Enable swarm mode?" / "The agent will run multiple sub-agents in
+ * parallel.") and only the dialog's confirm toggles the mode. The dialog lives
+ * in the client (`toggleSwarmMode`), which every swarm entry point goes through,
+ * so the row only emits — otherwise the mode would ask twice.
+ */
+function chooseSwarmRow(): void {
+  runAddRow(() => emit('toggleSwarm'));
+}
+
+/** Commands / Mention rows (mobile sheet only): seed the composer with the
+ *  trigger those menus open on, exactly as typing it would. An existing draft is
+ *  kept and the trigger appended after it, so the row never discards text. */
+function seedTrigger(char: '/' | '@'): void {
+  const current = text.value;
+  if (current.length === 0) text.value = char;
+  else if (!/\s$/.test(current)) text.value = `${current} ${char}`;
+  else text.value = `${current}${char}`;
+}
 /** Plan row: arm for the next send when off; an ACTIVE plan toggles off (the
  *  pill × is the other exit). */
 function choosePlanRow(): void {
@@ -1096,10 +1152,10 @@ function choosePlanRow(): void {
   else runAddRow(() => emit('togglePlanArmed'));
 }
 // Permission modes
-const PERM_MODES: { mode: PermissionMode; color: string; labelKey: string; descKey: string }[] = [
-  { mode: 'manual', color: 'var(--dim)', labelKey: 'status.permissionManual', descKey: 'status.permissionManualDesc' },
-  { mode: 'yolo', color: 'var(--color-warning)', labelKey: 'status.permissionYolo', descKey: 'status.permissionYoloDesc' },
-  { mode: 'auto', color: 'var(--color-danger)', labelKey: 'status.permissionAuto', descKey: 'status.permissionAutoDesc' },
+const PERM_MODES: { mode: PermissionMode; rowColor: string; icon: IconName; labelKey: string; descKey: string }[] = [
+  { mode: 'manual', rowColor: 'var(--color-text)', icon: 'hand', labelKey: 'status.permissionManual', descKey: 'status.permissionManualDesc' },
+  { mode: 'yolo', rowColor: 'var(--color-warning)', icon: 'shield-question', labelKey: 'status.permissionYolo', descKey: 'status.permissionYoloDesc' },
+  { mode: 'auto', rowColor: 'var(--color-danger)', icon: 'shield-exclamation', labelKey: 'status.permissionAuto', descKey: 'status.permissionAutoDesc' },
 ];
 const menuMeasureRef = ref<HTMLElement | null>(null);
 const permissionDescriptionWidth = ref('');
@@ -1259,22 +1315,27 @@ function selectModel(modelId: string): void {
     <!-- Main composer card -->
     <div ref="cardRef" class="composer-card lg-frost lg-lens">
       <!-- Input row with popup menus -->
-      <div ref="cinWrapRef" class="cin-wrap">
+      <div
+        ref="cinWrapRef"
+        class="cin-wrap"
+        :class="{ 'has-wm-pill': !!wmPillKind }"
+      >
         <!-- Work-mode pill — armed/active plan or armed goal, floating over the
              textarea's top-left; × exits (un-arm or turn off). -->
-        <div v-if="wmPillKind" ref="wmPillRef" class="wm-pill">
-          <Icon :name="wmPillKind === 'goal' ? 'target' : 'file-edit'" size="sm" />
+        <span v-if="wmPillKind" ref="wmPillRef" class="wm-pill" :data-work-mode="wmPillKind">
+          <span class="wm-icon"><Icon :name="wmPillKind === 'goal' ? 'target' : 'file-edit'" size="sm" /></span>
           <span>{{ t(wmPillKind === 'goal' ? 'status.goalLabel' : 'status.planLabel') }}</span>
-          <IconButton
+          <button
+            type="button"
             class="wm-x"
-            size="sm"
-            :label="t('status.workModeDismiss')"
+            :aria-label="t('status.workModeDismiss')"
+            :title="t('status.workModeDismiss')"
             @mousedown.prevent
             @click="dismissWmPill"
           >
             <Icon name="close" size="sm" />
-          </IconButton>
-        </div>
+          </button>
+        </span>
         <!-- Slash menu (above textarea) — the clamp style keeps it inside the
              viewport (flip below when the space above the composer is small).
              Desktop only: on mobile the same content opens as a bottom sheet
@@ -1375,7 +1436,7 @@ function selectModel(modelId: string): void {
           <div v-if="status" ref="addRef" class="add">
             <Tooltip :text="t('composer.addMenu')">
               <IconButton
-                class="add-btn lg-glass"
+                class="composer-attach lg-glass"
                 size="md"
                 :label="t('composer.addMenu')"
                 :class="{ open: addOpen }"
@@ -1396,7 +1457,6 @@ function selectModel(modelId: string): void {
                 ref="addMenuRef"
                 class="add-menu lg-glass"
                 :style="addMenuStyle"
-                role="menu"
                 @click.stop
                 @keydown="onAddKeydown"
               >
@@ -1414,10 +1474,7 @@ function selectModel(modelId: string): void {
                   @files="runAddRow(openFilePicker)"
                   @goal-main="goalActive ? runAddRow(() => emit('focusGoal')) : runAddRow(() => emit('toggleGoal'))"
                   @plan="choosePlanRow"
-                  @swarm="runAddRow(() => emit('toggleSwarm'))"
-                  @pause="emit('controlGoal', 'pause')"
-                  @resume="emit('controlGoal', 'resume')"
-                  @cancel="emit('controlGoal', 'cancel')"
+                  @swarm="chooseSwarmRow"
                 />
               </div>
             </Teleport>
@@ -1433,12 +1490,18 @@ function selectModel(modelId: string): void {
             @click.stop="togglePermDropdown"
             @keydown.enter="togglePermDropdown"
             @keydown.space.prevent="togglePermDropdown"
-          >{{ permLabel }}</span>
+          >
+            <!-- Leading glyph from the same per-mode table the dropdown rows
+                 use (hand / shield-question / shield-exclamation), so the pill
+                 and its menu read as one control. -->
+            <Icon v-if="permInfo" class="perm-pill-icon" :name="permInfo.icon" size="md" />
+            <span class="perm-pill-label">{{ permLabel }}</span>
+          </span>
 
           <!-- Permission dropdown — anchored to the toolbar left side -->
           <div
             v-if="permDropdownOpen && status"
-            class="perm-dropdown lg-glass"
+            class="ui-menu perm-dropdown lg-glass"
             :style="permissionMenuStyle"
             role="menu"
             @click.stop
@@ -1446,15 +1509,20 @@ function selectModel(modelId: string): void {
             <button
               v-for="opt in PERM_MODES"
               :key="opt.mode"
-              class="pd-row"
+              type="button"
+              class="ui-menu-item ui-menu-item--md pd-row"
               :class="{ 'is-current': opt.mode === status.permission }"
-              role="menuitem"
+              role="menuitemradio"
+              :aria-checked="opt.mode === status.permission"
               @click="choosePermission(opt.mode)"
             >
-              <span class="pd-check"><Icon v-if="opt.mode === status.permission" name="check" size="sm" /></span>
+              <span class="pd-icon"><Icon :name="opt.icon" size="md" :style="{ color: opt.rowColor }" /></span>
               <span class="pd-info">
-                <span class="pd-name" :style="{ color: opt.color }">{{ t(opt.labelKey) }}</span>
+                <span class="pd-name" :style="{ color: opt.rowColor }">{{ t(opt.labelKey) }}</span>
                 <span class="pd-desc">{{ t(opt.descKey) }}</span>
+              </span>
+              <span class="pd-check">
+                <Icon v-if="opt.mode === status.permission" name="check" size="sm" :style="{ color: 'var(--color-accent)' }" />
               </span>
             </button>
           </div>
@@ -1480,7 +1548,10 @@ function selectModel(modelId: string): void {
             >
               <ContextRing :pct="pct" />
               <span class="ctx-num">{{ formatTokens(status.ctxUsed) }}</span>
-              <span class="ctx-sep">|</span>
+              <!-- The separator belongs to the cache readout: with no cache rate
+                   reported it used to hang after the token count with nothing
+                   following it. -->
+              <span v-if="status?.cacheHitRate" class="ctx-sep">|</span>
               <span v-if="status?.cacheHitRate" class="cache-badge" :title="`${status.cacheHitRate.toFixed(2)}% cache hit rate`">{{ status.cacheHitRate.toFixed(2) }}%</span>
             </span>
           </Tooltip>
@@ -1489,21 +1560,20 @@ function selectModel(modelId: string): void {
                the label collapses to the chevron only (icon-only); the hover
                tooltip still shows model + effort. -->
           <Tooltip :text="modelPillCollapsed ? modelPillLabel : null">
-            <span
+            <button
               v-if="status"
+              type="button"
               class="model-pill lg-glass"
               :class="{ open: dropdownOpen, 'icon-only': modelPillCollapsed }"
-              role="button"
-              tabindex="0"
               :aria-label="modelPillLabel"
+              aria-haspopup="menu"
+              :aria-expanded="dropdownOpen"
               @click.stop="toggleDropdown"
-              @keydown.enter="toggleDropdown"
-              @keydown.space.prevent="toggleDropdown"
             >
-              <b>{{ status.model }}</b>
+              <span class="mp-name">{{ status.model }}</span>
               <span v-if="thinkingSuffix" class="think-suffix">{{ thinkingSuffix }}</span>
               <Icon class="cv" name="chevron-down" size="sm" />
-            </span>
+            </button>
           </Tooltip>
           <!-- Send + stop — one toolbar slot. Desktop: `display: contents`, so
                the two keep their own slots exactly as before (stop only visible
@@ -1533,7 +1603,7 @@ function selectModel(modelId: string): void {
                 :aria-label="sendLabel"
                 :aria-hidden="sendHidden ? 'true' : undefined"
                 :tabindex="sendHidden ? -1 : undefined"
-                :disabled="starting"
+                :disabled="starting || !canSubmit"
                 @click="handleSubmit()"
               >
                 <Spinner v-if="starting" size="sm" />
@@ -1545,11 +1615,14 @@ function selectModel(modelId: string): void {
 
         <!-- Model dropdown — current provider models + controls + more. Positioned by
              inline style (viewport-clamped, flips below when short of space
-             above); measured against the toolbar via modelDropdownRef. -->
+             above); measured against the toolbar via modelDropdownRef. One
+             container for both form factors, as upstream has it: its phone
+             capture carries the same `ui-menu model-dropdown`, anchored to the
+             right edge. -->
         <div
-          v-if="dropdownOpen && status && !isMobile"
+          v-if="dropdownOpen && status"
           ref="modelDropdownRef"
-          class="model-dropdown lg-glass"
+          class="ui-menu model-dropdown lg-glass"
           :style="modelDropdownStyle"
           role="menu"
           @click.stop
@@ -1566,6 +1639,13 @@ function selectModel(modelId: string): void {
             @set-thinking="(level) => emit('setThinking', level)"
           />
         </div>
+      </div>
+      <!-- Composer footer — upstream's `.composer-footer`. The new-session state
+           puts the workspace chip here (see the ws-bar markup ConversationPane
+           slots in); the wrapper only renders when that slot has content, so it
+           adds no element on any other surface. -->
+      <div v-if="$slots.footer" class="composer-footer">
+        <slot name="footer" />
       </div>
   </div>
   <!-- Full-window drop target affordance: shown while files are dragged anywhere
@@ -1631,30 +1711,13 @@ function selectModel(modelId: string): void {
           :plan-on="planOn"
           :plan-armed-on="planArmedOn"
           :swarm-on="swarmOn"
+          show-trigger-rows
           @files="runAddRow(openFilePicker)"
+          @commands="runAddRow(() => seedTrigger('/'))"
+          @mention="runAddRow(() => seedTrigger('@'))"
           @goal-main="goalActive ? runAddRow(() => emit('focusGoal')) : runAddRow(() => emit('toggleGoal'))"
           @plan="choosePlanRow"
-          @swarm="runAddRow(() => emit('toggleSwarm'))"
-          @pause="emit('controlGoal', 'pause')"
-          @resume="emit('controlGoal', 'resume')"
-          @cancel="emit('controlGoal', 'cancel')"
-        />
-      </div>
-    </BottomSheet>
-
-    <BottomSheet
-      :model-value="dropdownOpen && isMobile && !!status"
-      @update:model-value="(open) => { if (!open) closeDropdown(); }"
-    >
-      <div class="menu-sheet" role="menu" @click.stop>
-        <ComposerModelMenu
-          :models="models"
-          :starred-ids="starredIds"
-          :status="status"
-          :thinking="thinking"
-          @select="selectModel"
-          @more="closeDropdown(); emit('pickModel')"
-          @set-thinking="(level) => emit('setThinking', level)"
+          @swarm="chooseSwarmRow"
         />
       </div>
     </BottomSheet>
@@ -1715,16 +1778,27 @@ function selectModel(modelId: string): void {
      icon-only state). Matches the add-button / send-button footprint. */
   --composer-control-size: 32px;
   --composer-send-inset: var(--space-2);
+  /* Upstream's card geometry: a 32px corner radius and a single soft drop
+     shadow. Both are geometry, not surface colour, so they hold in every
+     theme; the literal radius sits behind a local var because the shared
+     --radius-* scale stops at 20px. */
+  --composer-card-radius: 32px;
+  --composer-card-shadow: 0 5px 16px -4px rgba(0, 0, 0, 0.07);
+  /* Upstream's card hairline is rgba(255,255,255,.12) — the text colour at
+     ~14% (upstream's dark --color-text is rgba(255,255,255,.84)). Expressing
+     it that way keeps a visible edge in the light theme too, where a literal
+     white hairline would vanish on a light card. */
+  --composer-card-border: color-mix(in srgb, var(--color-text) 14%, transparent);
   position: relative;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  background: var(--bg);
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--composer-card-border);
+  border-radius: var(--composer-card-radius);
+  background: var(--color-composer-bg, var(--color-bg));
+  box-shadow: var(--composer-card-shadow);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .composer-card:focus-within {
   border-color: var(--color-accent);
-  box-shadow: var(--shadow-md), 0 0 0 3px var(--color-accent-soft);
+  box-shadow: var(--composer-card-shadow), 0 0 0 3px var(--color-accent-soft);
 }
 
 
@@ -1856,7 +1930,11 @@ function selectModel(modelId: string): void {
   outline: none;
   resize: none;
   font-family: var(--font-ui);
-  font-size: var(--content-font-size);
+  /* The user's configured font size, not upstream's literal 14px: they set the
+     UI size deliberately and reading their own typing at a smaller size than
+     their messages was wrong. Upstream's 14px is only correct at upstream's
+     default scale. This keeps the composer at the app's setting. */
+  font-size: var(--ui-font-size);
   background: transparent;
   /* No top padding: the card's own inset already places the editor row, and
      upstream's contenteditable has zero editor padding — the 9px here pushed
@@ -1883,6 +1961,17 @@ function selectModel(modelId: string): void {
   color: var(--color-text);
 }
 
+/* Work-mode pill reserve — upstream keeps the pill out of the text by reserving
+   its block space on the editor (`padding-top: var(--wm-pill-block-reserve)`,
+   the pill's own height plus the gap), which is why its placeholder starts below
+   the pill instead of under it. Without the reserve the pill sat on the
+   textarea's first line and covered the placeholder. `.ph` and `.ph-overlay`
+   must keep identical padding (see the .ph-overlay note), so both get it. */
+.cin-wrap.has-wm-pill .ph,
+.cin-wrap.has-wm-pill .ph-overlay {
+  padding-top: calc(var(--ui-font-size) * 1.5 + var(--space-1));
+}
+
 /* Placeholder overlay — sits BEHIND the textarea in the flex row, fully
    pointer-event transparent so clicks fall through to the textarea. The
    overlay is hidden the moment text is typed (showPlaceholderOverlay) so it
@@ -1902,7 +1991,9 @@ function selectModel(modelId: string): void {
   padding: 0 14px 0 0;
   color: var(--muted);
   font-family: var(--font-ui);
-  font-size: var(--content-font-size);
+  /* must match .ph's size exactly, or the placeholder and the caret sit on
+     different baselines (upstream's editor metrics). */
+  font-size: var(--ui-font-size);
   line-height: 1.5;
   pointer-events: none;
   user-select: none;
@@ -1948,28 +2039,38 @@ function selectModel(modelId: string): void {
 }
 .compact-chip:hover { background: var(--panel2); }
 
-/* Send button — circular accent icon. Always "send"; while running it enqueues
+/* Send button — circular icon. Always "send"; while running it enqueues
    (handled upstream). On desktop the interrupt is a separate Stop button so the
    two are never confused; on mobile the two share one slot.
 
+   Fill: upstream's send is a near-white disc (--color-send-bg) carrying a dark
+   glyph, not a saturated accent disc. The glyph therefore takes the theme's
+   page background — dark in the dark theme (on the white disc), white in the
+   light theme (where --color-send-bg maps to the accent seed, keeping the
+   fork's blue light send).
+   Empty input / sending: upstream disables the control and paints it with
+   --color-send-bg-disabled; the fork mirrors that in .send:disabled below,
+   while restarting the enabled fill for the sending spinner.
+
    Glass split: the `lg-glass` class on the element is inert with the
    liquid-glass toggle OFF — the consuming rule is gated on
-   html[data-liquid-glass="on"], so the solid accent fill above stays the
-   resting look. With glass ON, the shared consuming rule paints the glass
-   material (tint + backdrop blur + edge rim + drop shadow), and the scoped
+   html[data-liquid-glass="on"], so the solid fill above stays the resting
+   look. With glass ON, the shared consuming rule paints the glass material
+   (tint + backdrop blur + edge rim + drop shadow), and the scoped
    .send.lg-glass.lg-glass rule below retargets --lg-tint / --lg-tint-top
    toward var(--color-accent) so the wash reads as a blue-tinted glass
    rather than the neutral text-tinted wash the other composer pills get via
    the global composer-card rule. The icon drops to --color-text in glass
-   mode (see the shared glass-mode glyph colour rule below) because
-   --color-text-on-accent on a pale-blue wash collapses the contrast in light
-   mode; the blue identity is carried by the wash itself, not the icon. */
+   mode (see the shared glass-mode glyph colour rule below) because the solid
+   resting glyph colour on the pale accent-tinted wash collapses the contrast
+   in light mode; the blue identity is carried by the wash itself, not the
+   icon. */
 .send {
   width: var(--composer-send-size);
   height: var(--composer-send-size);
   border-radius: 50%;
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
+  background: var(--color-send-bg, var(--color-accent));
+  color: var(--color-bg);
   border: none;
   box-shadow: var(--shadow-xs);
   padding: 0;
@@ -1983,34 +2084,47 @@ function selectModel(modelId: string): void {
   position: relative;
 }
 
-.send:hover {
-  background: var(--color-accent-hover);
+.send:hover:not(:disabled) {
+  background: var(--color-send-bg-hover, var(--color-accent-hover));
 }
 
 .send:active {
   transform: scale(0.92);
 }
 
+/* Empty input: no text and no ready attachment. Upstream paints the disc with
+   its disabled background token and the glyph with --color-send-icon-disabled.
+   The .lg-glass class on the button is inert with the liquid-glass toggle OFF
+   (every consuming glass rule is gated on html[data-liquid-glass="on"]), so
+   this rule is the only painter of the disc in the user's glass-off case. */
 .send:disabled {
   cursor: not-allowed;
-  opacity: 0.88;
+  background: var(--color-send-bg-disabled, rgba(255, 255, 255, 0.1));
+  color: var(--color-send-icon-disabled, rgba(255, 255, 255, 0.28));
+}
+
+/* Sending (starting) is disabled too, but keeps the enabled fill and glyph
+   (upstream's `.send.is-starting:disabled`) so the spinner on the disc reads. */
+.send.is-starting:disabled {
+  background: var(--color-send-bg, var(--color-accent));
+  color: var(--color-bg);
 }
 
 .send:disabled:active {
   transform: none;
 }
 
-/* Spinner-on-accent: recolor the ring so the arc reads on the accent fill
-   (solid mode). In glass mode the shared glass-mode glyph colour rule below
-   retargets these same properties to --color-text so the arc and track stay
-   high-contrast against the tinted wash. Spinner.vue styles are scoped, so
-   pierce them with :deep(). */
+/* Spinner-on-send: recolor the ring so the arc reads on the fill (solid mode).
+   In glass mode the shared glass-mode glyph colour rule below retargets these
+   same properties to --color-text so the arc and track stay high-contrast
+   against the tinted wash. Spinner.vue styles are scoped, so pierce them with
+   :deep(). */
 .send.is-starting :deep(.ui-spinner) {
-  color: var(--color-text-on-accent);
+  color: var(--color-bg);
 }
 
 .send.is-starting :deep(.ui-spinner__track) {
-  stroke: color-mix(in srgb, var(--color-text-on-accent) 32%, transparent);
+  stroke: color-mix(in srgb, var(--color-bg) 32%, transparent);
 }
 
 .send svg {
@@ -2044,7 +2158,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass:hover {
 
 /* Stop button — sibling of Send, shown only while running. Red at rest so the
    destructive action is easy to spot; fills solid danger on hover. Kept softer
-   than the accent Send so Send stays the primary action.
+   than the Send disc so Send stays the primary action.
 
    Same glass split as Send: `lg-glass` is inert with the toggle OFF, so the
    soft-danger fill + danger border stays as the resting look; with glass ON,
@@ -2098,18 +2212,18 @@ html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass:hover {
   --lg-tint-top: color-mix(in srgb, var(--color-danger) 18%, transparent);
 }
 
-/* Glass-mode glyph colour — the resting `--color-text-on-accent` for send and
-   `--color-danger` for stop were tuned for the solid accent / soft-danger
-   fills, where the high-contrast color sat on top of an opaque saturated
-   background. On the translucent accent-tinted glass wash, that envelope
-   collapses: white on pale blue reads as low-contrast in light mode, and
-   red on red-tinted glass reads as low-contrast in any mode. Drop the icon
-   to the main text colour so the glyph stays high-contrast against the
-   tinted glass in both themes — the accent identity is carried by the wash
-   itself (see the .send / .stop retarget rules above), not the icon. The
-   :deep() pierces scoping so the Spinner's scoped rules below the base
-   `.send` block follow the same retarget on the `is-starting` state (the
-   arc and track agree with the resting icon, not the solid accent). */
+/* Glass-mode glyph colour — the resting `--color-bg` glyph on the near-white
+   send disc and `--color-danger` for stop were tuned for opaque fills, where
+   the high-contrast color sat on top of a solid background. On the translucent
+   accent-tinted glass wash, that envelope collapses: a dark glyph on pale blue
+   reads as low-contrast in light mode, and red on red-tinted glass reads as
+   low-contrast in any mode. Drop the icon to the main text colour so the glyph
+   stays high-contrast against the tinted glass in both themes — the accent
+   identity is carried by the wash itself (see the .send / .stop retarget rules
+   above), not the icon. The :deep() pierces scoping so the Spinner's scoped
+   rules above the base `.send` block follow the same retarget on the
+   `is-starting` state (the arc and track agree with the resting icon, not the
+   solid fill). */
 html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass,
 html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass {
   color: var(--color-text);
@@ -2138,7 +2252,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px var(--composer-send-inset) var(--composer-send-inset);
+  padding: var(--space-1) var(--composer-send-inset) var(--composer-send-inset);
   position: relative;
 }
 
@@ -2190,11 +2304,16 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   transition: background 0.1s, color 0.15s;
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
-  /* The pill label truncates with the ellipsis instead of being clipped (or
-     wrapping) when the toolbar row is tight — never silently vanishes. */
-  flex: 0 1 auto;
+  /* Sized to its content (upstream's `.perm-pill` is `flex: none`): the label
+     must never be squeezed to nothing. A too-long label truncates through
+     .perm-pill-label's ellipsis at narrow widths; the glyph stays fixed. */
+  flex: none;
+}
+.perm-pill-icon {
+  flex: none;
+}
+.perm-pill-label {
   min-width: 0;
-  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2208,7 +2327,9 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   background: var(--color-accent-soft);
 }
 .perm-pill.perm-manual {
-  color: var(--dim);
+  /* The pill stays muted; the menu's Always-Ask row uses --color-text instead
+     (upstream's split between the pill and the row). */
+  color: var(--color-text-muted);
 }
 .perm-pill.perm-yolo {
   color: var(--color-warning);
@@ -2219,7 +2340,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
 
 /* Round the "+" trigger into a capsule to match the pills — the IconButton
    default is a rounded square. */
-.add-btn {
+.composer-attach {
   border-radius: var(--radius-full);
 }
 
@@ -2286,8 +2407,8 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   transition: background 0.1s;
   position: relative;
   overflow: hidden;
-  /* Yields to the row: the label truncates (min-width:0 on <b>) well before
-     the pill ever pushes its neighbours out. */
+  /* Yields to the row: the label truncates (min-width:0 on .mp-name) well
+     before the pill ever pushes its neighbours out. */
   flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
@@ -2302,7 +2423,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   justify-content: center;
   flex: none;
 }
-.model-pill.icon-only b,
+.model-pill.icon-only .mp-name,
 .model-pill.icon-only .think-suffix {
   display: none;
 }
@@ -2317,44 +2438,57 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
 .model-pill.open {
   background: var(--color-accent-soft);
 }
-.model-pill b {
-  font-weight: 500;
+.model-pill .mp-name {
+  flex: 0 8 auto;
+  font-weight: var(--weight-medium);
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  max-width: 280px;
+  max-width: min(40vw, 170px);
 }
 .model-pill .think-suffix {
   color: var(--color-accent);
-  font-weight: 500;
-  flex-shrink: 0;
+  font-weight: var(--weight-medium);
+  flex: none;
 }
 .model-pill .cv {
   color: var(--faint);
   flex: none;
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out);
 }
+/* The chevron steps its colour on hover/open (`--faint` → `--dim`) and flips
+   180° while the quick-switch menu is open. */
 .model-pill:hover .cv,
 .model-pill.open .cv {
-  color: var(--color-accent-hover);
+  color: var(--dim);
+}
+.model-pill.open .cv {
+  transform: rotate(180deg);
 }
 
 /* Model dropdown — anchored to the toolbar; the flip / horizontal clamp comes
    from the inline style computed in positionModelDropdown. The frame itself
    never scrolls: ComposerModelMenu's .md-list region owns the overflow so the
-   thinking row / cache note / "more models" footer stays pinned in view. */
+   thinking row / cache note / "more models" row stay pinned in view. */
 .model-dropdown {
   position: absolute;
   z-index: var(--z-dropdown);
   min-width: 200px;
   max-height: min(70vh, 520px);
   overflow: hidden;
-  background: var(--color-surface-raised);
+  /* Upstream's menu surface: translucent raised ink over a 24px backdrop blur,
+     with its own shadow. Measured from the live page. */
+  background: var(--color-menu-bg, var(--color-surface-raised));
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24);
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -2381,28 +2515,22 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   min-width: 220px;
   width: max-content;
   max-width: calc(100vw - var(--space-8));
-  background: var(--color-surface-raised);
+  /* Same measured menu surface as the model dropdown (upstream's permission
+     trigger was not measurable, so the anchor stays the fork's). */
+  background: var(--color-menu-bg, var(--color-surface-raised));
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24);
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
-/* Concentric corners (radius-md outer corners for the outermost rows). */
-.perm-dropdown > :first-child {
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
-}
-.perm-dropdown > :last-child {
-  border-bottom-left-radius: var(--radius-md);
-  border-bottom-right-radius: var(--radius-md);
-}
-
 .pd-row {
   display: grid;
-  grid-template-columns: 14px var(--composer-menu-desc-width, max-content);
+  grid-template-columns: var(--p-ic-md) var(--composer-menu-desc-width, max-content) var(--p-ic-sm);
   column-gap: 7px;
   row-gap: 2px;
   align-items: start;
@@ -2411,16 +2539,34 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   border: none;
   cursor: pointer;
   padding: 6px 7px;
-  border-radius: 6px;
+  border-radius: var(--radius-dropdown-row);
   text-align: left;
 }
-.pd-row:hover { background: var(--color-surface-sunken); }
-.pd-row.is-current { background: var(--color-accent-soft); }
+.pd-row:hover { background: var(--color-hover); }
+.pd-row.is-current { background: var(--color-hover); }
 
-.pd-check {
+.pd-icon {
   grid-column: 1;
   grid-row: 1;
-  width: 14px;
+  width: var(--p-ic-md);
+  min-height: 1lh;
+  font-size: var(--ui-font-size);
+  font-weight: var(--weight-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: var(--leading-tight);
+}
+.pd-row .pd-icon svg {
+  width: var(--p-ic-md);
+  height: var(--p-ic-md);
+  color: inherit;
+}
+
+.pd-check {
+  grid-column: 3;
+  grid-row: 1;
+  width: var(--p-ic-sm);
   min-height: 1lh;
   color: var(--color-accent);
   font-size: var(--ui-font-size);
@@ -2428,7 +2574,12 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: var(--leading-normal);
+  line-height: var(--leading-tight);
+}
+.pd-row .pd-check svg {
+  width: var(--p-ic-sm);
+  height: var(--p-ic-sm);
+  color: inherit;
 }
 
 .pd-info {
@@ -2441,7 +2592,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   font-family: var(--font-ui);
   font-size: var(--ui-font-size);
   font-weight: var(--weight-medium);
-  line-height: var(--leading-normal);
+  line-height: var(--leading-tight);
 }
 
 .pd-desc {
@@ -2450,9 +2601,9 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   width: var(--composer-menu-desc-width, auto);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  color: var(--muted);
-  line-height: var(--leading-normal);
+  font-weight: var(--weight-caption);
+  color: var(--color-text-muted);
+  line-height: var(--leading-tight);
 }
 
 /* Add menu ("+" next to the input) — Files / Goal / Plan / Swarm.
@@ -2460,31 +2611,29 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
    composer input row, which otherwise paints over the menu. flex:none keeps
    the trigger from being crushed when the row is narrow. */
 .add { position: relative; display: inline-flex; z-index: var(--z-sticky); flex: none; }
-.add-btn.open { background: var(--color-accent-soft); }
+.composer-attach.open { background: var(--color-accent-soft); }
 
 .add-menu {
   position: fixed;
   z-index: var(--z-dropdown);
   min-width: 220px;
+  /* Fallback width only: toggleAddMenu writes the composer card's left edge and
+     width inline, because upstream's add menu spans the card (`left:0;right:0`)
+     rather than shrinking to its content. */
   width: max-content;
   max-width: calc(100vw - var(--space-8));
-  background: var(--color-surface-raised);
+  /* Upstream's wide dock menu uses the frosted ink (measured
+     rgba(18,18,18,0.7)) with the same blur as the other menus. */
+  background: var(--color-menu-bg-frost, var(--color-surface-raised));
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24);
+  padding: 6px 12px;
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-/* Concentric corners (radius-md outer corners for the outermost rows). */
-.add-menu > :first-child {
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
-}
-.add-menu > :last-child {
-  border-bottom-left-radius: var(--radius-md);
-  border-bottom-right-radius: var(--radius-md);
 }
 
 /* Work-mode pill — armed/active plan or armed goal, floating over the
@@ -2497,8 +2646,8 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  height: calc(var(--content-font-size) * 1.5);
-  padding: 0 calc((var(--content-font-size) * 1.5 - 18px) / 2) 0 var(--space-2);
+  height: calc(var(--ui-font-size) * 1.5);
+  padding: 0 calc((var(--ui-font-size) * 1.5 - 18px) / 2) 0 var(--space-2);
   border: none;
   border-radius: var(--radius-full);
   background: var(--color-surface);
@@ -2507,7 +2656,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   font-family: var(--font-ui);
   font-size: var(--ui-font-size-sm);
   font-weight: var(--weight-medium);
-  line-height: calc(var(--content-font-size) * 1.5);
+  line-height: calc(var(--ui-font-size) * 1.5);
   white-space: nowrap;
   user-select: none;
 }
@@ -2529,21 +2678,22 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
    are never squeezed out. Mobile (≤640px) additionally hides perm / modes via
    the rules below (those live in MobileSettingsSheet there). */
 @media (max-width: 980px) {
-  /* Model name was budgeted for a wide card (280px); trim it so the ring and
-     send button are not squeezed out on a narrow column. */
-  .model-pill b {
+  /* The model name is capped at min(40vw, 170px); trim it further so the ring
+     and send button are not squeezed out on a narrow column. */
+  .model-pill .mp-name {
     max-width: 130px;
   }
-  /* Permission label is short (manual/yolo/auto); cap it defensively so a
-     longer label can never push the toolbar past its container. The base
-     .perm-pill rule already truncates with an ellipsis; only the cap lands
-     here. */
-  .perm-pill {
-    max-width: 104px;
+  /* Permission label is short (manual/yolo/auto); cap the LABEL rather than
+     the pill so the pill always keeps its glyph and a readable label, and the
+     row is still never pushed past its container. 72px + the pill's 16px icon,
+     4px gap, 14px padding and hairline lands on the same ~107px footprint the
+     pill-level cap used to enforce. */
+  .perm-pill-label {
+    max-width: 72px;
   }
 }
 
-/* ---- Mobile composer (prototype): round attach + rounded panel input +
+/* ---- Mobile composer (prototype): round add button + rounded panel input +
        round blue send with a soft shadow. The .cin container loses its border
        and acts as a flex row; the textarea itself becomes the pill input. ---- */
 @media (max-width: 640px) {
@@ -2613,10 +2763,10 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
     content: "↑";
     /* Glyph size shared by send and stop; sized to read well inside the 36px
        circle (the desktop icon box is --p-ic-lg 20px, these are scaled up for
-       the touch-first button). */
+       the touch-first button). The colour is inherited from .send so the
+       disabled / starting states reach this glyph too. */
     font-size: 22px;
     line-height: 1;
-    color: var(--bg);
   }
   /* Stop → 36px round "■" glyph to match the mobile Send sizing. */
   .stop {
@@ -2699,7 +2849,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
     font-size: 16px;
   }
   .model-pill,
-  .add-btn {
+  .composer-attach {
     font-size: var(--ui-font-size);
   }
   .toolbar {
@@ -2721,7 +2871,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   .model-pill.icon-only {
     min-height: var(--composer-control-size);
   }
-  .model-pill b {
+  .model-pill .mp-name {
     max-width: min(40vw, 170px);
   }
   .pd-name {
@@ -2749,13 +2899,13 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   .send,
   .stop,
   .expand-btn,
-  .add-btn {
+  .composer-attach {
     position: relative;
   }
   .send::before,
   .stop::before,
   .expand-btn::before,
-  .add-btn::before {
+  .composer-attach::before {
     content: "";
     position: absolute;
     inset: -6px;
@@ -2765,7 +2915,7 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   }
   /* The "+" is an md IconButton (32px), a step smaller than the 36px circles it
      sits beside, so it needs the extra reach to clear the touch floor. */
-  .add-btn::before {
+  .composer-attach::before {
     inset: -8px;
   }
 }

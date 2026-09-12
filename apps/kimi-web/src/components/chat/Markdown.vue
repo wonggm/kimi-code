@@ -323,8 +323,11 @@ onUnmounted(() => {
   observer?.disconnect();
 });
 
-// Shiki themes for code blocks: github-light on the light surface,
-// github-dark when the app colour scheme is dark.
+// Shiki themes for code blocks — the pair the upstream web app actually passes
+// to its markdown component (`code-block-light-theme: DP`, `code-block-dark-
+// theme: OP`, `themes: [DP, OP]` with `DP = "github-light"`, `OP =
+// "github-dark"`). The stream-diffs *component* default is the vitesse pair,
+// but upstream overrides it, so matching the render means passing github.
 const CODE_LIGHT_THEME = 'github-light';
 const CODE_DARK_THEME = 'github-dark';
 // Module-level so the array identity is stable across renders — an inline
@@ -357,16 +360,16 @@ const CODE_THEMES = [CODE_LIGHT_THEME, CODE_DARK_THEME];
 // fontSize / fontFamily matter as much as the gutter: since 1.0.9 the shiki
 // renderer (stream-diffs) applies these options as inline styles on the code
 // container (`applyEditorStyles`), so CSS overrides cannot beat them — the
-// values must be passed here. fontSize mirrors --text-sm (13px). `padding`
-// is ignored by the settled renderer (it draws inside a shadow root; its
-// vertical padding comes from `--diffs-gap-block` below) but sets the loading
-// fallback's inline padding, keeping the fallback → settled swap stable.
+// values must be passed here. fontSize mirrors --text-sm (13px). No `padding`:
+// upstream passes none either — the settled renderer takes its vertical inset
+// from `--diffs-gap-block` (Markdown.vue) and the loading fallback from
+// markstream's inline default.
 // 0.39 `code-block-interaction` port: the header row (language label +
 // line-number / word-wrap toggles + copy) is OUR MarkdownCodeBlock wrapper,
 // registered as the custom code_block renderer below; both toggles drive the
-// shared persisted prefs (lib/codeBlockPrefs). The wrapper forces
-// showHeader/showCopyButton off on markstream's CodeBlock and renders the
-// gutter via the line-number toggle, so those props stay out of here.
+// shared persisted prefs (lib/codeBlockPrefs). The wrapper fills markstream's
+// header slots and renders the gutter via the line-number toggle, so those
+// props stay out of here.
 setCustomComponents('kimi-web-chat', { code_block: MarkdownCodeBlock });
 const { codeLineNumbers } = useCodeBlockPrefs();
 const codeBlockProps = computed(() => ({
@@ -381,7 +384,6 @@ const codeBlockProps = computed(() => ({
   monacoOptions: {
     fontSize: 13,
     fontFamily: 'var(--font-mono)',
-    padding: { top: 12, bottom: 12 },
   },
 }));
 
@@ -566,6 +568,7 @@ function copyDiff(code: string, idx: number) {
   --inline-code-bg: var(--color-surface-sunken);
   --inline-code-fg: var(--color-fg);
   --inline-code-border: transparent;
+  --code-pad-block: calc(var(--text-sm) * (var(--leading-normal) - 1) / 2);
 }
 .md :deep(.md-file-link) {
   appearance: none;
@@ -662,8 +665,10 @@ function copyDiff(code: string, idx: number) {
 }
 
 /* ---------------------------------------------------------------------------
-   Code blocks — sunken surface, 1px line border, radius md, soft shadow, plus
-   our language label + copy button (markstream's built-in header).
+   Code blocks — sunken surface, 1px line border, radius md, soft shadow, one
+   panel around markstream's header (top corners) and the code body (bottom).
+   Code metrics mirror the upstream bundle: --text-sm font, --leading-normal
+   line height, and the derived --code-pad-block vertical inset.
 --------------------------------------------------------------------------- */
 .md :deep(.code-block-container) {
   margin: 0.6em 0;
@@ -673,77 +678,52 @@ function copyDiff(code: string, idx: number) {
   box-shadow: var(--shadow-xs);
   overflow: hidden;
   --vscode-editor-font-size: var(--text-sm);
-  --vscode-editor-line-height: calc(var(--text-sm) * 1.65);
+  --vscode-editor-line-height: calc(var(--text-sm) * var(--leading-normal));
+  /* Pierre's own default is rem-based, so it rendered 12px here while upstream
+     renders 13px (their root is fixed). Pin both to upstream's measured line
+     box: 13px text on a 20px line. */
+  --diffs-font-size: var(--text-sm);
+  --diffs-line-height: 20px;
 }
 .md :deep(.code-block-header) {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-line);
-  padding: 4px 12px;
+  padding: 4px 6px 4px 12px;
   color: var(--color-text-muted);
-  font: var(--text-xs) var(--font-mono);
-}
-.md :deep(.code-block-header *) {
-  color: var(--color-text-muted);
-  font: var(--text-xs) var(--font-mono);
-}
-.md :deep(.code-block-header .code-header-main) {
-  font-family: var(--font-ui);
-}
-/* Copy button — mirrors the §03 IconButton: muted glyph, sunken hover, soft
-   radius, and the shared focus ring. markstream renders its own button (the
-   `.code-action-btn` class since 1.0.9 — the old `.copy-button` is gone), so
-   we restyle it in place instead of swapping in the IconButton primitive. */
-.md :deep(.code-block-header .code-action-btn) {
-  color: var(--color-text-muted);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--duration-base) var(--ease-out),
-    color var(--duration-base) var(--ease-out);
-}
-.md :deep(.code-block-header .code-action-btn:hover) {
-  background: var(--color-surface-sunken);
-  color: var(--color-text);
-}
-.md :deep(.code-block-header .code-action-btn:focus-visible) {
-  outline: none;
-  box-shadow: var(--p-focus-ring);
-}
-.md :deep(.code-block-header .code-action-btn *) {
-  pointer-events: none;
+  font: var(--text-xs) var(--font-ui);
 }
 /* The code body wrapper was renamed in 1.0.9: `.code-block-content` is gone,
    the shiki (stream-diffs) block now mounts under `.code-block-shell-content`. */
 .md :deep(.code-block-shell-content),
 .md :deep(.markstream-pre) {
-  background: var(--color-surface-sunken);
+  /* Upstream's block is ONE surface: header and code body share the surface
+     token, and the sunken container token shows only as the 1px frame.
+     Painting the body sunken left a visible step under the header. */
+  background: var(--color-surface);
 }
 /* Pierre renders the highlighted code inside a shadow root. Its native gap
-   variable inherits through that boundary; the Monaco `padding` option above
-   does not, but it sets the loading fallback's inline padding — both layers
-   end up at 12px. Line height stays relative (1.65) so every rendering path
-   shares the token ratio without pinning a px value into inline styles. */
+   variable inherits through that boundary (the Monaco padding option does not,
+   it only reaches the loading fallback), so the highlighted body takes its
+   vertical inset from --code-pad-block, the upstream metric. */
 .md :deep(.code-editor-container) {
-  line-height: 1.65;
-  --diffs-gap-block: var(--space-3);
+  line-height: var(--leading-normal);
+  --diffs-gap-block: var(--code-pad-block);
 }
 .md :deep(.code-editor-container diffs-container) {
-  --diffs-line-height: 1.65em;
+  --diffs-line-height: var(--leading-normal);
 }
 /* Loading/streaming fallback <pre>: upstream hardcodes show-line-numbers on
    it while the settled stream-diffs block honors lineNumbers:false — the
    gutter (and its reserved padding) popping in and out on every load is a
-   visible flash. Hide the fallback gutter, pin its left inset to the settled
-   per-line padding (1ch), and force the shared 1.65 line height over the
-   inline 1.5×-font-size default upstream stamps on the pre, so the
-   fallback → highlighted swap is layout-stable. */
+   visible flash. Hide the fallback gutter and force the shared line height
+   over the inline 1.5×-font-size default stamp on the pre, so the fallback →
+   highlighted swap is layout-stable. */
 .md :deep(.code-pre-fallback > .markstream-pre__line-numbers) {
   display: none;
 }
 .md :deep(.code-block-container .code-pre-fallback) {
-  padding-left: 1ch;
-  line-height: 1.65 !important;
+  padding: var(--code-pad-block) var(--space-3);
+  line-height: var(--leading-normal) !important;
 }
 /* markstream ships the fallback <pre> as pre-wrap (an is-wrap class) while the
    settled renderer scrolls horizontally (overflow-x:auto, no wrap) — a long
@@ -770,9 +750,9 @@ function copyDiff(code: string, idx: number) {
 .md :deep(.code-block-container pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)),
 .md :deep(.markstream-pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)) {
   margin: 0;
-  padding: 12px 14px;
+  padding: var(--code-pad-block) var(--space-3);
   overflow-x: auto;
-  font: var(--text-sm)/1.65 var(--font-mono);
+  font: var(--text-sm)/var(--leading-normal) var(--font-mono);
 }
 .md :deep(.code-block-container pre code) {
   font: inherit;

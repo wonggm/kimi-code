@@ -27,6 +27,17 @@ export function matchSearchShortcut(e: ShortcutKeyLike, isApplePlatform: boolean
   return isApplePlatform ? e.metaKey : e.ctrlKey;
 }
 
+/**
+ * Cmd/Ctrl+Shift+O new-session shortcut: the trailing-edge hint on the
+ * "New Session" row. OS-aware like the search shortcut (Shift is required, so
+ * it can never collide with plain Ctrl+O); Alt rejects the match.
+ */
+export function matchNewSessionShortcut(e: ShortcutKeyLike, isApplePlatform: boolean): boolean {
+  if (e.key.toLowerCase() !== 'o') return false;
+  if (e.altKey || !e.shiftKey) return false;
+  return isApplePlatform ? e.metaKey : e.ctrlKey;
+}
+
 export function isAppleShortcutPlatform(): boolean {
   if (typeof navigator === 'undefined') return false;
   if (/Mac|iPod|iPhone|iPad/.test(navigator.platform)) return true;
@@ -64,7 +75,7 @@ import WorkspaceGroup from './WorkspaceGroup.vue';
 import SessionRow from './SessionRow.vue';
 import ResizeHandle from './ResizeHandle.vue';
 import { isMacosDesktop } from '../lib/desktopFlag';
-import { useSidebarLayout } from '../composables/useSidebarLayout';
+import { useSidebarLayout, type SidebarViewMode } from '../composables/useSidebarLayout';
 import { useGlassRefraction } from '../composables/useGlassRefraction';
 import IconButton from './ui/IconButton.vue';
 import Tooltip from './ui/Tooltip.vue';
@@ -137,6 +148,9 @@ const props = withDefaults(
     /** Experimental Lab `labSidebarTabs` flag — renders the Open / Done /
      *  Workspaces tab strip above the session list. */
     labSidebarTabs?: boolean;
+    /** True when a Kimi Code credential is connected — the footer's account row
+     *  then reads "Signed in" instead of "Not signed in". */
+    authReady?: boolean;
   }>(),
   {
     activeWorkspace: null,
@@ -150,6 +164,7 @@ const props = withDefaults(
     dragging: false,
     autoSessionTitle: false,
     labSidebarTabs: false,
+    authReady: false,
   },
 );
 
@@ -185,9 +200,73 @@ const emit = defineEmits<{
   expandSidebar: [];
   openSettings: [];
   collapse: [];
+  /** A folder was dropped on the sidebar. The path comes from the desktop
+   *  shell's bridge when one is present; see onFolderDrop. */
+  addWorkspacePath: [path: string];
 }>();
 
-const { sidebarViewMode, loadSidebarViewMode, toggleSidebarViewMode } = useSidebarLayout();
+// --- Folder drop ----------------------------------------------------------
+// Upstream shows a "Drop to add workspace" card while an OS folder is dragged
+// over the column. Its drop action reads the folder's absolute path through the
+// desktop shell (`window.kimiDesktop.getPathForFile`), which a plain browser does
+// not expose — a dropped directory only carries a tree-relative
+// `webkitRelativePath`. So the card is shown on a folder drag in both apps, and
+// the drop registers a workspace only where that bridge exists; upstream's own
+// guard behaves the same way in a browser.
+const folderDragActive = ref(false);
+let folderDragDepth = 0;
+
+/** A dragged folder arrives as a file item with no MIME type. */
+function isFolderDrag(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.items ?? []).some(
+    (item) => item.kind === 'file' && item.type === '',
+  );
+}
+
+function onFolderDragEnter(event: DragEvent): void {
+  if (!isFolderDrag(event)) return;
+  event.preventDefault();
+  folderDragDepth += 1;
+  folderDragActive.value = true;
+}
+
+function onFolderDragOver(event: DragEvent): void {
+  if (!folderDragActive.value) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+}
+
+function onFolderDragLeave(): void {
+  folderDragDepth = Math.max(0, folderDragDepth - 1);
+  if (folderDragDepth === 0) folderDragActive.value = false;
+}
+
+function onFolderDrop(event: DragEvent): void {
+  if (!folderDragActive.value) return;
+  event.preventDefault();
+  folderDragDepth = 0;
+  folderDragActive.value = false;
+  const bridge = (window as { kimiDesktop?: { getPathForFile?: (file: File) => string } })
+    .kimiDesktop;
+  const getPath = bridge?.getPathForFile;
+  if (typeof getPath !== 'function') return;
+  const path = Array.from(event.dataTransfer?.files ?? [])
+    .map((file) => {
+      try {
+        return getPath(file);
+      } catch {
+        return null;
+      }
+    })
+    .find((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0);
+  if (path) emit('addWorkspacePath', path);
+}
+
+const { sidebarViewMode, loadSidebarViewMode, setSidebarViewMode } = useSidebarLayout();
+
+/** Footer account row: the connected credential name, or the "not signed in"
+ *  state the settings surface uses (no auth flow is started from here). */
+const accountName = computed(() => (props.authReady ? t('sidebar.signedIn') : t('sidebar.notSignedIn')));
 
 const colRef = ref<HTMLElement | null>(null);
 useGlassRefraction(colRef, { transient: false });
@@ -200,6 +279,17 @@ const pinnedSessions = computed(() =>
 const unpinnedGroups = computed(() =>
   props.groups.map((group) => ({ ...group, sessions: group.sessions.filter((session) => !session.pinned) })),
 );
+/** Pinned rows per workspace: a group whose sessions are all pinned has no rows
+ *  left to render, so it shows upstream's "{count} conversations pinned"
+ *  summary instead of the plain empty state. */
+const pinnedCountByWorkspace = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {};
+  for (const session of pinnedSessions.value) {
+    const key = session.workspaceId ?? '';
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+});
 const flatSessions = computed(() => props.sessions.filter((session) => !session.pinned));
 
 // ---------------------------------------------------------------------------
@@ -210,7 +300,7 @@ const flatSessions = computed(() => props.sessions.filter((session) => !session.
 const PINNED_DEFAULT_HEIGHT = 180;
 const PINNED_MIN_HEIGHT = 72;
 const PINNED_MAX_HEIGHT = 380;
-/** Chrome above the pinned section (brand + New chat + search + section labels
+/** Chrome above the pinned section (brand + New session + search + section head
  *  + footer); the cap keeps at least this much room for the session list. */
 const PINNED_RESERVE = 300;
 const pinnedHeight = ref(PINNED_DEFAULT_HEIGHT);
@@ -242,6 +332,9 @@ function onTogglePinned(id: string, pinned: boolean): void {
 // ---------------------------------------------------------------------------
 const showSearch = ref(false);
 const sessionSearchKeys = isAppleShortcutPlatform() ? ['⌘', 'K'] : ['Ctrl', 'K'];
+// Hints only: like the search row's keycaps they drop out of the narrow-sidebar
+// container query below (see the @container rule on .btn-new-chat .ui-kbd).
+const newSessionKeys = isAppleShortcutPlatform() ? ['⌘', '⇧', 'O'] : ['Ctrl', 'Shift', 'O'];
 
 function openSearch(): void {
   // Sessions are loaded per-workspace (first page only); lazily drain the rest
@@ -250,29 +343,38 @@ function openSearch(): void {
   showSearch.value = true;
 }
 
-function onSearchKeydown(e: KeyboardEvent): void {
-  // OS-aware: Cmd+K on Apple platforms, Ctrl+K elsewhere (Ctrl+K on macOS must
-  // NOT fire — the composer uses it for delete-to-end-of-line). Alt/Shift held
-  // reject the match.
-  if (!matchSearchShortcut(e, isAppleShortcutPlatform())) return;
+function onSidebarKeydown(e: KeyboardEvent): void {
+  // OS-aware: Cmd+Shift+O creates a session, Cmd+K opens search. Both shortcuts
+  // are advertised as keycaps on their rows, so the handlers and the hints
+  // cannot drift apart.
+  const isApple = isAppleShortcutPlatform();
+  if (matchNewSessionShortcut(e, isApple)) {
+    e.preventDefault();
+    emit('create');
+    return;
+  }
+  // Cmd+K on Apple platforms, Ctrl+K elsewhere (Ctrl+K on macOS must NOT fire —
+  // the composer uses it for delete-to-end-of-line). Alt/Shift held reject the
+  // match.
+  if (!matchSearchShortcut(e, isApple)) return;
   e.preventDefault();
   openSearch();
 }
 
 onMounted(() => {
   loadSidebarViewMode();
-  window.addEventListener('keydown', onSearchKeydown);
+  window.addEventListener('keydown', onSidebarKeydown);
   updatePinnedMax();
   window.addEventListener('resize', updatePinnedMax);
 });
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onSearchKeydown);
+  window.removeEventListener('keydown', onSidebarKeydown);
   window.removeEventListener('resize', updatePinnedMax);
 });
 
-// Scroll-linked header seam: the .search-wrap bottom border/shadow only appears
-// once the session list has actually scrolled, so an unscrolled list shows no
-// abrupt boundary.
+// Scroll-linked header seam: the .sidebar-actions bottom border/shadow only
+// appears once the session list has actually scrolled, so an unscrolled list
+// shows no abrupt boundary.
 const sessionsScrolled = ref(false);
 const sessionsRef = ref<HTMLElement | null>(null);
 function onSessionsScroll(e: Event): void {
@@ -721,7 +823,7 @@ const sectionMenuRef = ref<InstanceType<typeof Menu> | null>(null);
 
 function onSectionMenuDocClick(e: MouseEvent): void {
   const target = e.target as Element;
-  if (target.closest('.side-section-kebab') || target.closest('.section-menu')) return;
+  if (target.closest('.side-section-view') || target.closest('.section-menu')) return;
   closeSectionMenu();
 }
 
@@ -763,6 +865,31 @@ function chooseSortMode(mode: WorkspaceSortMode): void {
   emit('setWorkspaceSortMode', mode);
   closeSectionMenu();
 }
+
+/** List options: the fork's view mode sits in this menu next to the workspace
+ *  sort order. Collapse-all stays a button in the head — one control, one
+ *  place. */
+function chooseViewMode(mode: SidebarViewMode): void {
+  setSidebarViewMode(mode);
+  closeSectionMenu();
+}
+
+/** Section head title. Without the Lab tab strip the panel heads the session
+ *  list itself ("sessions"); with it, the active tab names the list. */
+const sectionTitle = computed(() => {
+  if (!props.labSidebarTabs) return t('sidebar.sessionsHeader');
+  if (sidebarTab.value === 'done') return t('sidebar.tabDone');
+  if (sidebarTab.value === 'workspaces') return t('sidebar.workspaces');
+  return t('sidebar.tabOpen');
+});
+
+/** True while a collapsible workspace-group list is on screen — the collapse-all
+ *  button is meaningless for the flat list and for the Done tab's fixed groups. */
+const showGroupedControls = computed(() => {
+  if (sidebarViewMode.value === 'flat') return false;
+  if (!props.labSidebarTabs) return true;
+  return sidebarTab.value !== 'done';
+});
 
 // ---------------------------------------------------------------------------
 // Dev backend switcher menu (the pill next to the brand). Dev-only: repoints
@@ -902,6 +1029,10 @@ onBeforeUnmount(() => {
     class="side"
     :class="{ 'macos-desktop': isMacosDesktop, collapsed, 'no-anim': dragging }"
     :style="{ width: collapsed ? '0px' : colWidth + 'px' }"
+    @dragenter="onFolderDragEnter"
+    @dragover="onFolderDragOver"
+    @dragleave="onFolderDragLeave"
+    @drop="onFolderDrop"
   >
     <!-- Session column -->
     <div ref="colRef" class="col lg-lens" :style="{ width: colWidth + 'px' }">
@@ -939,44 +1070,102 @@ onBeforeUnmount(() => {
             </Pill>
           </template>
         </div>
-        <Tooltip v-if="!isMacosDesktop" :text="t('sidebar.collapseSidebar')">
+        <div class="ch-tail">
+          <Tooltip v-if="!isMacosDesktop" :text="t('sidebar.collapseSidebar')">
+            <IconButton
+              class="ch-collapse"
+              size="sm"
+              :label="t('sidebar.collapseSidebar')"
+              @click.stop="emit('collapse')"
+            >
+              <Icon name="panel-collapse" />
+            </IconButton>
+          </Tooltip>
+        </div>
+      </div>
+
+      <!-- Actions: New Session + Search. Both rows stack flush (0 gap, the
+           session-row rhythm) and their keycaps are pushed to the trailing
+           edge. This block is the last fixed row above the list — it carries
+           the scroll-linked seam, whose border/shadow only appear once the
+           session list has actually scrolled, so an unscrolled list shows no
+           abrupt boundary. -->
+      <div class="sidebar-actions" :class="{ 'sidebar-actions--scrolled': sessionsScrolled }">
+        <div class="actions-row">
+          <button class="btn-new-chat" type="button" @click.stop="emit('create')">
+            <Icon name="chat-new" />
+            <span>{{ t('sidebar.newSession') }}</span>
+            <Kbd :keys="newSessionKeys" />
+          </button>
           <IconButton
-            class="ch-collapse"
+            v-if="showNewWorkspaceButton"
             size="sm"
-            :label="t('sidebar.collapseSidebar')"
-            @click.stop="emit('collapse')"
+            :label="t('sidebar.newWorkspace')"
+            @click.stop="emit('addWorkspace')"
           >
-            <Icon name="panel-collapse" />
+            <Icon name="folder" />
           </IconButton>
-        </Tooltip>
-      </div>
-
-      <!-- New chat + new workspace buttons -->
-      <div class="btn-wrap">
-        <button class="btn-new-chat" type="button" @click.stop="emit('create')">
-          <Icon name="chat-new" />
-          <span>{{ t('sidebar.newChat') }}</span>
-        </button>
-        <IconButton
-          v-if="showNewWorkspaceButton"
-          size="sm"
-          :label="t('sidebar.newWorkspace')"
-          @click.stop="emit('addWorkspace')"
-        >
-          <Icon name="folder" />
-        </IconButton>
-      </div>
-
-      <!-- Session search — opens the Spotlight-style search dialog. Last fixed
-           row above the list (below the pinned block), so it carries the
-           scroll-linked seam. -->
-      <div class="search-wrap" :class="{ 'search-wrap--scrolled': sessionsScrolled }">
+        </div>
         <button class="search" type="button" @click="openSearch">
           <Icon class="search-icon" name="search" />
           <span class="search-input">{{ t('sidebar.search') }}</span>
           <Kbd :keys="sessionSearchKeys" />
         </button>
       </div>
+
+      <!-- Session list panel: the fixed section head plus the scrolling list.
+           The pinned section sits between them (fork-only), so the head titles
+           the whole panel rather than only the group list. -->
+      <div class="session-list-panel">
+        <!-- Experimental Lab: multi-tab sidebar (Open / Done / Workspaces).
+             The strip stays above the head, so the head's title names the tab
+             that is currently selected. -->
+        <div v-if="labSidebarTabs && groups.length > 0" class="sb-tabs-wrap">
+          <Tabs
+            :model-value="sidebarTab"
+            :options="tabOptions"
+            @update:model-value="sidebarTab = $event as SidebarTab"
+          />
+        </div>
+
+        <!-- Section head — the list's title plus its view controls (collapse
+             all workspaces, list options). Outside the scroll container, so it
+             stays put while the rows scroll. Upstream nests the label inside the
+             head (`.sessions-head > .side-section-label`); keeping them on one
+             element shifted every child up a level. -->
+        <div v-if="groups.length > 0" class="sessions-head">
+          <div class="side-section-label">
+            <span class="side-section-title">{{ sectionTitle }}</span>
+            <div class="side-section-actions">
+              <Tooltip
+                v-if="showGroupedControls"
+                :text="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')"
+              >
+                <IconButton
+                  class="side-section-toggle"
+                  size="sm"
+                  :label="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')"
+                  @click.stop="allCollapsed ? expandAllWorkspaces() : collapseAllWorkspaces()"
+                >
+                  <Icon v-if="allCollapsed" name="expand" />
+                  <Icon v-else name="collapse" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip :text="t('sidebar.listOptions')">
+                <IconButton
+                  class="side-section-toggle side-section-view"
+                  size="sm"
+                  :label="t('sidebar.listOptions')"
+                  aria-haspopup="menu"
+                  :aria-expanded="sectionMenuOpen"
+                  @click.stop="toggleSectionMenu($event)"
+                >
+                  <Icon name="dots-horizontal" />
+                </IconButton>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
 
       <!-- Pinned section — stays above the tabs (Lab mode) / above the list
            (today's mode); not owned by any single tab. Fixed height shared with
@@ -989,7 +1178,7 @@ onBeforeUnmount(() => {
             :class="{ 'fade-top': pinnedScrolled, 'fade-bot': !pinnedAtBottom }"
             @scroll.passive="onPinnedScroll"
           >
-            <div class="side-section-label"><span class="side-section-title">{{ $t('sidebar.pinned') }}</span></div>
+            <div class="side-section-label pinned-label"><span class="side-section-title">{{ $t('sidebar.pinned') }}</span></div>
             <SessionRow
               v-for="session in pinnedSessions"
               :key="session.id"
@@ -1022,7 +1211,8 @@ onBeforeUnmount(() => {
         />
       </template>
 
-      <!-- Session list — grouped by workspace -->
+      <!-- Session list — grouped by workspace. The section head and the Lab tab
+           strip above it are fixed chrome; only this list scrolls. -->
       <div class="sessions" ref="sessionsRef" @scroll="onSessionsScroll">
         <!-- Empty state — only when no workspace is registered at all; empty
              workspaces still render their group header (with the + button). -->
@@ -1033,33 +1223,9 @@ onBeforeUnmount(() => {
         <template v-else>
           <!-- ══ Experimental Lab: multi-tab sidebar (Open / Done / Workspaces) ══ -->
           <template v-if="labSidebarTabs">
-            <div class="sb-tabs-wrap">
-              <Tabs
-                :model-value="sidebarTab"
-                :options="tabOptions"
-                @update:model-value="sidebarTab = $event as SidebarTab"
-              />
-            </div>
-
-            <!-- Open tab: flat/grouped per the sidebarViewMode toggle -->
+            <!-- Open tab: flat rows when toggled; grouped falls through to the
+                 shared group list below. -->
             <template v-if="sidebarTab === 'open'">
-              <div class="side-section-label">
-                <span class="side-section-title">{{ t('sidebar.tabOpen') }}</span>
-                <div class="side-section-actions">
-                  <Tooltip :text="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')">
-                    <IconButton
-                      class="side-section-toggle"
-                      size="sm"
-                      :label="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')"
-                      @click.stop="toggleSidebarViewMode"
-                    >
-                      <Icon :name="sidebarViewMode === 'flat' ? 'folder' : 'list'" />
-                    </IconButton>
-                  </Tooltip>
-                </div>
-              </div>
-              <!-- Flat rows when toggled; grouped falls through to the shared
-                   group list below. -->
               <template v-if="sidebarViewMode === 'flat'">
                 <div v-if="flatSessions.length === 0" class="empty">
                   {{ t('sidebar.noOpenSessions') }}
@@ -1086,53 +1252,11 @@ onBeforeUnmount(() => {
               </template>
             </template>
 
-            <!-- Workspaces tab: the grouped view; owns collapse-all + section menu -->
-            <div v-else-if="sidebarTab === 'workspaces'" class="side-section-label">
-              <span class="side-section-title">{{ t('sidebar.workspaces') }}</span>
-              <div class="side-section-actions">
-                <Tooltip :text="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')">
-                  <IconButton
-                    class="side-section-toggle"
-                    size="sm"
-                    :label="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')"
-                    @click.stop="allCollapsed ? expandAllWorkspaces() : collapseAllWorkspaces()"
-                  >
-                    <Icon v-if="allCollapsed" name="expand" />
-                    <Icon v-else name="collapse" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip :text="t('sidebar.options')">
-                  <IconButton
-                    class="side-section-toggle side-section-kebab"
-                    size="sm"
-                    :label="t('sidebar.options')"
-                    aria-haspopup="menu"
-                    :aria-expanded="sectionMenuOpen"
-                    @click.stop="toggleSectionMenu($event)"
-                  >
-                    <Icon name="dots-horizontal" />
-                  </IconButton>
-                </Tooltip>
-              </div>
-            </div>
+            <!-- Workspaces tab: renders the shared group list below — its
+                 collapse-all button and list-options menu live in the head. -->
 
-            <!-- Done tab: archived sessions, flat/grouped per the toggle -->
-            <template v-else>
-              <div class="side-section-label">
-                <span class="side-section-title">{{ t('sidebar.tabDone') }}</span>
-                <div class="side-section-actions">
-                  <Tooltip :text="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')">
-                    <IconButton
-                      class="side-section-toggle"
-                      size="sm"
-                      :label="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')"
-                      @click.stop="toggleSidebarViewMode"
-                    >
-                      <Icon :name="sidebarViewMode === 'flat' ? 'folder' : 'list'" />
-                    </IconButton>
-                  </Tooltip>
-                </div>
-              </div>
+            <!-- Done tab: archived sessions, flat/grouped per the list option -->
+            <template v-else-if="sidebarTab === 'done'">
               <div v-if="doneSessionsLoading && doneSessions.length === 0" class="tab-list-loading">
                 <Spinner size="sm" />
               </div>
@@ -1216,6 +1340,7 @@ onBeforeUnmount(() => {
           >
             <WorkspaceGroup
               :group="g"
+              :pinned-count="pinnedCountByWorkspace[g.workspace.id] ?? 0"
               :active-workspace-id="activeWorkspaceId"
               :active-id="activeId"
               :renaming-id="renamingId"
@@ -1252,46 +1377,8 @@ onBeforeUnmount(() => {
             </template>
           </template>
 
-          <!-- ══ Today's mode (Lab off): single section header + flat/grouped ══ -->
+          <!-- ══ Today's mode (Lab off): flat/grouped list ══ -->
           <template v-else>
-          <div class="side-section-label">
-            <span class="side-section-title">{{ t('sidebar.workspaces') }}</span>
-            <div class="side-section-actions">
-              <Tooltip :text="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')">
-                <IconButton
-                  class="side-section-toggle"
-                  size="sm"
-                  :label="sidebarViewMode === 'flat' ? t('sidebar.workspaces') : t('sidebar.options')"
-                  @click.stop="toggleSidebarViewMode"
-                >
-                  <Icon :name="sidebarViewMode === 'flat' ? 'folder' : 'list'" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip :text="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')">
-                <IconButton
-                  class="side-section-toggle"
-                  size="sm"
-                  :label="allCollapsed ? t('sidebar.expandAll') : t('sidebar.collapseAll')"
-                  @click.stop="allCollapsed ? expandAllWorkspaces() : collapseAllWorkspaces()"
-                >
-                  <Icon v-if="allCollapsed" name="expand" />
-                  <Icon v-else name="collapse" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip :text="t('sidebar.options')">
-                <IconButton
-                  class="side-section-toggle side-section-kebab"
-                  size="sm"
-                  :label="t('sidebar.options')"
-                  aria-haspopup="menu"
-                  :aria-expanded="sectionMenuOpen"
-                  @click.stop="toggleSectionMenu($event)"
-                >
-                  <Icon name="dots-horizontal" />
-                </IconButton>
-              </Tooltip>
-            </div>
-          </div>
           <template v-if="sidebarViewMode === 'flat'">
             <SessionRow
               v-for="session in flatSessions"
@@ -1328,6 +1415,7 @@ onBeforeUnmount(() => {
           >
             <WorkspaceGroup
               :group="g"
+              :pinned-count="pinnedCountByWorkspace[g.workspace.id] ?? 0"
               :active-workspace-id="activeWorkspaceId"
               :active-id="activeId"
               :renaming-id="renamingId"
@@ -1365,13 +1453,28 @@ onBeforeUnmount(() => {
           </template>
         </template>
       </div>
+      </div>
 
-      <!-- Footer: settings entry pinned under the session list -->
+      <!-- Footer: account row + settings entry pinned under the session list -->
       <div class="side-footer">
-        <button class="btn-settings" type="button" @click.stop="emit('openSettings')">
-          <Icon name="settings" />
-          <span>{{ t('settings.title') }}</span>
-        </button>
+        <div class="side-footer-account">
+          <Tooltip :text="t('settings.tabs.account')">
+            <button class="user-menu-trigger" type="button" @click.stop="emit('openSettings')">
+              <Icon name="user" />
+              <span class="user-menu-name">{{ accountName }}</span>
+            </button>
+          </Tooltip>
+          <Tooltip :text="t('settings.title')">
+            <IconButton
+              size="sm"
+              class="side-footer-settings"
+              :label="t('settings.title')"
+              @click.stop="emit('openSettings')"
+            >
+              <Icon name="settings" />
+            </IconButton>
+          </Tooltip>
+        </div>
       </div>
     </div>
 
@@ -1403,25 +1506,44 @@ onBeforeUnmount(() => {
       <MenuItem separator />
       <MenuItem danger @click="deleteWs(wsMenuTarget)">{{ t('sidebar.removeWorkspace') }}</MenuItem>
     </Menu>
-    <!-- Workspace sort menu (position:fixed, anchored to the sort button) -->
+    <!-- List options menu (position:fixed, anchored to the section head's ⋯
+         button): the list's view mode and workspace sort order. -->
     <Menu
       v-if="sectionMenuOpen"
       ref="sectionMenuRef"
-      class="section-menu"
+      class="view-menu section-menu"
       :style="sectionMenuStyle"
       @click.stop
     >
+      <div class="view-menu-label">{{ t('sidebar.viewGroup') }}</div>
+      <MenuItem @click="chooseViewMode('flat')">
+        <Icon name="view-flat" size="sm" />
+        {{ t('sidebar.viewFlat') }}
+        <span class="view-menu-check">
+          <Icon v-if="sidebarViewMode === 'flat'" name="check" size="sm" />
+        </span>
+      </MenuItem>
+      <MenuItem @click="chooseViewMode('grouped')">
+        <Icon name="view-grouped" size="sm" />
+        {{ t('sidebar.viewGrouped') }}
+        <span class="view-menu-check">
+          <Icon v-if="sidebarViewMode === 'grouped'" name="check" size="sm" />
+        </span>
+      </MenuItem>
+      <div class="view-menu-label">{{ t('sidebar.sortGroup') }}</div>
       <MenuItem @click="chooseSortMode('manual')">
-        <span class="section-menu-check">
+        <Icon name="grip" size="sm" />
+        {{ t('sidebar.sortManual') }}
+        <span class="view-menu-check">
           <Icon v-if="workspaceSortMode === 'manual'" name="check" size="sm" />
         </span>
-        {{ t('sidebar.sortManual') }}
       </MenuItem>
       <MenuItem @click="chooseSortMode('recent')">
-        <span class="section-menu-check">
+        <Icon name="clock" size="sm" />
+        {{ t('sidebar.sortRecent') }}
+        <span class="view-menu-check">
           <Icon v-if="workspaceSortMode === 'recent'" name="check" size="sm" />
         </span>
-        {{ t('sidebar.sortRecent') }}
       </MenuItem>
       <MenuItem v-if="labSidebarTabs" separator />
       <!-- Lab entry point: cross-workspace session admin page (App main view). -->
@@ -1455,6 +1577,15 @@ onBeforeUnmount(() => {
       @select-workspace="onSelectWorkspaceFromSearch"
       @close="showSearch = false"
     />
+    <!-- Folder drop affordance: upstream shows this card while an OS folder is
+         dragged over the column. `pointer-events:none` keeps the overlay from
+         swallowing the drag events the root handlers need. -->
+    <div class="folder-drop-overlay" :class="{ show: folderDragActive }" aria-hidden="true">
+      <div class="folder-drop-card">
+        <Icon name="folder" size="lg" />
+        <span>{{ t('sidebar.dropToAddWorkspace') }}</span>
+      </div>
+    </div>
     <!-- Keep inside <aside>: a top-level <Teleport> makes Sidebar multi-root,
          which breaks v-show on the host (Vue can't apply display:none to a
          Fragment). Teleport still renders to body regardless of placement. -->
@@ -1537,6 +1668,59 @@ onBeforeUnmount(() => {
   width: 100%;
   box-sizing: border-box;
 }
+/* Upstream wraps the brand row's trailing controls in `.ch-tail`
+   (display:flex; gap:--space-2; margin-left:auto). With `space-between` on the
+   row the placement is unchanged; the wrapper exists so the two trees compare
+   element for element. */
+.ch-tail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-width: 0;
+  margin-left: auto;
+}
+/* Folder drop card — upstream's geometry and surface, shown while an OS folder
+   is dragged over the column (see onFolderDragEnter in the script). */
+.folder-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--color-sidebar-bg) 72%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--duration-base) ease, visibility var(--duration-base);
+}
+.folder-drop-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+.folder-drop-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 0.5px dashed var(--color-accent);
+  background: var(--color-bg);
+  color: var(--color-accent);
+  font-size: var(--ui-font-size-lg);
+  font-weight: var(--weight-medium);
+  box-shadow: var(--shadow-md);
+}
+.folder-drop-card > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* macOS desktop: the window uses a hidden title bar, so the traffic lights
    float over the top-left of the sidebar and the resident toggle sits beside
    them. The header renders no content here (brand hidden) — it is purely a
@@ -1618,14 +1802,30 @@ onBeforeUnmount(() => {
   .ch-name { display: none; }
 }
 
-/* Action buttons — first row of the actions group (New chat + search): rows
-   inside the group stack flush (0 gap, same rhythm as the session list rows);
-   the group's bottom gap lives on .search-wrap. */
-.btn-wrap {
+/* Actions block — New Session + Search: rows inside the group stack flush
+   (0 gap, same rhythm as the session list rows). This block is the last fixed
+   row above the list and carries the scroll-linked seam: its bottom
+   border/shadow only appear once the session list has actually scrolled, so an
+   unscrolled list shows no abrupt boundary. */
+.sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--sb-inset);
+  position: relative;
+  z-index: 1;
+  background: var(--color-sidebar-bg);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+.sidebar-actions--scrolled {
+  border-bottom-color: var(--line);
+  box-shadow: var(--shadow-sm);
+}
+.actions-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 var(--sb-inset);
 }
 .btn-new-chat {
   display: flex;
@@ -1647,29 +1847,15 @@ onBeforeUnmount(() => {
 .btn-new-chat:hover { background: var(--sb-hover); }
 .btn-new-chat:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 .btn-new-chat svg { flex: none; }
-.btn-new-chat span {
+.btn-new-chat > span:not(.ui-kbd) {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Session search — the wrapper is the last fixed row above the list and
-   carries the scroll-linked seam: its bottom border/shadow only appear once
-   the session list has actually scrolled, so an unscrolled list shows no
-   abrupt boundary. */
-.search-wrap {
-  padding: 0 var(--sb-inset);
-  position: relative;
-  z-index: 1;
-  background: var(--color-sidebar-bg);
-  border-bottom: 1px solid transparent;
-  transition: border-color var(--duration-base) var(--ease-out),
-    box-shadow var(--duration-base) var(--ease-out);
-}
-.search-wrap--scrolled {
-  border-bottom-color: var(--line);
-  box-shadow: var(--shadow-sm);
-}
+/* Session search — opens the Spotlight-style search dialog. */
 .search {
   display: flex;
   align-items: center;
@@ -1706,29 +1892,58 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Narrow sidebar: the two kbd chips compete for the last ~50px of column
-   width and crowd the right edge before the search-input's flex+ellipsis
-   can absorb them. Hide them below this width — the chips are decorative,
-   the Cmd/Ctrl+K shortcut still works via the global keydown handler. Mirrors
-   the brand row's tiered collapse (320px drops the dev pill endpoint, 250px
-   drops the product name). */
-@container sidebar-col (max-width: 280px) {
-  .search .ui-kbd { display: none; }
+/* The keycap chips are laid out at all times and revealed on hover/focus,
+   matching upstream (`.btn-new-chat .ui-kbd, .search .ui-kbd { opacity: 0 }` +
+   a `:hover`/`:focus-visible` reveal). They used to be dropped with
+   `display: none` in a narrow-sidebar container query, which removed them from
+   the rendered tree entirely — the label's flex+ellipsis already absorbs their
+   width, so the chips no longer crowd the row and the shortcut hint is
+   discoverable on hover the way upstream shows it. */
+.btn-new-chat .ui-kbd { margin-left: auto; }
+.btn-new-chat .ui-kbd,
+.search .ui-kbd {
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+.btn-new-chat:hover .ui-kbd,
+.btn-new-chat:focus-visible .ui-kbd,
+.search:hover .ui-kbd,
+.search:focus-visible .ui-kbd {
+  opacity: 1;
 }
 
-/* Sessions — owns the vertical padding around the list (the 12px gap to the
-   search row above and the bottom breathing room). Scrolled content passes
-   through the top padding and clips at the .search-wrap seam. The list keeps
-   the app's native-scrollbar choice, but the thumb only paints while the
-   pointer is over the list (or it is focused): an idle list reads edge-to-edge
-   clean. scrollbar-gutter: stable both-edges reserves the same track space on
-   BOTH sides so the left/right content insets stay equal whether or not the
-   thumb is showing — without it the right-side scrollbar eats into the right
+/* Session list panel — the fixed section head plus the scrolling list; the
+   pinned section (fork-only) sits between them. */
+.session-list-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Section head — the list's title (left) and its view controls (right). It
+   lives outside the scroll container so it stays put while rows scroll; the
+   collapse-all / list-options controls are revealed on hover or focus, like
+   the other quiet chrome in the column. Same spacing as the pinned label had
+   inside the list (12px above, 4px below), so the two label rows keep one
+   rhythm. */
+.sessions-head {
+  padding: var(--space-3) var(--sb-inset) var(--space-1) var(--sb-pad-x);
+}
+
+/* Sessions — the scrolling list, inset from the column edges. The section
+   head above it owns the top gap; this owns the bottom breathing room.
+   Scrolled content clips at the .sidebar-actions seam. The list keeps the
+   app's native-scrollbar choice, but the thumb only paints while the pointer
+   is over the list (or it is focused): an idle list reads edge-to-edge clean.
+   scrollbar-gutter: stable both-edges reserves the same track space on BOTH
+   sides so the left/right content insets stay equal whether or not the thumb
+   is showing — without it the right-side scrollbar eats into the right
    --sb-inset and the rows look off-center (sidebar-overlay-scrollbar). */
 .sessions {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-3) var(--sb-inset);
+  padding: 0 var(--sb-inset) var(--space-3);
   min-height: 0;
   scrollbar-gutter: stable both-edges;
   scrollbar-width: thin;
@@ -1814,19 +2029,24 @@ onBeforeUnmount(() => {
   align-self: stretch;
 }
 
-/* Footer — settings entry pinned under the session list. Same list-style
-   control family as search / New chat (full-width, left-aligned, hover
-   sunken — not a Button). */
+/* Footer — account row + settings entry pinned under the session list. The
+   account trigger is a "list-style" control (left-aligned, hover sunken — not
+   a Button); the settings entry is an IconButton on the row's trailing edge. */
 .side-footer {
   flex: none;
   padding: var(--space-2) var(--sb-inset);
   border-top: 1px solid var(--line);
 }
-.btn-settings {
+.side-footer-account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.user-menu-trigger {
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
+  flex: 1;
   min-width: 0;
   padding: 8px calc(var(--sb-pad-x) - var(--sb-inset));
   border: none;
@@ -1839,29 +2059,35 @@ onBeforeUnmount(() => {
   cursor: pointer;
   text-align: left;
 }
-.btn-settings:hover { background: var(--sb-hover); }
-.btn-settings:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
-.btn-settings svg { flex: none; }
-.btn-settings span {
+.user-menu-trigger:hover { background: var(--sb-hover); }
+.user-menu-trigger:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.user-menu-trigger svg { flex: none; color: var(--color-text-muted); }
+.user-menu-trigger span {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Section label — heads the workspace list below the action buttons. Aligns
-   with the rows' leading inset (--sb-pad-x) so it reads as the list's title. */
+/* Section label — heads a list. Aligns with the rows' leading inset
+   (--sb-pad-x) so it reads as the list's title. Padding belongs to the
+   placement (the panel head, the pinned block), not to this row. */
 .side-section-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 var(--space-3) var(--space-1) var(--space-2);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   font-weight: var(--weight-regular);
   text-transform: uppercase;
   color: var(--faint);
   user-select: none;
+}
+/* Label placement inside the padded pinned scroller. */
+.pinned-label {
+  padding: 0 var(--space-3) var(--space-1) var(--space-2);
 }
 .side-section-title {
   min-width: 0;
@@ -1982,6 +2208,20 @@ onBeforeUnmount(() => {
   display: inline-flex;
   flex: none;
   width: 14px;
+}
+
+/* List-options menu (upstream's view-menu): group headings for the view mode
+   and the sort order, and the trailing check on the selected item of each. */
+.view-menu-label {
+  padding: var(--space-1) var(--space-2) var(--space-05);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  user-select: none;
+}
+.view-menu-check {
+  margin-left: auto;
+  display: inline-flex;
 }
 
 /* Backend switcher menu rows: mono engine name + muted preset URL. */

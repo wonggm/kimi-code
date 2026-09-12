@@ -5,6 +5,13 @@ export default {
   authPageMessage: 'Connect your Kimi Code account before starting or continuing conversations.',
   authPageLogin: 'Sign in',
   connecting: 'Connecting…',
+  connectingStageAuth: 'Checking sign-in…',
+  connectingStageServer: 'Connecting to server…',
+  connectingStageConfig: 'Loading configuration…',
+  connectingStageSessions: 'Loading sessions…',
+  connectingStageSession: 'Opening session…',
+  connectingRetrySuffix: ' (retry {n})',
   connectRetrying: 'Cannot reach the server — retrying…',
+  refreshPreview: 'Refresh preview',
   internalBuildBanner: 'Internal testing only',
 } as const;

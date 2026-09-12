@@ -43,9 +43,9 @@ export function useSidebarLayout(options: UseSidebarLayoutOptions = {}) {
     sidebarViewMode.value = value === 'flat' ? 'flat' : 'grouped';
   }
 
-  function toggleSidebarViewMode(): void {
-    sidebarViewMode.value = sidebarViewMode.value === 'grouped' ? 'flat' : 'grouped';
-    safeSetString(SIDEBAR_VIEW_MODE_KEY, sidebarViewMode.value);
+  function setSidebarViewMode(mode: SidebarViewMode): void {
+    sidebarViewMode.value = mode;
+    safeSetString(SIDEBAR_VIEW_MODE_KEY, mode);
   }
 
   // Largest sidebar width that still leaves the conversation pane usable, then
@@ -95,7 +95,7 @@ export function useSidebarLayout(options: UseSidebarLayoutOptions = {}) {
     sidebarDragging,
     sidebarViewMode,
     loadSidebarViewMode,
-    toggleSidebarViewMode,
+    setSidebarViewMode,
     sideWidth,
     loadSidebarCollapsed,
     toggleSidebarCollapse,

@@ -1,0 +1,56 @@
+# code block — element-by-element measurement (2026-09-11)
+
+Captured from both live pages with liquid glass off, dark theme, English, same mock state.
+upstream = http://127.0.0.1:5399/ (bundle extracted from upstream/main)
+fork     = http://127.0.0.1:5400/ (apps/kimi-code/dist-web)
+
+Format: `depth | element | background | color | font-size/line-height | padding | border-radius | border-bottom-color | size`
+
+## upstream
+
+```
+0 | div.node-content                      | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 16px/26px  | 0px               | 0px            | rgba(255,255,255,.84) | 259x720
+1 | div.code-block-container.rounded-lg.border | rgb(18,18,18) | rgba(255,255,255,.84) | 16px/26px  | 0px               | 8px            | rgba(255,255,255,.12) | 259x720
+2 | div.code-block-header.flex.justify-between | rgb(31,31,31) | rgba(255,255,255,.56) | 14px/normal | 4px 6px 4px 12px | 8px 8px 0px 0px | rgba(255,255,255,.12) | 35x718
+3 | div.code-header-main                   | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 14px/normal | 0px               | 0px            | -                     | 19x602
+4 | span.icon-slot.h-4.w-4                 | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 14px/normal | 0px               | 0px            | -                     | 16x16
+5 | svg                                    | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 14px/normal | 0px               | 0px            | -                     | 16x16
+4 | div.code-header-copy                   | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 14px/normal | 0px               | 0px            | -                     | 19x50
+5 | div.code-header-title                  | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 15px/normal | 0px               | 0px            | -                     | 19x50
+3 | div.flex.items-center.gap-0.5          | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 14px/normal | 0px               | 0px            | -                     | 26x82
+4 | button.code-action-btn                 | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 14px/normal | 6px               | 6px            | -                     | 26x26
+5 | svg                                    | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 14px/normal | 0px               | 0px            | -                     | 14x14
+2 | div.code-block-shell-content           | rgb(31,31,31)       | rgba(255,255,255,.84) | 16px/26px  | 0px               | 0px 0px 8px 8px | rgba(255,255,255,.84) | 222x718
+3 | div.code-editor-layer                  | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 16px/26px  | 0px               | 0px            | -                     | 222x718
+4 | div.code-editor-container              | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 13px/20px  | 0px               | 0px            | -                     | 222x718
+5 | div.stream-diffs-shell                 | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 13px/20px  | 0px               | 0px            | -                     | 222x718
+```
+
+(the header also has three `button.code-action-btn` at 26x26, padding 6px, radius 6px, icon 14x14)
+
+## fork
+
+```
+0 | div.mdcb.mdcb--wrap                   | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 15px/24px  | 0px               | 0px            | -                     | 308x720
+1 | div.mdcb-head                         | rgb(31,31,31)       | rgba(255,255,255,.56) | 12px/normal | 4px 6px 4px 12px | 8px 8px 0px 0px | rgba(255,255,255,.12) | 35x720
+2 | span.mdcb-head-main                   | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 12px/normal | 0px | 0px | - | 16x604
+3 | span.mdcb-lang-icon                   | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 12px/normal | 0px | 0px | - | 16x16
+3 | span.mdcb-lang                        | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 12px/normal | 0px | 0px | - | 16x43
+2 | span.mdcb-actions                     | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 12px/normal | 0px | 0px | - | 26x82
+3 | button.mdcb-btn                       | rgba(0,0,0,0)       | rgba(255,255,255,.56) | 12px/normal | 0px | 6px | - | 26x26
+3 | button.mdcb-btn.active                | rgba(0,0,0,0)       | rgb(26,136,255)       | 12px/normal | 0px | 6px | - | 26x26
+1 | div.code-block-container.rounded-lg.border | rgb(18,18,18) | rgba(255,255,255,.84) | 15px/24px  | 0px | 8px | rgba(255,255,255,.12) | 264x720
+2 | div.code-block-shell-content          | rgb(18,18,18)       | rgba(255,255,255,.84) | 15px/24px  | 0px | 0px 0px 8px 8px | - | 262x718
+3 | div.code-editor-layer                  | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 15px/24px  | 0px | 0px | - | 262x718
+4 | div.code-editor-container              | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 12px/18px  | 0px | 0px | - | 262x718
+5 | div.stream-diffs-shell                 | rgba(0,0,0,0)       | rgba(255,255,255,.84) | 12px/18px  | 0px | 0px | - | 262x718
+```
+
+## Differences to close (user asked for a 100% match)
+
+1. **Code body background** — upstream `rgb(31,31,31)`, fork `rgb(18,18,18)`. Upstream's block is ONE `#1f1f1f` surface (header and body identical); the `#121212` container shows only as the 1px frame. The fork's lighter header over a darker body is the visible step the user reported. Fix: body → `var(--color-surface)`.
+2. **Code font** — upstream `13px/20px`, fork `12px/18px`.
+3. **Header label** — upstream title `15px` (row `14px`), fork `12px`.
+4. **Action buttons** — upstream padding `6px`, fork `0` (both 26×26 with a 14×14 icon).
+5. **Header containment** — upstream's header is inside the container; the fork's is a sibling (`container.contains(header) === false`), which produces the seam and the separate rounded corners.
+6. **Label text** — upstream shows display names (`Python`, `Shell`, `HTML`), the fork the raw fence string.

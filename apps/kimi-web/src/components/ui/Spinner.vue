@@ -3,7 +3,8 @@
      except the chat "waiting for Agent response" state, which uses MoonSpinner. -->
 <script setup lang="ts">
 withDefaults(defineProps<{
-  size?: 'sm' | 'md' | 'lg';
+  /** `xs` is upstream's `ui-spinner--xs`, used inside the todo glyph. */
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   label?: string;
 }>(), {
   size: 'md',
@@ -22,6 +23,7 @@ withDefaults(defineProps<{
 
 <style scoped>
 .ui-spinner { display: inline-flex; flex: none; color: var(--color-accent); }
+.ui-spinner--xs { width: 12px; height: 12px; }
 .ui-spinner--sm { width: 14px; height: 14px; }
 .ui-spinner--md { width: 18px; height: 18px; }
 .ui-spinner--lg { width: 28px; height: 28px; }

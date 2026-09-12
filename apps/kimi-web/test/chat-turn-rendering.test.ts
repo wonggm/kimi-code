@@ -254,6 +254,19 @@ describe('foldRenderBlocks', () => {
     }
   });
 
+  it('leaves the run unfolded when the tool-call summary preference is off', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([toolBlock('a'), toolBlock('b'), toolBlock('c')]),
+    );
+    const folded = foldRenderBlocks(rendered, new Set(), false);
+    expect(folded.some((block) => block.kind === 'tool-fold')).toBe(false);
+    expect(folded).toHaveLength(1);
+    expect(folded[0]?.kind).toBe('tool-stack');
+    if (folded[0]?.kind === 'tool-stack') {
+      expect(folded[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c']);
+    }
+  });
+
   it('folds longer consecutive runs (5 cards, including a pre-grouped stack)', () => {
     // a, b are adjacent → tool-stack; c, d, e stay as singles. Together: 5.
     const rendered: ReturnType<typeof assistantRenderBlocks> = [

@@ -63,13 +63,45 @@ export default {
   },
   group: {
     title: '{count} 个工具调用',
+    countOther: '执行了 {count} 次工具调用',
+    typed: {
+      read: { done: '读取了 {count} 个文件' },
+      bash: { done: '运行了 {count} 条命令' },
+      grep: { done: '搜索了 {count} 个模式' },
+      search: { done: '网络搜索了 {count} 次' },
+      glob: { done: '找了 {count} 次文件' },
+      ls: { done: '列出了 {count} 个目录' },
+      web_fetch: { done: '抓取了 {count} 个页面' },
+      edit: { done: '编辑了 {count} 处' },
+      write: { done: '写入了 {count} 个文件' },
+    },
     running: '运行中',
     error: '有失败',
     done: '已完成',
   },
+  activity: {
+    failedClause: '（{count} 失败）',
+    liveDonePrefix: '已',
+    busy: '正在执行…',
+    doing: {
+      read: '正在读取 {subject}',
+      bash: '正在运行 {subject}',
+      grep: '正在搜索 {subject}',
+      search: '正在搜索 {subject}',
+      glob: '正在匹配 {subject}',
+      ls: '正在列出 {subject}',
+      web_fetch: '正在抓取 {subject}',
+      edit: '正在编辑 {subject}',
+      write: '正在写入 {subject}',
+    },
+  },
   fold: {
     summary: '{count} 个工具调用 · 最近：{last}',
     expandedSummary: '{count} 个工具调用 · 最近：{last} · 已展开',
+  },
+  disclosure: {
+    expand: '展开详情',
+    collapse: '收起详情',
   },
   ask: {
     dismissed: '已忽略',
@@ -80,7 +112,7 @@ export default {
   },
   plan: {
     review: {
-      pending: '待审阅',
+      pending: '待确认',
       approved: '已通过',
       rejected: '已驳回',
       cancelled: '已取消',
