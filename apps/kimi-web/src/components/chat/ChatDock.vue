@@ -345,7 +345,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
         v-show="entry.visible"
         :key="entry.id"
         type="button"
-        class="ui-pill lg-band"
+        class="ui-pill"
         :class="{ 'is-active': entry.active }"
         :aria-label="entry.ariaLabel"
         :aria-pressed="entry.active"
@@ -512,11 +512,11 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 /* Dock pills. Upstream's container is the same `dock-workbar`, but its children
    are labelled `button.ui-pill`s, not icon squares: the label is visible text and
    the state is a chip beside it (`dw-running` with the accent dot for a running
-   count, `dw-count` for plain text such as "1/3"). Geometry and typography are
-   upstream's own: radius `--radius-lg`, padding `--space-2` / `--space-3`, base
-   font size, a `--color-hover` overlay for hover and the active pill, and the
-   icon at 1.5em. The material stays the fork's band (`.lg-band`), which is what
-   upstream's `--p-menu-backdrop` does for its own pill. */
+   count, `dw-count` for plain text such as "1/3"). Geometry, typography and
+   material are upstream's own: radius `--radius-lg`, padding `--space-2` /
+   `--space-3`, base font size, a `--color-hover` overlay for hover and the active
+   pill, the icon at 1.5em, and its `--color-selected` fill behind the menu
+   backdrop. */
 .dock-workbar .ui-pill {
   position: relative;
   flex: none;
@@ -527,6 +527,8 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
   border: none;
   border-radius: var(--radius-lg);
   background: var(--color-selected);
+  -webkit-backdrop-filter: var(--p-menu-backdrop);
+  backdrop-filter: var(--p-menu-backdrop);
   color: var(--color-text);
   font-family: var(--font-ui);
   font-size: var(--text-base);
