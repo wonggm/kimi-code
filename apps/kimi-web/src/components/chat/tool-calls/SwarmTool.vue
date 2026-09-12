@@ -27,10 +27,9 @@ const props = withDefaults(
   defineProps<{
     tool: ToolCall;
     mobile?: boolean;
-    stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
   }>(),
-  { mobile: false, stackPosition: 'single', toolDiffPanel: false },
+  { mobile: false, toolDiffPanel: false },
 );
 
 defineEmits<{
@@ -161,7 +160,7 @@ function phaseLabel(phase: AppSubagentPhase): string {
 </script>
 
 <template>
-  <div class="swarm-card" :class="{ open, err: aggregateStatus === 'error', stacked: stackPosition !== 'single' }">
+  <div class="swarm-card" :class="{ open, err: aggregateStatus === 'error' }">
     <button class="head" type="button" :aria-expanded="open" @click="toggle">
       <Icon class="ic" name="git-pull-request" size="sm" />
       <span class="title">{{ label }}</span>

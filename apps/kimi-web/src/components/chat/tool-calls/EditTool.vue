@@ -4,7 +4,7 @@ import { computed, inject, ref } from 'vue';
 import type { DiffViewLine, FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { diffStats } from '../../../lib/diffLines';
 import { buildEditDiffLines } from '../../../lib/toolDiff';
-import { toolGlyph, toolLabel, toolSummary } from '../../../lib/toolMeta';
+import { toolGlyph, toolHeadParts, toolLabel, toolSummary } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
 import ToolOutputBlock from './ToolOutputBlock.vue';
 
@@ -12,10 +12,9 @@ const props = withDefaults(
   defineProps<{
     tool: ToolCall;
     mobile?: boolean;
-    stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
   }>(),
-  { mobile: false, stackPosition: 'single', toolDiffPanel: false },
+  { mobile: false, toolDiffPanel: false },
 );
 
 const emit = defineEmits<{
@@ -29,15 +28,17 @@ const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
 const summary = computed(() => toolSummary(props.tool.name, props.tool.arg));
 const summaryFull = computed(() => toolSummary(props.tool.name, props.tool.arg, true));
+const head = computed(() => toolHeadParts(props.tool.name, props.tool.arg));
 
 const editDiff = computed<DiffViewLine[] | null>(() => buildEditDiffLines(props.tool));
-const chip = computed(() => {
+// Upstream prints the pair as two spans with a proportion bar rather than one
+// chip, so the counts ride on the row's `diff` prop and the chip stays for the
+// cases with no counts to show.
+const diffCounts = computed(() => {
   const diff = editDiff.value;
-  if (diff && props.tool.status !== 'error') {
-    const { added, removed } = diffStats(diff);
-    if (added || removed) return `+${added} −${removed}`;
-  }
-  return '';
+  if (!diff || props.tool.status === 'error') return undefined;
+  const { added, removed } = diffStats(diff);
+  return added || removed ? { add: added, del: removed } : undefined;
 });
 
 const hasOutput = computed(() => !!props.tool.output && props.tool.output.length > 0);
@@ -67,16 +68,18 @@ function toggle(): void {
     :status="status"
     :icon="glyph"
     :name="label"
+    :file="head.file"
+    :dir="head.dir"
+    :mono="head.mono"
+    :diff="diffCounts"
     :arg="!open ? summary : ''"
     :time="tool.timing"
     :open="open"
     :expandable="canExpand || toolDiffPanel"
-    :stacked="stackPosition !== 'single'"
-    :stack-position="stackPosition"
     @toggle="toggle"
   >
     <template #trailing>
-      <span v-if="chip" class="chip">{{ chip }}</span>
+      
     </template>
     <div v-if="summaryFull" class="bb-summary">{{ summaryFull }}</div>
     <ToolOutputBlock :lines="tool.output" empty-text="Waiting for output…" />
@@ -84,11 +87,6 @@ function toggle(): void {
 </template>
 
 <style scoped>
-.chip {
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  flex: none;
-}
 .bb-summary {
   color: var(--color-text);
   border-bottom: 1px dashed var(--color-line);

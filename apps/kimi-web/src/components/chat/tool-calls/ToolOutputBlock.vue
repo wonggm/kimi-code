@@ -16,22 +16,27 @@ const outputStyle = { '--tool-output-visible-lines': String(OUTPUT_SCROLL_LINE_C
 </script>
 
 <template>
-  <div class="bb-code tool-output-block" :class="{ scroll: isScrollable }" :style="outputStyle">
+  <div class="op" :class="{ scroll: isScrollable }" :style="outputStyle">
     <div v-if="outputLines.length === 0 && emptyText" class="bb-empty">{{ emptyText }}</div>
     <div v-for="(line, i) in outputLines" :key="i">{{ line }}</div>
   </div>
 </template>
 
 <style scoped>
-.tool-output-block {
-  margin-top: var(--space-2);
-  padding: var(--space-3);
+/* Upstream's output well: mono, the sunken surface, a hairline border. */
+.op {
+  font-family: var(--font-mono);
+  font-size: calc(var(--content-font-size) - 2px);
+  line-height: 1.6;
+  font-variant-ligatures: none;
+  color: var(--color-text);
+  background: var(--color-well);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
+  padding: var(--space-2) var(--space-3);
 }
-.tool-output-block.scroll {
-  max-height: calc(var(--tool-output-visible-lines) * 1lh);
+.op.scroll {
+  max-height: calc(var(--tool-output-visible-lines) * 1.6em);
   overflow-y: auto;
   scrollbar-gutter: stable;
 }

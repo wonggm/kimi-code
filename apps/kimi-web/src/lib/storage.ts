@@ -300,20 +300,22 @@ export function saveLabSidebarTabs(on: boolean): void {
 // ---------------------------------------------------------------------------
 // Code-block rendering preferences (Markdown.vue reads these per render).
 //
-// Persisted as 'true'/'false' strings. The wrap helper accepts an explicit
-// default (true) because word-wrap is the friendlier default for chat-sized
-// code; line-numbers default to false because every chat block starts at line 1
-// and most users prefer the cleaner read.
+// Persisted as 'true'/'false' strings. Wrap defaults to false, matching the
+// upstream web bundle's code-block default (`wordWrap: "off"`, long lines
+// clip and scroll); line-numbers default to false because every chat block
+// starts at line 1 and most users prefer the cleaner read. Upstream stores no
+// wrap preference at all, so this key is ours; it exists only to remember a
+// user's explicit choice.
 // ---------------------------------------------------------------------------
 
 /** Word-wrap preference for fenced code blocks in chat markdown. Defaults to
- *  true — long unbreakable lines remain horizontally scrollable inside the
- *  block, while most chat snippets benefit from wrapping to the column. */
+ *  false — long lines clip and scroll horizontally, as upstream renders them;
+ *  the header toggle turns wrapping back on and the choice is remembered. */
 export function loadCodeWrap(): boolean {
   const raw = safeGetString(STORAGE_KEYS.codeWrap);
   if (raw === 'true') return true;
   if (raw === 'false') return false;
-  return true;
+  return false;
 }
 
 export function saveCodeWrap(on: boolean): void {

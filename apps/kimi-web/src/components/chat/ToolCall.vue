@@ -9,10 +9,9 @@ const props = withDefaults(
   defineProps<{
     tool: ToolCall;
     mobile?: boolean;
-    stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
   }>(),
-  { mobile: false, stackPosition: 'single', toolDiffPanel: false },
+  { mobile: false, toolDiffPanel: false },
 );
 
 const emit = defineEmits<{
@@ -31,7 +30,6 @@ const Renderer = computed(() => resolveToolRenderer(props.tool));
     :is="Renderer"
     :tool="tool"
     :mobile="mobile"
-    :stack-position="stackPosition"
     :tool-diff-panel="toolDiffPanel"
     :data-scroll-anchor-id="tool.id"
     @open-media="emit('openMedia', $event)"

@@ -62,6 +62,9 @@ function foldKeyFor(items: ToolStackItem[]): string {
 export function foldRenderBlocks(
   blocks: readonly AssistantRenderBlock[],
   expandedFolds: ReadonlySet<string>,
+  /** When false the run is left as-is: the user turned off the tool-call
+   *  summary in settings (upstream's `activity-run-folding`). */
+  enabled = true,
 ): FoldedRenderBlock[] {
   if (blocks.length === 0) return [];
 
@@ -83,7 +86,7 @@ export function foldRenderBlocks(
     runKey = null;
     runFirstSourceIndex = -1;
 
-    if (items.length >= TOOL_FOLD_THRESHOLD) {
+    if (enabled && items.length >= TOOL_FOLD_THRESHOLD) {
       // Always emit the chip — even when expanded — so the user has a stable
       // affordance to re-collapse. The expanded view also emits a tool-stack
       // immediately after, so the chips + the cards render side-by-side.

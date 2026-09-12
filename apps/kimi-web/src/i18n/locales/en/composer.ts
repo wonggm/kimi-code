@@ -42,9 +42,13 @@ export default {
    *  upstream's rich placeholder copy: keyboard shortcuts and a brief tip. */
   /** Accessible label for the composer textarea (announces it as the chat input). */
   inputLabel: 'Message input',
-  attachFile: 'Attach file',
   addMenu: 'Add',
   addFiles: 'Files',
+  addFilesDesc: 'Upload files',
+  addCommands: 'Commands',
+  addCommandsDesc: 'Built-in commands or skills',
+  addMention: 'Mention',
+  addMentionDesc: 'Mention attachments, project files, or skills',
   addGoalDesc: 'Set a goal to keep pursuing',
   addPlanDesc: 'Turn plan mode on',
   addSwarmDesc: 'Turn swarm mode on',

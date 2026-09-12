@@ -68,16 +68,17 @@ onUnmounted(() => stop?.());
 </script>
 
 <template>
-  <div class="empty-doodle">
+  <div class="doodle-host empty-doodle">
     <canvas
       v-show="!failed"
       ref="canvasRef"
       class="doodle-canvas"
       width="560"
       height="220"
-      aria-hidden="true"
+      role="img"
+      aria-label="Kimi"
     ></canvas>
-    <span v-if="failed" class="doodle-fallback">{{ t('composer.emptyConversationTitle') }}</span>
+    <div v-if="failed" class="doodle-fallback">{{ t('composer.emptyConversationTitle') }}</div>
   </div>
 </template>
 

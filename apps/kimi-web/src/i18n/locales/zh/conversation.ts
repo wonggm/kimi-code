@@ -1,5 +1,11 @@
 export default {
   quote: '引用',
+  selection: {
+    label: '所选内容操作',
+    placeholder: '添加评论…（可选）',
+    cancel: '取消',
+    addToChat: '添加到对话',
+  },
   jumpToLatestAria: '跳到最新消息',
   toc: '对话目录',
   newMessages: '最新消息',
@@ -17,19 +23,25 @@ export default {
   summaryTitle: '压缩摘要',
   manuallyAborted: '您已手动终止',
   undo: '撤销',
+  undoEdit: '撤销编辑',
   undoTooltip: '撤销对话不会回滚代码',
   undoConfirm: '撤销上一条消息？',
   undone: '已撤销，原文已放回输入框',
   notification: {
-    kindTask: '后台任务',
-    kindSubagent: '子代理',
-    title: {
-      completed: '{kind}完成',
-      failed: '{kind}失败',
-      timed_out: '{kind}超时',
-      killed: '{kind}被终止',
-      lost: '{kind}丢失',
-      info: '{kind}通知',
+    sentBy: {
+      task: '由后台发送（Bash）',
+      subagent: '由后台发送（Agent）',
+    },
+    bodyLine: '{status}：{description}',
+    reason: '原因：{reason}',
+    userStopped: '已被用户终止',
+    statusTitle: {
+      completed: '已完成',
+      failed: '失败',
+      timed_out: '超时',
+      killed: '已终止',
+      lost: '丢失',
+      info: '通知',
     },
     status: {
       completed: '完成',

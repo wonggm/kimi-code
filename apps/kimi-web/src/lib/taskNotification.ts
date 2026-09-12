@@ -2,8 +2,10 @@
 // Parse the `<notification>` payload a background task completion injects as a
 // user message (packages/agent-core-v2 .../task/taskService.ts + notificationXml.ts).
 // The tag carries identity attributes, `Title:`/`Severity:` header lines, a
-// body, and an `<output-file>` or `<output-preview>` child block. Defensive:
-// never throws.
+// body, and an `<output-file>` or `<output-preview>` child block. The body's
+// boilerplate first line is split into status / description / reason (see
+// parseTaskNotificationBody) so the card can render one clean body line.
+// Defensive: never throws.
 
 export interface TaskNotificationFile {
   path: string;
@@ -30,6 +32,19 @@ export interface TaskNotification {
   body?: string;
   outputFile?: TaskNotificationFile;
   outputPreview?: TaskNotificationPreview;
+}
+
+/** The engine's boilerplate first body line, split into its parts: `<description>
+ *  <status>.` with an optional `Reason: …`, or `<description> was stopped
+ *  (by user).`, or the `<description> <status>: <detail>.` question form. */
+export interface TaskNotificationBody {
+  /** Raw status token: completed | failed | timed_out | killed | lost. */
+  status: string;
+  description: string;
+  reason?: string;
+  /** Everything after the first body line (e.g. the subagent recovery hint). */
+  rest?: string;
+  userStopped?: boolean;
 }
 
 const NOTIFICATION_RE = /<notification\b([^>]*)>([\s\S]*?)<\/notification>/;
@@ -123,4 +138,58 @@ export function parseTaskNotification(
     outputFile: parseOutputFile(inner),
     outputPreview: parseOutputPreview(inner),
   };
+}
+
+/** The task status carried by the notification `type` (e.g. `task.completed`),
+ *  or `info` when the type names no known terminal status. */
+export function taskStatusFromType(type: string | undefined): string {
+  for (const key of ['completed', 'failed', 'timed_out', 'killed', 'lost']) {
+    if (type?.endsWith(`.${key}`)) return key;
+  }
+  return 'info';
+}
+
+const BOILERPLATE_TITLE_RE = /^Background (?:process|agent) (completed|failed|timed[_ ]out|killed|lost)$/i;
+const DONE_BODY_RE = /^(.+?) (completed|failed|timed out|lost)\.(?: Reason: ([\s\S]+))?$/;
+const STOPPED_BODY_RE = /^(.+?) was stopped( by user)?\.(?: Reason: ([\s\S]+))?$/;
+const QUESTION_BODY_RE = /^(.+?) (completed|failed|timed out|lost|was killed): ([\s\S]+)\.$/;
+
+/** Whether `title` is the engine's `<kind> <status>` boilerplate (rather than a
+ *  meaning-carrying title such as a background-question outcome). */
+export function isBackgroundTaskTitle(title: string | undefined): boolean {
+  return BOILERPLATE_TITLE_RE.test((title ?? '').trim());
+}
+
+function normalizeStatus(raw: string): string {
+  if (raw === 'timed out') return 'timed_out';
+  if (raw === 'was killed') return 'killed';
+  return raw;
+}
+
+/** Split the engine's first body line into status / description / reason, and
+ *  return the remaining lines as `rest`. Returns null when the body is not the
+ *  boilerplate `<description> <status>.` shape. */
+export function parseTaskNotificationBody(body: string | undefined): TaskNotificationBody | null {
+  const raw = body ?? '';
+  const newline = raw.indexOf('\n');
+  const first = (newline === -1 ? raw : raw.slice(0, newline)).trim();
+  const tail = newline === -1 ? '' : raw.slice(newline + 1).trim();
+  const rest = tail === '' ? undefined : tail;
+
+  const done = DONE_BODY_RE.exec(first);
+  if (done?.[1] !== undefined && done[2] !== undefined) {
+    const description = done[1] === 'Background process' || done[1] === 'Background agent' ? '' : done[1];
+    return { status: normalizeStatus(done[2]), description, reason: done[3], rest };
+  }
+  const stopped = STOPPED_BODY_RE.exec(first);
+  if (stopped?.[1] !== undefined) {
+    const description = stopped[1] === 'Background process' || stopped[1] === 'Background agent' ? '' : stopped[1];
+    return { status: 'killed', description, reason: stopped[3], rest, userStopped: stopped[2] !== undefined };
+  }
+  const question = QUESTION_BODY_RE.exec(first);
+  if (question?.[1] !== undefined && question[2] !== undefined) {
+    const description = question[1] === 'Background process' || question[1] === 'Background agent' ? '' : question[1];
+    return { status: normalizeStatus(question[2]), description, reason: question[3], rest };
+  }
+  return null;
 }
