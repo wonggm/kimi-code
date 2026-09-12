@@ -15,6 +15,12 @@ const props = defineProps<{
 const { t } = useI18n();
 const expanded = ref(false);
 
+const emit = defineEmits<{
+  /** A changed path was chosen — the panel decides where it lands (a file tab
+   *  in the fork today; upstream's DiffView drills inside the diff tab). */
+  open: [path: string];
+}>();
+
 // Selecting a changed path opens the app-wide quote bubble, so the per-turn
 // changes panel can be quoted into the chat.
 const rootRef = ref<HTMLElement | null>(null);
@@ -52,7 +58,9 @@ function displayPath(path: string): string {
     </div>
     <ul class="changed-files-list">
       <li v-for="path in visibleFiles" :key="path" class="changed-files-path" :title="path">
-        {{ displayPath(path) }}
+        <button type="button" class="changed-files-path-btn" @click="emit('open', path)">
+          {{ displayPath(path) }}
+        </button>
       </li>
     </ul>
     <button
@@ -106,6 +114,23 @@ function displayPath(path: string): string {
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.changed-files-path-btn {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.changed-files-path-btn:hover {
+  color: var(--color-text);
 }
 .changed-files-toggle {
   display: inline-flex;

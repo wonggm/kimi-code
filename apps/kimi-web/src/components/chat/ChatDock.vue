@@ -15,7 +15,6 @@ import type { AppGoal, AppModel, AppPlanEntry, AppSkill, QuestionResponse, Think
 import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { DetachTaskTarget } from '../../lib/detachTarget';
-import type { RightPanelTab } from '../../lib/rightPanelTabs';
 import Composer from './Composer.vue';
 import GoalStrip from './GoalStrip.vue';
 import { useGlassRefraction } from '../../composables/useGlassRefraction';
@@ -101,9 +100,10 @@ const emit = defineEmits<{
   cancelTask: [taskId: string];
   /** Send a running foreground bash task row to the background. */
   detachTask: [target: DetachTaskTarget];
-  /** Open the right panel on the given tab. When the tab is the same as the
-   *  active tab, the caller treats this as a toggle (close the panel). */
-  'open-right-panel': [tab: RightPanelTab];
+  /** Reveal the right panel (the dock's work lists have no tab of their own —
+   *  they live in the dock — so their "open in the side panel" action only
+   *  brings the panel up on whatever it is already showing). */
+  'show-panel': [];
   /** A background subagent chip was clicked — open its live detail panel. */
   openAgent: [taskId: string];
 }>();
@@ -320,6 +320,12 @@ function setPanelFilter(value: string): void {
   else if (openPanel.value === 'subagents') subagentFilter.value = value as SubagentFilter;
 }
 
+/** Upstream keeps no bash/todos tab in the right panel — those lists live in the
+ *  dock — so their "open in the side panel" action simply reveals the panel. */
+function showPanel(): void {
+  emit('show-panel');
+}
+
 function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
   togglePanel(id, event);
 }
@@ -347,6 +353,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
         type="button"
         class="ui-pill"
         :class="{ 'is-active': entry.active }"
+        :data-dock-panel="entry.id"
         :aria-label="entry.ariaLabel"
         :aria-pressed="entry.active"
         @click="clickWorkbar(entry.id, $event)"
@@ -378,7 +385,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
             <SegmentedControl v-model="subagentFilter" :options="subagentFilterOptions" size="md" />
           </template>
           <template v-else-if="openPanel === 'plan'" #actions>
-            <IconButton size="sm" :label="t('tasks.openPanel')" @click="emit('open-right-panel', 'todos')">
+            <IconButton size="sm" :label="t('tasks.openPanel')" @click="showPanel()">
               <Icon name="panel-right" size="sm" />
             </IconButton>
             <IconButton size="sm" :label="t('tasks.closePanel')" @click="openPanel = null">
@@ -390,7 +397,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
             v-if="openPanel === 'bash'"
             :tasks="bashTasks"
             :filter="bashFilter"
-            @open="emit('open-right-panel', 'bash')"
+            @open="showPanel()"
             @stop="emit('cancelTask', $event)"
           />
           <DockAgentGrid
@@ -398,7 +405,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
             :tasks="subagentTasks"
             :filter="subagentFilter"
             @cancel="emit('cancelTask', $event)"
-            @open="emit('open-right-panel', 'subagents')"
+            @open="emit('openAgent', $event)"
           />
           <TodoCard v-else-if="openPanel === 'todos'" :todos="todos ?? []" />
           <PlanPanel

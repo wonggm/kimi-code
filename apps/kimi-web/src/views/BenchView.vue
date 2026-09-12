@@ -26,7 +26,6 @@ import { buildLongConversation, streamingMarkdown, BENCH_EPOCH_ISO } from '../be
 import { Sampler, signalDone, signalReady } from '../bench/sampler';
 import { scenarios } from '../bench/scenarios';
 import type { BenchContext, ScenarioName, Theme } from '../bench/types';
-import type { RightPanelTab } from '../lib/rightPanelTabs';
 
 import ChatPane from '../components/chat/ChatPane.vue';
 import ConversationToc, { type ConversationTocItem } from '../components/chat/ConversationToc.vue';
@@ -71,7 +70,6 @@ const sheetOpen = ref(false);
 const bottomSheetOpen = ref(false);
 const settingsOpen = ref(false);
 const serverAuthOpen = ref(false);
-const dockPanel = ref<RightPanelTab | null>(null);
 const warnings = ref<AppWarning[]>([]);
 // Work-mode arming for the composer's + menu: the dock's toggle-plan-armed
 // emit flips this so the armed-plan pill pose is reachable in bench scenes.
@@ -155,7 +153,6 @@ const ctx: BenchContext = {
   bottomSheetOpen,
   settingsOpen,
   serverAuthOpen,
-  dockPanel,
   warnings,
   nextFrame,
   settle,
@@ -268,11 +265,10 @@ onMounted(async () => {
         :subagent-running="1"
         :todo-done-count="1"
         :has-dock-work="true"
-        :active-panel-tab="dockPanel"
         :mobile="false"
         :plan-armed="planArmed"
         session-id="bench-session"
-        @open-right-panel="(tab) => (dockPanel = dockPanel === tab ? null : tab)"
+        @show-panel="() => {}"
         @toggle-plan-armed="planArmed = !planArmed"
       />
     </div>
