@@ -9,8 +9,6 @@ import type { Sampler } from './sampler';
 
 export type Theme = 'dark' | 'light';
 
-export type DockPanel = import('../lib/rightPanelTabs').RightPanelTab | null;
-
 export interface BenchContext {
   sampler: Sampler;
 
@@ -35,9 +33,6 @@ export interface BenchContext {
   bottomSheetOpen: Ref<boolean>;
   settingsOpen: Ref<boolean>;
   serverAuthOpen: Ref<boolean>;
-
-  /** ChatDock work-panel state. */
-  dockPanel: Ref<DockPanel>;
 
   /** Toast stack for WarningToasts. */
   warnings: Ref<AppWarning[]>;

@@ -6,13 +6,7 @@ import Sidebar from './components/Sidebar.vue';
 import ResizeHandle from './components/ResizeHandle.vue';
 import ConversationPane from './components/chat/ConversationPane.vue';
 import SessionAdminView from './views/SessionAdminView.vue';
-import FilePreview from './components/FilePreview.vue';
 import MediaPreview from './components/media/MediaPreview.vue';
-import ThinkingPanel from './components/chat/ThinkingPanel.vue';
-import AgentDetailPanel from './components/chat/AgentDetailPanel.vue';
-import ToolDiffPanel from './components/chat/ToolDiffPanel.vue';
-import SideChatPanel from './components/chat/SideChatPanel.vue';
-import DiffView from './components/chat/DiffView.vue';
 import ModelPicker from './components/settings/ModelPicker.vue';
 import ProviderManager from './components/settings/ProviderManager.vue';
 import LoginDialog from './components/dialogs/LoginDialog.vue';
@@ -35,13 +29,13 @@ import type { ToolMedia, TurnAttachment } from './types';
 import { useAuthGate } from './composables/useAuthGate';
 import { usePageTitle } from './composables/usePageTitle';
 import { useSidebarLayout } from './composables/useSidebarLayout';
-import { useFilePreview, type DetailTarget } from './composables/useFilePreview';
+import { useFilePreview } from './composables/useFilePreview';
 import { ensureGlassEngine } from './lib/glass/gl-renderer';
 import { useDetailPanel } from './composables/useDetailPanel';
+import { useRightPanel } from './composables/useRightPanel';
 import { useIsMobile } from './composables/useIsMobile';
 import { useMemoizedSwarmMembers } from './composables/useMemoizedSwarmMembers';
 import { useGlassRefraction } from './composables/useGlassRefraction';
-import { openDialogCount } from './composables/dialogStack';
 import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
 import { initServerAuth, onAuthRequired } from './api/daemon/serverAuth';
@@ -191,13 +185,9 @@ onMounted(() => {
   window.visualViewport?.addEventListener('resize', syncAppHeight);
   window.visualViewport?.addEventListener('scroll', syncAppHeight);
   window.addEventListener('resize', syncAppHeight);
-  // Capture-phase so Escape closes the side detail layer BEFORE the
-  // conversation pane's bubble-phase handler interrupts a running prompt.
-  document.addEventListener('keydown', onGlobalKeydown, true);
 });
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', onGlobalKeydown, true);
   window.visualViewport?.removeEventListener('resize', syncAppHeight);
   window.visualViewport?.removeEventListener('scroll', syncAppHeight);
   window.removeEventListener('resize', syncAppHeight);
@@ -214,48 +204,38 @@ onUnmounted(() => {
   }
 });
 
-function onGlobalKeydown(e: KeyboardEvent): void {
-  if (e.key !== 'Escape') return;
-  // An active IME composition owns Escape (cancel the candidate window, never
-  // close the side panel behind it).
-  if (e.isComposing || e.keyCode === 229) return;
-  // A modal dialog open on top of the side panel owns Escape — leave the event
-  // alone so the dialog can close itself instead of the panel behind it.
-  if (anyOverlayOpen.value) return;
-  if (closeOpenSidePanel()) {
-    e.stopPropagation();
-    e.preventDefault();
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Unified right-side detail layer. Only one detail is open at a time. The
-// shared `detailTarget` ref lives here so the file-preview and detail-panel
-// composables can both claim the single right-side slot.
+// The right panel. Its state is upstream's (useRightPanel): a list of tabs, one
+// active id, a width and a visibility flag — the panel owns all of it and the
+// transcript only opens tabs on it. Escape is not a way out of it (upstream
+// closes the panel from its own Close control), so there is no global handler.
 // ---------------------------------------------------------------------------
-const detailTarget = ref<DetailTarget | null>(null);
+const panel = useRightPanel();
 
-// True for one frame while the active session changes: suppresses the right
-// panel's width transition so a restored panel snaps to its width instead of
-// animating open from zero.
-const panelSwitching = ref(false);
-watch(client.activeSessionId, () => {
-  panelSwitching.value = true;
-  void nextTick(() => { panelSwitching.value = false; });
-});
+// Tabs are per session: switching restores the incoming session's restorable
+// tabs (agent, compaction, side chat) and drops the rest, terminals included.
+watch(client.activeSessionId, (id) => panel.bindSession(id), { immediate: true });
 
 const {
-  previewTarget,
-  previewFile,
-  previewLoading,
-  previewError,
-  previewDownloadUrl,
-  previewExternalActions,
-  openFilePreview,
+  requestFilePreview,
+  loadFilePreview,
   closeFilePreview,
-  openPreviewInEditor,
-  revealPreviewFile,
-} = useFilePreview({ client, detailTarget });
+} = useFilePreview({ client });
+
+// The panel's file tab IS the preview: opening it loads the file, closing it or
+// switching away resets the preview state (upstream wires the same pair).
+watch(
+  [() => panel.activeTab.value?.id ?? null, () => panel.visible.value] as const,
+  () => {
+    const tab = panel.activeTab.value;
+    if (panel.visible.value && tab?.kind === 'file') {
+      void loadFilePreview({ path: tab.path, line: tab.line });
+    } else {
+      closeFilePreview();
+    }
+  },
+  { immediate: true },
+);
 
 const mediaPreview = ref<ToolMedia | null>(null);
 const mediaPreviewSrc = ref<string | null>(null);
@@ -330,10 +310,8 @@ function openMediaPreview(media: ToolMedia): void {
 }
 
 // True while the right-side slot is actually occupied, so the sidebar reserves
-// room for it and the conversation can never be squeezed. Keyed off detailTarget
-// (the real occupant) rather than previewTarget, which can stay set after the
-// panel is hidden.
-const previewOpen = computed(() => detailTarget.value !== null);
+// room for it and the conversation can never be squeezed.
+const previewOpen = computed(() => panel.visible.value);
 
 // ---------------------------------------------------------------------------
 // Layout: resizable session column. ResizeHandle owns the column width (with
@@ -352,44 +330,19 @@ const {
   toggleSidebarCollapse,
 } = useSidebarLayout({ previewOpen });
 
+// The panel's width is half the room left beside the sidebar (upstream's own
+// rule), so the sidebar's width is what it needs to know.
+watch(sideWidth, (width) => panel.setSideWidth(width), { immediate: true });
+
 // ---------------------------------------------------------------------------
-// Unified right-side detail layer (thinking / compaction / agent / diff / side
-// chat) plus the preview-panel width. Only one detail is open at a time.
+// The panel's data layer: what a tab's body reads, and the transcript's openers.
 // ---------------------------------------------------------------------------
 const {
-  PREVIEW_WIDTH_KEY,
-  PREVIEW_MIN,
-  previewDefaultWidth,
-  previewMax,
-  previewWidth,
-  previewPanelWidth,
-  thinkingPanelText,
-  thinkingVisible,
-  openThinkingPanel,
-  closeThinkingPanel,
-  compactionPanelText,
-  compactionPanelVisible,
-  openCompactionPanel,
-  closeCompactionPanel,
-  agentPanelMemberStable,
-  agentPanelHold,
-  openAgentPanel,
-  closeAgentPanel,
-  toolDiffTarget,
   openToolDiff,
-  closeToolDiff,
-  detailDiffMode,
-  detailDiffPath,
   openDiffDetail,
-  closeDiffDetail,
-  selectDiffFile,
-  btwVisible,
   openSideChatTab,
   closeSideChat,
-  sidePanelVisible,
-  panelDragging,
-  closeOpenSidePanel,
-} = useDetailPanel({ client, sideWidth, detailTarget, closeFilePreview });
+} = useDetailPanel({ client });
 
 // Reference to ConversationPane so we can imperatively switch tabs
 const conversationPaneRef = ref<InstanceType<typeof ConversationPane> | null>(null);
@@ -458,26 +411,6 @@ function openSessionFromAdmin(sessionId: string): void {
 function expandSidebar(): void {
   if (sidebarCollapsed.value) toggleSidebarCollapse();
 }
-
-// Any of these modal/overlay layers, when open, owns Escape. The global
-// capture-phase handler must NOT close a background side panel out from under an
-// open dialog — otherwise Escape dismisses the panel behind the dialog and the
-// dialog's own Escape handler never fires. New top-level dialogs go here too.
-const anyOverlayOpen = computed<boolean>(
-  () =>
-    openDialogCount.value > 0 ||
-    showModelPicker.value ||
-    showProviders.value ||
-    showLogin.value ||
-    showAddWorkspace.value ||
-    showStatusPanel.value ||
-    showSettings.value ||
-    showOnboarding.value ||
-    showMobileSwitcher.value ||
-    showMobileSettings.value ||
-    mediaPreview.value !== null ||
-    mainView.value !== 'chat',
-);
 
 // Loading state for model/provider fetches
 const modelsLoading = ref(false);
@@ -970,7 +903,6 @@ function openPr(url: string): void {
         'sidebar-collapsed': sidebarCollapsed && !isMobile,
         'macos-desktop': isMacosDesktop,
       }"
-      :style="{ '--preview-w': previewPanelWidth + 'px' }"
     >
     <!-- Desktop navigation: workspace rail + resizable session column. -->
     <template v-if="!isMobile">
@@ -1134,12 +1066,12 @@ function openPr(url: string): void {
       @compact="client.compact()"
       @pick-model="openModelPicker()"
       @select-model="handleComposerSelectModel($event)"
-      @open-file="openFilePreview($event)"
+      @open-file="requestFilePreview($event)"
       @open-media="openMediaPreview($event)"
-      @open-thinking="openThinkingPanel($event)"
-      @open-compaction="openCompactionPanel($event)"
-      @open-agent="openAgentPanel($event)"
+      @open-compaction="panel.openCompaction($event.turnId)"
+      @open-agent="panel.openAgent($event)"
       @open-tool-diff="openToolDiff($event)"
+      @open-side-chat="openSideChatTab()"
       @edit-message="handleEditMessage"
       @resume-failure="handleResumeFailure"
     />
@@ -1169,95 +1101,6 @@ function openPr(url: string): void {
     >
       <Icon :name="sidebarCollapsed ? 'panel-expand' : 'panel-collapse'" />
     </IconButton>
-
-    <ResizeHandle
-      v-if="sidePanelVisible && !isMobile"
-      class="preview-handle"
-      :storage-key="PREVIEW_WIDTH_KEY"
-      :default-width="previewDefaultWidth"
-      :min="PREVIEW_MIN"
-      :max="previewMax"
-      reverse
-      :aria-label="t('layout.resizePreviewAria')"
-      @update:width="previewWidth = $event"
-      @update:dragging="panelDragging = $event"
-    />
-
-    <!-- Desktop: the aside is a PERMANENT grid column whose width transitions
-         0 ↔ var(--preview-w) — opening genuinely squeezes the chat column over
-         (one animation, no slide-over hacks). Mobile mounts only when open
-         (full-screen overlay). Content stays v-if'd, so a closed panel is a
-         zero-width empty shell. -->
-    <aside
-      v-if="!isMobile || sidePanelVisible"
-      class="global-preview"
-      :class="{ open: sidePanelVisible, mobile: isMobile, 'no-anim': panelDragging || panelSwitching }"
-      role="complementary"
-      :aria-label="t('layout.detailPanelAria')"
-      :aria-hidden="!sidePanelVisible"
-    >
-      <ThinkingPanel
-        v-if="detailTarget === 'thinking' && thinkingVisible"
-        :text="thinkingPanelText ?? ''"
-        @close="closeThinkingPanel"
-      />
-      <ThinkingPanel
-        v-else-if="detailTarget === 'compaction' && compactionPanelVisible"
-        :text="compactionPanelText ?? ''"
-        :subtitle="t('conversation.summaryTitle')"
-        @close="closeCompactionPanel"
-      />
-      <AgentDetailPanel
-        v-else-if="agentPanelHold"
-        :member="agentPanelMemberStable!"
-        :session-id="client.activeSessionId.value ?? undefined"
-        :tasks="client.activeAppTasks.value"
-        @close="closeAgentPanel"
-        @open-file="openFilePreview($event)"
-        @open-media="openMediaPreview($event)"
-        @open-agent="openAgentPanel($event)"
-      />
-      <SideChatPanel
-        v-else-if="detailTarget === 'btw' && btwVisible"
-        :turns="client.sideChatTurns.value"
-        :running="client.sideChatRunning.value"
-        :sending="client.sideChatSending.value"
-        @send="client.sendSideChatPrompt($event)"
-        @close="closeSideChat"
-      />
-      <DiffView
-        v-else-if="detailTarget === 'diff'"
-        :mode="detailDiffMode"
-        :changes="client.changes.value"
-        :git-info="client.gitInfo.value"
-        :file-diff="client.fileDiff.value"
-        :selected-diff-path="client.selectedDiffPath.value"
-        :file-diff-loading="client.fileDiffLoading.value"
-        closable
-        @open="selectDiffFile"
-        @back="detailDiffMode = 'list'; detailDiffPath = null; client.clearFileDiff()"
-        @close="closeDiffDetail"
-      />
-      <ToolDiffPanel
-        v-else-if="detailTarget === 'toolDiff' && toolDiffTarget"
-        :target="toolDiffTarget"
-        @close="closeToolDiff"
-      />
-      <FilePreview
-        v-else-if="detailTarget === 'file'"
-        :file="previewFile"
-        :loading="previewLoading"
-        :error="previewError"
-        :line="previewTarget?.line"
-        :download-url="previewDownloadUrl"
-        closable
-        :external-actions="previewExternalActions"
-        :open-file="openFilePreview"
-        @close="closeFilePreview"
-        @open-external="openPreviewInEditor"
-        @reveal="revealPreviewFile"
-      />
-    </aside>
 
     <!-- Internal-build tag — pinned to the app's bottom-right corner, above
          whatever pane happens to be there. Purely informational: pointer
@@ -1546,20 +1389,18 @@ function openPr(url: string): void {
   color: var(--dim);
 }
 .app {
-  --preview-w: 460px;
   flex: 1;
   min-height: 0;
   position: relative;
   display: grid;
-  /* sidebar | 0-width handle | conversation | 0-width handle | right panel.
-     The 4px ResizeHandles overflow their zero-width tracks via negative margins
-     so the whole strip is grabbable without consuming layout space. */
-  /* Both side tracks are PERMANENT (auto = follows the aside's width, 0 when
-     closed/collapsed) — opening or collapsing animates the aside's width, so
-     the conversation column is squeezed over smoothly instead of snapping to a
-     new template. Every column is pinned explicitly (grid-column 1–5) so a
-     display:none handle can't shift auto-placement. */
-  grid-template-columns: auto 0 minmax(0, 1fr) 0 auto;
+  /* sidebar | 0-width handle | conversation. The panel is a column INSIDE the
+     conversation (upstream's shape), so it needs no track of its own.
+     Both side tracks are PERMANENT (auto = follows the aside's width, 0 when
+     closed/collapsed) — collapsing animates the aside's width, so the
+     conversation column is squeezed over smoothly instead of snapping to a new
+     template. Every column is pinned explicitly so a display:none handle can't
+     shift auto-placement. */
+  grid-template-columns: auto 0 minmax(0, 1fr);
   background: var(--bg);
   color: var(--color-text);
   overflow: hidden;
@@ -1578,7 +1419,6 @@ function openPr(url: string): void {
 .app > .side { grid-column: 1; }
 .side-handle { grid-column: 2; }
 .app:not(.mobile) > .con { grid-column: 3; }
-.preview-handle { grid-column: 4; }
 
 /* Sidebar toggle — floating button pinned to the top-left corner. On macOS
    desktop it is resident (rendered in both states beside the traffic lights);
@@ -1624,40 +1464,6 @@ function openPr(url: string): void {
 .app.mobile {
   grid-template-columns: 1fr;
   grid-template-rows: auto 1fr;
-}
-
-/* The right-side panel column: a permanent grid item whose width animates
-   0 ↔ var(--preview-w). The CONTENT keeps a fixed width (and carries the
-   left hairline) so it clips during the transition instead of reflowing. */
-.global-preview {
-  grid-column: 5;
-  min-width: 0;
-  min-height: 0;
-  width: 0;
-  background: var(--bg);
-  overflow: hidden;
-  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.global-preview.open {
-  width: var(--preview-w);
-}
-/* While dragging the resize handle, follow the pointer 1:1. */
-.global-preview.no-anim {
-  transition: none;
-}
-.global-preview:not(.mobile) > * {
-  width: var(--preview-w);
-  height: 100%;
-  box-sizing: border-box;
-  border-left: 1px solid var(--line);
-}
-.global-preview.mobile {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-sticky);
-  width: auto;
-  transition: none;
-  border-top: 2px solid var(--color-text);
 }
 
 @media (max-width: 640px) {

@@ -1,12 +1,15 @@
 // apps/kimi-web/src/composables/useFilePreview.ts
-// File preview: download / path normalization / request-sequence guard. Claims
-// the 'file' slot of the shared right-side detail layer.
+// File preview: download / path normalization / request-sequence guard. The
+// preview IS the body of the panel's `file` tab, so the panel drives it:
+// `requestFilePreview` opens or focuses the tab, and App.vue watches the active
+// tab and calls `loadFilePreview` — upstream wires the same pair (its panel tab
+// watcher calls `filePreview.openFilePreview` / `closeFilePreview`).
 
 import { computed, provide, ref, watch, type InjectionKey, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { getKimiWebApi } from '../api';
 import { turnFilesForTurn } from '../lib/rightPanelTabs';
-import type { FileData, FilePreviewRequest, ToolMedia } from '../types';
+import { useRightPanel } from './useRightPanel';
+import type { FileData, FilePreviewRequest } from '../types';
 import type { useKimiWebClient } from './useKimiWebClient';
 
 type KimiWebClient = ReturnType<typeof useKimiWebClient>;
@@ -26,24 +29,19 @@ export interface FilePreviewRefreshHandle {
 
 export const FILE_PREVIEW_REFRESH_KEY: InjectionKey<FilePreviewRefreshHandle> =
   Symbol('kimi-web:file-preview-refresh');
-
-/** Which occupant currently owns the shared right-side detail layer. */
-export type DetailTarget = 'file' | 'diff' | 'thinking' | 'compaction' | 'agent' | 'toolDiff' | 'btw' | 'tabs';
-
-/** Whether a url can feed a native <video>/<img> src. A provider reference like
- *  `ms://…` has no local bytes and only yields a broken player, so it's treated
- *  as non-loadable and falls through to the no-preview card. */
-export function isPlayableMediaUrl(url: string): boolean {
-  return /^(?:https?:|blob:|data:)/i.test(url);
-}
+/** The preview's own state, provided by the composable so a pane that lives
+ *  elsewhere in the tree (the right panel's file tab) can render the same
+ *  preview instead of keeping a second one alive. */
+export const FILE_PREVIEW_STATE_KEY: InjectionKey<FilePreviewApi> =
+  Symbol('kimi-web.file-preview-state') as InjectionKey<FilePreviewApi>;
 
 export interface UseFilePreviewOptions {
   client: KimiWebClient;
-  detailTarget: Ref<DetailTarget | null>;
 }
 
-export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) {
+export function useFilePreview({ client }: UseFilePreviewOptions) {
   const { t } = useI18n();
+  const panel = useRightPanel();
 
   const previewTarget = ref<FilePreviewRequest | null>(null);
   const previewFile = ref<FileData | null>(null);
@@ -60,19 +58,9 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
   // Number of Edit/Write tool entries for the previewed path at load time. Any
   // later change to that count means the on-screen content is behind.
   let loadedEditCount: number | null = null;
-  // Incremented on every openFilePreview call so a slower earlier request can't
-  // overwrite the result of a later one (request-sequence guard).
+  // Incremented on every load so a slower earlier request can't overwrite the
+  // result of a later one (request-sequence guard).
   let previewRequestSeq = 0;
-  // Authenticated blob URL backing the current media preview, when the media
-  // came from the file store (a bare getFileUrl 401s in <img> under daemon
-  // auth). Revoked when the preview is replaced or closed.
-  let mediaObjectUrl: string | null = null;
-  function revokeMediaObjectUrl(): void {
-    if (mediaObjectUrl !== null) {
-      URL.revokeObjectURL(mediaObjectUrl);
-      mediaObjectUrl = null;
-    }
-  }
 
   const previewDownloadUrl = computed(() => {
     const path = previewNormalizedPath.value;
@@ -190,21 +178,17 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     }
   }
 
-  async function openFilePreview(target: FilePreviewRequest): Promise<void> {
-    // Clicking the link for the already-open file toggles the panel closed.
-    const current = previewTarget.value;
-    if (
-      detailTarget.value === 'file' &&
-      current &&
-      current.path === target.path &&
-      current.line === target.line
-    ) {
-      closeFilePreview();
-      return;
-    }
+  /** The transcript's file links: open the panel's file tab for this path, or
+   *  focus the one already open on it (upstream's keyed-by-path policy). The
+   *  active-tab watcher then loads the content. */
+  function requestFilePreview(target: FilePreviewRequest): void {
+    panel.openFile(target.path, target.line);
+  }
+
+  /** Load a file into the preview state. The panel's active tab is the only
+   *  caller — do not open a tab from here (that would re-enter the watcher). */
+  async function loadFilePreview(target: FilePreviewRequest): Promise<void> {
     const requestSeq = ++previewRequestSeq;
-    revokeMediaObjectUrl();
-    detailTarget.value = 'file';
     previewFile.value = null;
     previewError.value = null;
     previewLoading.value = true;
@@ -224,8 +208,8 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
 
     try {
       const result = await client.readFileContent(normalized.path);
-      // A newer openFilePreview started while this one was in flight — discard
-      // the stale result so the right-side panel shows the latest file.
+      // A newer load started while this one was in flight — discard the stale
+      // result so the right-side panel shows the latest file.
       if (requestSeq !== previewRequestSeq) return;
       if (result) {
         previewFile.value = { ...result, path: result.path || normalized.path };
@@ -246,75 +230,8 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     }
   }
 
-  function mimeFromDataUrl(url: string): string | undefined {
-    const match = /^data:([^;,]+)/i.exec(url);
-    return match?.[1];
-  }
-
-  function openMediaPreview(media: ToolMedia): void {
-    if (media.kind !== 'image' && media.kind !== 'video') return;
-    const seq = ++previewRequestSeq;
-    revokeMediaObjectUrl();
-    detailTarget.value = 'file';
-    previewTarget.value = null;
-    previewNormalizedPath.value = null;
-    previewError.value = null;
-    const isVideo = media.kind === 'video';
-    const base = {
-      path: media.path ?? (isVideo ? 'Video' : 'ReadMediaFile image'),
-      content: '',
-      encoding: 'utf-8' as const,
-      mime: media.mimeType ?? mimeFromDataUrl(media.url) ?? (isVideo ? 'video/*' : 'image/*'),
-      isBinary: true,
-      size: media.bytes ?? 0,
-    };
-    // The raw URL 401s under daemon auth (browsers load media without the
-    // Bearer token), so fetch the bytes with auth and preview a blob URL.
-    // Prompt-attached session_media ids only resolve on the session-scoped
-    // route; the generic /files call 404s for them.
-    if (media.fileId) {
-      const sid = client.activeSessionId.value;
-      const fetchBlob = media.sessionMedia
-        ? sid
-          ? () => getKimiWebApi().getSessionMediaBlob(sid, media.fileId!)
-          : undefined
-        : () => getKimiWebApi().getFileBlob(media.fileId!);
-      previewLoading.value = true;
-      previewFile.value = base;
-      if (!fetchBlob) {
-        previewLoading.value = false;
-        previewFile.value = isPlayableMediaUrl(media.url) ? { ...base, sourceUrl: media.url } : base;
-        return;
-      }
-      void fetchBlob().then((blob) => {
-        if (seq !== previewRequestSeq) return;
-        // The user may have switched to another detail panel while this was in
-        // flight — don't create (and leak) a blob URL for a hidden panel.
-        if (detailTarget.value !== 'file' || !previewFile.value) {
-          previewLoading.value = false;
-          return;
-        }
-        mediaObjectUrl = URL.createObjectURL(blob);
-        previewFile.value = { ...previewFile.value, sourceUrl: mediaObjectUrl };
-        previewLoading.value = false;
-      }).catch(() => {
-        if (seq !== previewRequestSeq) return;
-        // Fall back to the raw URL so the user sees an honest broken state.
-        if (previewFile.value) previewFile.value = { ...previewFile.value, sourceUrl: media.url };
-        previewLoading.value = false;
-      });
-    } else {
-      previewLoading.value = false;
-      // A non-loadable url (e.g. a provider `ms://` reference with no local
-      // bytes) can't feed a <video>/<img> src — leave sourceUrl unset so the
-      // preview shows the no-preview card instead of a broken player.
-      previewFile.value = isPlayableMediaUrl(media.url) ? { ...base, sourceUrl: media.url } : base;
-    }
-  }
-
   function resetFilePreview(): void {
-    // Invalidate any in-flight authenticated media fetch so it doesn't create a
-    // blob URL after the panel is gone (which would leak until the next preview).
+    // Invalidate any in-flight read so it doesn't publish after the tab closed.
     previewRequestSeq += 1;
     previewTarget.value = null;
     previewNormalizedPath.value = null;
@@ -324,21 +241,11 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     previewStale.value = false;
     previewRefreshing.value = false;
     loadedEditCount = null;
-    revokeMediaObjectUrl();
   }
 
   function closeFilePreview(): void {
     resetFilePreview();
-    if (detailTarget.value === 'file') detailTarget.value = null;
   }
-
-  // Revoke/close the preview when the user switches to another detail panel
-  // (useDetailPanel only flips detailTarget and does not call closeFilePreview),
-  // so an in-flight or already-shown blob URL isn't held while the file panel
-  // is hidden.
-  watch(detailTarget, (target, oldTarget) => {
-    if (oldTarget === 'file' && target !== 'file') resetFilePreview();
-  });
 
   function openPreviewInEditor(): void {
     const path = previewFile.value?.path ?? previewTarget.value?.path;
@@ -361,7 +268,7 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     },
   });
 
-  return {
+  const api = {
     previewTarget,
     previewFile,
     previewLoading,
@@ -370,11 +277,15 @@ export function useFilePreview({ client, detailTarget }: UseFilePreviewOptions) 
     previewRefreshing,
     previewDownloadUrl,
     previewExternalActions,
-    openFilePreview,
-    openMediaPreview,
+    requestFilePreview,
+    loadFilePreview,
     closeFilePreview,
     refreshPreview,
     openPreviewInEditor,
     revealPreviewFile,
   };
+  provide(FILE_PREVIEW_STATE_KEY, api);
+  return api;
 }
+
+export type FilePreviewApi = ReturnType<typeof useFilePreview>;

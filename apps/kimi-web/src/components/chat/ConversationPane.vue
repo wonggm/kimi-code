@@ -11,8 +11,10 @@ import ChatPane from './ChatPane.vue';
 import ChatHeader from './ChatHeader.vue';
 import Composer from './Composer.vue';
 import ChatDock from './ChatDock.vue';
-import RightPanelTabs from './RightPanelTabs.vue';
-import { coerceRightPanelTab, type RightPanelTab } from '../../lib/rightPanelTabs';
+import PanelTabs from './PanelTabs.vue';
+import RightPanelPane from './RightPanelPane.vue';
+import { normalizePanelPreviewPath } from '../../lib/rightPanelTabs';
+import { PANEL_PREVIEW_MIN, useRightPanel } from '../../composables/useRightPanel';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import EmptyDoodle from './EmptyDoodle.vue';
 import SelectionQuoteBubble from './SelectionQuoteBubble.vue';
@@ -22,7 +24,7 @@ import Spinner from '../ui/Spinner.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { isMacosDesktop } from '../../lib/desktopFlag';
 import { getVisibleWorkspaces } from '../../lib/workspacePicker';
-import { safeGetString, safeRemove, STORAGE_KEYS } from '../../lib/storage';
+import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
 import { normalizeToolName } from '../../lib/toolMeta';
 import { useComposerQuoteRequest } from '../../composables/useSelectionQuote';
 
@@ -155,6 +157,9 @@ const emit = defineEmits<{
   openCompaction: [target: { turnId: string }];
   openAgent: [toolCallId: string];
   openToolDiff: [id: string];
+  /** Panel's New-tab menu → Side chat: start one (creating the session when the
+   *  composer is still empty) and open its tab. */
+  openSideChat: [];
   /** Send a running foreground task (card or task-list row) to the background. */
   detachTask: [target: DetachTaskTarget];
   /** Chat header / files pane: focus the diff detail layer and refresh git status. */
@@ -340,23 +345,44 @@ const latestPlan = computed<AppPlanEntry | null>(() => {
   if (!plans || plans.length === 0) return null;
   return plans[plans.length - 1]!;
 });
-const activePanelTab = ref<RightPanelTab | null>(null);
+const panel = useRightPanel();
+const panelDragging = ref(false);
 const changesCount = computed(() => (props.gitInfo ? props.changes?.length ?? 0 : 0));
 
-/** Workbar toggle: clicking the active tab's square closes the panel. */
-function openRightPanel(tab: RightPanelTab): void {
-  activePanelTab.value = activePanelTab.value === tab ? null : tab;
+/** The panel's New-tab menu — upstream's own two kinds (`openDiffDetail` and
+ *  its side-chat opener). The side chat needs a session, which only the app
+ *  layer can create, so that half is an emit. */
+function addPanelTab(kind: 'diff' | 'btw'): void {
+  if (kind === 'diff') panel.openDiff();
+  else emit('openSideChat');
 }
 
-function closeRightPanel(): void {
-  activePanelTab.value = null;
+/** A file opened from a pane (a changed-file row, a link inside a diff, a trace
+ *  link) becomes a file tab, normalized the way the preview API expects. */
+function openFileInPanel(event: unknown): void {
+  const candidate =
+    typeof event === 'string'
+      ? event
+      : event && typeof event === 'object' && 'path' in event
+        ? (event as { path?: unknown }).path
+        : undefined;
+  if (typeof candidate !== 'string' || candidate.length === 0) return;
+  const normalized = normalizePanelPreviewPath(candidate, props.workspaceRoot);
+  if ('error' in normalized) return;
+  panel.openFile(normalized.path);
 }
 
-/** Header affordance: open the panel on the last-used tab (persisted by
- *  RightPanelTabs), keeping the current tab when the panel is already open. */
+/** Header affordance: reveal the panel. A session with nothing restorable shows
+ *  upstream's launcher (Quick open) rather than a tab it never opened. */
 function openPanelFromHeader(): void {
-  if (activePanelTab.value !== null) return;
-  activePanelTab.value = coerceRightPanelTab(safeGetString(STORAGE_KEYS.rightPanelActiveTab));
+  panel.show();
+}
+
+/** An agent opened from inside a pane (a trace link, a nested spawn) becomes
+ *  its own agent tab, and still reaches the app-level consumers. */
+function openAgentTab(target: string): void {
+  panel.openAgent(target);
+  emit('openAgent', target);
 }
 
 function tocTitle(turn: ChatTurn): string {
@@ -549,12 +575,12 @@ const dockHeight = ref(0);
  *  the card and the panel sit flush along the same line rather than the panel
  *  hovering above the message box. -1 means "not measurable" (no composer
  *  mounted — the question / approval card replaced it), which falls back to
- *  --dock-height in the .right-panel rule. */
+ *  --dock-height the panel's column uses. */
 const composerClearance = ref(-1);
 const chatLayoutStyle = computed(() => ({
   '--dock-height': `${dockHeight.value}px`,
   // -1 = not measurable (no composer card mounted): drop the property so the
-  // .right-panel rule falls back to --dock-height.
+  // panel column falls back to --dock-height.
   '--composer-clearance': composerClearance.value >= 0 ? `${composerClearance.value}px` : undefined,
 }));
 const chatDockStyle = computed(() => ({
@@ -1942,8 +1968,8 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
         :pending-approval="pendingApproval"
         :approval-busy="approvalBusy"
         :mobile="mobile"
-        @open-right-panel="openRightPanel($event)"
-        @open-agent="emit('openAgent', $event)"
+        @show-panel="panel.show()"
+        @open-agent="openAgentTab($event)"
         @detach-task="emit('detachTask', $event)"
         @answer="handleQuestionAnswer"
         @dismiss="emit('dismiss', $event)"
@@ -1997,38 +2023,51 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
 
       <!-- Right-side multi-tab panel (0.39 port): Changes / Side chat /
            Turn diff / Terminal / task lists. Floating card over the
-           transcript — see the .right-panel rule below. Drill-downs started
-           inside it (subagent / file preview) stay in-panel via its own view
-           stack; only task/media opens still bubble to the app-level layer. -->
-      <Transition name="sheet">
-        <RightPanelTabs
-          v-if="activePanelTab !== null"
-          class="right-panel"
-          :active-tab="activePanelTab"
-          :turns="turns"
-          :changed-files="changedFiles"
-          :plan-entry="latestPlan"
-          :plan-mode="planMode"
-          :todos="todos"
-          :bash-tasks="bashTasks"
-          :subagent-tasks="subagentTasks"
-          :app-tasks="appTasks"
-          :workspace-root="workspaceRoot"
-          :side-chat="{
-            turns: props.sideChatTurns ?? [],
-            running: props.sideChatRunning ?? false,
-            sending: props.sideChatSending ?? false,
-          }"
-          :terminal-available="sessionId !== undefined"
-          :session-id="sessionId"
-          @update:active-tab="activePanelTab = $event"
-          @close="closeRightPanel()"
-          @side-chat-send="emit('sideChatSend', $event)"
-          @cancel-task="emit('cancelTask', $event)"
-          @detach-task="emit('detachTask', $event)"
-          @open-media="emit('openMedia', $event)"
-        />
-      </Transition>
+           transcript: it is a column of the layout, as upstream's is, and the
+           panel's own component carries its geometry (see PanelTabs.vue). -->
+        <!-- Upstream's panel: always in the DOM, parked with aria-hidden + inert
+             while nothing is open, so the tab strip's tail (New tab, Close) is
+             present in the resting state too. -->
+        <PanelTabs
+          :tabs="panel.tabs.value"
+          :active-tab-id="panel.activeTabId.value"
+          :visible="panel.visible.value"
+          :expanded="panel.expanded.value"
+          :can-expand="!mobile"
+          :mobile="mobile"
+          :preview-width="panel.previewWidth.value"
+          :min-width="PANEL_PREVIEW_MIN"
+          :max-width="panel.maxWidth.value"
+          :no-anim="panelDragging"
+          :can-open-diff="changedFiles.length > 0"
+          :can-open-side-chat="sessionId !== undefined"
+          @activate="panel.activateTab($event)"
+          @close="panel.closeTab($event)"
+          @add="addPanelTab($event)"
+          @update:preview-width="panel.setPreviewWidth($event)"
+          @dragging="panelDragging = $event"
+          @toggle-expanded="panel.toggleExpanded()"
+          @hide="panel.hide()"
+        >
+          <RightPanelPane
+            v-if="panel.activeTab.value"
+            :tab="panel.activeTab.value"
+            :turns="turns"
+            :changed-files="changedFiles"
+            :app-tasks="appTasks"
+            :side-chat="{
+              turns: props.sideChatTurns ?? [],
+              running: props.sideChatRunning ?? false,
+              sending: props.sideChatSending ?? false,
+            }"
+            :terminal-available="sessionId !== undefined"
+            :session-id="sessionId"
+            @open-file="openFileInPanel"
+            @open-agent="openAgentTab($event)"
+            @side-chat-send="emit('sideChatSend', $event)"
+            @open-media="emit('openMedia', $event)"
+          />
+        </PanelTabs>
     </div>
 
     <!-- Single app-wide selection popover (comment + quote-to-chat) for every
@@ -2158,7 +2197,7 @@ html[data-liquid-glass="on"] .panes.has-header {
 
 /* Chat tab layout: the chat column (header + message list + dock) sits in
    .chat-main; the right panel is a floating card positioned absolutely over
-   it (see .right-panel), so opening the panel overlays the transcript
+   it, so opening the panel shifts the transcript
    instead of squeezing the chat column. */
 .chat-layout {
   display: flex;
@@ -2193,66 +2232,6 @@ html[data-liquid-glass="on"] .panes.has-header {
    controls inside (no nested backdrop-filter in Firefox or Chromium). Width
    is a layout property, so the drill-driven resize below eases with the
    gentle spring (no overshoot). */
-.right-panel {
-  position: absolute;
-  top: var(--panel-head-h, 48px);
-  right: var(--space-3);
-  bottom: var(--composer-clearance, var(--dock-height, 0px));
-  z-index: calc(var(--z-modal) - 10);
-  width: min(max(460px, 0px), calc(100% - var(--space-3) * 2));
-  min-height: 0;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  transition: width var(--duration-spring-gentle) var(--spring-gentle);
-}
-
-/* Subagent drill: the detail transcript needs more room than a list, so the
-   panel takes the preview-pane width while an agent view sits on top of the
-   in-panel stack, and gives it back when the stack pops. Bound by
-   RightPanelTabs from the drill stack's top view (file drills stay narrow).
-   The max() keeps this strictly widening: --preview-w is viewport-clamped (it
-   drops below 460px in the mobile shell), where shrinking the card would be
-   the opposite of what the modifier is for. The base rule above wraps its
-   460px in a dummy max(460px, 0px) so both rules share the same min/max
-   argument structure — math functions only interpolate when the structure
-   matches, and a mismatch animates discretely (Firefox flips the width at
-   the transition midpoint: a visible pause, then a jump). */
-.right-panel.right-panel-wide {
-  width: min(max(460px, var(--preview-w, 460px)), calc(100% - var(--space-3) * 2));
-}
-
-/* Glass on: the panel consumes the shared frost material straight from the
-   consuming rule in style.css (.right-panel is on its selector list) — this
-   block only retargets the parameters: the frost tier's blur/tint, and the
-   resting drop shadow stepped up to lg now that every edge faces the chat
-   (the rim stays whole — nothing is flush with the window anymore). */
-html[data-liquid-glass="on"] .right-panel {
-  --lg-blur: var(--lg-blur-frost);
-  --lg-tint-a: var(--lg-tint-frost-a);
-  --lg-drop-shadow: var(--shadow-lg);
-}
-
-html:not([data-liquid-glass="on"]) .right-panel {
-  background: var(--panel);
-}
-
-/* Mobile: no chat header row is rendered, so the card starts at the very
-   top with the tighter --space-2 insets it has always used; the bottom inset
-   still tracks the composer card's bottom margin. The wide (subagent drill)
-   modifier caps against those mobile insets, so it never grows past the card. */
-.con.mobile .right-panel {
-  top: var(--space-2);
-  right: var(--space-2);
-  bottom: var(--composer-clearance, var(--dock-height, 0px));
-}
-
-.con.mobile .right-panel.right-panel-wide {
-  width: min(max(460px, var(--preview-w, 460px)), calc(100% - var(--space-2) * 2));
-}
 .chat-scroll {
   flex: 1;
   min-height: 0;

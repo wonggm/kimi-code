@@ -1,37 +1,12 @@
 // apps/kimi-web/src/lib/rightPanelTabs.ts
-// Pure helpers for the right-side multi-tab panel (Changes / Side chat /
-// Turn diff / Terminal / Bash / Sub agents / Todos). Lives in lib/ so the tab
-// state, persistence, in-panel drill stack, and "scoped" logic can be
-// unit-tested without Vue.
+// Pure helpers the right panel's panes read from the transcript: the per-file
+// diff entries of a turn, and the path normalisation a pane needs before asking
+// the file API for content. Lives in lib/ so both can be unit-tested without
+// Vue.
 
-import type { AppTask } from '../api/types';
 import type { ChatTurn, DiffViewLine, ToolCall } from '../types';
 import { buildEditDiffLines } from './toolDiff';
 import { normalizeToolName } from './toolMeta';
-
-export const RIGHT_PANEL_TABS = [
-  'changes',
-  'sideChat',
-  'turnDiff',
-  'terminal',
-  'bash',
-  'subagents',
-  'todos',
-] as const;
-
-export type RightPanelTab = (typeof RIGHT_PANEL_TABS)[number];
-
-export const DEFAULT_RIGHT_PANEL_TAB: RightPanelTab = 'changes';
-
-export function isRightPanelTab(value: string | null | undefined): value is RightPanelTab {
-  return typeof value === 'string' && (RIGHT_PANEL_TABS as readonly string[]).includes(value);
-}
-
-/** Normalise a persisted string to a valid tab id, falling back to the default
- *  when the saved value is missing, unparsable, or no longer in the tab set. */
-export function coerceRightPanelTab(value: string | null | undefined): RightPanelTab {
-  return isRightPanelTab(value) ? value : DEFAULT_RIGHT_PANEL_TAB;
-}
 
 export interface TurnDiffEntry {
   path: string;
@@ -96,57 +71,6 @@ export function latestTurnDiffEntries(turns: ChatTurn[]): TurnDiffEntry[] {
     if (turn?.role === 'assistant') return turnFilesForTurn(turn);
   }
   return [];
-}
-
-// ---------------------------------------------------------------------------
-// In-panel drill stack — the panel drills from a tab list into a detail view
-// (subagent preview, file preview) without leaving the panel. The stack state
-// lives in RightPanelTabs; these pure transitions keep it unit-testable.
-// ---------------------------------------------------------------------------
-
-export type PanelDrillView =
-  | { kind: 'agent'; taskId: string }
-  | { kind: 'file'; path: string; line?: number };
-
-export function samePanelDrill(a: PanelDrillView, b: PanelDrillView): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === 'agent') return b.kind === 'agent' && a.taskId === b.taskId;
-  return b.kind === 'file' && a.path === b.path && a.line === b.line;
-}
-
-/** Push a drill view. Re-pushing the view already on top is a no-op (guards
- *  double-fired opens reopening the same detail). Returns a new array so the
- *  caller can assign straight onto a ref. */
-export function pushPanelDrill(
-  stack: readonly PanelDrillView[],
-  view: PanelDrillView,
-): PanelDrillView[] {
-  const top = stack.at(-1);
-  if (top && samePanelDrill(top, view)) return [...stack];
-  return [...stack, view];
-}
-
-/** Pop one drill level; popping an empty stack stays empty. */
-export function popPanelDrill(stack: readonly PanelDrillView[]): PanelDrillView[] {
-  return stack.slice(0, Math.max(0, stack.length - 1));
-}
-
-/** Resolve an open-agent target (subagent task id, wire agent id, or the
- *  spawning tool-call id) to a task row id. Mirrors the app-level
- *  useDetailPanel.resolveSubagentId, including the single-unmapped fallback
- *  for subagents whose spawn event was missed after a late subscribe. */
-export function resolvePanelSubagentTaskId(
-  tasks: readonly AppTask[],
-  target: string,
-): string | undefined {
-  const task =
-    tasks.find((tk) => tk.id === target) ??
-    tasks.find((tk) => tk.agentId === target) ??
-    tasks.find((tk) => tk.parentToolCallId === target);
-  if (task) return task.id;
-  const unmapped = tasks.filter((tk) => tk.kind === 'subagent' && !tk.parentToolCallId);
-  if (unmapped.length === 1) return unmapped[0]!.id;
-  return undefined;
 }
 
 /** Normalize a path opened from inside the panel to the workspace-relative

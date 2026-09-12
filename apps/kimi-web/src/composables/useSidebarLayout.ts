@@ -4,7 +4,7 @@
 
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue';
 import { safeGetString, safeSetString, STORAGE_KEYS } from '../lib/storage';
-import { PREVIEW_MIN } from './useDetailPanel';
+import { PANEL_PREVIEW_MIN } from './useRightPanel';
 import { clampPanelWidth, panelMaxWidth, useViewportWidth } from './useViewportWidth';
 
 const SIDEBAR_WIDTH_KEY = STORAGE_KEYS.sidebarWidth;
@@ -53,7 +53,7 @@ export function useSidebarLayout(options: UseSidebarLayoutOptions = {}) {
   // displays. When the right-side panel is open, also reserves its minimum
   // width so the conversation column can never be squeezed to nothing.
   const sidebarMax = computed(() => {
-    const reserve = CONVERSATION_MIN + (toValue(options.previewOpen) ? PREVIEW_MIN : 0);
+    const reserve = CONVERSATION_MIN + (toValue(options.previewOpen) ? PANEL_PREVIEW_MIN : 0);
     return Math.min(SIDEBAR_MAX, panelMaxWidth(viewportWidth.value, SIDEBAR_MIN, reserve));
   });
 

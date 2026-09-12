@@ -85,6 +85,26 @@ function json(res, data) {
   res.end(JSON.stringify({ code: 0, msg: 'success', data, request_id: 'mock' }));
 }
 
+/** Body the mock serves for any file the preview asks for. A fixed, short
+ *  Python file is enough for the panel's file tab and the transcript's file
+ *  links to render content (and for the walk to pair the pane). */
+function mockFileText(path) {
+  return [
+    `"""${path || 'file'} — mock content served by webdiff/mock-server.mjs."""`,
+    '',
+    'import os',
+    '',
+    '',
+    'def load_config(path: str) -> dict:',
+    '    with open(path, "r", encoding="utf-8") as fh:',
+    '        return {"path": path, "env": dict(os.environ)}',
+    '',
+    '',
+    'TIMEOUT = 30',
+    '',
+  ].join('\n');
+}
+
 function buildFixtures(env) {
   const now = new Date().toISOString();
 
@@ -600,6 +620,28 @@ function createHandler({ root, token, env, fixtures }) {
           // card all read one of these.
           if (p === base + '/fs:git_status') return json(res, rich.gitStatus);
           if (p.includes('/file-history')) return json(res, rich.fileChanges);
+        }
+        if (p === base + '/fs:read') {
+          // The file preview's route (POST .../fs:read). Serving it is what makes
+          // the panel's file tab and the transcript's file links show content
+          // instead of their load-error state.
+          readBody(req).then((body) => {
+            const wanted = typeof body?.path === 'string' ? body.path : '';
+            const text = mockFileText(wanted);
+            json(res, {
+              path: wanted,
+              content: text,
+              encoding: 'utf-8',
+              size: Buffer.byteLength(text, 'utf8'),
+              truncated: false,
+              etag: 'mock-etag',
+              mime: 'text/x-python',
+              language_id: 'python',
+              line_count: text.split('\n').length,
+              is_binary: false,
+            });
+          });
+          return;
         }
         if (p.includes('/transcript/plan')) return json(res, { agent_id: 'main', plans: richOn ? rich.plans : [] });
         if (p.includes('/transcript')) {

@@ -56,8 +56,10 @@ export const STORAGE_KEYS = {
   sidebarViewMode: 'kimi-web.sidebar-view-mode',
   /** Pinned-section height (px) in the sidebar, owned by its resize handle. */
   pinnedHeight: 'kimi-web.pinned-height',
-  // Active right-panel tab (multi-tab layout replacing the dock pills).
-  rightPanelActiveTab: 'kimi-web.right-panel.active-tab',
+  // Right panel: the restorable tabs per session (upstream rebuilds only the
+  // agent / compaction / side-chat kinds on load) and the panel's own width.
+  rightPanelTabs: 'kimi-web.right-panel.tabs',
+  filePreviewWidth: 'kimi-web.file-preview-width',
   // Code-block rendering preferences in chat messages: word wrap and line-number
   // gutter. Persisted so a user's toggle survives a reload; each block honors
   // the saved preference at render time (Markdown.vue reads these helpers).

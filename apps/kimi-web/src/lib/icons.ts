@@ -33,6 +33,7 @@ import KimiHand from '~icons/kimi/hand';
 import KimiListLines from '~icons/kimi/list-lines';
 import KimiChevronDown from '~icons/kimi/chevron-down';
 import KimiCircleCheck from '~icons/kimi/circle-check';
+import KimiPanelCollapseRight from '~icons/kimi/panel-collapse-right';
 import KimiMore from '~icons/kimi/more';
 import KimiPlus from '~icons/kimi/plus';
 import KimiFlask from '~icons/kimi/flask';
@@ -121,6 +122,7 @@ import RiUserLine from '~icons/ri/user-line';
 import RawKimiAddConversation from '~icons/kimi/add-conversation?raw';
 import RawKimiChevronDown from '~icons/kimi/chevron-down?raw';
 import RawKimiCircleCheck from '~icons/kimi/circle-check?raw';
+import RawKimiPanelCollapseRight from '~icons/kimi/panel-collapse-right?raw';
 import RawKimiFolder from '~icons/kimi/folder?raw';
 import RawKimiFolderOpen from '~icons/kimi/folder-open?raw';
 import RawKimiHand from '~icons/kimi/hand?raw';
@@ -219,6 +221,7 @@ export type IconName =
   | 'close'
   | 'check'
   | 'circle-check'
+  | 'panel-collapse-right'
   | 'archive'
   | 'search'
   | 'copy'
@@ -324,6 +327,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   close: entry(RiCloseLine, RawCloseLine),
   check: entry(RiCheckLine, RawCheckLine),
   'circle-check': entry(KimiCircleCheck, RawKimiCircleCheck),
+  'panel-collapse-right': entry(KimiPanelCollapseRight, RawKimiPanelCollapseRight),
   archive: entry(RiArchiveLine, RawArchiveLine),
   search: entry(KimiSearch, RawKimiSearch),
   copy: entry(RiFileCopyLine, RawFileCopyLine),

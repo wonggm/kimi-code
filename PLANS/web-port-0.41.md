@@ -1642,3 +1642,230 @@ Upstream's panel recipe turned out to be exactly its *menu* material — `backgr
 - `prefers-reduced-transparency: reduce` restated for these two surfaces (solid raised face, no blur), since they no longer ride the tier slots that rule retargets.
 - Two token divergences stay, and are not this round's to change: the light `--color-line` hairline (fork `#e7eaee` against upstream `rgba(0,0,0,.13)`) and the pill fill (`--color-selected`: `#00000014`/`#ffffff14` against upstream's `.05`/`.1`) — both are app-wide tokens.
 - Verified: a four-control walk over the same pill surfaces on both apps (`.tmp/walkmat`) reports **blocker 0**, exit 0, and `typecheck` / `check:style` 51 / vitest 1011 are green. Screenshots: `.tmp/dockmat-{upstream,fork}-{dark,light}.png`.
+
+## Right panel — complete merge with upstream (2026-09-12, new round)
+
+User decision: the fork's right panel is REPLACED by upstream's — the fork's own panel features (its `rpt-*` shell and tab-strip vocabulary, mount-on-demand while closed, the in-panel drill stack with Esc-to-pop, the persisted active-tab key, its own pane set where upstream has a counterpart) are dropped, not kept as divergences. Comparisons run with the fork's liquid glass OFF (user note).
+
+**The build contract, read out of the bundle** (`.tmp/upstream-web-new/assets/index-HU0LCM-X.js` + `index-C8RkgE6U.css`; component `PanelTabs`, scope `data-v-cb4e8dda`):
+
+```
+aside.global-preview[role=complementary][aria-label=layout.detailPanelAria]
+     [aria-hidden=!visible][inert=!visible][.open][.mobile][.expanded]      ← always in the DOM, parked when closed
+  ├ PanelResize.panel-resize                ← only while visible && !mobile && !expanded
+  │     storage-key=panel.PREVIEW_WIDTH_KEY, default/min/max from panel.*, reverse, aria-label=layout.resizePreviewAria
+  └ div.pt-shell[style="--pfc-host-h:<measured px>"]
+      ├ PanelTabBar
+      │   ├ div.ptb-tabs[role=tablist]
+      │   │    └ div.ptb-tab[.on] → button.ptb-tab-main[role=tab][aria-selected][tabindex][title]  (icon + span title)
+      │   │                          button.ptb-x[aria-label=panel.closeTab]
+      │   └ div.ptb-tail: IconButton plus = panel.newTab [aria-haspopup=menu] · expand/collapse when canExpand && tabs
+      │                  · IconButton.ptb-hide = panel.hide
+      │   └ Menu.panel-add-menu → item "message + sideChat.title" → btw · item "git-fork + panel.tabs.diff" → diff
+      ├ div.pt-body
+      │   ├ <component :is=activeTab.component v-bind=activeTab.props>
+      │   └ PanelLauncher.pl ← shown only when there is no active tab and no tabs:
+      │        role=group, aria-label=panel.launcherAria, two buttons
+      │        (git-fork + panel.tabs.diff → diff · message + sideChat.title → btw)
+      └ div.pfc-host                          ← floating-card host; its measured height is what --pfc-host-h carries
+```
+
+- Tab kinds, from the bundle's component map `{file, diff, turn-diff, compaction, agent, btw}`; titles from `panel.tabs.{file,diff,turnDiff,compaction,agent,term}` plus `sideChat.title` for `btw`.
+- Behaviour: per-tab activate/close; the add menu opens a turn-diff detail or a side chat and then focuses it; `toggleExpanded` (canExpand is `!mobile`); `hidePanel`; ArrowLeft/Right/Home/End move between tabs; the add menu closes on outside mousedown, Escape and focusout.
+- Panel state: `panelTabs`, `activeTabId`, `activeTab`, `panelVisible`, `panelExpanded`, `activateTab`, `closeTab`, `toggleExpanded`, `hidePanel`, `openDiffDetail`, `previewWidth`, `previewPanelWidth`, `previewDefaultWidth`, `previewMax`, `PREVIEW_MIN`, `PREVIEW_WIDTH_KEY`, `panelDragging`, `bumpInteractionVersion`.
+- CSS parts to build: `.global-preview` (the aside, carrying `--preview-w`), `.panel-resize`, `.pt-shell`, `.panel-tab-bar`, `.pt-body`, `.ptb-tabs`, `.ptb-tab`, `.ptb-tab-main`, `.ptb-x`, `.ptb-tail`, `.pfc-host`, `.pl` (the launcher group).
+- The closed state, taken verbatim from upstream's own capture of the base scene (`.tmp/wdfull/final/upstream/desktop-dark-en/main.html`) — this is what the fork must render while nothing is open, and it is absent from the fork's tree today:
+
+  ```html
+  <aside class="global-preview" role="complementary" aria-label="Detail panel"
+         aria-hidden="true" inert style="--preview-w: 320px">
+    <div class="pt-shell" style="--pfc-host-h: 0px">
+      <div class="panel-tab-bar">
+        <div class="ptb-tabs" role="tablist"></div>
+        <div class="ptb-tail">
+          <button class="ui-icon-button ui-icon-button--sm" aria-label="New tab" aria-haspopup="menu" aria-expanded="false">…</button>
+          <button class="ui-icon-button ui-icon-button--sm ptb-hide" aria-label="Close right panel">…</button>
+        </div>
+      </div>
+      <div class="pt-body">…</div>
+      <div class="pfc-host"></div>
+    </div>
+  </aside>
+  ```
+
+  No tabs, no expand button and no launcher while closed — but the New-tab and Close controls are still in the DOM, which is why the comparison reports the whole shell as missing on the fork in every base-scene capture.
+
+**Fork ↔ upstream tab map — settled from the bundle's own tab registry** (`const sm={…}` in `index-HU0LCM-X.js`, plus the type→component map `L9t` and the panel's public entry points). Each tab carries a policy, a key and a restorable flag upstream; the fork has none of that (it persists one active tab and drills inside the panel).
+
+| upstream tab kind | policy / key | title | icon | restorable | component | opened by | fork counterpart today |
+|---|---|---|---|---|---|---|---|
+| `diff` | singleton | `panel.tabs.diff` | `git-fork` | no | `DiffView` | `openDiffDetail` (+ `detailDiffMode`, `detailDiffPath`, `selectDiffFile`) | the `changes` tab (`ChangedFilesCard`) |
+| `turn-diff` | singleton | basename of the change path | `file-edit` | no | `TurnDiffPanel` | `openTurnDiff` | the `turnDiff` tab |
+| `file` | keyed by `path` | basename of the path | `file-text` | no | `FilePreview` | `openFilePreview` | the file preview the fork reaches by drilling |
+| `agent` | keyed by `subagentId` | `panel.tabs.agent` | `robot` | **yes** | `AgentPanel` (`loadOlderAgentMessages`, `agentPanelHasMoreOf`, `agentPanelRunningOf`, …) | `openAgentPanel` | the `subagents` tab (a grid of all agents, with the drill stack) |
+| `compaction` | keyed by `turnId` | `panel.tabs.compaction` | `list` | **yes** | the text panel (`.tp-body`) | the transcript's compaction entry | the compaction summary the fork reaches by drilling |
+| `btw` | `always` | `sideChat.title`, plus a sequence number from the second tab on | `message` | **yes** | `SideChatPanel` | `openSideChatTab` (keyed per `agentId`) | the `sideChat` tab |
+| `term` | `always` | `panel.tabs.term`, or the payload's own `title` | `terminal` | no | the terminal pane | the panel's own terminal entry | the `terminal` tab — a real counterpart, corrected below |
+| — | — | — | — | — | — | — | the `bash` tab: upstream reaches this list through the dock's Bash pill (`BashTaskPanel` / `TasksPane` are dock components), not a tab |
+| — | — | — | — | — | — | — | the `todos` tab: upstream's list is the dock's Progress panel (`TodoCard`) |
+
+Correction (same round): the `terminal` tab has an upstream counterpart after all — the registry holds a seventh kind, `term` (`{policy:'always', icon:'terminal', i18nKey:'panel.tabs.term', restorable:false}`, title taken from the payload when it carries one). An earlier draft of this table recorded it as absent because the type→component map `L9t` omits it; the registry and the session-switch branch (`m.value.filter(t => t.type === 'term')`, which keeps only the session's own terminal tabs) are the evidence. So the fork's `terminal` tab is a port target, not a deletion.
+
+Consequences the port must honour, all from that registry: the panel holds at most one `diff` and one `turn-diff`; `agent`, `compaction` and `btw` rebuild themselves on load while `diff`, `file` and `turn-diff` do not; side-chat tabs number themselves; the agent transcript is one tab per subagent, not a grid; and the fork's `bash` and `todos` tabs leave the panel (upstream reaches those lists through its dock), with the fork's dock pills remaining the way to those lists.
+
+**Kept because the engine needs it:** the composables and API calls that feed the panel (session transcript, plans, tasks, subagents, file preview), re-pointed at upstream's panel, and the integrations — a subagent card or a dock "open in side panel" must still land in upstream's panel.
+
+**Deleted with the shell:** `RightPanelTabs.vue`'s `rpt-*` strip, the mount-on-demand `v-if`, the drill stack and its Esc-to-pop, the persisted active-tab storage key.
+
+**Landed so far (right-panel round):**
+
+- `apps/kimi-web/src/lib/panelTabs.ts` — the tab model, ported from upstream's registry: the six kinds with their policy (`singleton` for `diff`/`turn-diff`, `keyed` for `file`/`agent`/`compaction`, `always` for `btw`), their glyph, their restorable flag, `panelTabKey`, `openPanelTab` (including upstream's rule that a side chat replaces one for the same agent — two session-level side chats replace each other), `closePanelTab` (focus goes to the next tab, then the previous), `restorablePanelTabs` and the serialize/deserialize pair that drops a stored tab whose payload no longer exists. Seven new cases in `test/right-panel-tabs.test.ts`; kimi-web 1018/1018, vue-tsc clean, `check:style` at its 51 baseline.
+- Upstream's panel strings in `i18n/locales/{en,zh}/panel.ts`, verbatim from its bundle (`diff` "Changes"/改动, `file` "File"/文件, `compaction` "Compaction summary"/压缩摘要, `agent` "Subagent"/子 Agent, `closeTab`, `expand`/`collapse`, `hide`, `launcherAria` "Quick open"/快速打开). The fork's pre-merge keys stay until the components that read them go.
+- Checked while extracting: upstream's side-chat title is "Side chat" / 侧边聊天, identical to the fork's, so that string needs no change.
+- Still to add to the icon set: `panel-collapse-right`, the tail's Close glyph on desktop (`close` on mobile). Upstream's own path is in the captured markup.
+
+**Shell landed (same round):** `src/components/chat/PanelTabs.vue` — upstream's panel re-implemented from its own stylesheet: the always-mounted `aside.global-preview` (`aria-hidden` + `inert` while parked, `.open`/`.mobile`/`.expanded`, `--preview-w`), `pt-shell` carrying the measured `--pfc-host-h`, `panel-tab-bar` with the `ptb-tabs` strip (role=tab, arrow/Home/End walking, per-tab `ptb-x` close with the touch-target hit expansion), the `ptb-tail` (New tab with its `.panel-add-menu`, expand/collapse, Close with `panel-collapse-right` on pointer widths and `close` on mobile), `pt-body` with the active pane as a slot plus the `pl` launcher when the panel has no tabs, and the `pfc-host` layer. Geometry, spacing and type are upstream's numbers, now tokens: `--panel-head-h` 48px, `--panel-tab-h` 28px, `--panel-tab-pad-x` 10px, `--panel-tab-max-w` 168px, `--panel-tab-x-size` 18px, `--panel-launcher-w` 288px, `--panel-default-w` 460px, plus upstream's `--space-1-5` (6px), `--p-hairline` (0.5px) and `--touch-target-min` (44px), which the fork lacked. One deviation, recorded: upstream places the aside in a four-column grid, the fork's layout is a flex row, so the panel keeps upstream's width rule and drops `grid-column: 4`.
+
+Also added: the `panel-collapse-right` icon (upstream's exact three-path glyph, ids stripped so repeated instances stay valid HTML).
+
+**Still open in this round:** the shell is not mounted yet (the parent still renders the old `RightPanelTabs.vue`), the resize handle renders but does not drag (upstream's `PanelResize` behaviour — min 320px, key `kimi-web.file-preview-width`), the six-plus-one panes still need mapping onto the new tab kinds, and the old `rpt-*` shell + drill stack + persisted tab key are still in the tree.
+
+**State layer landed (same round):** `src/composables/useRightPanel.ts` — upstream's panel state (tabs, active id, visible, expanded, width) as a module singleton, since the dock pills, the subagent cards and the transcript all open tabs on it; the typed openers upstream names (`openDiff`/`openTurnDiff`/`openFile`/`openAgent`/`openCompaction`/`openSideChat`/`openTerminal`) plus `activateTab`, `closeTab`, `toggleExpanded`, `hide`/`show`. Storage keys added: `rightPanelTabs` (the restorable tabs per session) and `filePreviewWidth` (upstream's own `kimi-web.file-preview-width`); the old `rightPanelActiveTab` key stays only until its shell is deleted.
+
+Two behaviours the tests caught and corrected against the bundle, both from upstream's own session watcher:
+- a session switch clears **every** tab of the previous session — terminal tabs included (upstream keeps terminals only in the draft-promotion case, where the "new" session is the same work continuing) — and then rebuilds the new session's restorable set;
+- visibility is restored with the tabs: a session that had tabs open comes back showing them, because upstream stores `visible` per session alongside the list.
+
+Three new cases in `test/right-panel-tabs.test.ts` (rebind, restorable-only persistence, hide on last close); kimi-web 1022/1022, `vue-tsc` clean, `check:style` at its 51 baseline.
+
+**Mounted (same round):** the panel is live — `ConversationPane` now renders `PanelTabs` **unconditionally** (no `v-if`, so the parked resting state exists) with `RightPanelPane` as its body, driven by `useRightPanel`. `RightPanelPane.vue` renders one pane per upstream kind from the fork's own pane components: `ChangedFilesCard` for `diff`, the latest turn's `DiffLines`/output for `turn-diff` (one file per tab, as upstream titles it), `FilePreview` for `file` (its own read, request-sequence-guarded, through `readFile` + `getFileDownloadUrl`), `AgentDetailPanel` for `agent` (the tab's `subagentId` resolved against the app tasks and mapped with `toAgentMember`), the turn's summary text for `compaction`, `SideChatPanel` for `btw`, `Terminal` for `term`.
+
+Integrations kept and re-pointed: the header affordance reveals the panel (opening the changed-files view when nothing is restorable); a changed-file row or a link inside a pane opens a file tab through the existing `normalizePanelPreviewPath`; the Background Agent card now hands its **task id** to the panel (`@open` on the grid reaches `openAgent` with the id instead of the bare `'subagents'` string) and ConversationPane routes it to `openAgentTab`, which opens the agent tab and still emits to the app-level consumers; the bash and todos bodies' "open in the side panel" action now only reveals the panel, because upstream keeps no such tab (their lists live in the dock).
+
+Still open in this round: `RightPanelTabs.vue` and the storage key `rightPanelActiveTab` are still in the tree (unused by the mount, so the criterion's "no on-demand mount / no persisted tab key" is not yet met), the drill helpers in `lib/rightPanelTabs.ts` go with them, the resize handle still does not drag, and the fork's app-level `useDetailPanel` surfaces (compaction panel, tool diff, agent panel) now overlap the new tabs and need folding in or retiring.
+
+Gauntlet after the mount: `vue-tsc` clean, kimi-web 1022/1022, `check:style` 51.
+
+**The fork's shell is gone (same round):** `src/components/chat/RightPanelTabs.vue` is deleted, along with the drill-stack transitions (`pushPanelDrill` / `popPanelDrill` / `samePanelDrill` / `PanelDrillView`), the subagent-id resolver that only served the drill, the old tab union's coercions (`coerceRightPanelTab` / `isRightPanelTab` / `DEFAULT_RIGHT_PANEL_TAB`) and the storage key `rightPanelActiveTab`. Verified in the tree: no `rpt-` markup, no `rightPanelActiveTab`, no drill symbols, and no mount-on-demand — the panel is rendered unconditionally.
+
+Kept on purpose: `latestTurnDiffEntries` and `turnFilesForTurn` (the pane and the app-level preview read them) and `normalizePanelPreviewPath` (the panel's file opens), plus `RIGHT_PANEL_TABS` / `RightPanelTab`, which the perf bench (`bench/types.ts`, `BenchView.vue`) still names — retyping the bench and ChatDock's `open-right-panel` payload onto the new kinds is part of the next slice.
+
+Tests: the cases that covered the deleted API are removed (22 remain in `test/right-panel-tabs.test.ts`); kimi-web 1012/1012, `vue-tsc` clean, `check:style` 51.
+
+**Remaining before this round can be called done:** `useDetailPanel`'s overlapping surfaces (its compaction panel, tool diff and agent panel) folded into the panel's tabs or retired; the resize handle made to drag (upstream: min 320px, width under `kimi-web.file-preview-width`); the bench/ChatDock types moved onto the new kinds; then a fresh 2x2x2 walk with the fork's liquid glass OFF, the closeout gate, and the panes measured against upstream's own pane components.
+
+**The duplicate panel, found while folding the overlaps (same round).** App.vue renders its **own** `aside.global-preview` — the fork had borrowed upstream's class name for a *second*, app-level right panel driven by `detailTarget`, with seven branches (ThinkingPanel for `thinking` and `compaction`, `AgentDetailPanel`, `SideChatPanel`, `DiffView`, `ToolDiffPanel`, `FilePreview`) and its own drag state (`panelDragging`, `panelSwitching`) and `open*Panel` toggles from `useDetailPanel`. That is the shape the complete merge has to collapse: upstream has ONE panel, and every one of those branches except the thinking one already has a tab kind here:
+
+| App.vue's `detailTarget` branch | panel tab |
+|---|---|
+| `compaction` (ThinkingPanel with the summary text) | `compaction` ✔ wired |
+| agent detail (`AgentDetailPanel`) | `agent` ✔ wired |
+| `btw` (`SideChatPanel`) | `btw` |
+| `diff` (`DiffView`) | `diff` |
+| `toolDiff` (`ToolDiffPanel`) | `turn-diff` (needs the tool's path resolved from the tool id) |
+| `file` (`FilePreview`) | `file` |
+| `thinking` (`ThinkingPanel`) | no upstream kind — needs a verdict |
+
+Wired so far: `@open-compaction` now calls `panel.openCompaction($event.turnId)` and both `@open-agent` sites call `panel.openAgent($event)`; the destructured `openCompactionPanel` / `openAgentPanel` are gone from App.vue. The two branches themselves are still in App.vue's slot (now unreachable for those targets) and come out with the rest of the slot once `toolDiff`, `btw`, `diff`, `file` and `thinking` are handled — that deletion, plus the retype of the bench/ChatDock and the resize drag, is what remains of this round's panel scope.
+
+Gauntlet after this step: `vue-tsc` clean, kimi-web 1012/1012.
+
+**First render of the mounted panel (same round), fork vs upstream, glass off** (`.tmp/probe-panel-mount.mjs`):
+
+- The shell is present on both sides in the resting state — `aside.global-preview` with `pt-shell`, `panel-tab-bar`, `pt-body`, `pfc-host`, the `pl` launcher, two tail buttons and zero tabs, parked with `aria-hidden` + `inert`. That is the criterion's resting state, met.
+- Two real bugs the measurement caught, both now fixed:
+  1. the fork's resting panel measured **460px wide** where upstream's is **0** — the mount had inherited the fork's own `.right-panel` floating-card rules (absolute placement, fixed 460px, its own border/radius/shadow/transition). Those rules and the class are deleted; the panel's geometry is `PanelTabs.vue`'s, so a parked panel now takes no width.
+  2. the header affordance opened a **`Changes` tab** where upstream shows the **launcher**: `openPanelFromHeader` called `openDiff()`. It now only reveals the panel, which is upstream's Quick-open state for a session with nothing restorable.
+- Also noted: the panel's background is `rgb(250,251,252)` on the fork against upstream's `rgb(255,255,255)` — a `--color-bg` token difference, the same class as the dock's `--color-selected`/`--color-line` ones already recorded.
+
+**Re-measured after the fixes (same round):**
+
+| | upstream | fork |
+|---|---|---|
+| resting | `aside.global-preview`, `aria-hidden` + `inert`, **width 0**, `pt-shell` / `panel-tab-bar` / `pt-body` / `pfc-host` / launcher present, 0 tabs, 2 tail buttons | identical |
+| opened | `global-preview open`, width **585**, 0 tabs, launcher, 2 tail buttons | `global-preview open`, width 460, 0 tabs, launcher, 2 tail buttons |
+
+Background matches too (both white) — the earlier `rgb(250,251,252)` was the deleted card rule's `--panel` fill, not a token difference.
+
+One delta left, recorded rather than guessed: upstream's opened panel is **585px** wide where the fork uses its `--panel-default-w` token (460). Upstream's own `--panel-default-w` is also 460, so its 585 comes from a *computed* default (`previewDefaultWidth` is a function, `previewMax` another) — the formula has to be read out of the bundle before the fork can match it. The fork's width is stored under `kimi-web.file-preview-width` once one is set, so this only shows in the default case.
+
+Gauntlet at this point: `vue-tsc` clean, kimi-web 1012/1012, `check:style` **50** (one below the 51 baseline — deleting the card rules removed a finding).
+
+**Three more branches folded (same round).** In `useDetailPanel` the openers now land on the panel instead of the app-level slot:
+
+- `openToolDiff(id)` — resolves the tool, and when it has a file path opens that file's **`turn-diff` tab**; without a path (a non-edit tool or an unparsable argument) it opens nothing, because upstream has no such surface and the transcript already carries the output inline. The `ToolDiffPanel` branch is now unreachable.
+- `openDiffDetail()` — opens the **`diff` tab** (it still kicks off `loadGitStatus`).
+- the side-chat opener — opens the **`btw` tab** instead of setting `detailTarget = 'btw'`.
+
+So compaction, agent, toolDiff, diff and btw are all panel tabs now; the app-level branches survive only as unreachable code.
+
+`file` is deliberately **not** folded yet: `useFilePreview` is instantiated once in App.vue and keeps its state in that call's closure (`previewFile`, `previewTarget`, the staleness/object-URL machinery), so the pane cannot read it without routing it through provide/inject (or making the composable a singleton) — that is its own slice, and doing it half-way would double-render the preview. `thinking` still needs a verdict (upstream's tab set has no thinking kind).
+
+Gauntlet after the fold: `vue-tsc` clean, kimi-web 1012/1012, `check:style` 50.
+
+**The duplicate slot is folded (same round).** `App.vue`'s `detailTarget` slot now holds **two** branches — `thinking` (`ThinkingPanel`, no upstream counterpart, verdict still open) and `file`, which survives only because **media** previews still target it (`openMediaPreview` sets the target for images/videos, and that surface carries the data-URL/zoom machinery; folding media is its own verdict). The compaction, agent, side-chat, diff and tool-diff branches are deleted, along with their dead bindings (`compactionPanelText`, `compactionPanelVisible`, `closeCompactionPanel`, `toolDiffTarget`, `closeToolDiff`, `detailDiffMode`, `detailDiffPath`, `closeDiffDetail`, `selectDiffFile`, `btwVisible`) and the now-unused imports (`DiffView`, `ToolDiffPanel`, `SideChatPanel`).
+
+The `file` fold itself is done properly rather than half-way: `useFilePreview` now **provides** its own state under `FILE_PREVIEW_STATE_KEY` (`FilePreviewApi` is the composable's return type), `openFilePreview` opens a `file` tab instead of setting the slot target, and `RightPanelPane` injects that state so the panel renders the same preview the app-level slot used to — no second copy, no double render. (The pane's own `readFile` fetch is gone with it.)
+
+Gauntlet: `vue-tsc` clean, kimi-web 1012/1012, `check:style` 50.
+
+**`thinking` settled and the compaction pane aligned (same round).**
+
+- Upstream's tab component map says `compaction: put`, and `put` wraps `__name:"ThinkingPanel"` — upstream renders its compaction summary with the *same* panel component the fork's `ThinkingPanel.vue` was written for (its props even document the double duty: `text` + a `subtitle` override for the compaction viewer). `RightPanelPane`'s compaction pane now renders `ThinkingPanel` with the turn's summary instead of a hand-rolled `<pre>`, so the pane matches upstream's renderer rather than approximating it.
+- The fork's `thinking` panel target is **removed**: upstream has no thinking tab kind (its key set is `panel.tabs.{diff,file,turnDiff,compaction,agent,term}`) and renders thinking inline in the transcript; its only `ThinkingPanel` use is the compaction tab. So App.vue's thinking branch, its `@open-thinking` handler and the dead bindings (`thinkingPanelText`, `thinkingVisible`, `closeThinkingPanel`, `agentPanelHold`, `openThinkingPanel`) are gone, leaving the inline `ThinkingBlock` as the only thinking surface — the same shape upstream has.
+- App.vue's `detailTarget` slot is now **one** branch: `file`, kept only for media previews (`openMediaPreview`), which is its own remaining verdict.
+
+Gauntlet: `vue-tsc` clean, kimi-web 1012/1012, `check:style` 50.
+
+**Dead API left behind, to clean next:** `useDetailPanel` still exports the thinking/compaction/agent/diff/toolDiff openers and their refs, now that only the panel uses those targets (its compaction/diff/toolDiff openers do still open tabs, so their *state* is what has gone dead).
+
+**One panel, and the app-level slot is gone (same round).** The `file` branch turned out to be dead already: `@open-media` in App.vue calls App's *own* `openMediaPreview` (which sets the lightbox state and renders `MediaPreview.vue`), while `useFilePreview`'s same-named opener — the one that set `detailTarget = 'file'` — is not imported there at all. Upstream's media surface is a lightbox too (`__name:"MediaLightbox"` in its bundle), so the fork already had the aligned shape and only the slot branch was redundant.
+
+Deleted, with the compiler naming each dead binding as it went: the whole `aside` detail slot from App.vue (its `FilePreview` and `AgentDetailPanel` branches included — the latter referenced `agentPanelHold`, which was already undefined after the earlier fold, so it never rendered), plus `previewTarget` / `previewFile` / `previewLoading` / `previewError` / `previewDownloadUrl` / `previewExternalActions` / `openPreviewInEditor` / `revealPreviewFile` / `agentPanelMemberStable` / `closeAgentPanel` and the `AgentDetailPanel` / `FilePreview` / `ThinkingPanel` / `DiffView` / `ToolDiffPanel` / `SideChatPanel` imports.
+
+The fork now has exactly **one** right panel — `PanelTabs` in ConversationPane — and the app-level slot's *markup* is gone. Media goes to the lightbox, thinking is inline, and every other surface is a tab.
+
+Two leftovers the first pass of this record missed, found by re-grepping instead of trusting the claim, and fixed in the same slice: `App.vue` still carried the deleted aside's own `.global-preview` CSS block (a five-column grid style, now removed), and `previewOpen` — which feeds `useSidebarLayout` and so really does move the layout — still keyed off the dead `detailTarget`; it now follows `panel.visible`. The `detailTarget` ref itself survives only as the parameter the two composables still take.
+
+Gauntlet: `vue-tsc` clean, kimi-web 1012/1012, `check:style` 50.
+
+**Still dead and to prune next:** `useDetailPanel`'s now-unused slot machinery (`detailTarget`, `sidePanelVisible`, `panelDragging`/`panelSwitching` if nothing else binds them, the width clamps) and `useFilePreview`'s `detailTarget` parameter with its `openMediaPreview` path. The compiler cannot flag exported-but-unused API, so this needs a manual pass.
+
+**The width now matches upstream — 585px on both sides (same round).** Upstream's default is not its `--panel-default-w` token: its `TWe` computes `room = viewportWidth - sideWidth`, `max = panelMaxWidth(room, 320, 320)`, and the default is `clamp(room / 2, 320, max)` — half the room beside the sidebar. `useRightPanel` now does the same with the fork's own helpers (`clampPanelWidth` / `panelMaxWidth`, the equivalents of the two clamps in that function), plus `PANEL_PREVIEW_MIN = 320`; a dragged width is stored and wins, and `setPreviewWidth` writes the stored one rather than the computed one. `App.vue` feeds it `sideWidth` (it already had it from `useSidebarLayout`) through a watcher.
+
+Verified on the served builds with glass off: **upstream 585px, fork 585px** in the same 1440-wide viewport, with the same shell parts, launcher, two tail buttons, zero tabs and background — the panel's measured shape now matches upstream in the resting *and* opened states.
+
+Gauntlet: `vue-tsc` clean, kimi-web 1012/1012.
+
+**The resize handle drags (same round), verified live.** `PanelTabs`'s `.panel-resize` is now upstream's control: the handle sits on the panel's left edge so dragging left widens it (`reverse`), the width applies live, it is clamped to `[minWidth, maxWidth]` the caller passes, and ArrowLeft/Right nudge by 16px with Home/End jumping to the bounds (a `role="separator"` with an i18n label). The aside takes upstream's `no-anim` class while dragging, so the width does not animate under the pointer.
+
+Measured on the served fork build with glass off (`.tmp/probe-panel-resize.mjs`, a real pointer drag): **585 → 705** while dragging 120px left (exactly +120), **705** after release with `kimi-web.file-preview-width` stored as `705`, and dragged hard left it stops at **850** — which is upstream's own maximum, `panelMaxWidth(room, 320, 320)` for a 1440 viewport and the sidebar's width. So the clamp, the live application and the persistence all match upstream's rule rather than approximating it.
+
+Gauntlet: `vue-tsc` clean, `check:style` 50.
+
+**The dead slot machinery is pruned and the wide API retyped (same round).** Manual pass, because the compiler cannot flag an exported-but-unused export. What decided each deletion was a grep for callers, not a guess:
+
+- `useFilePreview` no longer takes a `detailTarget`, and its `openMediaPreview` / `isPlayableMediaUrl` / `mimeFromDataUrl` are gone (no caller — App's own lightbox is the media surface, and upstream's file-preview composable has no such function; `isPlayableMediaUrl` had only its own test, which is deleted with it). The pair that replaces the slot is upstream's: `requestFilePreview` opens or focuses the panel's `file` tab, `loadFilePreview` loads the content, and **App.vue watches the panel's active tab** to drive them (`file` tab → load, anything else → `closeFilePreview`) — the same wiring upstream's `PanelTabs` has, where the tab is the source of truth and the preview is its body.
+- `useDetailPanel` is now only the panel's data layer and its transcript entry points: the diff tab's `detailDiffMode` / `detailDiffPath` / `selectDiffFile` / `openDiffDetail` / `closeDiffDetail`, `compactionPanelTextOf(turnId)`, `agentPanelMemberOf` + the last-known-member fallback and the empty-body seed, `openToolDiff`, `openSideChatTab`, `closeSideChat`. Those names are upstream's own (`openDiffDetail`, `detailDiffMode`, `selectDiffFile` are in upstream's panel composable `TWe`), so they stay in the fork's file rather than being reinvented. Gone: the thinking machinery, `toolDiffTarget`/`toolDiffVisible`/`closeToolDiff` (the ref, not the opener), the per-session `PanelSnapshot` machinery — `useRightPanel` restores the restorable tabs from storage, which is upstream's mechanism — the width clamps and `PREVIEW_*` constants (`useRightPanel` owns the width; `useSidebarLayout` now imports `PANEL_PREVIEW_MIN` from there), `sidePanelVisible`, `panelDragging`, `hideSideChatPanel`, `btwVisible`, `openCompactionPanel`/`openAgentPanel`/`closeAgentPanel` (ConversationPane opens tabs on the panel directly), and `closeOpenSidePanel`.
+- **Escape no longer closes the panel.** Upstream's document keydown handler (`al`) handles the undo hint, an abort and the select-all-region — the panel is not in it; the panel's own Close control (`ptb-hide`) is the way out, and the only Escape inside the panel belongs to its New-tab menu. So App.vue's capture-phase keydown listener, `onGlobalKeydown`, `anyOverlayOpen` and the `openDialogCount` import are gone. Probed on the served fork build with glass off before deciding: with a side-chat tab open, Escape left `global-preview open`, width 585, one tab — the handler was already inert for panel tabs, so nothing observable is being given up.
+- App.vue also loses the duplicate width and resize machinery the panel now owns: the `.preview-handle` `ResizeHandle`, the root `--preview-w` binding and its 460px default, `panelSwitching`, and the fifth grid column. The panel is a column *inside* the conversation (upstream's shape), so `grid-template-columns` is now `auto 0 minmax(0, 1fr)` and the stale comments about a panel track are gone.
+- **A real bug found while pruning:** nothing called `useRightPanel().bindSession`. The tabs are keyed per session and `persistTabs` no-ops while `currentSessionId` is null, so restorable tabs were never stored and never restored. App.vue now watches `client.activeSessionId` and calls `bindSession`, which is where upstream's own session watcher does it.
+- `useFilePreview`'s same-path toggle is gone with the slot (upstream focuses the existing keyed tab instead of closing it), and `DetailTarget` is deleted from `types.ts`.
+
+**The bench and the dock are off the old tab vocabulary.** `lib/rightPanelTabs.ts` no longer declares `RIGHT_PANEL_TABS` / `RightPanelTab` (the deleted `rpt-*` vocabulary) and its header no longer claims tab state or a drill stack — what is left is what its name now means: the transcript's per-file diff entries and the panel's path normalisation. `ChatDock` emits `show-panel` with no payload (the dock's work lists have no upstream tab, so their "open in the side panel" action only reveals the panel), the pill carries `data-dock-panel="<kind>"` so the bench can drive it, and `BenchView` / `bench/types.ts` no longer carry a `dockPanel` ref that fed a prop `ChatDock` does not have. The dock now owns its work panel (the pills are the control, as upstream has it), and `bench/scenarios.ts`'s dock cycle clicks the pill open and shut instead of setting a ref nothing read. ConversationPane's `openRightPanel(tab, agentId)` switch (written for the old seven-tab vocabulary) is replaced by `addPanelTab('diff' | 'btw')`, the two kinds upstream's New-tab menu actually offers; the side-chat half is a new `openSideChat` emit that App maps to `openSideChatTab()` so the session-creating path is still the one that runs.
+
+**Known, and fixed by the transcript scope next:** the fork's `ThinkingBlock` still emits `open` on click (its comment says the full text goes to the right-side panel). That panel is gone — upstream has no thinking tab, and its `ThinkingBlock` expands **in line** (`think-head` toggles `think-body`, `inert` while closed, with upstream's streaming timer and duration label). So a foldable thinking block is currently unreadable, and porting upstream's inline expand is the first item of the transcript scope.
+
+Gauntlet after the prune: `vue-tsc` clean, kimi-web 1009/1009 (three tests for the deleted `isPlayableMediaUrl` went with it), `check:style` **50**.
+
+## Transcript appearance — merge with upstream (same round)
+
+Inventory taken first, in `.tmp/transcript-appearance-diff.md` (294 lines, families: user row and header 4, assistant footer 2, tool rows and groups 3, code blocks 11, markdown renderer 2, thinking 1, root tokens 4). The five most structural, each to be re-derived against the bundle before it is touched:
+
+1. The fork wraps consecutive tool rows in a bordered card with an aggregated status/count header (`ToolGroup.vue`); upstream renders flat individual `tool-line` rows.
+2. The fork interposes `<div class="mdcb">` between `node-content` and `code-block-container` to carry per-block state; upstream mounts the container directly (`MarkdownCodeBlock.vue`).
+3. Upstream's highlighted code renders through Pierre's `stream-diffs-shell` / `surface` grid; the fork uses the `code-editor-layer` path with a `code-pre-fallback` intermediate.
+4. The fork adds a `u-atts` attachment-chip row inside the user bubble; upstream has no attachment rendering there.
+5. Upstream's assistant footer carries `<span class="a-time">`; the fork omits the timestamp and adds a Quote button.
+
+Constraint carried into the scope: the fork's eviction / reconcile / memoisation stay untouched — the scope is appearance only.

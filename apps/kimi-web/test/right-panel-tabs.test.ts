@@ -1,18 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  coerceRightPanelTab,
-  DEFAULT_RIGHT_PANEL_TAB,
-  isRightPanelTab,
   latestTurnDiffEntries,
   normalizePanelPreviewPath,
-  popPanelDrill,
-  pushPanelDrill,
-  resolvePanelSubagentTaskId,
-  RIGHT_PANEL_TABS,
-  samePanelDrill,
   turnFilesForTurn,
-  type PanelDrillView,
 } from '../src/lib/rightPanelTabs';
+import {
+  closePanelTab,
+  deserializeRestorableTabs,
+  nextSideChatSeq,
+  openPanelTab,
+  PANEL_TAB_RULES,
+  restorablePanelTabs,
+  serializeRestorableTabs,
+} from '../src/lib/panelTabs';
+import { useRightPanel } from '../src/composables/useRightPanel';
 import { STORAGE_KEYS, safeGetString, safeSetString } from '../src/lib/storage';
 import type { AppTask } from '../src/api/types';
 import type { ChatTurn, ToolCall } from '../src/types';
@@ -59,59 +60,6 @@ function assistantTurn(id: string, tools: ToolCall[], extra: Partial<ChatTurn> =
 function userTurn(id: string, text: string): ChatTurn {
   return { id, role: 'user', text };
 }
-
-describe('rightPanelTabs helpers', () => {
-  it('exposes a stable tab order', () => {
-    expect(RIGHT_PANEL_TABS).toEqual([
-      'changes',
-      'sideChat',
-      'turnDiff',
-      'terminal',
-      'bash',
-      'subagents',
-      'todos',
-    ]);
-  });
-
-  it('coerces unknown / nullish values to the default tab', () => {
-    expect(coerceRightPanelTab(null)).toBe(DEFAULT_RIGHT_PANEL_TAB);
-    expect(coerceRightPanelTab(undefined)).toBe(DEFAULT_RIGHT_PANEL_TAB);
-    expect(coerceRightPanelTab('')).toBe(DEFAULT_RIGHT_PANEL_TAB);
-    expect(coerceRightPanelTab('bogus')).toBe(DEFAULT_RIGHT_PANEL_TAB);
-    expect(coerceRightPanelTab('turnDiff')).toBe('turnDiff');
-  });
-
-  it('narrows valid strings via isRightPanelTab', () => {
-    expect(isRightPanelTab('changes')).toBe(true);
-    expect(isRightPanelTab('todos')).toBe(true);
-    expect(isRightPanelTab('nope')).toBe(false);
-    expect(isRightPanelTab(null)).toBe(false);
-    expect(isRightPanelTab(undefined)).toBe(false);
-  });
-});
-
-describe('rightPanelTabs persistence', () => {
-  let original: Storage;
-  beforeEach(() => {
-    original = globalThis.localStorage;
-    Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage(), configurable: true });
-  });
-  afterEach(() => {
-    Object.defineProperty(globalThis, 'localStorage', { value: original, configurable: true });
-  });
-
-  it('round-trips a saved tab through safeGetString + coerceRightPanelTab', () => {
-    safeSetString(STORAGE_KEYS.rightPanelActiveTab, 'turnDiff');
-    const stored = safeGetString(STORAGE_KEYS.rightPanelActiveTab);
-    expect(coerceRightPanelTab(stored)).toBe('turnDiff');
-  });
-
-  it('falls back to default when storage returns an unknown tab', () => {
-    safeSetString(STORAGE_KEYS.rightPanelActiveTab, 'mystery');
-    const stored = safeGetString(STORAGE_KEYS.rightPanelActiveTab);
-    expect(coerceRightPanelTab(stored)).toBe(DEFAULT_RIGHT_PANEL_TAB);
-  });
-});
 
 describe('latestTurnDiffEntries', () => {
   it('scopes to the most recent assistant turn', () => {
@@ -194,83 +142,6 @@ describe('turnFilesForTurn', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// In-panel drill stack (RightPanelTabs list → detail navigation)
-// ---------------------------------------------------------------------------
-
-function agentView(taskId: string): PanelDrillView {
-  return { kind: 'agent', taskId };
-}
-
-function fileView(path: string, line?: number): PanelDrillView {
-  return { kind: 'file', path, line };
-}
-
-describe('panel drill stack transitions', () => {
-  it('pushes new views and pops one level at a time', () => {
-    let stack: PanelDrillView[] = [];
-    stack = pushPanelDrill(stack, agentView('a1'));
-    stack = pushPanelDrill(stack, fileView('src/x.ts'));
-    expect(stack).toEqual([agentView('a1'), fileView('src/x.ts')]);
-    stack = popPanelDrill(stack);
-    expect(stack).toEqual([agentView('a1')]);
-    stack = popPanelDrill(stack);
-    expect(stack).toEqual([]);
-    expect(popPanelDrill(stack)).toEqual([]);
-  });
-
-  it('ignores re-pushing the view already on top', () => {
-    const base = pushPanelDrill([], agentView('a1'));
-    expect(samePanelDrill(base[0]!, agentView('a1'))).toBe(true);
-    expect(pushPanelDrill(base, agentView('a1'))).toEqual(base);
-    // Same agent re-opened below the top still stacks; so does a different
-    // line of the same file.
-    const withFile = pushPanelDrill(base, fileView('src/x.ts', 3));
-    expect(pushPanelDrill(withFile, fileView('src/x.ts', 7))).toHaveLength(3);
-    expect(pushPanelDrill(withFile, fileView('src/x.ts', 3))).toEqual(withFile);
-  });
-});
-
-function appTask(overrides: Partial<AppTask> & { id: string }): AppTask {
-  return {
-    sessionId: 's1',
-    kind: 'subagent',
-    description: 'task',
-    status: 'running',
-    createdAt: '2026-01-01T00:00:00Z',
-    ...overrides,
-  };
-}
-
-describe('resolvePanelSubagentTaskId', () => {
-  const tasks: AppTask[] = [
-    appTask({ id: 'task-1', parentToolCallId: 'call-1' }),
-    appTask({ id: 'task-2', agentId: 'agent-0' }),
-    appTask({ id: 'task-3', kind: 'bash', parentToolCallId: undefined }),
-  ];
-
-  it('resolves by task id, wire agent id, then parent tool-call id', () => {
-    expect(resolvePanelSubagentTaskId(tasks, 'task-1')).toBe('task-1');
-    expect(resolvePanelSubagentTaskId(tasks, 'agent-0')).toBe('task-2');
-    expect(resolvePanelSubagentTaskId(tasks, 'call-1')).toBe('task-1');
-  });
-
-  it('falls back to the single unmapped subagent row', () => {
-    const withUnmapped = [...tasks, appTask({ id: 'orphan', parentToolCallId: undefined })];
-    expect(resolvePanelSubagentTaskId(withUnmapped, 'unknown')).toBeUndefined();
-    expect(
-      resolvePanelSubagentTaskId(
-        [appTask({ id: 'only', parentToolCallId: undefined })],
-        'unknown',
-      ),
-    ).toBe('only');
-  });
-
-  it('returns undefined when nothing matches', () => {
-    expect(resolvePanelSubagentTaskId([], 'anything')).toBeUndefined();
-  });
-});
-
 describe('normalizePanelPreviewPath', () => {
   it('passes relative paths through, collapsing . and empty segments', () => {
     expect(normalizePanelPreviewPath('src/a.ts')).toEqual({ path: 'src/a.ts' });
@@ -294,5 +165,173 @@ describe('normalizePanelPreviewPath', () => {
 
   it('lets absolute paths through unvalidated when no root is known', () => {
     expect(normalizePanelPreviewPath('/abs/file.ts')).toEqual({ path: '/abs/file.ts' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The tab model the complete-merge round adopted, ported from upstream's own
+// registry (`const sm` in its bundle). The panel holds at most one `diff` and
+// one `turn-diff`, replaces by key for the file/agent/compaction kinds, numbers
+// side-chat tabs, and rebuilds only the restorable kinds on load.
+// ---------------------------------------------------------------------------
+describe('panelTabs model', () => {
+  it('keeps a singleton kind to one tab', () => {
+    const first = openPanelTab([], { id: 'a', kind: 'diff' });
+    const second = openPanelTab(first, { id: 'b', kind: 'diff' });
+    expect(second.map((tab) => tab.id)).toEqual(['b']);
+  });
+
+  it('replaces by key for the keyed kinds and keeps the others', () => {
+    const tabs = openPanelTab(
+      openPanelTab([], { id: 'a', kind: 'file', path: 'src/a.ts' }),
+      { id: 'b', kind: 'file', path: 'src/b.ts' },
+    );
+    const reopened = openPanelTab(tabs, { id: 'c', kind: 'file', path: 'src/a.ts' });
+    expect(reopened.map((tab) => tab.id)).toEqual(['b', 'c']);
+  });
+
+  it('replaces a side chat for the same agent, appends for a new one', () => {
+    const sessionLevel = openPanelTab([], { id: 'a', kind: 'btw', seq: 1 });
+    // Upstream replaces a side chat whose `agentId` matches the one being
+    // opened — and two session-level side chats both carry `undefined`, so the
+    // second replaces the first.
+    expect(openPanelTab(sessionLevel, { id: 'b', kind: 'btw', seq: 2 }).map((tab) => tab.id)).toEqual(['b']);
+    const forAgent = openPanelTab(sessionLevel, { id: 'c', kind: 'btw', agentId: 'agent-1', seq: 2 });
+    expect(forAgent.map((tab) => tab.id)).toEqual(['a', 'c']);
+    expect(
+      openPanelTab(forAgent, { id: 'd', kind: 'btw', agentId: 'agent-1', seq: 3 }).map((tab) => tab.id),
+    ).toEqual(['a', 'd']);
+  });
+
+  it('numbers the next side chat', () => {
+    expect(nextSideChatSeq([])).toBe(1);
+    expect(nextSideChatSeq([{ id: 'a', kind: 'btw', seq: 1 }])).toBe(2);
+    expect(nextSideChatSeq([{ id: 'a', kind: 'file', path: 'x' }])).toBe(1);
+  });
+
+  it('closes a tab and hands focus to the next one, then the previous', () => {
+    const tabs = [
+      { id: 'a', kind: 'diff' as const },
+      { id: 'b', kind: 'file' as const, path: 'src/b.ts' },
+      { id: 'c', kind: 'compaction' as const, turnId: 't1' },
+    ];
+    expect(closePanelTab(tabs, 'b')).toEqual({
+      tabs: [tabs[0], tabs[2]],
+      activeId: 'c',
+    });
+    expect(closePanelTab(tabs, 'c').activeId).toBe('b');
+    expect(closePanelTab(tabs, 'a').activeId).toBe('b');
+    expect(closePanelTab(tabs, 'nope').activeId).toBeNull();
+  });
+
+  it('appends terminals and never restores them', () => {
+    const one = openPanelTab([], { id: 'a', kind: 'term', title: 'zsh' });
+    const two = openPanelTab(one, { id: 'b', kind: 'term' });
+    expect(two.map((tab) => tab.id)).toEqual(['a', 'b']);
+    expect(restorablePanelTabs(two)).toEqual([]);
+    expect(PANEL_TAB_RULES.term).toMatchObject({ policy: 'always', restorable: false, icon: 'terminal' });
+  });
+
+  it('restores only the restorable kinds and keeps their payloads', () => {
+    const tabs = [
+      { id: 'a', kind: 'diff' as const },
+      { id: 'b', kind: 'file' as const, path: 'src/b.ts' },
+      { id: 'c', kind: 'agent' as const, subagentId: 'agent-2' },
+      { id: 'd', kind: 'btw' as const, seq: 2 },
+    ];
+    expect(restorablePanelTabs(tabs).map((tab) => tab.id)).toEqual(['c', 'd']);
+    const stored = serializeRestorableTabs(tabs);
+    expect(stored).toEqual([
+      { kind: 'agent', subagentId: 'agent-2' },
+      { kind: 'btw', agentId: undefined, seq: 2 },
+    ]);
+    let n = 0;
+    const rebuilt = deserializeRestorableTabs(stored, () => `r${n++}`);
+    expect(rebuilt).toEqual([
+      { id: 'r0', kind: 'agent', subagentId: 'agent-2' },
+      { id: 'r1', kind: 'btw', agentId: undefined, seq: 2 },
+    ]);
+  });
+
+  it('drops a stored tab that lost what it needs instead of failing', () => {
+    const rebuilt = deserializeRestorableTabs(
+      [{ kind: 'agent' }, { kind: 'compaction', turnId: 't9' }, { kind: 'diff' }],
+      () => 'x',
+    );
+    expect(rebuilt).toEqual([{ id: 'x', kind: 'compaction', turnId: 't9' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The panel's state layer: only the restorable kinds survive a reload, and a
+// terminal belongs to the session that opened it (upstream drops terminal tabs
+// when the session changes).
+// ---------------------------------------------------------------------------
+describe('useRightPanel state', () => {
+  let storage: Storage;
+  // The panel is a module-level singleton (the dock pills, the agent cards and
+  // the transcript all open tabs on it), so each case starts from empty.
+  function clearPanel(): void {
+    const panel = useRightPanel();
+    panel.bindSession(null);
+    for (const tab of [...panel.tabs.value]) panel.closeTab(tab.id);
+  }
+  beforeEach(() => {
+    storage = memoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    clearPanel();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the restorable tabs and drops the rest across a session rebind', () => {
+    clearPanel();
+    const panel = useRightPanel();
+    panel.bindSession('session-a');
+    panel.openAgent('agent-1');
+    panel.openFile('src/a.ts');
+    panel.openTerminal('zsh');
+    expect(panel.tabs.value.map((tab) => tab.kind)).toEqual(['agent', 'file', 'term']);
+
+    // Same session: nothing is dropped.
+    panel.bindSession('session-a');
+    expect(panel.tabs.value.map((tab) => tab.kind)).toEqual(['agent', 'file', 'term']);
+
+    // A new session: everything of the old one goes (upstream clears the list
+    // rather than carrying tabs across), and a session with nothing stored
+    // leaves the panel empty.
+    panel.bindSession('session-b');
+    expect(panel.tabs.value).toEqual([]);
+    expect(panel.visible.value).toBe(false);
+
+    // Coming back, the restorable tab is rebuilt and the rest are not.
+    panel.bindSession('session-a');
+    expect(panel.tabs.value.map((tab) => tab.kind)).toEqual(['agent']);
+    expect(panel.tabs.value[0]).toMatchObject({ kind: 'agent', subagentId: 'agent-1' });
+    expect(panel.visible.value).toBe(true);
+  });
+
+  it('persists only what it can rebuild', () => {
+    clearPanel();
+    const panel = useRightPanel();
+    panel.bindSession('session-c');
+    panel.openDiff();
+    panel.openCompaction('turn-7');
+    const raw = storage.getItem(STORAGE_KEYS.rightPanelTabs);
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!)).toEqual({ 'session-c': [{ kind: 'compaction', turnId: 'turn-7' }] });
+  });
+
+  it('hides itself when the last tab closes', () => {
+    clearPanel();
+    const panel = useRightPanel();
+    panel.bindSession('session-d');
+    panel.openSideChat();
+    const id = panel.activeTabId.value!;
+    panel.closeTab(id);
+    expect(panel.tabs.value).toEqual([]);
+    expect(panel.visible.value).toBe(false);
+    expect(panel.activeTabId.value).toBeNull();
   });
 });
