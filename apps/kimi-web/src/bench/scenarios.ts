@@ -14,7 +14,7 @@ import {
   STREAMING_ASSISTANT_ID,
 } from './fixtures';
 import { setPhase, waitForStop } from './sampler';
-import type { BenchContext, DockPanel, ScenarioName, ScenarioRunner, Theme } from './types';
+import type { BenchContext, ScenarioName, ScenarioRunner, Theme } from './types';
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -170,11 +170,16 @@ async function dockToc(ctx: BenchContext): Promise<void> {
   await ctx.settle(500);
 
   ctx.sampler.start();
-  const panels: Exclude<DockPanel, null>[] = ['bash', 'subagents', 'todos'];
+  // The dock owns its work panel (the pills ARE the control, as upstream has
+  // it), so drive it the way a user does: click the pill open, click it shut.
+  const panels = ['bash', 'subagents', 'todos'];
   for (let i = 0; i < 12; i++) {
-    ctx.dockPanel.value = panels[i % panels.length]!;
+    const pill = document.querySelector<HTMLElement>(
+      `.dock-workbar button[data-dock-panel="${panels[i % panels.length]!}"]`,
+    );
+    pill?.click();
     await ctx.settle(180);
-    ctx.dockPanel.value = null;
+    pill?.click();
     await ctx.settle(120);
   }
 

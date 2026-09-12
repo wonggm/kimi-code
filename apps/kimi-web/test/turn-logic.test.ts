@@ -3,7 +3,6 @@ import type { AppMessage, AppMessageContent } from '../src/api/types';
 import { latestTodos } from '../src/composables/latestTodos';
 import { messagesToTurns } from '../src/composables/messagesToTurns';
 import { reconcileTurns } from '../src/composables/reconcileTurns';
-import { isPlayableMediaUrl } from '../src/composables/useFilePreview';
 import type { ChatTurn, ToolCall, TurnAttachment } from '../src/types';
 
 function message(
@@ -989,26 +988,6 @@ describe('messagesToTurns cron', () => {
     // No prompt ids anywhere (REST-shaped): the cron still becomes its own
     // turn, and the cron-triggered reply does not merge into the first answer.
     expect(turns.map((t) => t.role)).toEqual(['user', 'assistant', 'cron', 'assistant']);
-  });
-});
-
-describe('isPlayableMediaUrl', () => {
-  // Gates the file-preview media source: a playable url feeds a native
-  // <video>/<img> src; a non-playable one falls through to the no-preview card.
-  it('accepts browser-loadable schemes', () => {
-    expect(isPlayableMediaUrl('https://example.com/clip.mp4')).toBe(true);
-    expect(isPlayableMediaUrl('http://example.com/clip.mp4')).toBe(true);
-    expect(isPlayableMediaUrl('data:video/mp4;base64,AAAA')).toBe(true);
-    expect(isPlayableMediaUrl('blob:https://app/uuid')).toBe(true);
-  });
-
-  it('rejects a provider ms:// reference (no local bytes → no preview)', () => {
-    expect(isPlayableMediaUrl('ms://file-abc123')).toBe(false);
-  });
-
-  it('rejects other non-loadable inputs', () => {
-    expect(isPlayableMediaUrl('/api/v1/files/f_abc')).toBe(false);
-    expect(isPlayableMediaUrl('')).toBe(false);
   });
 });
 

@@ -484,6 +484,8 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   /* -- spacing (4px grid) -------------------------------------------------- */
   --space-05: 2px;
   --space-1: 4px;
+  /* Upstream's half step, which its panel chrome is written against. */
+  --space-1-5: 6px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
@@ -584,6 +586,20 @@ html[data-color-scheme="dark"][data-accent="mono"] {
      pills all share. Kept as its own token so those surfaces can take upstream's
      material verbatim, rather than approximating it with a glass tier. */
   --p-menu-backdrop: blur(24px) saturate(1.8);
+
+  /* -- panel chrome (upstream's right panel) -------------------------------
+     The tab strip, its tail and the launcher are written against these in
+     upstream's stylesheet, so the shell keeps its own numbers there. */
+  --p-hairline: 0.5px;
+  --panel-head-h: 48px;
+  --panel-tab-h: 28px;
+  --panel-tab-pad-x: 10px;
+  --panel-tab-max-w: 168px;
+  --panel-tab-x-size: 18px;
+  --panel-launcher-w: 288px;
+  --panel-default-w: 460px;
+  /* Upstream's minimum touch target, which its tab-strip hit expansion uses. */
+  --touch-target-min: 44px;
 
   /* -- selection (design-system §02) --------------------------------------- */
   --p-selection: rgba(23, 131, 255, 0.18);

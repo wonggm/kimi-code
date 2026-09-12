@@ -1,137 +1,79 @@
 // apps/kimi-web/src/composables/useDetailPanel.ts
-// Unified right-side detail layer. Only one detail is open at a time.
+// The right panel's data layer and the transcript's entry points into it. The
+// panel's own state (its tabs, the active id, the width, visibility) belongs to
+// useRightPanel; what is left here is the fork's engine data — what a tab's body
+// reads, and the resolution the transcript needs before a tab can be keyed.
+//
+// The names follow upstream's panel composable, which is where these functions
+// come from: `openDiffDetail` / `closeDiffDetail` / `detailDiffMode` /
+// `detailDiffPath` / `selectDiffFile` are the diff tab's own list ↔ detail
+// drill, and `compactionPanelTextOf` / `agentPanelMemberOf` are the props
+// upstream's prop-builder hands to its compaction and agent panes.
 
-import { computed, ref, watch, type Ref } from 'vue';
-import type { AgentMember, ToolDiffTarget } from '../types';
-import type { DetailTarget } from './useFilePreview';
+import { computed, ref, watch } from 'vue';
+import type { AgentMember } from '../types';
 import type { useKimiWebClient } from './useKimiWebClient';
-import { buildEditDiffLines, extractEditPath, findToolCallById } from '../lib/toolDiff';
-import { toolLabel } from '../lib/toolMeta';
+import { extractEditPath, findToolCallById } from '../lib/toolDiff';
 import { toAgentMember } from './messagesToTurns';
-import { clampPanelWidth, panelMaxWidth, useViewportWidth } from './useViewportWidth';
+import { useRightPanel } from './useRightPanel';
 
 type KimiWebClient = ReturnType<typeof useKimiWebClient>;
 
-const PREVIEW_WIDTH_KEY = 'kimi-web.file-preview-width';
-export const PREVIEW_MIN = 320;
-
 export interface UseDetailPanelOptions {
   client: KimiWebClient;
-  /** Mirrored sidebar width (px) so the preview max-width stays within the viewport. */
-  sideWidth: Ref<number>;
-  /** Shared owner of the single right-side slot (also written by useFilePreview). */
-  detailTarget: Ref<DetailTarget | null>;
-  /** Closes the file preview; injected to avoid a composable-to-composable import cycle. */
-  closeFilePreview: () => void;
 }
 
-export function useDetailPanel({
-  client,
-  sideWidth,
-  detailTarget,
-  closeFilePreview,
-}: UseDetailPanelOptions) {
+export function useDetailPanel({ client }: UseDetailPanelOptions) {
+  const panel = useRightPanel();
+
   // ---------------------------------------------------------------------------
-  // Panel width helpers
+  // Diff tab: the session's changed files, and one file's diff.
   // ---------------------------------------------------------------------------
-  const { viewportWidth } = useViewportWidth();
+  const detailDiffMode = ref<'list' | 'detail'>('list');
+  const detailDiffPath = ref<string | null>(null);
 
-  // Area available to the right of the sidebar (conversation + preview).
-  const previewAreaWidth = computed(() =>
-    Math.max(0, viewportWidth.value - sideWidth.value),
-  );
-
-  // Largest preview width that still leaves the conversation pane usable.
-  const previewMax = computed(() =>
-    panelMaxWidth(previewAreaWidth.value, PREVIEW_MIN, PREVIEW_MIN),
-  );
-
-  function clampPreviewWidth(width: number): number {
-    return clampPanelWidth(Math.round(width), PREVIEW_MIN, previewMax.value);
+  function openDiffDetail(): void {
+    detailDiffMode.value = 'list';
+    detailDiffPath.value = null;
+    panel.openDiff();
+    void client.loadGitStatus(client.activeSessionId.value!);
   }
 
-  function defaultPreviewWidth(): number {
-    return clampPreviewWidth(previewAreaWidth.value / 2);
+  function closeDiffDetail(): void {
+    detailDiffMode.value = 'list';
+    detailDiffPath.value = null;
+    client.clearFileDiff();
   }
 
-  const previewDefaultWidth = computed(() => defaultPreviewWidth());
-  const previewWidth = ref(previewDefaultWidth.value);
-  // Rendered width, clamped to the current cap so a restored width or a window
-  // shrink can never push the resize handle off-screen.
-  const previewPanelWidth = computed(() =>
-    clampPanelWidth(previewWidth.value, PREVIEW_MIN, previewMax.value),
-  );
-
-  // ---------------------------------------------------------------------------
-  // Thinking panel
-  // ---------------------------------------------------------------------------
-  const thinkingTarget = ref<{ turnId: string; blockIndex: number } | null>(null);
-
-  const thinkingPanelText = computed<string | null>(() => {
-    const target = thinkingTarget.value;
-    if (!target) return null;
-    const turn = client.turns.value.find((tn) => tn.id === target.turnId);
-    const blk = turn?.blocks?.[target.blockIndex];
-    return blk?.kind === 'thinking' ? blk.thinking : null;
-  });
-
-  const thinkingVisible = computed(() => thinkingPanelText.value !== null);
-
-  function openThinkingPanel(target: { turnId: string; blockIndex: number }): void {
-    const current = thinkingTarget.value;
-    if (current && current.turnId === target.turnId && current.blockIndex === target.blockIndex) {
-      thinkingTarget.value = null;
-      if (detailTarget.value === 'thinking') detailTarget.value = null;
-      return;
-    }
-    detailTarget.value = 'thinking';
-    thinkingTarget.value = target;
-  }
-
-  function closeThinkingPanel(): void {
-    thinkingTarget.value = null;
-    if (detailTarget.value === 'thinking') detailTarget.value = null;
+  function selectDiffFile(path: string): Promise<void> {
+    detailDiffMode.value = 'detail';
+    detailDiffPath.value = path;
+    return client.loadFileDiff(path);
   }
 
   // ---------------------------------------------------------------------------
-  // Compaction summary panel
+  // Compaction tab: the summary text of the turn the tab is keyed by.
   // ---------------------------------------------------------------------------
-  const compactionTarget = ref<{ turnId: string } | null>(null);
-
-  const compactionPanelText = computed<string | null>(() => {
-    const target = compactionTarget.value;
-    if (!target) return null;
-    const turn = client.turns.value.find((tn) => tn.id === target.turnId);
+  function compactionPanelTextOf(turnId: string): string | null {
+    const turn = client.turns.value.find((tn) => tn.id === turnId);
     return turn?.role === 'compaction' && turn.text ? turn.text : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent tab: the live subagent task behind it.
+  // ---------------------------------------------------------------------------
+  // Sourced from the live subagent task (not the message flow), so the pane
+  // keeps streaming a still-running subagent's `outputLines`. The tab is keyed
+  // by the subagent task id; the transcript's open entry points are the `Agent`
+  // tool card (keyed by its tool-call id) and a background subagent chip in the
+  // dock (keyed by the task id).
+  const agentTabId = computed(() => {
+    const tab = panel.activeTab.value;
+    return tab?.kind === 'agent' ? tab.subagentId : null;
   });
 
-  const compactionPanelVisible = computed(() => compactionPanelText.value !== null);
-
-  function openCompactionPanel(target: { turnId: string }): void {
-    if (compactionTarget.value?.turnId === target.turnId) {
-      compactionTarget.value = null;
-      if (detailTarget.value === 'compaction') detailTarget.value = null;
-      return;
-    }
-    detailTarget.value = 'compaction';
-    compactionTarget.value = target;
-  }
-
-  function closeCompactionPanel(): void {
-    compactionTarget.value = null;
-    if (detailTarget.value === 'compaction') detailTarget.value = null;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Subagent detail panel
-  // ---------------------------------------------------------------------------
-  // Sourced from the live subagent task (not the message flow), so the panel
-  // keeps streaming a still-running subagent's `outputLines`. `agentTarget`
-  // holds the subagent task id; the open entry points are the `Agent` tool card
-  // (keyed by its tool-call id) and a background subagent chip in the dock
-  // (keyed by the task id) — both resolve to a task id here.
-  const agentTarget = ref<{ subagentId: string } | null>(null);
-
+  /** Resolve the row the open entry points hand over — a task id, an agent id or
+   *  the spawning tool call's id — to the subagent task id the tab is keyed by. */
   function resolveSubagentId(target: string): string | undefined {
     const tasks = client.activeAppTasks.value;
     const task =
@@ -139,356 +81,104 @@ export function useDetailPanel({
       tasks.find((tk) => tk.agentId === target) ??
       tasks.find((tk) => tk.parentToolCallId === target);
     if (task) return task.id;
-    // Same fallback as resolveAgentTaskId: a synthesized subagent task (missed
-    // spawn) has no parentToolCallId; if exactly one exists, open it.
+    // A synthesized subagent task (a missed spawn) has no parentToolCallId; if
+    // exactly one exists, open it.
     const unmapped = tasks.filter((tk) => tk.kind === 'subagent' && !tk.parentToolCallId);
     if (unmapped.length === 1) return unmapped[0]!.id;
     return undefined;
   }
 
-  const agentPanelMember = computed<AgentMember | null>(() => {
-    const target = agentTarget.value;
-    if (!target) return null;
-    const task = client.activeAppTasks.value.find((tk) => tk.id === target.subagentId);
+  const agentPanelMemberOf = computed<AgentMember | null>(() => {
+    const id = agentTabId.value;
+    if (id === null) return null;
+    const task = client.activeAppTasks.value.find((tk) => tk.id === id);
     return task ? toAgentMember(task) : null;
   });
 
-  // A background task refresh can transiently drop the row the panel is open
-  // for; without a last-known fallback the whole panel unmounts mid-read
-  // (observed: mounted → unmounted ~400ms after Open). Keep the last resolved
-  // member so the pane persists until the user closes it.
+  // A background task refresh can transiently drop the row the pane is open
+  // for; without a last-known fallback the pane unmounts mid-read. Keep the last
+  // resolved member until the user closes the tab.
   const lastAgentMember = ref<AgentMember | null>(null);
-  watch(agentPanelMember, (member) => {
+  watch(agentPanelMemberOf, (member) => {
     if (member) lastAgentMember.value = member;
   });
-  const agentPanelMemberStable = computed<AgentMember | null>(
-    () => agentPanelMember.value ?? lastAgentMember.value,
+  const agentPanelMember = computed<AgentMember | null>(
+    () => agentPanelMemberOf.value ?? lastAgentMember.value,
   );
 
-  // The pane also unmounted while detailTarget was still 'agent' (mystery
-  // closer: an async detail-layer re-evaluation ~200-400ms after open, with no
-  // removeChild on the .ap element). Latch the pane open once it has actually
-  // rendered with a member; only an explicit user close (close button,
-  // toggle, session switch) clears the latch. Mystery detailTarget flips can
-  // no longer close the pane out from under the user.
-  const agentPanelLatched = ref(false);
-  const agentPanelExplicitClose = ref(false);
-  watch([detailTarget, agentPanelMember], () => {
-    if (detailTarget.value === 'agent' && agentPanelMember.value) {
-      agentPanelLatched.value = true;
-      agentPanelExplicitClose.value = false;
-    }
-    if (detailTarget.value === null) agentPanelLatched.value = false;
-  });
-  const agentPanelHold = computed<boolean>(
-    () =>
-      detailTarget.value === 'agent' &&
-      (agentPanelMember.value !== null ||
-        (agentPanelLatched.value && !agentPanelExplicitClose.value)),
-  );
-
-  const agentPanelVisible = computed(() => agentPanelMember.value !== null);
-
-  // A grid re-render around the click can dispatch the open event twice
-  // within a few hundred ms; the second call would hit the toggle branch and
-  // close the panel the user just opened. Debounce same-target re-opens.
-  let lastOpenAt = 0;
-  let lastOpenId: string | undefined;
-  function openAgentPanel(target: string): void {
-    const subagentId = resolveSubagentId(target);
-    if (!subagentId) return;
-    const now = Date.now();
-    if (subagentId === lastOpenId && now - lastOpenAt < 600) return;
-    lastOpenAt = now;
-    lastOpenId = subagentId;
-    if (agentTarget.value?.subagentId === subagentId) {
-      agentPanelExplicitClose.value = true;
-      agentTarget.value = null;
-      if (detailTarget.value === 'agent') detailTarget.value = null;
-      return;
-    }
-    agentTarget.value = { subagentId };
-    detailTarget.value = 'agent';
-  }
-
-  function closeAgentPanel(): void {
-    agentPanelExplicitClose.value = true;
-    agentTarget.value = null;
-    if (detailTarget.value === 'agent') detailTarget.value = null;
-  }
-
-  // Seed an empty-bodied subagent panel from its server transcript. A
-  // subagent's body is normally filled ONLY by live progress frames; after a
-  // page reload / resync those were missed, so the panel would open with an
-  // empty body even though the server holds the full transcript. On open, fetch
-  // + seed once per panel when the body is still empty (the reducer no-ops a
-  // seed that races live frames that already populated it).
+  // Seed an empty-bodied subagent pane from its server transcript. A subagent's
+  // body is normally filled ONLY by live progress frames; after a page reload /
+  // resync those were missed, so the pane would open with an empty body even
+  // though the server holds the full transcript. On open, fetch + seed once per
+  // tab when the body is still empty (the reducer no-ops a seed that races live
+  // frames that already populated it).
   const seededSubagentIds = new Set<string>();
-  watch(agentTarget, (target) => {
-    if (!target) {
+  watch(agentTabId, (id) => {
+    if (id === null) {
       seededSubagentIds.clear();
       return;
     }
-    const id = target.subagentId;
     if (seededSubagentIds.has(id)) return;
     seededSubagentIds.add(id);
-    const task = client.activeAppTasks.value.find((t) => t.id === id);
+    const task = client.activeAppTasks.value.find((tk) => tk.id === id);
     const hasBody =
       task !== undefined && ((task.text?.length ?? 0) > 0 || (task.outputLines?.length ?? 0) > 0);
-    if (hasBody) return;
-    if (!task) return;
+    if (!task || hasBody) return;
     const sid = client.activeSessionId.value;
     if (sid) void client.seedTaskBody(sid, task);
   }, { immediate: true });
 
   // ---------------------------------------------------------------------------
-  // Edit/Write tool-call diff preview
+  // Transcript entry points.
   // ---------------------------------------------------------------------------
-  // Store only the tool id and re-derive the panel payload from the live tool
-  // call in the session turns, so a panel opened while the tool is still
-  // running keeps tracking its status / output / diff as they update.
-  const toolDiffToolId = ref<string | null>(null);
-
-  const toolDiffTarget = computed<ToolDiffTarget | null>(() => {
-    const id = toolDiffToolId.value;
-    if (!id) return null;
-    const tool = findToolCallById(client.turns.value, id);
-    if (!tool) return null;
-    return {
-      id,
-      title: toolLabel(tool.name),
-      path: extractEditPath(tool.arg),
-      // On error the diff describes what was attempted, not what happened —
-      // show the tool output (the failure reason) instead.
-      lines: tool.status === 'error' ? null : buildEditDiffLines(tool),
-      output: tool.output,
-    };
-  });
-
-  const toolDiffVisible = computed(() => toolDiffTarget.value !== null);
-
-  function openToolDiff(id: string): void {
-    if (detailTarget.value === 'toolDiff' && toolDiffToolId.value === id) {
-      closeToolDiff();
-      return;
-    }
-    detailTarget.value = 'toolDiff';
-    toolDiffToolId.value = id;
+  /** An edit/write tool row's "open diff" — upstream's turn-diff tab, keyed by
+   *  the file the tool wrote. A tool with no path to key a tab by (a non-edit
+   *  call, or an unparsable argument) has no upstream surface: the transcript
+   *  already carries its output. */
+  function openToolDiff(toolCallId: string): void {
+    const tool = findToolCallById(client.turns.value, toolCallId);
+    const path = tool ? extractEditPath(tool.arg) : undefined;
+    if (path) panel.openTurnDiff(path);
   }
 
-  function closeToolDiff(): void {
-    toolDiffToolId.value = null;
-    if (detailTarget.value === 'toolDiff') detailTarget.value = null;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Diff detail layer (opened from the chat header git area)
-  // ---------------------------------------------------------------------------
-  const detailDiffMode = ref<'list' | 'detail'>('list');
-  const detailDiffPath = ref<string | null>(null);
-
-  function openDiffDetail(): void {
-    if (detailTarget.value === 'diff') {
-      closeDiffDetail();
-      return;
-    }
-    detailTarget.value = 'diff';
-    detailDiffMode.value = 'list';
-    detailDiffPath.value = null;
-    void client.loadGitStatus(client.activeSessionId.value!);
-  }
-
-  function closeDiffDetail(): void {
-    if (detailTarget.value === 'diff') detailTarget.value = null;
-    detailDiffMode.value = 'list';
-    detailDiffPath.value = null;
-    client.clearFileDiff();
-  }
-
-  async function selectDiffFile(path: string): Promise<void> {
-    detailDiffMode.value = 'detail';
-    detailDiffPath.value = path;
-    await client.loadFileDiff(path);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Side chat (BTW) — now rendered in the unified right-side detail layer.
-  // ---------------------------------------------------------------------------
+  /** `/btw [<question>]` and the composer's side-chat entry. */
   async function openSideChatTab(prompt?: string): Promise<void> {
-    // Empty-composer heal: `/btw [<question>]` from the new-session screen needs
-    // a parent session before openSideChat can start a BTW sub-agent. Create one
-    // in the active workspace (same path as the first prompt / a new-session
-    // skill / goal), then open the side chat on it.
+    // Empty-composer heal: a side chat started from the new-session screen
+    // needs a parent session before openSideChat can start a BTW sub-agent.
+    // Create one in the active workspace (same path as the first prompt), then
+    // open the side chat on it.
     if (!client.activeSessionId.value && client.activeWorkspaceId.value) {
       await client.startSessionAndOpenSideChat(client.activeWorkspaceId.value, prompt);
     } else {
       await client.openSideChat(prompt);
     }
-    detailTarget.value = 'btw';
+    panel.openSideChat();
   }
 
   function closeSideChat(): void {
     client.closeSideChat();
-    if (detailTarget.value === 'btw') detailTarget.value = null;
   }
 
-  // Only hides the right-side BTW panel; the side-chat target is per-session and
-  // preserved so switching back to a session restores its BTW transcript.
-  function hideSideChatPanel(): void {
-    if (detailTarget.value === 'btw') detailTarget.value = null;
-  }
-
-  const btwVisible = computed(() => client.sideChatVisible.value);
-
-  /** Any occupant of the shared right-side slot. */
-  const sidePanelVisible = computed(
-    () =>
-      detailTarget.value !== null &&
-      (detailTarget.value !== 'thinking' || thinkingVisible.value) &&
-      (detailTarget.value !== 'compaction' || compactionPanelVisible.value) &&
-      (detailTarget.value !== 'agent' || agentPanelVisible.value) &&
-      (detailTarget.value !== 'toolDiff' || toolDiffVisible.value) &&
-      (detailTarget.value !== 'btw' || btwVisible.value),
-  );
-
-  /** True while the panel's resize handle is being dragged — the width
-      transition is disabled so the panel follows the pointer 1:1. */
-  const panelDragging = ref(false);
-
-  // ---------------------------------------------------------------------------
-  // Per-session panel snapshot (in-memory only). Switching sessions still closes
-  // the right-side detail layer, but for the transient panels whose content is
-  // re-derived from the session's turns (thinking / compaction / agent /
-  // toolDiff) or already stored per session (btw), we remember which one was
-  // open and restore it when the user switches back.
-  //
-  // File preview ('file') and git diff ('diff') are intentionally excluded:
-  // their content is tied to the active session's cwd / git state and is
-  // re-fetched on demand, so restoring them across sessions would be ambiguous.
-  // ---------------------------------------------------------------------------
-  type PanelSnapshot =
-    | { kind: 'thinking'; turnId: string; blockIndex: number }
-    | { kind: 'compaction'; turnId: string }
-    | { kind: 'agent'; subagentId: string }
-    | { kind: 'toolDiff'; toolId: string }
-    | { kind: 'btw' };
-
-  const snapshotBySession = ref<Record<string, PanelSnapshot>>({});
-
-  function captureSnapshot(): PanelSnapshot | null {
-    switch (detailTarget.value) {
-      case 'thinking':
-        return thinkingTarget.value ? { kind: 'thinking', ...thinkingTarget.value } : null;
-      case 'compaction':
-        return compactionTarget.value ? { kind: 'compaction', ...compactionTarget.value } : null;
-      case 'agent':
-        return agentTarget.value ? { kind: 'agent', ...agentTarget.value } : null;
-      case 'toolDiff':
-        return toolDiffToolId.value ? { kind: 'toolDiff', toolId: toolDiffToolId.value } : null;
-      case 'btw':
-        return { kind: 'btw' };
-      default:
-        return null;
-    }
-  }
-
-  function restoreSnapshot(snap: PanelSnapshot | undefined): void {
-    if (!snap) return;
-    switch (snap.kind) {
-      case 'thinking':
-        thinkingTarget.value = { turnId: snap.turnId, blockIndex: snap.blockIndex };
-        detailTarget.value = 'thinking';
-        break;
-      case 'compaction':
-        compactionTarget.value = { turnId: snap.turnId };
-        detailTarget.value = 'compaction';
-        break;
-      case 'agent':
-        agentTarget.value = { subagentId: snap.subagentId };
-        detailTarget.value = 'agent';
-        break;
-      case 'toolDiff':
-        toolDiffToolId.value = snap.toolId;
-        detailTarget.value = 'toolDiff';
-        break;
-      case 'btw':
-        // Only re-open the BTW panel if this session still has a live side chat;
-        // the snapshot can outlive it if the user closed the side chat explicitly.
-        if (client.sideChatVisible.value) detailTarget.value = 'btw';
-        break;
-    }
-  }
-
-  // Escape closes whichever transient right-side detail panel is open.
-  function closeOpenSidePanel(): boolean {
-    if (detailTarget.value === 'thinking' && thinkingVisible.value) { closeThinkingPanel(); return true; }
-    if (detailTarget.value === 'compaction' && compactionPanelVisible.value) { closeCompactionPanel(); return true; }
-    if (detailTarget.value === 'agent' && agentPanelVisible.value) { closeAgentPanel(); return true; }
-    if (detailTarget.value === 'toolDiff' && toolDiffVisible.value) { closeToolDiff(); return true; }
-    if (detailTarget.value === 'file') { closeFilePreview(); return true; }
-    if (detailTarget.value === 'diff') { closeDiffDetail(); return true; }
-    if (detailTarget.value === 'btw') { closeSideChat(); return true; }
-    return false;
-  }
-
-  watch(client.activeSessionId, (newId, oldId) => {
-    // Remember the leaving session's open panel (restorable kinds only) before
-    // the close calls below wipe the target refs.
-    if (oldId) {
-      const snap = captureSnapshot();
-      if (snap) snapshotBySession.value[oldId] = snap;
-      else delete snapshotBySession.value[oldId];
-    }
-    // Close everything for the incoming session (unchanged behavior).
-    closeFilePreview();
-    closeThinkingPanel();
-    closeCompactionPanel();
-    closeAgentPanel();
-    closeToolDiff();
-    closeDiffDetail();
-    hideSideChatPanel();
-    // Restore the entering session's panel, if it had one.
-    if (newId) {
-      restoreSnapshot(snapshotBySession.value[newId]);
-    }
+  // A session switch resets the tab-local drill and the last-known agent row;
+  // the panel's own tabs are rebuilt by useRightPanel's session binding.
+  watch(client.activeSessionId, () => {
+    detailDiffMode.value = 'list';
+    detailDiffPath.value = null;
+    lastAgentMember.value = null;
   });
 
   return {
-    PREVIEW_WIDTH_KEY,
-    PREVIEW_MIN,
-    previewDefaultWidth,
-    previewMax,
-    previewWidth,
-    previewPanelWidth,
-    thinkingPanelText,
-    thinkingVisible,
-    openThinkingPanel,
-    closeThinkingPanel,
-    compactionPanelText,
-    compactionPanelVisible,
-    openCompactionPanel,
-    closeCompactionPanel,
-    agentPanelMember,
-    agentPanelMemberStable,
-    agentPanelHold,
-    agentPanelVisible,
-    openAgentPanel,
-    closeAgentPanel,
-    toolDiffTarget,
-    toolDiffVisible,
-    openToolDiff,
-    closeToolDiff,
     detailDiffMode,
     detailDiffPath,
     openDiffDetail,
     closeDiffDetail,
     selectDiffFile,
-    btwVisible,
+    compactionPanelTextOf,
+    resolveSubagentId,
+    agentPanelMemberOf,
+    agentPanelMember,
+    openToolDiff,
     openSideChatTab,
     closeSideChat,
-    hideSideChatPanel,
-    sidePanelVisible,
-    panelDragging,
-    closeOpenSidePanel,
   };
 }

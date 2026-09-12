@@ -360,10 +360,6 @@ export interface ConversationStatus {
   isGitRepo: boolean;
 }
 
-/** Kind of the global right-side detail layer. Only one detail is visible at a
- *  time; opening a new one closes the previous. */
-export type DetailTarget = 'file' | 'diff' | 'thinking' | 'compaction' | 'agent' | 'btw';
-
 export interface ActivationBadges {
   plan: boolean;
   goal: { status: string; turnsUsed: number; elapsedMs: number } | null;
