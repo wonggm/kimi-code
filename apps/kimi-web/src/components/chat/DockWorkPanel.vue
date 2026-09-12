@@ -100,7 +100,7 @@ onBeforeUnmount(closeMenu);
 
 <template>
   <div
-    class="dock-work-panel lg-glass lg-lens"
+    class="dock-work-panel"
     :class="panelClass"
     :style="{ transformOrigin: `${originX}px 100%` }"
   >
@@ -157,6 +157,12 @@ onBeforeUnmount(closeMenu);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Upstream's own material for this surface — the same `--color-menu-bg-frost`
+     fill behind the menu backdrop that its menus use, not a glass tier: the
+     tier's tint, rim and refraction read visibly denser than upstream's panel. */
+  background: var(--color-menu-bg-frost);
+  -webkit-backdrop-filter: var(--p-menu-backdrop);
+  backdrop-filter: var(--p-menu-backdrop);
   border: 0.5px solid var(--color-line);
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-menu);
