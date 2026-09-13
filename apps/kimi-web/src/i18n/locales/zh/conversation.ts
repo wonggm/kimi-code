@@ -4,7 +4,8 @@ export default {
   thinkingStreaming: '思考中…',
   selection: {
     label: '所选内容操作',
-    placeholder: '添加评论…（可选）',
+    comment: '评论',
+    commentPlaceholder: '写一句评论…',
     cancel: '取消',
     addToChat: '添加到对话',
   },
@@ -70,6 +71,9 @@ export default {
   },
   requesting: '请求中…',
   working: '处理中…',
+  goal: {
+    continuation: '目标续跑',
+  },
   cron: {
     fired: '定时任务已触发',
     missed: '错过的定时提醒',

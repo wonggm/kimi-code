@@ -2,7 +2,7 @@
 // Vue state composable — the only place that imports both src/api/* and src/types.ts.
 // Components consume computed view props and call actions; they never touch the API or reducer.
 
-import { onUnmounted, computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { i18n } from '../i18n';
 import { traceClientEvent, traceKeyEvent } from '../debug/trace';
 import { getKimiWebApi } from '../api';
@@ -17,6 +17,7 @@ import { mergeWorkspaces } from '../lib/mergeWorkspaces';
 import { workspaceRootKey } from '../lib/rootKey';
 import { mergeSnapshotMessages } from '../lib/snapshotMessages';
 import { mergeSnapshotSubagents } from '../lib/taskMerge';
+import { bareDuration } from '../lib/bareDuration';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
 import {
   loadUnread,
@@ -1962,30 +1963,6 @@ function findBashCommandForTask(task: AppTask): string | undefined {
 }
 
 /** Map AppTask to UI TaskItem */
-/**
- * Bare elapsed time in upstream's units ("5m4s", "11h39m", "9s") — the form its
- * task rows show, taken from the same `timeUnit*` strings its bundle carries.
- * Upstream's rule (`Oc` in its bundle): a zero component is dropped ("5m", not
- * "5m0s"), and anything under a second formats to nothing at all, which is how
- * its rows come to show no time. The composite `timing` strings stay for the
- * side-panel panes.
- */
-function bareDuration(seconds: number): string {
-  const hour = i18n.global.t('tasks.durationHour');
-  const minute = i18n.global.t('tasks.durationMinute');
-  const second = i18n.global.t('tasks.durationSecond');
-  const total = Math.max(0, Math.floor(seconds));
-  if (total < 60) return total === 0 ? '' : `${total}${second}`;
-  const minutes = Math.floor(total / 60);
-  if (minutes < 60) {
-    const s = total % 60;
-    return s === 0 ? `${minutes}${minute}` : `${minutes}${minute}${s}${second}`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 ? `${hours}${hour}` : `${hours}${hour}${m}${minute}`;
-}
-
 function toUiTask(task: AppTask): TaskItem {
   let state: TaskState;
   if (task.status === 'running') {
@@ -2261,52 +2238,6 @@ const goal = computed<AppGoal | null>(() => {
   const sid = rawState.activeSessionId;
   if (!sid) return null;
   return rawState.goalBySession[sid] ?? null;
-});
-
-// Goal stats go stale between engine snapshot events (the pill showed a frozen
-// elapsed time until the next GoalUpdated arrived). Tick a 1s clock while the
-// active goal is running and extrapolate from the latest snapshot's arrival
-// moment. The engine's wallClockMs is already live at emission
-// (liveWallClockMs), so the baseline must reset on EVERY fresh snapshot — the
-// goal object is replaced on each GoalUpdated / REST goal fold — not only on
-// goalId/status transitions, or the two intervals double-count.
-const goalClock = ref(Date.now());
-const goalSnapshotAt = ref(Date.now());
-let goalClockTimer: ReturnType<typeof setInterval> | null = null;
-watch(
-  () => [goal.value, goal.value?.status] as const,
-  ([g, status]) => {
-    if (g) goalSnapshotAt.value = Date.now();
-    if (status === 'active' && goalClockTimer === null) {
-      goalClockTimer = setInterval(() => {
-        goalClock.value = Date.now();
-      }, 1000);
-    } else if (status !== 'active' && goalClockTimer !== null) {
-      clearInterval(goalClockTimer);
-      goalClockTimer = null;
-    }
-  },
-  { immediate: true },
-);
-onUnmounted(() => {
-  if (goalClockTimer !== null) clearInterval(goalClockTimer);
-});
-
-const goalLive = computed<{
-  elapsedMs: number;
-  turnsUsed: number;
-  tokensTotal: number;
-} | null>(() => {
-  const g = goal.value;
-  if (!g) return null;
-  return {
-    elapsedMs:
-      g.status === 'active'
-        ? g.wallClockMs + Math.max(0, goalClock.value - goalSnapshotAt.value)
-        : g.wallClockMs,
-    turnsUsed: g.turnsUsed,
-    tokensTotal: g.tokensUsed,
-  };
 });
 
 /** Current todo list of the active session (TodoList tool, latest write wins). */
@@ -3214,7 +3145,6 @@ export function useKimiWebClient() {
     activeAppTasks,
     todos,
     goal,
-    goalLive,
     swarms,
     swarmMembersByToolCallId,
     activationBadges,

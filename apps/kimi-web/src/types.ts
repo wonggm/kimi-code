@@ -132,6 +132,9 @@ export interface AgentMember {
   agentId?: string;
   toolCallId?: string;
   name: string;
+  /** The task kind behind the member (upstream's `member.kind`). A `bash` row
+   *  renders the command/output pane instead of a subagent transcript. */
+  kind?: 'subagent' | 'bash' | 'tool';
   subagentType?: string;
   /** Bound model alias the subagent is actually running on (resolved at
    *  spawn, NOT re-read from `[subagent_models]`). Optional — only present
@@ -142,7 +145,8 @@ export interface AgentMember {
   thinkingEffort?: string;
   phase: AgentPhase;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
-  /** The prompt/task the subagent was given (from the Agent tool input). */
+  /** The prompt/task the subagent was given (from the Agent tool input), or a
+   *  bash task's command — upstream's `task.command ?? spawningTool.prompt`. */
   prompt?: string;
   summary?: string;
   outputLines?: string[];
@@ -302,6 +306,9 @@ export interface ChatTurn {
       scheduled reminder rather than a real user. Mirrors the TUI's
       CronTranscriptData. `missedCount` present means a missed-fire catch-up. */
   cron?: CronTurnData;
+  /** The engine continued an active goal on its own prompt — upstream labels the
+      reply with a "Goal continuation" marker above the turn's content. */
+  goalContinuation?: boolean;
 }
 
 /**

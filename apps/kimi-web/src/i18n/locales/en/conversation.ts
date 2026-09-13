@@ -4,7 +4,8 @@ export default {
   thinkingStreaming: 'Thinking…',
   selection: {
     label: 'Selection actions',
-    placeholder: 'Add a comment… (optional)',
+    comment: 'Comment',
+    commentPlaceholder: 'Write a comment…',
     cancel: 'Cancel',
     addToChat: 'Add to chat',
   },
@@ -70,6 +71,9 @@ export default {
   },
   requesting: 'Requesting…',
   working: 'Working…',
+  goal: {
+    continuation: 'Goal continuation',
+  },
   cron: {
     fired: 'Scheduled reminder fired',
     missed: 'Missed scheduled reminders',

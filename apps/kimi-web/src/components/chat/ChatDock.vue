@@ -1,7 +1,8 @@
 <!-- ChatDock.vue -->
-<!-- Bottom dock that belongs to the chat tab: goal strip, running-task chips,
-     pending question/approval cards, and the composer. Only rendered inside a
-     chat-pane group so it never leaks into files/tasks/preview/btw panes. -->
+<!-- Bottom dock that belongs to the chat tab: the work bar and the floating
+     panels its pills open, running-task chips, pending question/approval cards,
+     and the composer. Only rendered inside a chat-pane group so it never leaks
+     into files/tasks/preview/btw panes. -->
 <!-- Workbar (above the composer) is upstream's labelled pill row; each pill
      toggles the floating panel for its kind (DockWorkPanel), which carries the
      kind's body, its filter control and its own actions. The right-side
@@ -16,8 +17,9 @@ import type { FileItem } from './MentionMenu.vue';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { DetachTaskTarget } from '../../lib/detachTarget';
 import Composer from './Composer.vue';
-import GoalStrip from './GoalStrip.vue';
+import GoalPanel from './GoalPanel.vue';
 import { useGlassRefraction } from '../../composables/useGlassRefraction';
+import { useConfirmDialog } from '../../composables/useConfirmDialog';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
 import PlanPanel from './PlanPanel.vue';
@@ -28,6 +30,7 @@ import DockWorkPanel, { type DockPanelKind } from './DockWorkPanel.vue';
 import Icon from '../ui/Icon.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import IconButton from '../ui/IconButton.vue';
+import { bareDuration } from '../../lib/bareDuration';
 import { BASH_FILTERS, type BashFilter } from '../../lib/bashTaskFilter';
 import { SUBAGENT_FILTERS, type SubagentFilter } from '../../lib/subagentFilter';
 
@@ -52,8 +55,6 @@ const props = defineProps<{
   starredIds?: string[];
   skills?: AppSkill[];
   goal?: AppGoal | null;
-  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number } | null;
-  goalExpandSignal?: number;
   bashTasks: TaskItem[];
   subagentTasks: TaskItem[];
   /** Latest ExitPlanMode plan entry of the active session — the plan viewer
@@ -89,7 +90,6 @@ const emit = defineEmits<{
   openBtw: [];
   createGoal: [objective: string];
   controlGoal: [action: 'pause' | 'resume' | 'cancel'];
-  focusGoal: [];
   focusSwarm: [];
   compact: [];
   pickModel: [];
@@ -100,15 +100,15 @@ const emit = defineEmits<{
   cancelTask: [taskId: string];
   /** Send a running foreground bash task row to the background. */
   detachTask: [target: DetachTaskTarget];
-  /** Reveal the right panel (the dock's work lists have no tab of their own —
-   *  they live in the dock — so their "open in the side panel" action only
-   *  brings the panel up on whatever it is already showing). */
+  /** Reveal the right panel on whatever it is already showing (the Plan panel's
+   *  "open in the side panel" — those two lists have no tab of their own). */
   'show-panel': [];
-  /** A background subagent chip was clicked — open its live detail panel. */
+  /** A task row was clicked — open that task's own pane in the side panel. */
   openAgent: [taskId: string];
 }>();
 
 const { t } = useI18n();
+const { confirm } = useConfirmDialog();
 
 /** Work-bar plan pill meta: the latest plan's review outcome label, e.g.
  *  "Approved" — empty while the review is still pending. */
@@ -116,6 +116,30 @@ const planReviewLabel = computed<string>(() => {
   const state = props.planEntry?.review?.state;
   return state ? t(`tools.plan.review.${state}`) : '';
 });
+
+/** The goal's status word ("Active", "Paused", …) — the text the pill carries
+ *  beside its "Goal" label, coloured by the state. */
+const goalStatus = computed<string>(() => {
+  switch (props.goal?.status) {
+    case 'active': return t('status.goalStatusActive');
+    case 'paused': return t('status.goalStatusPaused');
+    case 'blocked': return t('status.goalStatusBlocked');
+    case 'complete': return t('status.goalStatusComplete');
+    default: return '';
+  }
+});
+
+/** Panel head meta: the goal's wall-clock time in upstream's bare units
+ *  ("12m34s"), straight off the snapshot — upstream does not tick it. */
+const goalElapsed = computed<string>(() =>
+  props.goal ? bareDuration(props.goal.wallClockMs / 1000) : '',
+);
+
+/** The goal pill's full label ("Goal Active") — upstream repeats this string in
+ *  the aria-label, where the visible status word is the accessible name. */
+const goalPillLabel = computed<string>(() =>
+  `${t('status.goalLabel')} ${goalStatus.value}`.trim(),
+);
 const composerRef = ref<{
   loadForEdit: (value: string) => boolean;
   loadAttachmentsForEdit: (atts: { fileId?: string; kind: 'image' | 'video' | 'file'; url: string; name?: string }[]) => void;
@@ -156,7 +180,13 @@ function openPermissionMenu(): void {
 // tab and toggle it open via `open-right-panel`.
 const openPanel = ref<DockPanelKind | null>(null);
 const panelOriginX = ref(0);
-const panelRef = ref<HTMLElement | null>(null);
+const panelRef = ref<InstanceType<typeof DockWorkPanel> | null>(null);
+// The panel's root node: a component ref resolves to the instance, and the
+// outside-mousedown test below needs the element.
+const panelEl = computed<HTMLElement | null>(() => {
+  const el = panelRef.value?.$el;
+  return el instanceof HTMLElement ? el : null;
+});
 // Upstream's `has-popup` marks the dock while any of its popups is up, the
 // composer's own menus included.
 const composerPopup = ref(false);
@@ -165,7 +195,7 @@ const composerPopup = ref(false);
 // mousedown, so freezing the shared page snapshot while it is up is exactly the
 // menu behaviour the flag exists for. The element is v-if'd, so its ref
 // appearing/disappearing is the mount signal.
-useGlassRefraction(panelRef);
+useGlassRefraction(panelEl);
 
 /** The same pill toggles its panel shut; another pill swaps the body. The panel
  *  grows from the clicked pill, so its centre is read off the button here —
@@ -180,10 +210,37 @@ function togglePanel(kind: DockPanelKind, event?: MouseEvent): void {
   openPanel.value = kind;
 }
 
+/** The composer's Goal row on an active goal — upstream's `focusGoal`, which
+ *  reveals the goal panel rather than the user's own click. */
+function openGoalPanel(): void {
+  if (props.goal) openPanel.value = 'goal';
+}
+
+// A goal that ends (or is cancelled) while its panel is up leaves the panel
+// with nothing to show; upstream drops the dock panel with the goal.
+watch(
+  () => props.goal,
+  (goal) => {
+    if (!goal && openPanel.value === 'goal') openPanel.value = null;
+  },
+);
+
+/** Cancel asks first, as upstream's does: the engine cannot resume it after. */
+async function cancelGoal(): Promise<void> {
+  const confirmed = await confirm({
+    title: t('status.goalCancel'),
+    message: t('status.goalCancelConfirm'),
+    confirmLabel: t('status.goalCancelConfirmYes'),
+    cancelLabel: t('status.goalCancelConfirmNo'),
+    variant: 'danger',
+  });
+  if (confirmed) emit('controlGoal', 'cancel');
+}
+
 function onDocumentMouseDown(event: MouseEvent): void {
   const target = event.target as Node | null;
   if (!target) return;
-  if (panelRef.value?.contains(target)) return;
+  if (panelEl.value?.contains(target)) return;
   if (workbarRef.value?.contains(target)) return;
   openPanel.value = null;
 }
@@ -226,10 +283,10 @@ defineExpose({ loadForEdit, loadAttachmentsForEdit, focus, openModelMenu, openPe
 
 interface WorkbarEntry {
   id: DockPanelKind;
-  /** Upstream's own glyphs: a filled pencil for Plan, a terminal-in-a-box for
-      Bash, its agent mark for Background Agent, and the shared list-lines for
-      Progress. */
-  icon: 'pencil-filled' | 'terminal-filled' | 'agent-filled' | 'list-lines';
+  /** Upstream's own glyphs: the target mark for Goal, a filled pencil for Plan,
+      a terminal-in-a-box for Bash, its agent mark for Background Agent, and the
+      shared list-lines for Progress. */
+  icon: 'target' | 'pencil-filled' | 'terminal-filled' | 'agent-filled' | 'list-lines';
   /** Visible pill text. Upstream spells the pill out and repeats the string in
       its aria-label with the chip appended ("Bash 1 running"), so the label is
       the accessible name rather than an "Open …" verb. */
@@ -240,12 +297,25 @@ interface WorkbarEntry {
   /** `running` renders the accent dot beside the count; `count` is plain text
       (todo progress, "1/3"). A pill with neither shows only its label. */
   chip?: { kind: 'running' | 'count'; text: string };
+  /** The goal pill's status word, in its own span so the word carries the
+      state's colour (`dw-goal-status--<state>`) rather than the whole pill. */
+  status?: { state: AppGoal['status']; word: string };
   /** The panel head's state text ("1 running", "1/3", "Pending review"); the
       pill carries the same state as its numeric chip. */
   meta?: string;
 }
 
 const workbarEntries = computed<WorkbarEntry[]>(() => [
+  {
+    id: 'goal',
+    icon: 'target',
+    label: t('status.goalLabel'),
+    ariaLabel: goalPillLabel.value,
+    visible: !!props.goal,
+    active: openPanel.value === 'goal',
+    status: props.goal ? { state: props.goal.status, word: goalStatus.value } : undefined,
+    meta: goalElapsed.value,
+  },
   {
     id: 'plan',
     icon: 'pencil-filled',
@@ -326,6 +396,13 @@ function showPanel(): void {
   emit('show-panel');
 }
 
+/** A task row hands its task to the side panel and dismisses the dock panel, as
+ *  upstream's row does (`closeDockPanel()` before `openAgentPanel(id)`). */
+function openDockTask(taskId: string): void {
+  openPanel.value = null;
+  emit('openAgent', taskId);
+}
+
 function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
   togglePanel(id, event);
 }
@@ -338,13 +415,6 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
     :class="[mobile ? ['align-mobile', 'pills-compact'] : 'align-center', { 'has-popup': openPanel !== null || composerPopup }]"
     @click.stop
   >
-    <GoalStrip
-      v-if="goal"
-      :goal="goal"
-      :live="goalLive"
-      :force-expanded="goalExpandSignal"
-      @control-goal="emit('controlGoal', $event)"
-    />
     <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">
       <button
         v-for="entry in workbarEntries"
@@ -360,6 +430,11 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
       >
         <Icon :name="entry.icon" size="md" />
         <span>{{ entry.label }} </span>
+        <span
+          v-if="entry.status"
+          class="dw-goal-status"
+          :class="`dw-goal-status--${entry.status.state}`"
+        >{{ entry.status.word }}</span>
         <span v-if="entry.chip" :class="entry.chip.kind === 'running' ? 'dw-running' : 'dw-count'">
           <span v-if="entry.chip.kind === 'running'" class="kw-dot kw-dot--running" aria-hidden="true" />
           {{ entry.chip.text }}
@@ -393,11 +468,36 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
             </IconButton>
           </template>
 
+          <template v-else-if="openPanel === 'goal' && goal" #actions>
+            <IconButton
+              v-if="goal.status === 'active'"
+              size="sm"
+              :label="t('status.goalPause')"
+              @click="emit('controlGoal', 'pause')"
+            >
+              <Icon name="pause" size="sm" />
+            </IconButton>
+            <IconButton
+              v-if="goal.status === 'paused' || goal.status === 'blocked'"
+              size="sm"
+              :label="t('status.goalResume')"
+              @click="emit('controlGoal', 'resume')"
+            >
+              <Icon name="play" size="sm" />
+            </IconButton>
+            <IconButton size="sm" :label="t('status.goalCancel')" @click="cancelGoal()">
+              <Icon name="stop" size="sm" />
+            </IconButton>
+            <IconButton size="sm" :label="t('tasks.closePanel')" @click="openPanel = null">
+              <Icon name="close" size="sm" />
+            </IconButton>
+          </template>
+
           <DockTaskList
             v-if="openPanel === 'bash'"
             :tasks="bashTasks"
             :filter="bashFilter"
-            @open="showPanel()"
+            @open="openDockTask($event)"
             @stop="emit('cancelTask', $event)"
           />
           <DockAgentGrid
@@ -408,6 +508,11 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
             @open="emit('openAgent', $event)"
           />
           <TodoCard v-else-if="openPanel === 'todos'" :todos="todos ?? []" />
+          <GoalPanel
+            v-else-if="openPanel === 'goal' && goal"
+            :goal="goal"
+            :open-file="openFile"
+          />
           <PlanPanel
             v-else
             :plan="planEntry ?? null"
@@ -469,7 +574,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
       @open-btw="emit('openBtw')"
       @create-goal="emit('createGoal', $event)"
       @control-goal="emit('controlGoal', $event)"
-      @focus-goal="emit('focusGoal')"
+      @focus-goal="openGoalPanel()"
       @focus-swarm="emit('focusSwarm')"
       @compact="emit('compact')"
       @pick-model="emit('pickModel')"
@@ -594,6 +699,20 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 .dock-workbar .ui-pill.is-active .dw-running,
 .dock-workbar .ui-pill.is-active .dw-count {
   color: inherit;
+}
+/* The goal pill's status word carries the state's colour — the pill itself
+   stays upstream-neutral. */
+.dock-workbar .dw-goal-status {
+  font-weight: var(--weight-medium);
+}
+.dock-workbar .dw-goal-status--active {
+  color: var(--color-success);
+}
+.dock-workbar .dw-goal-status--paused {
+  color: var(--color-warning);
+}
+.dock-workbar .dw-goal-status--blocked {
+  color: var(--color-danger);
 }
 .kw-dot {
   flex: none;

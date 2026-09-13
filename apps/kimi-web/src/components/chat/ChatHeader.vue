@@ -32,6 +32,10 @@ const props = defineProps<{
   pr?: { number: number; state: string; url: string } | null;
   /** True for ~2s after a successful copy-all, to flip the icon to a check. */
   copied?: boolean;
+  /** True while the right panel is showing. The panel's own Close control
+   *  replaces this header button, so only one "right panel" control is ever on
+   *  screen — upstream's `v-if="!panel.isVisible()"`. */
+  panelOpen?: boolean;
   /** Whether the current session is pinned in the sidebar — drives the ⋮
    *  menu's Pin/Unpin label and icon. */
   pinned?: boolean;
@@ -354,8 +358,10 @@ function togglePin(): void {
       <span>PR #{{ pr.number }} · {{ prStateLabel(pr.state) }}</span>
     </button>
 
-    <!-- Open right panel — the panel's own close button handles the reverse. -->
+    <!-- Open right panel while the panel is closed; the panel's own Close
+         control takes over once it is open, as upstream's does. -->
     <IconButton
+      v-if="!panelOpen"
       class="ch-panel"
       :label="t('panel.openPanel')"
       @click="emit('openPanel')"

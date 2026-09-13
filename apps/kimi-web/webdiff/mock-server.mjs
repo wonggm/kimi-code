@@ -14,6 +14,9 @@
 //   MOCK_RICH=0        bare fixture (one session, one message, nothing else)
 //   MOCK_FOLD_TOOLS=0  drop the run of three consecutive tool calls
 //   MOCK_GOAL=0        no active goal (on by default with the rich fixtures)
+//   MOCK_GOAL_STATUS=active|paused|blocked|complete
+//                      the goal's state; the apps draw a different panel per
+//                      state, so each is a separate pass (default active)
 //   MOCK_PENDING=1     add the pending question + approval cards. Off by
 //                      default: the fork's ChatDock renders `<Composer v-else>`,
 //                      so a pending card replaces the composer entirely.
@@ -114,8 +117,36 @@ const MOCK_THINKING = [
   'check needs 30. I will raise it and re-run the check to confirm.',
 ].join('\n');
 
+/** The session's goal, in the shape both apps read. The REST route and the
+ *  `GetGoal` tool result are the same object, so the goal panel a manual pass
+ *  inspects on either app shows one set of numbers. `budgetUsed` / `budgetLimit`
+ *  are the names upstream's goal schema takes; `tokensUsed`, `budget` and
+ *  `wallClockMs` are what the fork's goal strip reads.
+ *
+ *  `status` is the part the apps render differently per state (active / paused /
+ *  blocked / complete), so MOCK_GOAL_STATUS selects it — a manual pass or a scene
+ *  run with `MOCK_GOAL_STATUS=paused` sees that state's panel. */
+const GOAL_STATUSES = ['active', 'paused', 'blocked', 'complete'];
+
+function goalMock(status = 'active') {
+  return {
+    goalId: 'goal_mock_1',
+    objective: 'Reduce the pion-production systematic uncertainty below 3% for the CDR — refit the hadronic interaction model against the thin-target data and propagate through the full simulation chain.',
+    completionCriterion: 'Fit converges with chi2/ndf < 1.5 and the propagated uncertainty band on the yield is under 3%.',
+    status: GOAL_STATUSES.includes(status) ? status : 'active',
+    turnsUsed: 7,
+    turns_used: 7,
+    tokensUsed: 182340,
+    budgetUsed: 182340,
+    budgetLimit: 500000,
+    wallClockMs: 12 * 60 * 1000 + 34 * 1000,
+    budget: { tokenBudget: 500000, remainingTokens: 317660, turnBudget: null, remainingTurns: null, wallClockBudgetMs: null, remainingWallClockMs: null, overBudget: false },
+  };
+}
+
 function buildFixtures(env) {
   const now = new Date().toISOString();
+  const goal = goalMock(env.MOCK_GOAL_STATUS);
 
   const session = {
     id: SESSION_ID,
@@ -195,6 +226,22 @@ function buildFixtures(env) {
     run_in_background: true,
   };
 
+  // Foreground subagent: upstream's dock lists foreground and background
+  // subagents alike, while the fork's filter keeps only `runInBackground === true`
+  // (src/lib/subagentFilter.ts), so this is the row that tells the two apart.
+  const subagentForeground = {
+    id: 'agent-3',
+    session_id: SESSION_ID,
+    kind: 'subagent',
+    description: 'Refit the hadronic interaction model',
+    status: 'running',
+    subagent_phase: 'working',
+    subagent_type: 'coder',
+    created_at: now,
+    started_at: now,
+    run_in_background: false,
+  };
+
   const snapshot = {
     as_of_seq: 3,
     epoch: 'mock-epoch',
@@ -229,7 +276,7 @@ function buildFixtures(env) {
               tool_name: 'TodoWrite',
               input: {
                 todos: [
-                  { title: 'Read the config', status: 'completed' },
+                  { title: 'Read the config', status: 'done' },
                   { title: 'Change the timeout', status: 'in_progress' },
                   { title: 'Re-run the check', status: 'pending' },
                 ],
@@ -239,6 +286,26 @@ function buildFixtures(env) {
           ]),
           { type: 'tool_use', tool_call_id: 'tc_edit_1', tool_name: 'Edit', input: { path: '/tmp/mock-workspace/config.py', old_string: 'a', new_string: 'b' } },
           { type: 'tool_result', tool_call_id: 'tc_edit_1', output: 'The file has been updated.', is_error: false },
+          // A subagent call (the `Agent` tool): both apps fold `agent` onto their
+          // `task` kind and render a card for it, so a manual pass can see the
+          // card in the transcript — the running one is also the dock's
+          // "Background Agent" pill.
+          { type: 'tool_use', tool_call_id: 'tc_agent_1', tool_name: 'Agent', input: {
+            description: 'Refit the hadronic interaction model',
+            subagent_type: 'coder',
+            prompt: 'Refit the hadronic interaction model against the thin-target data and report the chi2/ndf of the converged fit.',
+          } },
+          { type: 'tool_result', tool_call_id: 'tc_agent_1', output: 'Fit converged: chi2/ndf = 1.24 over 38 bins; the propagated uncertainty band on the yield dropped from 4.1% to 2.7%.', is_error: false },
+          // A goal read (the `GetGoal` tool): upstream renders its goal panel
+          // from the returned goal, the fork from the same fields.
+          { type: 'tool_use', tool_call_id: 'tc_getgoal_1', tool_name: 'GetGoal', input: { goalId: 'goal_mock_1' } },
+          { type: 'tool_result', tool_call_id: 'tc_getgoal_1', output: JSON.stringify(goal), is_error: false },
+          // A budget set: both apps summarise it from `{value, unit}` — this is
+          // where upstream shows the goal's token budget and wall-clock budget.
+          { type: 'tool_use', tool_call_id: 'tc_goalbudget_1', tool_name: 'SetGoalBudget', input: { value: 500000, unit: 'tokens' } },
+          { type: 'tool_result', tool_call_id: 'tc_goalbudget_1', output: 'Budget set: 500000 tokens.', is_error: false },
+          { type: 'tool_use', tool_call_id: 'tc_goalbudget_2', tool_name: 'SetGoalBudget', input: { value: 30, unit: 'minutes' } },
+          { type: 'tool_result', tool_call_id: 'tc_goalbudget_2', output: 'Wall-clock budget set: 30 minutes.', is_error: false },
           { type: 'text', text: CODE_MD },
         ], created_at: now },
         ...(env.MOCK_MANY_TURNS === '1'
@@ -406,11 +473,11 @@ function buildFixtures(env) {
   };
   rich.fsBrowse = rich.fsHome;
 
-  return { now, session, bashTask, bashTaskExited, subagentTask, subagentRunning, snapshot, config, rich };
+  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, config, rich };
 }
 
 function createHandler({ root, token, env, fixtures }) {
-  const { now, session, bashTask, bashTaskExited, subagentTask, subagentRunning, snapshot, config, rich } = fixtures;
+  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, config, rich } = fixtures;
   // MOCK_RICH=0 turns the extra fixtures off, leaving the single-session fixture
   // the walk was originally built against.
   const richOn = env.MOCK_RICH !== '0';
@@ -576,7 +643,7 @@ function createHandler({ root, token, env, fixtures }) {
           items: env.MOCK_NO_TASKS === '1'
             ? []
             : richOn
-              ? [bashTask, bashTaskExited, subagentRunning, subagentTask]
+              ? [bashTask, bashTaskExited, subagentRunning, subagentTask, subagentForeground]
               : [bashTask, subagentTask],
         });
       if (p === `/api/v1/sessions/${SESSION_ID}/media/mock_media_1`) {
@@ -609,17 +676,7 @@ function createHandler({ root, token, env, fixtures }) {
         }
         // Feature fetches (goal/todos/plans/transcript): graceful empty shapes.
         if (p.endsWith('/goal') && (env.MOCK_GOAL === '1' || (richOn && env.MOCK_GOAL !== '0'))) {
-          return json(res, {
-            goalId: 'goal_mock_1',
-            objective: 'Reduce the pion-production systematic uncertainty below 3% for the CDR — refit the hadronic interaction model against the thin-target data and propagate through the full simulation chain.',
-            completionCriterion: 'Fit converges with chi2/ndf < 1.5 and the propagated uncertainty band on the yield is under 3%.',
-            status: 'active',
-            turnsUsed: 7,
-            turns_used: 7,
-            tokensUsed: 182340,
-            wallClockMs: 12 * 60 * 1000 + 34 * 1000,
-            budget: { tokenBudget: 500000, remainingTokens: 317660, turnBudget: null, remainingTurns: null, wallClockBudgetMs: null, remainingWallClockMs: null, overBudget: false },
-          });
+          return json(res, goalMock(env.MOCK_GOAL_STATUS));
         }
         if (richOn) {
           // Live status: the source of truth for the status line, and the driver
@@ -716,6 +773,16 @@ function createHandler({ root, token, env, fixtures }) {
                     { title: 'Re-run the check', status: 'pending' },
                   ] }, output: 'Todos updated' },
                   { kind: 'tool', frameId: 's1.tc_edit_1', toolCallId: 'tc_edit_1', name: 'Edit', state: 'done', input: { path: '/tmp/mock-workspace/config.py', old_string: 'a', new_string: 'b' }, output: 'The file has been updated.' },
+                  // The subagent card and the goal card, matching the snapshot's
+                  // tool_use parts above so both transcript routes carry them.
+                  { kind: 'tool', frameId: 's1.tc_agent_1', toolCallId: 'tc_agent_1', name: 'Agent', state: 'done', taskId: subagentForeground.id, agentRefs: [{ agentId: subagentForeground.id, role: 'child' }], input: {
+                    description: 'Refit the hadronic interaction model',
+                    subagent_type: 'coder',
+                    prompt: 'Refit the hadronic interaction model against the thin-target data and report the chi2/ndf of the converged fit.',
+                  }, output: 'Fit converged: chi2/ndf = 1.24 over 38 bins; the propagated uncertainty band on the yield dropped from 4.1% to 2.7%.' },
+                  { kind: 'tool', frameId: 's1.tc_getgoal_1', toolCallId: 'tc_getgoal_1', name: 'GetGoal', state: 'done', input: { goalId: 'goal_mock_1' }, output: JSON.stringify(goal) },
+                  { kind: 'tool', frameId: 's1.tc_goalbudget_1', toolCallId: 'tc_goalbudget_1', name: 'SetGoalBudget', state: 'done', input: { value: 500000, unit: 'tokens' }, output: 'Budget set: 500000 tokens.' },
+                  { kind: 'tool', frameId: 's1.tc_goalbudget_2', toolCallId: 'tc_goalbudget_2', name: 'SetGoalBudget', state: 'done', input: { value: 30, unit: 'minutes' }, output: 'Wall-clock budget set: 30 minutes.' },
                   { kind: 'text', frameId: 'f1', role: 'assistant', text: CODE_MD },
                 ], startedAt: now, endedAt: now },
               ], startedAt: now, endedAt: now },
@@ -730,6 +797,7 @@ function createHandler({ root, token, env, fixtures }) {
                   { taskId: bashTaskExited.id, kind: 'shell', state: 'completed', detached: false, description: bashTaskExited.description, agentId: 'main', outputTail: bashTaskExited.output_preview, startedAt: now, endedAt: now },
                   { taskId: subagentRunning.id, kind: 'subagent', state: 'running', detached: true, description: subagentRunning.description, agentId: subagentRunning.id, outputTail: '', startedAt: now },
                   { taskId: subagentTask.id, kind: 'subagent', state: 'completed', detached: true, description: subagentTask.description, agentId: subagentTask.id, outputTail: '', startedAt: now, endedAt: now },
+                  { taskId: subagentForeground.id, kind: 'subagent', state: 'running', detached: false, description: subagentForeground.description, agentId: subagentForeground.id, outputTail: '', startedAt: now },
                 ]
               : [],
             interactions: [],
@@ -744,7 +812,13 @@ function createHandler({ root, token, env, fixtures }) {
                   ] },
                 ]
               : [],
-            meta: { activity: 'idle' },
+            meta: { activity: 'idle', goal: {
+              objective: goal.objective,
+              status: goal.status,
+              completionCriterion: goal.completionCriterion,
+              budgetUsed: goal.budgetUsed,
+              budgetLimit: goal.budgetLimit,
+            } },
             agents: [{ agentId: 'main', type: 'main' }],
             pending_interactions: [],
           });

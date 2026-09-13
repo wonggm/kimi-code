@@ -36,6 +36,9 @@ const props = defineProps<{
   /** Suppress the width transition while the handle is being dragged or the
    *  session is switching, as upstream's `no-anim` class does. */
   noAnim?: boolean;
+  /** Titles an agent tab from the agent it shows; upstream resolves the same
+   *  name from the live task rows. `undefined` falls back to the i18n label. */
+  agentTitle?: (subagentId: string) => string | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -82,13 +85,16 @@ function iconFor(tab: PanelTab): IconName {
   return PANEL_TAB_RULES[tab.kind].icon;
 }
 
-/** Upstream titles the path kinds from their payload (the basename) and the
- *  rest from i18n; a terminal carries its own title when it has one. */
+/** Upstream titles the path kinds from their payload (the basename), an agent
+ *  tab from the agent itself, and the rest from i18n; a terminal carries its own
+ *  title when it has one. */
 function titleFor(tab: PanelTab): string {
   switch (tab.kind) {
     case 'file':
     case 'turn-diff':
       return basename(tab.path);
+    case 'agent':
+      return props.agentTitle?.(tab.subagentId) ?? t(PANEL_TAB_RULES.agent.i18nKey ?? 'panel.tabs.agent');
     case 'term':
       return tab.title ?? t('panel.tabs.term');
     case 'btw':

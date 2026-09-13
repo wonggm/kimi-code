@@ -675,6 +675,47 @@ describe('messagesToTurns', () => {
 
     expect(turns[0]).toMatchObject({ role: 'user', text: 'a < b and c > d, no system tag here' });
   });
+
+  it('marks a goal-continuation reply and hides its trigger prompt', () => {
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [{ type: 'text', text: 'set up the goal' }]),
+        message('a1', 'assistant', [{ type: 'text', text: 'goal created' }], { promptId: 'p1' }),
+        message('u2', 'user', [{ type: 'text', text: 'continue the goal' }], {
+          metadata: { origin: { kind: 'system_trigger', name: 'goal_continuation' } },
+          promptId: 'p2',
+        }),
+        message('a2', 'assistant', [{ type: 'text', text: 'working on it' }], { promptId: 'p2' }),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    // The trigger prompt is engine-injected: no user bubble, and only the reply
+    // it produced carries the marker.
+    expect(turns.map((turn) => turn.role)).toEqual(['user', 'assistant', 'assistant']);
+    expect(turns[1]?.goalContinuation).toBeUndefined();
+    expect(turns[2]).toMatchObject({ text: 'working on it', goalContinuation: true });
+  });
+
+  it('does not mark a turn that follows the continuation', () => {
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [{ type: 'text', text: 'continue the goal' }], {
+          metadata: { origin: { kind: 'system_trigger', name: 'goal_continuation' } },
+        }),
+        message('a1', 'assistant', [{ type: 'text', text: 'first reply' }], { promptId: 'p1' }),
+        message('u2', 'user', [{ type: 'text', text: 'and now do this' }]),
+        message('a2', 'assistant', [{ type: 'text', text: 'second reply' }], { promptId: 'p2' }),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns.map((turn) => turn.goalContinuation)).toEqual([true, undefined, undefined]);
+  });
 });
 
 describe('messagesToTurns resync dedup', () => {
