@@ -171,7 +171,7 @@ onMounted(load);
             <div class="pp-main">
               <div class="pp-title">
                 <span class="pp-name">{{ entry.displayName }}</span>
-                <span v-if="entry.installed?.version ?? entry.version" class="pp-version">{{ entry.installed?.version ?? entry.version }}</span>
+                <span v-if="entry.installed?.version ?? entry.version" class="pp-version" :class="{ 'pp-version--muted': !entry.installed }">{{ entry.installed?.version ?? entry.version }}</span>
                 <span v-if="entrySummary(entry)?.hasErrors === true" class="pp-badge">{{ t('settings.plugins.hasErrors') }}</span>
                 <a v-if="entry.homepage" class="pp-homepage" :href="entry.homepage" target="_blank" rel="noopener noreferrer" :aria-label="t('settings.plugins.homepage')"><Icon name="external-link" size="sm" /></a>
               </div>
@@ -341,8 +341,7 @@ onMounted(load);
   margin: 0;
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+  color: var(--color-text-faint);
 }
 .pp-row {
   display: flex;
@@ -374,9 +373,11 @@ onMounted(load);
   white-space: nowrap;
 }
 .pp-version {
-  color: var(--color-text-muted);
+  flex: none;
+  color: var(--color-text-faint);
   font-size: var(--text-xs);
 }
+.pp-version--muted { opacity: 0.7; }
 .pp-homepage {
   display: inline-flex;
   color: var(--color-text-muted);

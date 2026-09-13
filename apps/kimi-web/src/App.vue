@@ -1125,7 +1125,7 @@ function openPr(url: string): void {
       :color-scheme="client.colorScheme.value"
       :accent="client.accent.value"
       :ui-font-size="client.uiFontSize.value"
-      :auth-ready="client.authReady.value"
+      :managed-provider-status="client.managedProviderStatus.value"
       :account-model="client.defaultModel.value"
       :plan-usage="planUsage"
       :plan-usage-loading="planUsageLoading"

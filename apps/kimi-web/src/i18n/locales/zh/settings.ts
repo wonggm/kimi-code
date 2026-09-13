@@ -59,6 +59,8 @@ export default {
   notifyQuestionFallback: '有提问等待你回答',
   notifyApprovalFallback: '有工具等待你审批',
   account: '账户',
+  signedIn: '已登录',
+  signedOutHint: '登录后可查看账户和模型权益',
   planUsageTitle: '套餐用量',
   planUsageLoading: '正在加载用量…',
   planUsageUnavailable: '暂无用量信息',

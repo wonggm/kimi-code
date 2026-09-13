@@ -59,6 +59,8 @@ export default {
   notifyQuestionFallback: 'A question is waiting for your answer',
   notifyApprovalFallback: 'A tool needs your approval',
   account: 'Account',
+  signedIn: 'Signed in',
+  signedOutHint: 'Sign in to view your account and model access',
   planUsageTitle: 'Plan Usage',
   planUsageLoading: 'Loading usage…',
   planUsageUnavailable: 'Usage unavailable',

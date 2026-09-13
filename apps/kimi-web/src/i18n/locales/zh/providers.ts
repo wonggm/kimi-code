@@ -10,6 +10,7 @@ export default {
     error: '错误',
     unconfigured: '未配置',
   },
+  addProvider: '添加供应商',
   keySet: 'key 已设置',
   keyNotSet: '未设置 key',
   modelCount: '{count} 个模型',

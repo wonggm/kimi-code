@@ -301,7 +301,6 @@ onMounted(async () => {
       :color-scheme="appearance.colorScheme.value"
       :accent="appearance.accent.value"
       :ui-font-size="appearance.uiFontSize.value"
-      :auth-ready="true"
       :notify="true"
       :notify-question="true"
       :notify-approval="true"
