@@ -230,6 +230,7 @@ export function toAgentMember(task: AppTask): AgentMember {
     agentId: task.agentId,
     toolCallId: task.parentToolCallId,
     name: task.description,
+    kind: task.kind,
     subagentType: task.subagentType,
     model: task.model,
     thinkingEffort: task.thinkingEffort,
@@ -237,6 +238,9 @@ export function toAgentMember(task: AppTask): AgentMember {
       task.subagentPhase ??
       (task.status === 'completed' ? 'completed' : task.status === 'failed' ? 'failed' : 'working'),
     status: task.status,
+    // A bash task's pane shows its command, which upstream carries in the same
+    // `prompt` field as a subagent's task text.
+    prompt: task.kind === 'bash' ? task.command : undefined,
     summary: task.outputPreview,
     outputLines: task.outputLines,
     text: task.text,
@@ -465,6 +469,10 @@ interface Group {
    * `contentSig` / `covers`) so a turn shows each reply once.
    */
   foldedSigs: ContentSig[];
+  /** The engine continued an active goal on its own prompt (`goal_continuation`
+   *  system trigger). The turn renders nothing for the trigger message, only the
+   *  marker above its own content. */
+  goalContinuation?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -573,6 +581,16 @@ function isTaskNotificationMessage(msg: AppMessage): boolean {
   const origin = msg.metadata?.['origin'] as { kind?: string } | undefined;
   const kind = origin?.kind;
   return kind === 'task' || kind === 'background_task' || kind === 'task_notification';
+}
+
+/**
+ * The engine's own prompt for continuing an active goal: a system trigger named
+ * `goal_continuation`. The fork renders no user bubble for it; the assistant
+ * reply it produces carries upstream's "Goal continuation" marker instead.
+ */
+function isGoalContinuationMessage(msg: AppMessage): boolean {
+  const origin = msg.metadata?.['origin'] as { kind?: string; name?: string } | undefined;
+  return origin?.kind === 'system_trigger' && origin?.name === 'goal_continuation';
 }
 
 /**
@@ -686,6 +704,8 @@ export function messagesToTurns(
   }
 
   let pendingGroup: Group | null = null;
+  /** Set by a goal-continuation trigger; the assistant group it opens carries it. */
+  let goalContinuation = false;
 
   function flushGroup(final = false): void {
     if (!pendingGroup) return;
@@ -719,6 +739,7 @@ export function messagesToTurns(
       approvalId: g.approvalId,
       durationMs: g.durationMs,
       createdAt: g.createdAt,
+      goalContinuation: g.goalContinuation,
     });
   }
 
@@ -937,7 +958,14 @@ export function messagesToTurns(
       }
       // Hide system-injected user turns (TUI parity) — they end the previous
       // assistant turn but aren't rendered as a user bubble.
+      if (isGoalContinuationMessage(msg)) {
+        goalContinuation = true;
+        continue;
+      }
       if (!isDisplayableUserMessage(msg)) continue;
+      // A real prompt ends any marked stretch: only the reply to a goal
+      // continuation carries the marker.
+      goalContinuation = false;
 
       const origin = msg.metadata?.['origin'] as
         | {
@@ -1077,7 +1105,9 @@ export function messagesToTurns(
         foldedSigs: [],
         durationMs: msg.durationMs,
         createdAt: msg.createdAt,
+        goalContinuation: goalContinuation || undefined,
       };
+      goalContinuation = false;
     } else if (pendingGroup !== null && pendingGroup.promptId === undefined && pid !== undefined) {
       pendingGroup.promptId = pid;
     }

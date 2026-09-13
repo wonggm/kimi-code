@@ -990,7 +990,6 @@ function openPr(url: string): void {
       :plans="client.activePlans.value"
       :todos="client.todos.value"
       :goal="client.goal.value"
-      :goal-live="client.goalLive.value"
       :activation-badges="client.activationBadges.value"
       :status="client.status.value"
       :thinking="client.thinking.value"

@@ -1110,6 +1110,12 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         :style="rowLockStyle(turn.id)"
         :data-turn-id="turn.id"
       >
+        <!-- The engine continued an active goal on its own prompt: upstream
+             labels the reply with a marker above its content. -->
+        <div v-if="turn.goalContinuation" class="goal-prov">
+          <Icon name="target" size="sm" aria-hidden="true" />
+          <span>{{ t('conversation.goal.continuation') }}</span>
+        </div>
         <template v-if="isTurnHeavyContentMounted(turn)">
           <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
             <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
@@ -1652,6 +1658,29 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .a-msg > :deep(.box:first-child),
 .a-msg > :deep(.swarm-card:first-child),
 .a-msg > :deep(.media-tool:first-child) {
+  margin-top: 0;
+}
+/* The goal-continuation marker, ported from upstream's `.goal-prov`: a faint
+   one-line label above the reply the engine produced on its own prompt. */
+.goal-prov {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  user-select: none;
+}
+/* The marker is the turn's first child, so the block under it keeps no gap. */
+.a-msg > .goal-prov:first-child + .msg,
+.a-msg > .goal-prov:first-child + :deep(.think),
+.a-msg > .goal-prov:first-child + :deep(.activity-run),
+.a-msg > .goal-prov:first-child + :deep(.agent-card),
+.a-msg > .goal-prov:first-child + :deep(.agent-group),
+.a-msg > .goal-prov:first-child + :deep(.box),
+.a-msg > .goal-prov:first-child + :deep(.swarm-card),
+.a-msg > .goal-prov:first-child + :deep(.media-tool) {
   margin-top: 0;
 }
 .a-msg :deep(code) {

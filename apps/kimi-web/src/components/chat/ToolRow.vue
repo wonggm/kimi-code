@@ -255,4 +255,15 @@ function onHeadClick(): void {
   flex: none;
   white-space: nowrap;
 }
+
+/* The status chip a tool can carry (the goal tools' state): upstream's
+   `tl-pill` geometry, with the tone colours in the owning card. */
+:slotted(.tl-pill) {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  flex: none;
+  white-space: nowrap;
+}
 </style>

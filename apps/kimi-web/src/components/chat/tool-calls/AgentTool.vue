@@ -1,16 +1,18 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/AgentTool.vue -->
-<!-- The single-subagent `Agent` tool, rendered as a normal tool card: the fixed
-     args (description / prompt) and final result show here when expanded, while
-     the subagent's LIVE progress streams in the right-side detail panel. The
-     trailing "Open" button jumps to that panel. -->
+<!-- The single-subagent `Agent` tool, rendered as upstream's card: the agent
+     glyph, the description as the title, the muted `Foreground · coder` mode
+     line, the `saved-result` control, and the result body behind it or the
+     head's disclosure. The fork's own "Open" button jumps to the subagent's
+     live progress in the detail panel. -->
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
-import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
+import { toolLabel } from '../../../lib/toolMeta';
 import type { DetachTaskTarget } from '../../../lib/detachTarget';
-import Badge from '../../ui/Badge.vue';
-import ToolRow from '../ToolRow.vue';
+import Icon from '../../ui/Icon.vue';
+import StatusDot from '../../ui/StatusDot.vue';
+import ToolOutputBlock from './ToolOutputBlock.vue';
 
 const { t } = useI18n();
 
@@ -36,28 +38,26 @@ const emit = defineEmits<{
 interface AgentInput {
   description?: string;
   subagentType?: string;
-  prompt?: string;
+  runInBackground: boolean;
 }
 
 function parseAgentInput(arg: string): AgentInput {
-  if (!arg) return {};
+  if (!arg) return { runInBackground: false };
   try {
     const obj = JSON.parse(arg) as Record<string, unknown>;
     return {
       description: typeof obj['description'] === 'string' ? obj['description'] : undefined,
       subagentType: typeof obj['subagent_type'] === 'string' ? obj['subagent_type'] : undefined,
-      prompt: typeof obj['prompt'] === 'string' ? obj['prompt'] : undefined,
+      runInBackground: obj['run_in_background'] === true,
     };
   } catch {
-    return {};
+    return { runInBackground: false };
   }
 }
 
 const input = computed(() => parseAgentInput(props.tool.arg));
 const hasOutput = computed(() => !!props.tool.output && props.tool.output.length > 0);
-const canExpand = computed(
-  () => Boolean(input.value.prompt) || Boolean(input.value.subagentType) || hasOutput.value,
-);
+const canExpand = computed(() => hasOutput.value);
 // Persist the user's manual open/closed choice across row eviction (see
 // ChatPane's toolExpandState); the persisted value overrides the default on
 // re-mount, while the auto-expand watch below keeps its existing behavior for
@@ -68,9 +68,8 @@ const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
 const open = ref(persisted ?? (props.tool.defaultExpanded === true && canExpand.value));
 
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
-const label = computed(() => toolLabel(props.tool.name));
-const glyph = computed(() => toolGlyph(props.tool.name));
-const summary = computed(() => input.value.description || input.value.subagentType || '');
+const statusLabel = computed(() => t(`tools.agent.status.${status.value}`));
+const title = computed(() => input.value.description || input.value.subagentType || toolLabel(props.tool.name));
 
 // Hide the "Open detail" button when no live/background subagent task matches
 // this tool call (e.g. a completed foreground subagent after a page refresh) —
@@ -81,8 +80,7 @@ const canOpenAgent = computed(() => {
   return resolveAgentTaskId(props.tool.id) !== undefined;
 });
 
-// Foreground/background mode label for this card's subagent (undefined when no
-// matching task exists — same fallback as the Open-detail button).
+// The subagent's task, when a live/background one matches this tool call.
 const resolveAgentTask = inject<(toolCallId: string) => unknown | undefined>('resolveAgentTask');
 const agentTask = computed(() => {
   if (!resolveAgentTask) return undefined;
@@ -91,6 +89,20 @@ const agentTask = computed(() => {
     | undefined;
   return task ?? undefined;
 });
+// The task is the live truth once it exists (a detached foreground subagent
+// flips to background without its args changing); before that the launch args
+// carry the mode.
+const runInBackground = computed(
+  () => agentTask.value?.runInBackground ?? (input.value.runInBackground === true),
+);
+const subtitle = computed(() =>
+  [
+    runInBackground.value ? t('tools.agent.background') : t('tools.agent.foreground'),
+    input.value.description ? input.value.subagentType : '',
+  ]
+    .filter(Boolean)
+    .join(' · '),
+);
 // Detach is only meaningful while the subagent still runs in the foreground.
 const canDetach = computed(
   () => status.value === 'running' && agentTask.value?.runInBackground === false,
@@ -111,72 +123,174 @@ watch(
 </script>
 
 <template>
-  <ToolRow
-    :status="status"
-    :icon="glyph"
-    :name="label"
-    :arg="!open ? summary : ''"
-    :time="tool.timing"
-    :open="open"
-    :expandable="canExpand"
-    @toggle="toggle"
-  >
-    <template #trailing>
-      <Badge
-        v-if="agentTask"
-        variant="neutral"
-        size="sm"
-        class="at-mode"
-      >{{ agentTask.runInBackground ? t('tools.agent.background') : t('tools.agent.foreground') }}</Badge>
-      <button v-if="canDetach" type="button" class="at-open" @click.stop="emit('detachTask', { toolCallId: tool.id, agentId: agentTask?.agentId })">
+  <div class="agent-card" :class="{ err: status === 'error' }">
+    <div class="head-row">
+      <button
+        class="head"
+        type="button"
+        :disabled="!canExpand"
+        :aria-expanded="open"
+        @click="toggle"
+      >
+        <span class="lead" aria-hidden="true"><Icon name="robot" size="sm" /></span>
+        <span class="main">
+          <span class="task">{{ title }}</span>
+          <span v-if="subtitle" class="type">{{ subtitle }}</span>
+        </span>
+        <span class="tail">
+          <span class="st" :class="status" role="status" :aria-label="statusLabel">
+            <Icon v-if="status === 'ok'" name="check" size="sm" />
+            <Icon v-else-if="status === 'error'" name="close" size="sm" />
+            <StatusDot v-else status="running" />
+          </span>
+        </span>
+      </button>
+      <button
+        v-if="canDetach"
+        type="button"
+        class="at-action"
+        @click.stop="emit('detachTask', { toolCallId: tool.id, agentId: agentTask?.agentId })"
+      >
         {{ t('tasks.sendToBackground') }}
       </button>
-      <button v-if="canOpenAgent" type="button" class="at-open" @click.stop="emit('openAgent', tool.id)">
+      <button v-if="canOpenAgent" type="button" class="at-action" @click.stop="emit('openAgent', tool.id)">
         {{ t('tasks.openDetail') }}
       </button>
-    </template>
-    <div v-if="input.subagentType" class="at-type">{{ input.subagentType }}</div>
-    <div v-if="input.prompt" class="at-task">{{ input.prompt }}</div>
-    <div v-if="hasOutput" class="bb-code">
-      <div v-for="(line, i) in tool.output ?? []" :key="i">{{ line }}</div>
+      <span class="go-slot" aria-hidden="true" @click="toggle">
+        <Icon v-if="canExpand" class="go car" :class="{ open }" name="chevron-right" size="sm" />
+      </span>
     </div>
-  </ToolRow>
+    <!-- Upstream's `saved-result` control. Upstream gates it on the card having
+         a linked agent (`tool.agentId`, which it reads from the transcript
+         frame's `agentRefs`); the fork never sees that field, so it shows the
+         control wherever there is a result body to reveal. -->
+    <button
+      v-if="hasOutput"
+      type="button"
+      class="saved-result"
+      :aria-expanded="open"
+      @click="toggle"
+    >
+      <Icon class="saved-result__chevron" :class="{ open }" name="chevron-right" size="sm" />
+      <span>{{ t('tools.output.saved') }}</span>
+    </button>
+    <div v-if="open && hasOutput" class="result">
+      <ToolOutputBlock :lines="tool.output" />
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.at-open {
-  flex: none;
-  background: none;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-xs);
-  color: var(--color-text-muted);
-  font: var(--text-xs) var(--font-ui);
-  padding: 1px 7px;
+.agent-card {
+  margin: var(--space-1) 0;
+  background: var(--color-surface-raised);
+  border: 0.5px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--duration-base) var(--ease-out);
+}
+.agent-card:hover { border-color: var(--color-line-strong); }
+.agent-card.err { border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-bg)); }
+.head-row { display: flex; align-items: center; }
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  text-align: left;
   cursor: pointer;
 }
-.at-open:hover {
+.head:disabled { cursor: default; }
+.head:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.lead {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  flex: none;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.task {
+  font-size: var(--ui-font-size);
+  /* Upstream's `--leading-caption`. */
+  line-height: 1.4;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.type {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--color-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tail { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.st { display: inline-flex; align-items: center; }
+.st.ok { color: var(--color-success); }
+.st.error { color: var(--color-danger); }
+.go-slot {
+  display: inline-flex;
+  align-items: center;
+  padding-right: var(--space-3);
+  cursor: pointer;
+  flex: none;
+}
+.go { color: var(--color-text-faint); transition: color var(--duration-base) var(--ease-out); }
+.car { transition: transform var(--duration-base) var(--ease-out); }
+.car.open { transform: rotate(90deg); }
+.agent-card:hover .head:not(:disabled) .go { color: var(--color-text); }
+.at-action {
+  flex: none;
+  margin-right: var(--space-1);
+  padding: 1px 7px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--color-text-muted);
+  font: var(--text-xs) var(--font-ui);
+  cursor: pointer;
+}
+.at-action:hover {
   color: var(--color-text);
   background: var(--color-surface-sunken);
 }
-.at-mode {
-  flex: none;
+.result { padding: var(--space-2) var(--space-3); }
+.saved-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-top: 0.5px solid var(--color-line);
+  background: transparent;
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
 }
-.at-type {
-  font: var(--text-xs) var(--font-mono);
-  color: var(--color-text-muted);
-  margin-bottom: 6px;
-}
-.at-task {
-  color: var(--color-text);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.at-task + .bb-code {
-  margin-top: 10px;
-}
-.bb-code {
-  padding: 11px 13px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-}
+.saved-result:hover { color: var(--color-text-muted); }
+.saved-result:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.saved-result__chevron { transition: transform var(--duration-base) var(--ease-out); }
+.saved-result__chevron.open { transform: rotate(90deg); }
 </style>
