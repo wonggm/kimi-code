@@ -62,7 +62,6 @@ export default {
     hours: '{value} hr',
   },
   group: {
-    title: '{count} tool call | {count} tool calls',
     countOther: '{count} tool call | {count} tool calls',
     typed: {
       read: { done: 'Read {count} file | Read {count} files' },

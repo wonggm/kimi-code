@@ -28,8 +28,6 @@ export function turnBlocks(turn: ChatTurn): TurnBlock[] {
   return blocks;
 }
 
-export type ToolStackPosition = 'single' | 'first' | 'middle' | 'last';
-
 export type ToolStackItem = {
   tool: Extract<TurnBlock, { kind: 'tool' }>['tool'];
   sourceIndex: number;
@@ -44,13 +42,6 @@ export type AssistantRenderBlock =
 
 export function rendersToolCard(block: Extract<TurnBlock, { kind: 'tool' }>): boolean {
   return !(block.tool.status === 'ok' && block.tool.media);
-}
-
-export function toolStackPosition(index: number, count: number): ToolStackPosition {
-  if (count <= 1) return 'single';
-  if (index === 0) return 'first';
-  if (index === count - 1) return 'last';
-  return 'middle';
 }
 
 export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {

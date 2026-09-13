@@ -203,7 +203,10 @@ summary {
   --ui-font-size-xs: calc(var(--ui-font-size) - 2px);
   --ui-font-size-lg: calc(var(--ui-font-size) + 1px);
   --ui-font-size-xl: calc(var(--ui-font-size) + 2px);
-  --content-font-size: calc(var(--base-ui-font-size) + 1px);
+  /* Prose body text. Upstream's `--content-font-size` IS its base (`--md-b1: calc(14px + shift)`),
+     not a step above it; the +1px here made every paragraph, list and user bubble 15px where
+     upstream renders 14px. */
+  --content-font-size: var(--base-ui-font-size);
   --mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   /* Body/UI font follows the design-system canonical token. Mirrors --font-ui
      so the legacy alias can never drift from the current text face. */
@@ -577,6 +580,8 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --leading-tight: 1.25;
   --leading-normal: 1.5;
   --leading-relaxed: 1.7;
+  /* Prose line-height, upstream's own token value (`--leading-prose: 1.6`). */
+  --leading-prose: 1.6;
   --weight-regular: 400;
   --weight-caption: 450;
   --weight-medium: 500;

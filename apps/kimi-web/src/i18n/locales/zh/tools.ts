@@ -62,7 +62,6 @@ export default {
     hours: '{value} 小时',
   },
   group: {
-    title: '{count} 个工具调用',
     countOther: '执行了 {count} 次工具调用',
     typed: {
       read: { done: '读取了 {count} 个文件' },
