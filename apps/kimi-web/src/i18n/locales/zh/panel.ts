@@ -30,7 +30,6 @@ export default {
   drillAgentLabel: '子 Agent 详情',
   drillFileLabel: '文件预览',
   turnDiffEmpty: '本轮没有改动文件',
-  turnDiffUnavailable: '本轮改动不可用',
   terminalUnavailable: '当前版本未提供终端',
   workbarLabel: '打开{name}',
   openPanel: '打开右侧面板',

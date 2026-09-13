@@ -105,6 +105,15 @@ function mockFileText(path) {
   ].join('\n');
 }
 
+/** The reasoning text both transcript routes carry, so upstream's collapsible
+ *  thinking block and the fork's can be compared on the same content. */
+const MOCK_THINKING = [
+  'Let me look at the config first.',
+  '',
+  'The timeout is the part that matters: the file sets 10 seconds and the',
+  'check needs 30. I will raise it and re-run the check to confirm.',
+].join('\n');
+
 function buildFixtures(env) {
   const now = new Date().toISOString();
 
@@ -197,6 +206,10 @@ function buildFixtures(env) {
           { type: 'image', source: { kind: 'session_media', file_id: 'mock_media_1' } },
         ], created_at: now },
         { id: 'm2', session_id: SESSION_ID, role: 'assistant', content: [
+          // A reasoning block: upstream renders it as its collapsible thinking
+          // block (head + inline body) and so does the fork, so the two can be
+          // paired. The transcript route below carries the matching frame.
+          { type: 'thinking', thinking: MOCK_THINKING },
           // Default on: a run of consecutive tool calls is what the fork's
           // tool-call summary (and the settings switch that gates it) acts on,
           // and without it no capture ever contains a tool card. Set
@@ -621,6 +634,29 @@ function createHandler({ root, token, env, fixtures }) {
           if (p === base + '/fs:git_status') return json(res, rich.gitStatus);
           if (p.includes('/file-history')) return json(res, rich.fileChanges);
         }
+        if (p === base + '/fs:diff') {
+          // The diff pane's per-file route (POST .../fs:diff), so the drill into
+          // one file shows lines instead of its "no line changes" state.
+          readBody(req).then((body) => {
+            const wanted = typeof body?.path === 'string' ? body.path : 'file';
+            return json(res, {
+              path: wanted,
+              diff: [
+                `diff --git a/${wanted} b/${wanted}`,
+                `--- a/${wanted}`,
+                `+++ b/${wanted}`,
+                '@@ -1,4 +1,5 @@',
+                ` """${wanted} — mock content."""`,
+                ' import os',
+                '-TIMEOUT = 10',
+                '+TIMEOUT = 30',
+                '+# the mock server serves this diff',
+                ' def load_config(path):',
+              ].join('\n'),
+            });
+          });
+          return;
+        }
         if (p === base + '/fs:read') {
           // The file preview's route (POST .../fs:read). Serving it is what makes
           // the panel's file tab and the transcript's file links show content
@@ -654,6 +690,7 @@ function createHandler({ root, token, env, fixtures }) {
               { kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', origin: { kind: 'user' }, prompt: 'Show me a config example.', steps: [], startedAt: now, endedAt: now },
               { kind: 'turn', turnId: 't2', ordinal: 1, state: 'completed', origin: { kind: 'user' }, steps: [
                 { kind: 'step', stepId: 's1', turnId: 't2', ordinal: 0, state: 'completed', frames: [
+                  { kind: 'thinking', frameId: 's1.th_1', text: MOCK_THINKING },
                   // A run of tool calls, matching the snapshot's tool_use parts,
                   // shaped after transcriptFrameSchema in
                   // packages/transcript/src/contract/schema.ts: frameId,

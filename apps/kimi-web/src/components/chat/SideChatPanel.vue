@@ -1,54 +1,59 @@
 <!-- apps/kimi-web/src/components/chat/SideChatPanel.vue -->
 <!-- BTW "side chat": a side-channel agent rendered in the right-side panel.
      It keeps the parent's context without creating a sidebar session. Reuses
-     ChatPane for the transcript; its panel-open emits are no-ops here. -->
+     ChatPane for the transcript. Element structure and class vocabulary follow
+     upstream's own SideChatPanel: no pane header (the tab strip titles it), a
+     composer pinned to the pane's bottom edge with the transcript padded clear
+     of it, and a moon + label line while the prompt waits for its first token. -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ChatPane from './ChatPane.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
 import Icon from '../ui/Icon.vue';
-import type { ChatTurn } from '../../types';
-import PanelHeader from '../ui/PanelHeader.vue';
+import type { ChatTurn, ToolMedia } from '../../types';
 import Tooltip from '../ui/Tooltip.vue';
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   turns: ChatTurn[];
   running: boolean;
   sending: boolean;
-  title?: string;
-  subtitle?: string;
-  /** Show the close button in the panel header. Inside the right tab panel the
-   *  tab bar owns closing, so the pane passes false. */
-  closable?: boolean;
-}>(), {
-  closable: true,
-});
+}>();
 
 const emit = defineEmits<{
   send: [text: string];
-  close: [];
+  openMedia: [media: ToolMedia];
 }>();
 
 const { t } = useI18n();
 
-const firstUserText = computed(() => {
-  const turn = props.turns.find((t) => t.role === 'user');
-  return turn?.text?.trim() ?? '';
-});
-
-const panelTitle = computed(() => props.title?.trim() || t('sideChat.title'));
-const panelSubtitle = computed(() => {
-  if (props.subtitle?.trim()) return props.subtitle.trim();
-  return firstUserText.value || t('sideChat.subtitle');
-});
-
 const draft = ref('');
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const bodyRef = ref<HTMLDivElement | null>(null);
+const composerEl = ref<HTMLDivElement | null>(null);
 
-// Panel mounts fresh on every open (v-else-if in App.vue), so land focus in
-// the input immediately — /btw or the shortcut both land the user typing.
+// The composer floats over the pane's bottom edge, so the transcript needs the
+// composer's height as bottom padding to keep its last row reachable.
+const composerHeight = ref(0);
+let composerObserver: ResizeObserver | null = null;
+
+watch(composerEl, (el, previous) => {
+  if (previous) composerObserver?.unobserve(previous);
+  if (el !== null && typeof ResizeObserver !== 'undefined') {
+    if (composerObserver === null) {
+      composerObserver = new ResizeObserver(() => {
+        composerHeight.value = composerEl.value?.offsetHeight ?? 0;
+      });
+    }
+    composerObserver.observe(el);
+  }
+  composerHeight.value = el?.offsetHeight ?? 0;
+}, { immediate: true });
+
+onBeforeUnmount(() => composerObserver?.disconnect());
+
+// Panel mounts fresh on every open (v-else-if in the panel body), so land focus
+// in the input immediately — /btw or the shortcut both land the user typing.
 onMounted(() => {
   void nextTick(() => {
     inputRef.value?.focus();
@@ -91,12 +96,11 @@ watch(scrollKey, async () => {
   scrollToBottom();
 });
 
-/** Show a lightweight "waiting for first token" indicator from the moment the
-    user sends a prompt until the assistant's first message appears. */
+/** Show the "Requesting…" line from the moment the user sends a prompt until
+    the assistant's first message appears — upstream's own condition. */
 const showLoading = computed(() => {
   if (!props.sending) return false;
-  const last = props.turns.at(-1);
-  return last?.role === 'user';
+  return props.turns.at(-1)?.role === 'user';
 });
 
 function onKeydown(e: KeyboardEvent): void {
@@ -116,14 +120,11 @@ function autosize(): void {
 
 <template>
   <div class="sc">
-    <PanelHeader
-      :title="panelTitle"
-      :subtitle="panelSubtitle"
-      :closable="closable"
-      :close-label="t('thinking.close')"
-      @close="emit('close')"
-    />
-    <div ref="bodyRef" class="sc-body">
+    <div
+      ref="bodyRef"
+      class="sc-body"
+      :style="composerHeight > 0 ? { paddingBottom: `${composerHeight}px` } : undefined"
+    >
       <div v-if="turns.length === 0" class="sc-empty">{{ t('sideChat.empty') }}</div>
       <ChatPane
         v-else
@@ -131,13 +132,17 @@ function autosize(): void {
         :approvals="[]"
         :turn-active="running"
         :working="sending || running"
+        @open-media="emit('openMedia', $event)"
       />
-      <div v-if="showLoading" class="sc-loading" aria-hidden="true">
-        <MoonSpinner />
+      <div v-if="showLoading" class="sc-loading">
+        <div class="working-indicator" role="status">
+          <span class="wi-mascot" aria-hidden="true"><MoonSpinner size="lg" /></span>
+          <span class="wi-label">{{ t('conversation.requesting') }}</span>
+        </div>
       </div>
     </div>
 
-    <div class="sc-composer">
+    <div ref="composerEl" class="sc-composer">
       <textarea
         ref="inputRef"
         v-model="draft"
@@ -163,6 +168,7 @@ function autosize(): void {
   flex-direction: column;
   min-height: 0;
   background: var(--bg);
+  position: relative;
 }
 .sc-body {
   flex: 1;
@@ -177,19 +183,23 @@ function autosize(): void {
 }
 
 .sc-composer {
-  flex: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: flex-end;
   gap: 6px;
   padding: 8px 10px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
+  border-top: 0.5px solid var(--color-line);
+  background: var(--color-surface-raised);
 }
 .sc-input {
   flex: 1;
   min-width: 0;
   resize: none;
-  border: 1px solid var(--line);
+  border: 0.5px solid var(--color-line);
   border-radius: var(--r-sm, 8px);
   padding: 7px 9px;
   background: var(--bg);
@@ -215,14 +225,34 @@ function autosize(): void {
 .sc-send:disabled { opacity: 0.4; cursor: default; }
 .sc-send:not(:disabled):hover { background: var(--color-accent-hover); }
 
-/* Send → first-token loading indicator (replaces ChatPane's working moon). */
+/* Send → first-token indicator, upstream's WorkingIndicator layout. */
 .sc-loading {
   flex: none;
   padding: 8px 12px 12px;
 }
+.working-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  font: var(--text-sm)/var(--leading-normal) var(--font-ui);
+  color: var(--color-text-muted);
+}
+.wi-mascot {
+  flex: none;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wi-label { animation: wi-breathe 1.6s var(--ease-in-out) infinite; }
+
+@keyframes wi-breathe {
+  50% { opacity: 0.55; }
+}
 
 /* The side chat reuses ChatPane, but we don't want its working moon/spinner
-   placeholder here — the tab already shows activity via the parent layout. */
+   placeholder here — the line above owns that state (upstream hides it too). */
 .sc-body :deep(.sending-placeholder),
 .sc-body :deep(.sending-line) {
   display: none;

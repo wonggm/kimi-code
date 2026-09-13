@@ -556,16 +556,18 @@ function copyDiff(code: string, idx: number) {
 }
 .md :deep(.markstream-vue),
 .md :deep(.markdown-renderer) {
-  --code-bg: var(--color-surface-sunken);
+  --code-bg: var(--code-surface);
   --code-fg: var(--color-text);
-  --code-border: var(--color-line);
-  --code-header-bg: var(--color-surface);
-  --code-action-fg: var(--color-text-muted);
+  --code-border: var(--code-line);
+  /* Upstream's code header takes the same surface as the block body in light
+     mode and its raised surface in dark; `--color-well` is that pair. */
+  --code-header-bg: var(--color-well);
+  --code-action-fg: var(--code-ink-muted);
   --code-action-hover-fg: var(--color-accent);
-  --markstream-code-fallback-bg: var(--color-surface-sunken);
+  --markstream-code-fallback-bg: var(--code-surface);
   --markstream-code-fallback-fg: var(--color-text);
-  --markstream-code-border-color: var(--color-line);
-  --inline-code-bg: var(--color-surface-sunken);
+  --markstream-code-border-color: var(--code-line);
+  --inline-code-bg: var(--code-surface);
   --inline-code-fg: var(--color-fg);
   --inline-code-border: transparent;
   --code-pad-block: calc(var(--text-sm) * (var(--leading-normal) - 1) / 2);
@@ -686,8 +688,11 @@ function copyDiff(code: string, idx: number) {
   --diffs-line-height: 20px;
 }
 .md :deep(.code-block-header) {
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-line);
+  /* Upstream's header takes `--code-header-bg` (its neutral code surface, the
+     block's own in light mode) and a `--code-border` hairline; ours painted the
+     bluish `--color-surface`, so the header read as a lighter band. */
+  background: var(--code-header-bg);
+  border-bottom: 1px solid var(--code-border);
   padding: 4px 6px 4px 12px;
   color: var(--color-text-muted);
   font: var(--text-xs) var(--font-ui);

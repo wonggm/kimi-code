@@ -400,6 +400,14 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   /* Output wells (tool output, match lists): upstream's own surface, one step
      lighter than sunken in dark mode. */
   --color-well: #f5f5f5;
+  /* Code surfaces. Upstream's are neutral greys (its code body is #f5f5f5 and
+     its header the same, #1f1f1f against a #121212 body in dark); the fork's
+     light palette is blue-tinted, so the code block read as a bluish panel
+     where upstream's reads grey. These two are upstream's own values, kept
+     separate so nothing else in the light palette moves. */
+  --code-surface: #f5f5f5;
+  --code-line: rgba(0, 0, 0, 0.13);
+  --code-ink-muted: rgba(0, 0, 0, 0.6);
   /* Checkerboard canvas behind <img> so transparent PNGs keep white/black
      content visible and read as transparent. Squares are mixed from the
      theme's bg/text (≈#858585/#6b6b6b light, ≈#676b72/#7a7e85 dark), each
@@ -640,6 +648,9 @@ html[data-color-scheme="dark"] {
   --color-surface-raised: #292929;
   --color-surface-sunken: #121212;
   --color-well: #1f1f1f;
+  --code-surface: #121212;
+  --code-line: rgba(255, 255, 255, 0.12);
+  --code-ink-muted: rgba(255, 255, 255, 0.56);
   --color-text: rgba(255, 255, 255, 0.84);
   --color-text-muted: rgba(255, 255, 255, 0.56);
   --color-text-faint: rgba(255, 255, 255, 0.42);
@@ -702,6 +713,9 @@ html[data-color-scheme="dark"] {
     --color-surface-raised: #292929;
     --color-surface-sunken: #121212;
     --color-well: #1f1f1f;
+    --code-surface: #121212;
+    --code-line: rgba(255, 255, 255, 0.12);
+    --code-ink-muted: rgba(255, 255, 255, 0.56);
     --color-text: rgba(255, 255, 255, 0.84);
     --color-text-muted: rgba(255, 255, 255, 0.56);
     --color-text-faint: rgba(255, 255, 255, 0.42);

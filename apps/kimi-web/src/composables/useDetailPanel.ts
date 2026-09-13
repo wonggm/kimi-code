@@ -23,15 +23,18 @@ export interface UseDetailPanelOptions {
   client: KimiWebClient;
 }
 
+// The diff tab's own list ↔ detail drill is module state, like the panel's tab
+// list: the pane that renders the drill and the transcript that opens the tab
+// are different components and must read the same value.
+const detailDiffMode = ref<'list' | 'detail'>('list');
+const detailDiffPath = ref<string | null>(null);
+
 export function useDetailPanel({ client }: UseDetailPanelOptions) {
   const panel = useRightPanel();
 
   // ---------------------------------------------------------------------------
   // Diff tab: the session's changed files, and one file's diff.
   // ---------------------------------------------------------------------------
-  const detailDiffMode = ref<'list' | 'detail'>('list');
-  const detailDiffPath = ref<string | null>(null);
-
   function openDiffDetail(): void {
     detailDiffMode.value = 'list';
     detailDiffPath.value = null;
@@ -91,9 +94,36 @@ export function useDetailPanel({ client }: UseDetailPanelOptions) {
   const agentPanelMemberOf = computed<AgentMember | null>(() => {
     const id = agentTabId.value;
     if (id === null) return null;
-    const task = client.activeAppTasks.value.find((tk) => tk.id === id);
-    return task ? toAgentMember(task) : null;
+    const tasks = client.activeAppTasks.value;
+    // The open entry points hand over a task id, an agent id or the spawning
+    // tool call's id — resolve whichever one the tab was keyed by.
+    const task =
+      tasks.find((tk) => tk.id === id) ??
+      tasks.find((tk) => tk.agentId === id) ??
+      tasks.find((tk) => tk.parentToolCallId === id) ??
+      tasks.filter((tk) => tk.kind === 'subagent' && !tk.parentToolCallId).at(-1);
+    if (!task) return null;
+    const member = toAgentMember(task);
+    if (member.prompt !== undefined) return member;
+    // The task rows carry no prompt; the pane's prompt bubble is fed from the
+    // Agent tool call that spawned the subagent.
+    const prompt = agentPromptOf(task.parentToolCallId ?? id);
+    return prompt === undefined ? member : { ...member, prompt };
   });
+
+  /** The subagent's task text, out of the spawning `Agent` tool call's argument. */
+  function agentPromptOf(toolCallId: string): string | undefined {
+    const tool = findToolCallById(client.turns.value, toolCallId);
+    if (!tool) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(tool.arg);
+      if (parsed === null || typeof parsed !== 'object') return undefined;
+      const prompt = (parsed as Record<string, unknown>)['prompt'];
+      return typeof prompt === 'string' && prompt.trim().length > 0 ? prompt : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   // A background task refresh can transiently drop the row the pane is open
   // for; without a last-known fallback the pane unmounts mid-read. Keep the last

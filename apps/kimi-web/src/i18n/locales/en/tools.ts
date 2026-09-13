@@ -110,6 +110,9 @@ export default {
     answered: 'Answered',
     more: '(+{count} more)',
   },
+  output: {
+    waiting: 'Waiting for output…',
+  },
   plan: {
     review: {
       pending: 'Pending review',
