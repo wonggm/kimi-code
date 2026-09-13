@@ -42,6 +42,7 @@ export default {
   signOut: 'Sign out',
   notSignedIn: 'Not signed in',
   signIn: 'Sign in',
+  defaultUserName: 'Kimi User',
   language: 'Language',
   daemon: 'Daemon',
   backendTitle: 'Backend {backend} · {endpoint} — click to switch',

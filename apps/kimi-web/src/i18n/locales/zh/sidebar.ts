@@ -42,6 +42,7 @@ export default {
   signOut: '退出登录',
   notSignedIn: '未登录',
   signIn: '登录',
+  defaultUserName: 'Kimi 用户',
   language: '语言',
   daemon: '后台',
   backendTitle: '后端 {backend} · {endpoint} — 点击切换',

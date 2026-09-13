@@ -1,13 +1,18 @@
 <!-- apps/kimi-web/src/components/settings/ProvidersPanel.vue
-     Settings → Providers. The fork's own custom-provider manager (add / edit /
-     remove OpenAI-compatible providers), lifted out of the Agent tab so the
-     settings nav carries upstream's Providers tab. Upstream's tab is a
-     catalogue-driven manager; this one edits config.providers directly. -->
+     Settings → Providers, ported from upstream's panel: the same class
+     vocabulary (pp / pp-head / pp-item / pp-row / pp-acc), the provider id +
+     protocol badge + model count on the collapsed row, and the editor in the
+     row's expandable body. The rows come from config.providers; GET /providers
+     only supplies the protocol and the model count upstream reads from it. -->
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { AppConfig } from '../../api/types';
+import { getKimiWebApi } from '../../api';
+import type { AppConfig, AppConfigProvider, AppProvider } from '../../api/types';
 import { useCustomProviders } from '../../composables/useCustomProviders';
+import Badge from '../ui/Badge.vue';
 import Button from '../ui/Button.vue';
+import Icon from '../ui/Icon.vue';
 
 const props = defineProps<{
   config?: AppConfig | null;
@@ -22,92 +27,192 @@ const customProviders = useCustomProviders({
   config: () => props.config,
   updateConfig: (patch) => emit('updateConfig', patch),
 });
+
+const providerInfo = ref<Map<string, AppProvider>>(new Map());
+
+const rows = computed(() =>
+  customProviders.providers.map(([id, provider]) => {
+    const info = providerInfo.value.get(id);
+    return {
+      id,
+      provider,
+      type: info?.type || provider.type,
+      modelCount: info?.models?.length ?? provider.models?.length ?? 0,
+    };
+  }),
+);
+
+function toggleAdd(): void {
+  if (customProviders.adding) customProviders.cancel();
+  else customProviders.openAdd();
+}
+
+function toggleRow(id: string, provider: AppConfigProvider): void {
+  if (customProviders.editingId === id) customProviders.cancel();
+  else customProviders.openEdit(id, provider);
+}
+
+onMounted(async () => {
+  try {
+    const providers = await getKimiWebApi().listProviders();
+    providerInfo.value = new Map(providers.map((provider) => [provider.id, provider]));
+  } catch {
+    // Enrichment only — the config rows render without the protocol and count.
+  }
+});
 </script>
 
 <template>
-  <section class="sec">
-    <div class="sec-head">
-      <h3 class="sec-title">{{ t('settings.customProviders') }}</h3>
-      <Button variant="primary" size="sm" :disabled="configSaving" @click="customProviders.openAdd">{{ t('settings.customProviderAdd') }}</Button>
+  <section class="pp">
+    <div class="pp-head">
+      <h3 class="pp-title">{{ t('settings.tabs.providers') }}</h3>
+      <Button variant="secondary" size="sm" @click="toggleAdd">
+        <Icon name="plus" size="sm" /> {{ t('providers.addProvider') }}
+      </Button>
     </div>
-    <p class="hint provider-desc">{{ t('settings.customProvidersHint') }}</p>
-    <div v-if="!config" class="empty-config">{{ t('settings.configUnavailable') }}</div>
-    <div v-else-if="customProviders.providers.length === 0 && !customProviders.adding" class="provider-empty">{{ t('settings.customProvidersEmpty') }}</div>
-    <div v-else class="provider-list">
-      <div v-for="[id, provider] in customProviders.providers" :key="id" class="provider-card">
-        <div class="provider-card-main">
-          <strong>{{ id }}</strong>
-          <span class="hint">{{ provider.type }} · {{ provider.baseUrl || t('settings.customProviderNoUrl') }}</span>
-          <span class="hint">{{ provider.hasApiKey ? t('settings.customProviderKeySet') : t('settings.customProviderKeyMissing') }}<template v-if="provider.models?.length"> · {{ t('settings.customProviderModelCount', { count: provider.models.length }) }}</template></span>
+    <div class="pp-group">
+      <div v-if="customProviders.adding" class="pp-item pp-add-item open">
+        <button type="button" class="pp-row pp-add-row" @click="customProviders.cancel">
+          <span class="pp-add-label">{{ t('providers.addProvider') }}</span>
+          <span class="grow"></span>
+          <span class="pp-chev"><Icon name="chevron-right" size="sm" /></span>
+        </button>
+        <div class="pp-acc">
+          <div class="pp-acc-in">
+            <form class="provider-form" @submit.prevent="customProviders.save">
+              <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" :disabled="configSaving" autocomplete="off" /></label>
+              <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
+              <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
+              <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" placeholder="••••••••" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
+              <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
+              <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
+              <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
+            </form>
+          </div>
         </div>
-        <div class="actions">
-          <Button variant="secondary" size="sm" :disabled="configSaving" @click="customProviders.openEdit(id, provider)">{{ t('settings.customProviderEdit') }}</Button>
-          <Button variant="danger-soft" size="sm" :disabled="configSaving" @click="customProviders.remove(id)">{{ t('settings.customProviderRemove') }}</Button>
+      </div>
+      <div v-else-if="rows.length === 0" class="pp-empty">{{ t('providers.empty') }}</div>
+      <div
+        v-for="row in rows"
+        :key="row.id"
+        class="pp-item"
+        :class="{ open: customProviders.editingId === row.id }"
+      >
+        <button type="button" class="pp-row" @click="toggleRow(row.id, row.provider)">
+          <div class="grow">
+            <span class="pp-id">{{ row.id }}</span>
+            <Badge v-if="row.type" variant="neutral" size="sm">{{ row.type }}</Badge>
+          </div>
+          <span class="pp-count">{{ t('providers.modelCount', { count: row.modelCount }) }}</span>
+          <span class="pp-chev"><Icon name="chevron-right" size="sm" /></span>
+        </button>
+        <div class="pp-acc">
+          <div class="pp-acc-in">
+            <div v-if="customProviders.editingId === row.id" class="provider-edit">
+              <form class="provider-form" @submit.prevent="customProviders.save">
+                <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" disabled autocomplete="off" /></label>
+                <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
+                <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
+                <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" placeholder="••••••••" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
+                <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
+                <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
+                <div class="actions">
+                  <Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button>
+                  <Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button>
+                  <Button type="button" variant="danger-soft" size="sm" :disabled="configSaving" @click="customProviders.remove(row.id)">{{ t('settings.customProviderRemove') }}</Button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
-        <form v-if="customProviders.editingId === id" class="provider-form" @submit.prevent="customProviders.save">
-          <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" disabled autocomplete="off" /></label>
-          <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
-          <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
-          <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" placeholder="••••••••" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
-          <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
-          <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
-          <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
-        </form>
       </div>
     </div>
-    <span v-if="customProviders.error && !customProviders.adding && customProviders.editingId === null" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
-    <form v-if="customProviders.adding" class="provider-form" @submit.prevent="customProviders.save">
-      <label class="provider-field">{{ t('settings.customProviderId') }}<input v-model="customProviders.form.id" :disabled="configSaving" autocomplete="off" /></label>
-      <label class="provider-field">{{ t('settings.customProviderType') }}<input v-model="customProviders.form.type" :disabled="configSaving" autocomplete="off" /></label>
-      <label class="provider-field">{{ t('settings.customProviderBaseUrl') }}<input v-model="customProviders.form.baseUrl" :disabled="configSaving" type="url" autocomplete="off" /></label>
-      <label class="provider-field">{{ t('settings.customProviderApiKey') }}<input v-model="customProviders.form.apiKey" placeholder="••••••••" :disabled="configSaving" type="password" autocomplete="new-password" /></label>
-      <label class="provider-field">{{ t('settings.customProviderModels') }}<input v-model="customProviders.form.models" :disabled="configSaving" :placeholder="t('settings.customProviderModelsPlaceholder')" autocomplete="off" /></label>
-      <span v-if="customProviders.error" class="provider-error">{{ t(`settings.customProviderError.${customProviders.error}`) }}</span>
-      <div class="actions"><Button type="submit" variant="primary" size="sm" :disabled="configSaving">{{ t('settings.customProviderSave') }}</Button><Button type="button" variant="secondary" size="sm" @click="customProviders.cancel">{{ t('common.cancel') }}</Button></div>
-    </form>
   </section>
 </template>
 
 <style scoped>
-/* Shared settings-panel rules repeated here because scoped styles do not
-   cross the component boundary; the provider-specific rules moved with the
-   markup out of SettingsDialog. */
-.sec { padding: var(--space-4) 0; border-bottom: 1px solid var(--color-line); }
-.sec:last-child { border-bottom: none; }
-.sec-head {
+.pp { display: flex; flex-direction: column; }
+.pp-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
-.sec-title {
-  margin: 0 0 var(--space-3);
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-.sec-head .sec-title { margin-bottom: 0; }
-.hint { font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-faint); }
-.empty-config {
+.pp-title {
+  margin: 0;
   font-family: var(--font-ui);
   font-size: var(--text-base);
-  color: var(--color-text-muted);
-  padding: var(--space-1) 0;
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
 }
+.pp-group {
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-raised);
+}
+.pp-group > * + * { border-top: 1px solid var(--color-line); }
+.pp-item.open > .pp-row { background: var(--color-surface-sunken); }
+.pp-item.open .pp-chev { transform: rotate(90deg); }
+.pp-item.open > .pp-acc { grid-template-rows: 1fr; }
+.pp-item.open .pp-acc-in { overflow: visible; }
+.pp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-ui);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.pp-row:hover { background: var(--color-hover); }
+.pp-row .grow { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); }
+.pp-add-row { gap: var(--space-2); color: var(--color-text); font-size: var(--text-base); font-weight: var(--weight-medium); }
+.pp-id {
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pp-count { flex: none; font-size: var(--text-xs); color: var(--color-text-faint); white-space: nowrap; }
+.pp-chev { display: inline-flex; flex: none; color: var(--color-text-faint); transition: transform var(--duration-base) var(--ease-out); }
+.pp-acc { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--duration-slow) var(--ease-out); }
+.pp-acc-in { overflow: hidden; min-height: 0; }
+.pp-empty {
+  padding: var(--space-5) var(--space-4);
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.provider-edit { padding: 0 var(--space-4) var(--space-4); }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.provider-desc { margin: calc(var(--space-3) * -1) 0 var(--space-3); }
-.provider-empty { padding: var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-md); color: var(--color-text-faint); text-align: center; }
-.provider-list { display: flex; flex-direction: column; gap: var(--space-2); }
-.provider-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
-.provider-card-main { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow: hidden; }
-.provider-card-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.provider-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
+.provider-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+.provider-edit .provider-form { padding: 0; }
 .provider-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); color: var(--color-text-muted); }
-.provider-field input { height: 36px; padding: 0 var(--space-2); border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface-raised); color: var(--color-text); font: inherit; }
+.provider-field input {
+  height: 36px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
 .provider-field input:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
 .provider-error { color: var(--color-danger); font-size: var(--text-sm); }
 .provider-form .actions { grid-column: 1 / -1; }

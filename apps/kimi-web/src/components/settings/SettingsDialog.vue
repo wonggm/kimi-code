@@ -36,7 +36,9 @@ const props = defineProps<{
   colorScheme: ColorScheme;
   accent: Accent;
   uiFontSize: number;
-  authReady: boolean;
+  /** Managed Kimi account status from GET /api/v1/auth ('authenticated' when
+   *  signed in to Kimi); null when the server reports no managed provider. */
+  managedProviderStatus?: string | null;
   accountModel?: string | null;
   /** Managed OAuth account usage from GET /api/v1/oauth/usage. */
   planUsage?: AccountPlanUsageData | null;
@@ -205,6 +207,13 @@ function toggleTelemetry(): void {
 function setTab(tab: SettingsTab): void {
   activeTab.value = tab;
 }
+
+// Account section: the server's managed-provider status is the signed-in
+// signal (upstream's too) — the fork has no nickname to show, so a signed-in
+// account falls back to the same generic name upstream uses.
+const signedIn = computed(() => props.managedProviderStatus === 'authenticated');
+const accountName = computed(() => (signedIn.value ? t('sidebar.defaultUserName') : t('sidebar.notSignedIn')));
+const accountSub = computed(() => (signedIn.value ? t('settings.signedIn') : t('settings.signedOutHint')));
 
 // ---------------------------------------------------------------------------
 // Archived-sessions tab — its own list state (server-side `archived_only`
@@ -503,19 +512,22 @@ function archiveTime(iso: string): string {
         <section v-show="activeTab === 'account'" class="panel">
           <section class="sec">
             <h3 class="sec-title">{{ t('settings.account') }}</h3>
-            <div class="row">
-              <span class="rlabel">{{ authReady ? 'managed:kimi-code' : t('sidebar.notSignedIn') }}</span>
-              <Tooltip :text="accountModel">
-                <span v-if="authReady && accountModel" class="rvalue">{{ accountModel }}</span>
-              </Tooltip>
+            <div class="settings-group">
+              <div class="account-row">
+                <span class="account-avatar" aria-hidden="true"><Icon name="user" size="md" /></span>
+                <span class="account-meta">
+                  <span class="account-name-row"><span class="account-name">{{ accountName }}</span></span>
+                  <span class="account-sub">{{ accountSub }}</span>
+                </span>
+                <Button v-if="signedIn" variant="danger-soft" size="sm" @click="emit('logout')">{{ t('sidebar.signOut') }}</Button>
+                <Button v-else variant="primary" size="sm" @click="emit('login')">{{ t('sidebar.signIn') }}</Button>
+              </div>
             </div>
             <div class="actions">
               <Button variant="secondary" size="sm" @click="emit('openOnboarding'); emit('close')">{{ t('onboarding.reopen') }}</Button>
-              <Button v-if="authReady" variant="danger-soft" size="sm" @click="emit('logout')">{{ t('sidebar.signOut') }}</Button>
-              <Button v-else variant="primary" size="sm" @click="emit('login')">{{ t('sidebar.signIn') }}</Button>
             </div>
             <AccountPlanUsage
-              v-if="authReady"
+              v-if="signedIn"
               :account="accountModel"
               :usage="planUsage"
               :loading="planUsageLoading"
@@ -1012,6 +1024,39 @@ function archiveTime(iso: string): string {
 }
 .settings-group > .row:first-child { border-top: none; }
 .settings-group > .empty-config { padding: var(--space-3); }
+/* Account row (upstream's account-row primitive): avatar, name + hint, action. */
+.account-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4); }
+.account-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+.account-meta { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.account-name-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.account-name {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-sub {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  color: var(--color-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sec-head .sec-title { margin-bottom: 0; }
 .saving {
   flex: none;
