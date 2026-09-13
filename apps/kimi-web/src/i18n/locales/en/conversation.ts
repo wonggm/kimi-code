@@ -1,5 +1,4 @@
 export default {
-  quote: 'Quote',
   // Thinking block head (upstream: thinking.panelTitle / thinking.streaming).
   thinkingTitle: 'Thinking',
   thinkingStreaming: 'Thinking…',

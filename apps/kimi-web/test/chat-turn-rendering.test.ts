@@ -7,7 +7,6 @@ import {
   rendersToolCard,
   renderBlockKey,
   toolFoldBlockKey,
-  toolStackPosition,
   turnBlocks,
   turnFinalText,
   turnToMarkdown,
@@ -86,16 +85,6 @@ describe('rendersToolCard', () => {
     expect(
       rendersToolCard(toolBlock('e', { status: 'error', media: { kind: 'image', url: 'x' } })),
     ).toBe(true);
-  });
-});
-
-describe('toolStackPosition', () => {
-  it('marks a lone tool single and otherwise reports first/middle/last', () => {
-    expect(toolStackPosition(0, 1)).toBe('single');
-    expect(toolStackPosition(0, 0)).toBe('single');
-    expect(toolStackPosition(0, 3)).toBe('first');
-    expect(toolStackPosition(1, 3)).toBe('middle');
-    expect(toolStackPosition(2, 3)).toBe('last');
   });
 });
 

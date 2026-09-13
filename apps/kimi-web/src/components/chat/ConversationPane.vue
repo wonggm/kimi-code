@@ -767,11 +767,11 @@ function scrollToBottom(smooth = false): void {
 type ScrollAnchor = { kind: 'turn' | 'tool'; id: string; top: number };
 
 function scrollAnchorTop(container: HTMLElement, node: HTMLElement): number {
-  // Tool calls inside a collapsed group still exist under an inert, clipped
-  // body. Anchor them to the visible group row so hidden content cannot create
+  // Tool calls inside a collapsed run still exist under an inert, clipped
+  // body. Anchor them to the visible run row so hidden content cannot create
   // a fake layout delta while the stable tool id remains usable.
   const inert = node.closest<HTMLElement>('[inert]');
-  const positionNode = inert?.closest<HTMLElement>('.tool-group') ?? node;
+  const positionNode = inert?.closest<HTMLElement>('.activity-run') ?? node;
   return (
     positionNode.getBoundingClientRect().top -
     container.getBoundingClientRect().top +
@@ -1312,9 +1312,9 @@ function handleComposerSubmit(payload: { text: string; attachments: PromptAttach
 // returns. Scrolling here would target the pre-undo bottom and fight the
 // bubble-exit animation, so we only arm the follow state; the scrollKey watcher
 // smooth-scrolls once the truncated turns actually land.
-// Quote-to-chat (0.39 `code comment/quote` port): a turn's text lands in the
-// active composer as a markdown blockquote; the user adds their own comment
-// and sends. Local bridge — no undo/resend semantics like edit.
+// Selection quoting lands a markdown blockquote in the active composer; the
+// user adds their own comment and sends. Local bridge — no undo/resend
+// semantics like edit.
 function handleQuote(text: string): void {
   following.value = true;
   showPill.value = false;
@@ -1325,10 +1325,9 @@ function handleQuote(text: string): void {
   composer.focus();
 }
 
-// Selection quoting (messages, file preview, diff panels, terminal) goes
-// through the same handler as the outline rail's quote button: the shared
-// SelectionQuoteBubble recomposes the selection as a markdown blockquote and
-// asks here for insertion, so both sources share one composer path.
+// Selection quoting (messages, file preview, diff panels, terminal) inserts
+// through this handler: the shared SelectionQuoteBubble recomposes the
+// selection as a markdown blockquote and asks here for insertion.
 const composerQuoteRequest = useComposerQuoteRequest();
 watch(composerQuoteRequest, (request) => {
   if (request === null) return;
@@ -1913,7 +1912,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
               @open-agent="emit('openAgent', $event)"
               @open-tool-diff="emit('openToolDiff', $event)"
               @detach-task="emit('detachTask', $event)"
-              @quote="handleQuote"
               @edit-message="handleEditMessage"
               @resume-failure="emit('resumeFailure')"
               @load-older-messages="handleLoadOlderMessages"

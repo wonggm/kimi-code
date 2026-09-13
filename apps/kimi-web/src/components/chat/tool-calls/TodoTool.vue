@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue';
 import type { ToolCall } from '../../../types';
-import { toolGlyph, toolHeadParts, toolLabel, toolSummary } from '../../../lib/toolMeta';
+import { toolGlyph, toolHeadParts, toolLabel } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
 import Icon from '../../ui/Icon.vue';
 import StatusDot from '../../ui/StatusDot.vue';
@@ -41,6 +41,10 @@ const todos = computed<TodoItem[]>(() => {
 });
 
 const doneCount = computed(() => todos.value.filter((todo) => todo.status === 'completed').length);
+/** Upstream puts the in-progress item's title next to the label (`tl-dim`) and
+ *  nothing when every item is settled; the fork showed the item COUNT there
+ *  ("3 items"), which is not what upstream's row reads. */
+const currentTitle = computed(() => todos.value.find((todo) => todo.status === 'in_progress')?.title ?? '');
 const fillPct = computed(() =>
   todos.value.length === 0 ? 0 : (doneCount.value / todos.value.length) * 100,
 );
@@ -48,7 +52,6 @@ const fillPct = computed(() =>
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
-const summary = computed(() => toolSummary(props.tool.name, props.tool.arg));
 const head = computed(() => toolHeadParts(props.tool.name, props.tool.arg));
 
 const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
@@ -84,7 +87,7 @@ function glyphClass(todoStatus: string): string {
     :file="head.file"
     :dir="head.dir"
     :mono="head.mono"
-    :arg="!open ? summary : ''"
+    :arg="!open ? currentTitle : ''"
     :time="tool.timing"
     :open="open"
     :expandable="todos.length > 0"

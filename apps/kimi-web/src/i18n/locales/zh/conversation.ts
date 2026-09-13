@@ -1,5 +1,4 @@
 export default {
-  quote: '引用',
   // Thinking block head (upstream: thinking.panelTitle / thinking.streaming).
   thinkingTitle: '思考过程',
   thinkingStreaming: '思考中…',
