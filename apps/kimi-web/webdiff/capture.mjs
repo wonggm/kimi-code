@@ -181,7 +181,18 @@ const DIGEST_EXPR = `(() => {
   }
 
   const text = document.body ? document.body.innerText : '';
-  const lines = Array.from(new Set(text.split('\\n').map((l) => l.trim()).filter(Boolean))).sort();
+  // Volatile by construction, so the two apps can never agree on them: the
+  // settings pane's "App version" row prints the build stamp of whichever bundle
+  // is loaded ("0.41.0 · 2026-09-09 13:40"), and a build stamp differs between
+  // two bundles by definition. Blank the date and keep the version, as the settle
+  // signature already does for elapsed times.
+  const stableText = text
+    .replace(/(\\d+\\.\\d+\\.\\d+) · \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}/g, '$1 · T')
+    // Same reason, different value: the settings pane prints the connected
+    // server's address, and each app is served by its own mock on its own port,
+    // so the two can never agree on the port number.
+    .replace(/\\b(127\\.0\\.0\\.1|localhost):\\d{2,5}\\b/g, '$1:PORT');
+  const lines = Array.from(new Set(stableText.split('\\n').map((l) => l.trim()).filter(Boolean))).sort();
 
   const dom = parts.join('\\n');
   return {

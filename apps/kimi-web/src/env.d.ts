@@ -15,6 +15,12 @@ declare const __KIMI_DEV_BACKENDS__: { default: string; multi: string };
 // Injected by Vite `define` from apps/kimi-web/package.json.
 declare const __KIMI_WEB_VERSION__: string;
 
+// Injected by Vite `define` from apps/kimi-code/package.json (the app whose
+// release the settings pane reports) and the build's own timestamp, so the
+// "App version" row can print "0.41.0 · 2026-09-09 13:40" as upstream's does.
+declare const __KIMI_APP_VERSION__: string;
+declare const __KIMI_APP_BUILD_TIME__: string;
+
 // Injected by Vite `define`: true only in the web bundle embedded in the Kimi
 // Desktop app. Gates the internal-build banner (see InternalBuildBanner.vue).
 declare const __KIMI_WEB_DESKTOP__: boolean;
