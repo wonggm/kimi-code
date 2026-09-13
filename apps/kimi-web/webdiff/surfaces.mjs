@@ -251,6 +251,59 @@ export const BEHAVIOUR_SCENES = [
       { name: 'selection-menu-add-to-chat', text: /Add to chat/ },
     ],
   },
+  {
+    name: 'behaviour-settings-pane',
+    desktopOnly: true,
+    // The settings dialog's own labels are UI text, so this scene is English-only.
+    // It states the pane's contents and the one transition that has a trap: a
+    // click outside must dismiss it (both apps do; measured), and while it is open
+    // the controls behind it are unreachable, which is why `DISCOVER_EXPR`
+    // hit-tests a control's centre before the walk clicks it.
+    enOnly: true,
+    // `expect` is what makes a variant's acceptance mean "the dialog opened":
+    // without it the runner keeps the first variant that changes the surface at
+    // all, so a click that only opens the account menu wins the race and the
+    // dialog requirements then fail on both apps (measured).
+    expect: /Appearance/,
+    // The two apps reach Settings by different routes (see the `settings` scene).
+    attempts: [
+      [{ action: 'click', selector: '.side-footer-settings', ms: 350 }],
+      [{ action: 'clickText', text: 'Not signed in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+      [{ action: 'click', selector: '[aria-label="Settings"]', ms: 350 }],
+    ],
+    requires: [
+      { name: 'settings-dialog-open', present: '.settings-dialog' },
+      { name: 'settings-section-appearance', within: '.settings-dialog', text: /Appearance/ },
+      { name: 'settings-section-account', within: '.settings-dialog', text: /Account/ },
+      { name: 'settings-font-size-row', within: '.settings-dialog', text: /Adjust interface and message text size/ },
+    ],
+    then: {
+      name: 'dismissed',
+      // The viewport corner: no dialog covers it, so the click lands on the
+      // backdrop on both apps.
+      steps: [{ action: 'clickPoint', x: 20, y: 20, ms: 500 }],
+      requires: [{ name: 'settings-dialog-dismissed', absent: '.settings-dialog' }],
+    },
+  },
+  {
+    name: 'behaviour-sidebar-workspace-collapse',
+    desktopOnly: true,
+    // The left panel's workspace control is one toggle: collapsing hides every
+    // workspace's session list and the same control brings it back. Addressed by
+    // class rather than by its label (which flips between "Collapse all
+    // workspaces" and "Expand all workspaces"), so this scene holds in both
+    // locales.
+    steps: [PIN_TAIL, { action: 'click', selector: '.side-section-toggle', ms: 500 }],
+    requires: [
+      { name: 'sidebar-groups-collapsed', absent: '.group-sessions' },
+      { name: 'sidebar-toggle-present', present: '.side-section-toggle' },
+    ],
+    then: {
+      name: 'restored',
+      steps: [{ action: 'click', selector: '.side-section-toggle', ms: 500 }],
+      requires: [{ name: 'sidebar-groups-restored', present: '.group-sessions' }],
+    },
+  },
 ];
 
 export const BASE_SCENES = [

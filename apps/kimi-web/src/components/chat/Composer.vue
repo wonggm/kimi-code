@@ -1491,6 +1491,7 @@ function selectModel(modelId: string): void {
             :class="['perm-' + status.permission, { open: permDropdownOpen }]"
             role="button"
             tabindex="0"
+            :aria-label="permLabel"
             @click.stop="togglePermDropdown"
             @keydown.enter="togglePermDropdown"
             @keydown.space.prevent="togglePermDropdown"
