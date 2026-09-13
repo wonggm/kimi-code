@@ -359,7 +359,17 @@ function onResizeKey(event: KeyboardEvent): void {
   inset: 0;
   z-index: var(--z-sticky);
   width: auto;
+  transition: none;
   border-top: var(--p-hairline) solid var(--color-text);
+}
+/* Closed on a phone, the panel must not exist on screen: the rule above is a
+   full-viewport fixed overlay, so a parked (aria-hidden, inert) aside still
+   painted an opaque layer over the conversation — you landed inside the panel
+   and could not get out. Upstream never shows this state because its mobile
+   shell does not mount the conversation pane at landing at all, so there is no
+   upstream rule to copy; hiding the closed overlay is the fork's equivalent. */
+.global-preview.mobile:not(.open) {
+  display: none;
 }
 .pt-shell {
   position: relative;
