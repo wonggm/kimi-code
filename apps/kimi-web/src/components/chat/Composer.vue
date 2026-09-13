@@ -2829,13 +2829,16 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   }
 
   /* Mobile toolbar: hide secondary controls; the "+" add menu / context ring /
-     model / send stay visible. Permission + the plan/goal/swarm pill move into
-     the MobileSettingsSheet. The context ring stays at every width by design —
+     model / send stay visible. The permission pill moves into the
+     MobileSettingsSheet; the work-mode chip stays, as it does upstream. The
+     context ring stays at every width by design —
      it is the live context-pressure signal on a phone (the exact numbers live
      in the ring's tooltip). The /compact chip also stays so compaction is one
      tap away at ≥80% usage. */
-  .perm-pill,
-  .wm-pill {
+  /* Upstream keeps the work-mode chip (armed goal / plan) on a phone — measured
+     visible at the composer's top-left — so only the permission pill is dropped
+     here. Hiding it made every mobile state report upstream's "Goal" as missing. */
+  .perm-pill {
     display: none;
   }
 
