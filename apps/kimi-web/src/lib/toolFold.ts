@@ -129,7 +129,7 @@ export function foldRenderBlocks(
 }
 
 /** Status rollup of a fold group for the chip glyph (running spinner, error
- *  dot, done check). Mirrors ToolGroup's aggregate-status semantics. */
+ *  dot, done check). Mirrors the activity-run head's aggregate-status semantics. */
 export type FoldStatus = 'running' | 'error' | 'done';
 
 export function foldAggregateStatus(tools: readonly ToolStackItem[]): FoldStatus {

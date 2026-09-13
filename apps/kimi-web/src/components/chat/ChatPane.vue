@@ -6,7 +6,6 @@ import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolMedia, QueuedProm
 import type { DetachTaskTarget } from '../../lib/detachTarget';
 import type { AppSkill } from '../../api/types';
 import ToolCall from './ToolCall.vue';
-import ToolGroup from './ToolGroup.vue';
 import ActivityRun from './ActivityRun.vue';
 import Markdown from './Markdown.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
@@ -22,7 +21,7 @@ import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
-import { toQuoteBlock, useSelectionCapture } from '../../composables/useSelectionQuote';
+import { useSelectionCapture } from '../../composables/useSelectionQuote';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { formatMessageTime } from '../../lib/formatMessageTime';
 import { openFileAttachment } from '../../lib/openFileAttachment';
@@ -32,6 +31,7 @@ import {
   formatTokens,
   renderBlockKey,
   toolFoldBlockKey,
+  toolStackKey,
   turnBlocks,
   turnFinalText,
   turnToMarkdown,
@@ -203,10 +203,10 @@ onUnmounted(() => {
 // Tool-card expand/collapse persistence. Tool cards keep their open/closed
 // state in component-local refs, which are lost when an evicted row unmounts
 // them — a re-mounted row would re-render every card in its default state
-// (tool groups open, Edit cards closed), changing the row's height by 60-70%
-// and shifting the document. The plain Map (not reactive: it is only read at
-// card mount and written on toggle) survives eviction and is consumed via
-// inject('toolExpandState') by ToolGroup and the tool-call cards.
+// (Edit cards closed), changing the row's height by 60-70% and shifting the
+// document. The plain Map (not reactive: it is only read at card mount and
+// written on toggle) survives eviction and is consumed via
+// inject('toolExpandState') by the tool-call cards.
 //
 // The Map is also keyed for TOOL-CALL SUMMARY FOLDS (`fold:<id>`), which the
 // render layer folds into one row when ≥ 3 tool calls land in a row inside a
@@ -242,7 +242,10 @@ function onFoldToggle2(foldKey: string, open: boolean): void {
   foldTick.value++;
 }
 
-function foldKeyForBlock(block: { tools: { tool: { id?: string }; sourceIndex: number }[]; sourceIndex: number }): string {
+/** Run identity, shared by both run shapes. A short run (`tool-stack`) carries
+ *  no source index of its own, so the first tool's id — or its source index —
+ *  is the anchor. */
+function foldKeyForBlock(block: { tools: { tool: { id?: string }; sourceIndex: number }[]; sourceIndex?: number }): string {
   const first = block.tools[0];
   return `${TOOL_FOLD_KEY_PREFIX}${first?.tool.id ?? `idx-${first?.sourceIndex ?? block.sourceIndex}`}`;
 }
@@ -251,7 +254,7 @@ function foldKeyForBlock(block: { tools: { tool: { id?: string }; sourceIndex: n
  *  the lib helper; lives here so the row template can call it inline without
  *  re-importing. */
 function renderBlocksFor(turn: ChatTurn) {
-  // No expandedFolds here: the run's cards render inside ActivityRun, so the
+  // No expandedFolds here: the run's rows render inside ActivityRun, so the
   // fold helper must not also emit a follow-up tool-stack for an open run.
   return foldRenderBlocks(assistantRenderBlocks(turn), new Set(), activityRunFolding.value);
 }
@@ -556,8 +559,6 @@ watch(
 const showWorking = computed(() => props.working);
 
 const emit = defineEmits<{
-  /** Quote a turn's text into the composer as a markdown blockquote. */
-  quote: [text: string];
   openFile: [target: FilePreviewRequest];
   openMedia: [media: ToolMedia];
   copyConversationCopied: [];
@@ -849,11 +850,6 @@ function copyAssistantRun(index: number): void {
   }).catch(() => {/* ignore */});
 }
 
-// Format a turn's text as a markdown blockquote for quote-to-chat (the shared
-// formatter is also used by selection quoting).
-function quoteTurn(text: string): void {
-  emit('quote', toQuoteBlock(text));
-}
 function copyUserMessage(turn: ChatTurn): void {
   const text = turn.text;
   if (!text.trim()) return;
@@ -1064,16 +1060,6 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
                 </button>
               </Tooltip>
             </div>
-            <Tooltip v-if="turn.text.trim().length > 0" :text="t('conversation.quote')">
-              <button
-                type="button"
-                class="u-copy"
-                :aria-label="t('conversation.quote')"
-                @click.stop="quoteTurn(turn.text)"
-              >
-                <Icon name="message" size="sm" />
-              </button>
-            </Tooltip>
             <Tooltip v-if="turn.text.trim().length > 0" :text="t('filePreview.copy')">
               <button
                 type="button"
@@ -1128,30 +1114,23 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
           <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
             <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
             <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
-            <ToolGroup
-              v-else-if="blk.kind === 'tool-stack'"
-              :tools="blk.tools"
-              mobile
-              :tool-diff-panel="toolDiffPanel"
-              @open-media="emit('openMedia', $event)"
-              @open-file="emit('openFile', $event)"
-              @open-tool-diff="emit('openToolDiff', $event)"
-              @open-agent="emit('openAgent', $event)"
-              @detach-task="emit('detachTask', $event)"
-            />
             <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
-            <!-- Upstream's activity run: one head row over the run's tool
-                 cards. The cards are always mounted inside and inert while the
-                 run is closed, exactly as upstream renders it. -->
+            <!-- Upstream's activity run: one head row over the run's own tool
+                 rows. The rows are always mounted inside and inert while the
+                 run is closed, exactly as upstream renders it. A short run
+                 (`tool-stack`) and a folded one (`tool-fold`) render the same
+                 tree — lib/toolFold only decides when a run is folded. -->
             <ActivityRun
-              v-else-if="blk.kind === 'tool-fold'"
+              v-else-if="blk.kind === 'tool-stack' || blk.kind === 'tool-fold'"
               :items="blk.tools"
               :run-key="foldKeyForBlock(blk)"
               :expanded="expandedFolds.has(foldKeyForBlock(blk))"
               @toggle-fold="onFoldToggle2"
             >
-              <ToolGroup
-                :tools="blk.tools"
+              <ToolCall
+                v-for="item in blk.tools"
+                :key="toolStackKey(item)"
+                :tool="item.tool"
                 mobile
                 :tool-diff-panel="toolDiffPanel"
                 @open-media="emit('openMedia', $event)"
@@ -1166,20 +1145,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         </template>
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />
         <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && assistantRunFinalText(ti).trim().length > 0" class="a-msg-ft">
-          <!-- Upstream's footer is the turn's time followed by one copy control
-               inside its tooltip. Ours showed a click-to-expand time button and
-               two bare buttons, so the time lost upstream's `a-time` element and
-               the copy button lost its tooltip wrapper. -->
           <span v-if="turn.createdAt" class="a-time">{{ messageTimeLabel(turn.createdAt) }}</span>
-          <button
-            v-if="assistantRunFinalText(ti).trim().length > 0"
-            class="a-cpbtn"
-            :aria-label="t('conversation.quote')"
-            :title="t('conversation.quote')"
-            @click="quoteTurn(assistantRunFinalText(ti))"
-          >
-            <Icon name="message" size="sm" />
-          </button>
           <Tooltip v-if="assistantRunFinalText(ti).trim().length > 0" :text="t('filePreview.copy')">
             <button
               class="a-cpbtn"
@@ -1649,7 +1615,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
        (.u-copy / .u-edit) are bumped to the same floor below. */
     min-height: 40px;
   }
-  /* Per-turn Copy / Quote / edit actions: same padding-and-negative-margin
+  /* Per-turn Copy / edit actions: same padding-and-negative-margin
      treatment, so the hit area reaches the touch floor without moving the row
      they sit in. */
   .u-copy,
@@ -1670,7 +1636,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 /* ChatPane owns block spacing; child components own only their internal layout. */
 .a-msg > .msg,
 .a-msg > :deep(.think),
-.a-msg > :deep(.tool-group),
+.a-msg > :deep(.activity-run),
 .a-msg > :deep(.agent-card),
 .a-msg > :deep(.agent-group),
 .a-msg > :deep(.box),
@@ -1680,7 +1646,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 }
 .a-msg > .msg:first-child,
 .a-msg > :deep(.think:first-child),
-.a-msg > :deep(.tool-group:first-child),
+.a-msg > :deep(.activity-run:first-child),
 .a-msg > :deep(.agent-card:first-child),
 .a-msg > :deep(.agent-group:first-child),
 .a-msg > :deep(.box:first-child),

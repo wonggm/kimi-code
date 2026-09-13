@@ -47,7 +47,10 @@ function toggle(): void {
   border-radius: var(--radius-sm);
   color: var(--muted);
   font: inherit;
-  font-size: var(--text-base);
+  /* Upstream's `.msg-time` rule: 12px at the medium weight (measured live on
+     both apps — ours was 14px). */
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   line-height: 1;
   cursor: pointer;
   opacity: 0.7;

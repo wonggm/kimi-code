@@ -2,7 +2,7 @@
      Upstream's activity run: a run of consecutive tool calls behind one head
      row — a state glyph, the counted summary ("Read 1 file · Ran 1 command ·
      Searched 1 pattern · Made 1 edit") and a chevron — over a body that holds
-     the tool cards. Collapsed by default; the body stays mounted and is `inert`
+     the run's tool rows. Collapsed by default; the body stays mounted and is `inert`
      while closed, exactly as upstream renders it. -->
 <script setup lang="ts">
 import { computed } from 'vue';

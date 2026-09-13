@@ -546,12 +546,12 @@ function copyDiff(code: string, idx: number) {
 
 /* Base prose — assistant message text. */
 .md {
-  font: 400 15px/1.6 var(--font-ui);
+  font: 400 var(--content-font-size)/var(--leading-prose) var(--font-ui);
   color: var(--color-text);
   word-break: break-word;
 }
 .md :deep(.markdown-renderer) {
-  font: 400 15px/1.6 var(--font-ui);
+  font: 400 var(--content-font-size)/var(--leading-prose) var(--font-ui);
   color: var(--color-text);
 }
 .md :deep(.markstream-vue),
@@ -588,14 +588,18 @@ function copyDiff(code: string, idx: number) {
 .md :deep(.md-file-link:hover) {
   color: var(--color-accent);
 }
-/* Pin the prose text size explicitly. markstream sets no font-size of its own,
-   so without this the rendered <p>/<li> can pick up a different base size. */
+/* Pin the prose text size and leading explicitly. markstream sets no font-size
+   of its own (so without this the rendered <p>/<li> can pick up a different
+   base size) but it DOES set a 1.75 line-height on paragraphs, which is looser
+   than upstream's `--leading-prose` (1.6) — the fork's paragraphs measured
+   24.5px against upstream's 23px. */
 .md :deep(.markdown-renderer p),
 .md :deep(.markdown-renderer li),
 .md :deep(.markdown-renderer blockquote),
 .md :deep(.markdown-renderer td),
 .md :deep(.markdown-renderer th) {
   font-size: var(--content-font-size);
+  line-height: var(--leading-prose);
 }
 
 /* Themed surfaces swallow white-on-transparent (light) or black-on-transparent
