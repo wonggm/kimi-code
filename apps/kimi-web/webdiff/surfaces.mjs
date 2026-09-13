@@ -333,6 +333,24 @@ export const BEHAVIOUR_SCENES = [
       requires: [{ name: 'sidebar-groups-restored', present: '.group-sessions' }],
     },
   },
+  {
+    name: 'behaviour-composer-permission-menu',
+    desktopOnly: true,
+    // The composer's permission pill opens a three-row menu (the two apps share
+    // the `perm-dropdown` / `pd-row` vocabulary for it), and clicking the same
+    // control again closes it. Class-addressed, so the scene holds in both
+    // locales; the rows' own labels are localized and are not asserted.
+    steps: [PIN_TAIL, { action: 'click', selector: '.perm-pill', ms: 500 }],
+    requires: [
+      { name: 'composer-permission-menu', present: '.perm-dropdown' },
+      { name: 'composer-permission-rows', present: '.perm-dropdown .pd-row', count: 3 },
+    ],
+    then: {
+      name: 'closed',
+      steps: [{ action: 'click', selector: '.perm-pill', ms: 500 }],
+      requires: [{ name: 'composer-permission-menu-closed', absent: '.perm-dropdown' }],
+    },
+  },
 ];
 
 export const BASE_SCENES = [
