@@ -678,8 +678,13 @@ function serializeRequirement(requirement) {
  * step caught upstream's panel mid-mount and reported it missing. A requirement
  * that is never met still costs the full timeout, so a genuine miss is still a
  * miss — it just takes a moment to be sure.
+ *
+ * The budget is generous because a surface can be a lazily loaded chunk: the
+ * settings dialog arrives a second or more after the click that asks for it on a
+ * cold page, which read as "not open" at 1.5s while the capture taken two seconds
+ * later showed it open. The poll exits as soon as every requirement is met.
  */
-export async function checkRequirements(cdp, requirements, label = 'main', { timeoutMs = 1_500, intervalMs = 150 } = {}) {
+export async function checkRequirements(cdp, requirements, label = 'main', { timeoutMs = 4_000, intervalMs = 150 } = {}) {
   const list = (requirements ?? []).filter(Boolean);
   if (list.length === 0) return [];
   const serialized = list.map(serializeRequirement);
