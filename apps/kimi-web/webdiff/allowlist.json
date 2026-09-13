@@ -475,6 +475,10 @@
     {
       "id": "desktop-*::walk-main-click-01*::dom-elements-missing",
       "reason": "New-session icon count: upstream's captured empty state carries 30 `svg.kw-icon` in its page source against the fork's 24 (20 vs 18 after the digest drops hidden subtrees), while the fork carries svg.ctx-ring and svg.glass-defs in the same state. The digest's signature for these is a bare `svg.kw-icon` with no per-icon class, and the composer-card counts (6 vs 7), the chat-header marker and the empty-panel-btn all match, so WHICH glyphs differ is NOT recoverable from the capture - the cause is not established. Scoped to this scene only; the empty-tail class difference that also lived here is fixed in source."
+    },
+    {
+      "id": "*::*::missing-text::expand-all-workspaces",
+      "reason": "Tooltip lifetime, not the control: both apps carry the label (upstream even renders its bubble text, the fork's is unmounted when the bubble closes) and the same aria-label on the same `.side-section-toggle`. Measured on the fork: the bubble mounts with the text 600ms after the click and the button keeps focus; the capture then runs the harness's own scroll normalisation, and the fork's tooltip hides on scroll (ui/Tooltip.vue onScrollOrResize) while upstream's survives it, so the text is missing from the fork's text inventory in that state."
     }
   ],
   "warnings": [
