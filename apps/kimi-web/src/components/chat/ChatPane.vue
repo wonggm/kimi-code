@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, wat
 import { useI18n } from 'vue-i18n';
 import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolMedia, QueuedPromptView, TurnAttachment } from '../../types';
 import type { DetachTaskTarget } from '../../lib/detachTarget';
+import type { RunItem } from '../chatTurnRendering';
 import type { AppSkill } from '../../api/types';
 import ToolCall from './ToolCall.vue';
 import ActivityRun from './ActivityRun.vue';
@@ -28,10 +29,10 @@ import { openFileAttachment } from '../../lib/openFileAttachment';
 import { getKimiWebApi } from '../../api';
 import {
   assistantRenderBlocks,
+  firstRunTool,
   formatTokens,
   renderBlockKey,
   toolFoldBlockKey,
-  toolStackKey,
   turnBlocks,
   turnFinalText,
   turnToMarkdown,
@@ -243,10 +244,11 @@ function onFoldToggle2(foldKey: string, open: boolean): void {
 }
 
 /** Run identity, shared by both run shapes. A short run (`tool-stack`) carries
- *  no source index of its own, so the first tool's id — or its source index —
- *  is the anchor. */
-function foldKeyForBlock(block: { tools: { tool: { id?: string }; sourceIndex: number }[]; sourceIndex?: number }): string {
-  const first = block.tools[0];
+ *  no source index of its own, so its first tool's id — or that tool's source
+ *  index — is the anchor; a run that opens with a thinking item anchors on the
+ *  first row that follows it. */
+function foldKeyForBlock(block: { items: RunItem[]; sourceIndex?: number }): string {
+  const first = firstRunTool(block.items);
   return `${TOOL_FOLD_KEY_PREFIX}${first?.tool.id ?? `idx-${first?.sourceIndex ?? block.sourceIndex}`}`;
 }
 
@@ -1121,30 +1123,32 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
             <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
             <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
             <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
-            <!-- Upstream's activity run: one head row over the run's own tool
-                 rows. The rows are always mounted inside and inert while the
-                 run is closed, exactly as upstream renders it. A short run
+            <!-- Upstream's activity run: one head row over the run's own items
+                 — the thinking block that opened it, then its tool rows. The
+                 items are always mounted inside and inert while the run is
+                 closed, exactly as upstream renders it. A short run
                  (`tool-stack`) and a folded one (`tool-fold`) render the same
                  tree — lib/toolFold only decides when a run is folded. -->
             <ActivityRun
               v-else-if="blk.kind === 'tool-stack' || blk.kind === 'tool-fold'"
-              :items="blk.tools"
+              :items="blk.items"
+              :streaming="turn.id === streamingTurnId"
               :run-key="foldKeyForBlock(blk)"
               :expanded="expandedFolds.has(foldKeyForBlock(blk))"
               @toggle-fold="onFoldToggle2"
             >
-              <ToolCall
-                v-for="item in blk.tools"
-                :key="toolStackKey(item)"
-                :tool="item.tool"
-                mobile
-                :tool-diff-panel="toolDiffPanel"
-                @open-media="emit('openMedia', $event)"
-                @open-file="emit('openFile', $event)"
-                @open-tool-diff="emit('openToolDiff', $event)"
-                @open-agent="emit('openAgent', $event)"
-                @detach-task="emit('detachTask', $event)"
-              />
+              <template #default="{ item }">
+                <ToolCall
+                  :tool="item.tool"
+                  mobile
+                  :tool-diff-panel="toolDiffPanel"
+                  @open-media="emit('openMedia', $event)"
+                  @open-file="emit('openFile', $event)"
+                  @open-tool-diff="emit('openToolDiff', $event)"
+                  @open-agent="emit('openAgent', $event)"
+                  @detach-task="emit('detachTask', $event)"
+                />
+              </template>
             </ActivityRun>
             <TaskNotice v-else-if="blk.kind === 'task'" :text="blk.text" :created-at="blk.createdAt" />
           </template>

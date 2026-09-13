@@ -28,16 +28,36 @@ export function turnBlocks(turn: ChatTurn): TurnBlock[] {
   return blocks;
 }
 
+export type ThinkingItem = {
+  kind: 'thinking';
+  thinking: string;
+  sourceIndex: number;
+};
+
 export type ToolStackItem = {
+  kind: 'tool';
   tool: Extract<TurnBlock, { kind: 'tool' }>['tool'];
   sourceIndex: number;
 };
 
+/** One row of an activity run. Upstream's run holds the thinking block that
+ *  opened it as its first item, in source order with the tool rows. */
+export type RunItem = ThinkingItem | ToolStackItem;
+
+/** The run's first tool row — a run may open with a thinking item. */
+export function firstRunTool(items: readonly RunItem[]): ToolStackItem | undefined {
+  return items.find((item): item is ToolStackItem => item.kind === 'tool');
+}
+
+export function runItemKey(item: RunItem): string {
+  return item.kind === 'tool' ? toolStackKey(item) : `thinking-${item.sourceIndex}`;
+}
+
 export type AssistantRenderBlock =
-  | { kind: 'thinking'; thinking: string; sourceIndex: number }
+  | ThinkingItem
   | { kind: 'text'; text: string; sourceIndex: number }
   | { kind: 'tool'; tool: ToolStackItem['tool']; sourceIndex: number }
-  | { kind: 'tool-stack'; tools: ToolStackItem[] }
+  | { kind: 'tool-stack'; items: RunItem[] }
   | { kind: 'task'; text: string; createdAt?: string; sourceIndex: number };
 
 export function rendersToolCard(block: Extract<TurnBlock, { kind: 'tool' }>): boolean {
@@ -47,40 +67,48 @@ export function rendersToolCard(block: Extract<TurnBlock, { kind: 'tool' }>): bo
 export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
   const blocks = turnBlocks(turn);
   const rendered: AssistantRenderBlock[] = [];
-  let toolRun: ToolStackItem[] = [];
+  let run: RunItem[] = [];
 
-  const flushToolRun = () => {
-    if (toolRun.length === 1) {
-      const [item] = toolRun;
-      if (item) rendered.push({ kind: 'tool', tool: item.tool, sourceIndex: item.sourceIndex });
-    } else if (toolRun.length > 1) {
-      rendered.push({ kind: 'tool-stack', tools: toolRun });
+  // A run of one item is not a run: a lone thinking block or tool card renders
+  // on its own, exactly as upstream's builder emits it.
+  const flushRun = () => {
+    if (run.length === 1) {
+      const [item] = run;
+      if (item?.kind === 'thinking') rendered.push(item);
+      else if (item) rendered.push({ kind: 'tool', tool: item.tool, sourceIndex: item.sourceIndex });
+    } else if (run.length > 1) {
+      rendered.push({ kind: 'tool-stack', items: run });
     }
-    toolRun = [];
+    run = [];
   };
 
   blocks.forEach((block, sourceIndex) => {
+    // The thinking that opens a run stays inside it (upstream nests it as the
+    // run's first item), so it is collected here rather than flushed out.
+    if (block.kind === 'thinking') {
+      run.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
+      return;
+    }
+
     if (block.kind === 'tool') {
       if (rendersToolCard(block)) {
-        toolRun.push({ tool: block.tool, sourceIndex });
+        run.push({ kind: 'tool', tool: block.tool, sourceIndex });
         return;
       }
-      flushToolRun();
+      flushRun();
       rendered.push({ kind: 'tool', tool: block.tool, sourceIndex });
       return;
     }
 
-    flushToolRun();
-    if (block.kind === 'thinking') {
-      rendered.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
-    } else if (block.kind === 'text') {
+    flushRun();
+    if (block.kind === 'text') {
       rendered.push({ kind: 'text', text: block.text, sourceIndex });
     } else if (block.kind === 'task') {
       rendered.push({ kind: 'task', text: block.text, createdAt: block.createdAt, sourceIndex });
     }
   });
 
-  flushToolRun();
+  flushRun();
   return rendered;
 }
 
@@ -112,9 +140,9 @@ export function toolStackKey(item: ToolStackItem): string {
 
 export function renderBlockKey(block: AssistantRenderBlock, index: number): string {
   if (block.kind === 'tool-stack') {
-    return `tool-stack-${block.tools[0]?.sourceIndex ?? index}`;
+    return `tool-stack-${block.items[0]?.sourceIndex ?? index}`;
   }
-  if (block.kind === 'tool') return toolStackKey({ tool: block.tool, sourceIndex: block.sourceIndex });
+  if (block.kind === 'tool') return toolStackKey({ kind: 'tool', tool: block.tool, sourceIndex: block.sourceIndex });
   return `${block.kind}-${block.sourceIndex}`;
 }
 
@@ -122,7 +150,7 @@ export function renderBlockKey(block: AssistantRenderBlock, index: number): stri
  *  fold's first-tool id is the stable anchor; falls back to the block's
  *  source index when no id is present (defensive — persisted tools always
  *  carry one). */
-export function toolFoldBlockKey(block: { tools: { tool: { id?: string }; sourceIndex: number }[]; sourceIndex: number }): string {
-  const first = block.tools[0];
+export function toolFoldBlockKey(block: { items: RunItem[]; sourceIndex: number }): string {
+  const first = firstRunTool(block.items);
   return `tool-fold-${first?.tool.id || `idx-${first?.sourceIndex ?? block.sourceIndex}`}`;
 }

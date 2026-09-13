@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatTurn, ToolCall, TurnBlock } from '../src/types';
+import type { RunItem } from '../src/components/chatTurnRendering';
 import {
   assistantRenderBlocks,
+  firstRunTool,
   formatDuration,
   formatTokens,
   rendersToolCard,
   renderBlockKey,
+  runItemKey,
   toolFoldBlockKey,
   turnBlocks,
   turnFinalText,
@@ -28,6 +31,15 @@ function toolBlock(id: string, over: Partial<ToolCall> = {}): Extract<TurnBlock,
 
 function assistantTurn(blocks: TurnBlock[], over: Partial<ChatTurn> = {}): ChatTurn {
   return { id: 't1', role: 'assistant', no: 1, text: '', blocks, ...over };
+}
+
+function thinkingBlock(thinking: string): TurnBlock {
+  return { kind: 'thinking', thinking };
+}
+
+/** Ids of a run's tool rows, in order (a run may open with a thinking item). */
+function toolIds(items: readonly RunItem[]): string[] {
+  return items.flatMap((item) => (item.kind === 'tool' ? [item.tool.id] : []));
 }
 
 describe('formatTokens', () => {
@@ -94,8 +106,8 @@ describe('assistantRenderBlocks', () => {
     expect(rendered).toHaveLength(1);
     expect(rendered[0]).toMatchObject({ kind: 'tool-stack' });
     if (rendered[0]?.kind === 'tool-stack') {
-      expect(rendered[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b']);
-      expect(rendered[0].tools.map((t) => t.sourceIndex)).toEqual([0, 1]);
+      expect(rendered[0].items.map((t) => t.sourceIndex)).toEqual([0, 1]);
+      expect(toolIds(rendered[0].items)).toEqual(['a', 'b']);
     }
   });
 
@@ -121,21 +133,42 @@ describe('assistantRenderBlocks', () => {
     );
     expect(rendered.map((b) => b.kind)).toEqual(['tool-stack', 'tool']);
     if (rendered[0]?.kind === 'tool-stack') {
-      expect(rendered[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b']);
+      expect(toolIds(rendered[0].items)).toEqual(['a', 'b']);
     }
   });
 
   it('preserves thinking/text order with their source indexes', () => {
     const rendered = assistantRenderBlocks(
-      assistantTurn([
-        { kind: 'thinking', thinking: 'plan' },
-        { kind: 'text', text: 'answer' },
-      ]),
+      assistantTurn([thinkingBlock('plan'), { kind: 'text', text: 'answer' }]),
     );
     expect(rendered).toEqual([
       { kind: 'thinking', thinking: 'plan', sourceIndex: 0 },
       { kind: 'text', text: 'answer', sourceIndex: 1 },
     ]);
+  });
+
+  it('nests the thinking that opens a run as the run\'s first item', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([thinkingBlock('plan'), toolBlock('a'), toolBlock('b')]),
+    );
+    expect(rendered.map((b) => b.kind)).toEqual(['tool-stack']);
+    if (rendered[0]?.kind === 'tool-stack') {
+      expect(rendered[0].items).toEqual([
+        { kind: 'thinking', thinking: 'plan', sourceIndex: 0 },
+        { kind: 'tool', tool: tool('a'), sourceIndex: 1 },
+        { kind: 'tool', tool: tool('b'), sourceIndex: 2 },
+      ]);
+    }
+  });
+
+  it('keeps a second thinking block inside the run, in source order', () => {
+    const rendered = assistantRenderBlocks(
+      assistantTurn([toolBlock('a'), thinkingBlock('plan'), toolBlock('b')]),
+    );
+    expect(rendered.map((b) => b.kind)).toEqual(['tool-stack']);
+    if (rendered[0]?.kind === 'tool-stack') {
+      expect(rendered[0].items.map((item) => item.kind)).toEqual(['tool', 'thinking', 'tool']);
+    }
   });
 });
 
@@ -169,7 +202,7 @@ describe('renderBlockKey', () => {
     expect(renderBlockKey({ kind: 'text', text: 'x', sourceIndex: 2 }, 0)).toBe('text-2');
     expect(renderBlockKey({ kind: 'tool', tool: tool('a'), sourceIndex: 3 }, 0)).toBe('a');
     expect(
-      renderBlockKey({ kind: 'tool-stack', tools: [{ tool: tool('a'), sourceIndex: 5 }] }, 0),
+      renderBlockKey({ kind: 'tool-stack', items: [{ kind: 'tool', tool: tool('a'), sourceIndex: 5 }] }, 0),
     ).toBe('tool-stack-5');
   });
 });
@@ -178,9 +211,10 @@ describe('toolFoldBlockKey', () => {
   it('keys the fold on the first tool id', () => {
     expect(
       toolFoldBlockKey({
-        tools: [
-          { tool: tool('first'), sourceIndex: 2 },
-          { tool: tool('second'), sourceIndex: 3 },
+        items: [
+          { kind: 'thinking', thinking: 'plan', sourceIndex: 1 },
+          { kind: 'tool', tool: tool('first'), sourceIndex: 2 },
+          { kind: 'tool', tool: tool('second'), sourceIndex: 3 },
         ],
         sourceIndex: 2,
       }),
@@ -190,10 +224,29 @@ describe('toolFoldBlockKey', () => {
   it('falls back to the first tool source index when no id is present', () => {
     expect(
       toolFoldBlockKey({
-        tools: [{ tool: { ...tool('x'), id: '' }, sourceIndex: 7 }],
+        items: [{ kind: 'tool', tool: { ...tool('x'), id: '' }, sourceIndex: 7 }],
         sourceIndex: 7,
       }),
     ).toBe('tool-fold-idx-7');
+  });
+});
+
+describe('firstRunTool', () => {
+  it('skips a leading thinking item', () => {
+    expect(
+      firstRunTool([
+        { kind: 'thinking', thinking: 'plan', sourceIndex: 0 },
+        { kind: 'tool', tool: tool('a'), sourceIndex: 1 },
+      ])?.tool.id,
+    ).toBe('a');
+    expect(firstRunTool([{ kind: 'thinking', thinking: 'plan', sourceIndex: 0 }])).toBeUndefined();
+  });
+});
+
+describe('runItemKey', () => {
+  it('keys a tool row by its id and a thinking item by its source index', () => {
+    expect(runItemKey({ kind: 'tool', tool: tool('a'), sourceIndex: 4 })).toBe('a');
+    expect(runItemKey({ kind: 'thinking', thinking: 'plan', sourceIndex: 4 })).toBe('thinking-4');
   });
 });
 
@@ -205,11 +258,11 @@ describe('toolFoldBlockKey', () => {
 // (ChatTurn / blocks / tools[]). These tests exercise the helper directly.
 
 function stackItem(id: string, sourceIndex: number, over: Partial<ToolCall> = {}) {
-  return { tool: tool(id, over), sourceIndex };
+  return { kind: 'tool' as const, tool: tool(id, over), sourceIndex };
 }
 
-function stackBlock(ids: string[], sourceIndex = 0): Extract<ReturnType<typeof assistantRenderBlocks>, { kind: 'tool-stack' }>[number] {
-  return { kind: 'tool-stack', tools: ids.map((id, i) => stackItem(id, sourceIndex + i)) };
+function stackBlock(ids: string[], sourceIndex = 0): Extract<ReturnType<typeof assistantRenderBlocks>, { kind: 'tool-stack' }> {
+  return { kind: 'tool-stack', items: ids.map((id, i) => stackItem(id, sourceIndex + i)) };
 }
 
 describe('foldRenderBlocks', () => {
@@ -239,7 +292,7 @@ describe('foldRenderBlocks', () => {
     expect(folded).toHaveLength(1);
     expect(folded[0]?.kind).toBe('tool-fold');
     if (folded[0]?.kind === 'tool-fold') {
-      expect(folded[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c']);
+      expect(toolIds(folded[0].items)).toEqual(['a', 'b', 'c']);
     }
   });
 
@@ -252,7 +305,7 @@ describe('foldRenderBlocks', () => {
     expect(folded).toHaveLength(1);
     expect(folded[0]?.kind).toBe('tool-stack');
     if (folded[0]?.kind === 'tool-stack') {
-      expect(folded[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c']);
+      expect(toolIds(folded[0].items)).toEqual(['a', 'b', 'c']);
     }
   });
 
@@ -268,7 +321,7 @@ describe('foldRenderBlocks', () => {
     expect(folded).toHaveLength(1);
     expect(folded[0]?.kind).toBe('tool-fold');
     if (folded[0]?.kind === 'tool-fold') {
-      expect(folded[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
+      expect(toolIds(folded[0].items)).toEqual(['a', 'b', 'c', 'd', 'e']);
     }
   });
 
@@ -298,7 +351,7 @@ describe('foldRenderBlocks', () => {
     // Expanded fold → chip + underlying stack, side by side.
     expect(folded.map((b) => b.kind)).toEqual(['tool-fold', 'tool-stack']);
     if (folded[1]?.kind === 'tool-stack') {
-      expect(folded[1].tools.map((t) => t.tool.id)).toEqual(['a', 'b', 'c']);
+      expect(toolIds(folded[1].items)).toEqual(['a', 'b', 'c']);
     }
   });
 
