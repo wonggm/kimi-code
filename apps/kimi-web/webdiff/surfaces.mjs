@@ -77,6 +77,32 @@ const DOCK_AGENT_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:n
 // the surface is gone by the time a capture's settle finishes (the selection
 // popup), so no capture is written and the "opened nothing" bookkeeping is
 // skipped rather than reported as a coverage gap.
+// The routes both apps reach Settings by, tried in order. The fork has a labelled
+// item in the sidebar footer; upstream puts Settings behind the account row, whose
+// label follows the locale; the mobile shells hide it behind a header control.
+// Each route pins the transcript first, so a settings capture also compares the
+// main surface behind the dialog in one scroll state. Order matters: the runner
+// keeps the first variant that changes the surface, so a text route that opens
+// the wrong menu would win the race — `expect` on the scene is what rejects it.
+const SETTINGS_ROUTES = [
+  [{ action: 'click', selector: '.side-footer-settings', ms: 350 }],
+  [{ action: 'clickText', text: 'Not signed in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+  [{ action: 'clickText', text: 'Sign in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+  [{ action: 'clickText', text: '未登录', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
+  [{ action: 'clickText', text: '登录', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
+  [{ action: 'clickText', text: 'Settings', ms: 350 }],
+  [{ action: 'clickText', text: '设置', ms: 350 }],
+  [{ action: 'click', selector: '[aria-label="Settings"]', ms: 350 }],
+  [{ action: 'click', selector: '[aria-label="设置"]', ms: 350 }],
+  [{ action: 'click', selector: '[aria-label*="ettings" i]', ms: 350 }],
+  [{ action: 'click', selector: '[aria-label*="设置"]', ms: 350 }],
+  [{ action: 'clickText', text: 'More', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+  [{ action: 'clickText', text: '更多', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
+  [{ action: 'clickText', text: 'Menu', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+  [{ action: 'click', selector: 'header button:last-of-type', ms: 350 }],
+  [{ action: 'click', selector: '.topbar button:last-of-type', ms: 350 }],
+].map((attempt) => [PIN_TAIL, ...attempt]);
+
 export const BEHAVIOUR_SCENES = [
   {
     name: 'behaviour-dock-panel-toggle',
@@ -266,23 +292,26 @@ export const BEHAVIOUR_SCENES = [
     // dialog requirements then fail on both apps (measured).
     expect: /Appearance/,
     // The two apps reach Settings by different routes (see the `settings` scene).
-    attempts: [
-      [{ action: 'click', selector: '.side-footer-settings', ms: 350 }],
-      [{ action: 'clickText', text: 'Not signed in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
-      [{ action: 'click', selector: '[aria-label="Settings"]', ms: 350 }],
-    ],
+    // The same routes the base `settings` scene uses: a shortened list is not
+    // equivalent, because the first route is a coordinate click that the footer
+    // row does not always receive, and the base scene falls through to the ones
+    // that do. Each route pins the transcript first.
+    attempts: SETTINGS_ROUTES,
     requires: [
-      { name: 'settings-dialog-open', present: '.settings-dialog' },
-      { name: 'settings-section-appearance', within: '.settings-dialog', text: /Appearance/ },
-      { name: 'settings-section-account', within: '.settings-dialog', text: /Account/ },
-      { name: 'settings-font-size-row', within: '.settings-dialog', text: /Adjust interface and message text size/ },
+      // `.settings-dialog` does not exist on either app (upstream's is
+      // `.settings-dialog-title` inside its tabs header), so the dialog marker and
+      // the text scopes are the shell both apps actually share: `.ui-dialog`.
+      { name: 'settings-dialog-open', present: '.ui-dialog' },
+      { name: 'settings-section-appearance', within: '.ui-dialog', text: /Appearance/ },
+      { name: 'settings-section-account', within: '.ui-dialog', text: /Account/ },
+      { name: 'settings-font-size-row', within: '.ui-dialog', text: /Adjust interface and message text size/ },
     ],
     then: {
       name: 'dismissed',
       // The viewport corner: no dialog covers it, so the click lands on the
       // backdrop on both apps.
       steps: [{ action: 'clickPoint', x: 20, y: 20, ms: 500 }],
-      requires: [{ name: 'settings-dialog-dismissed', absent: '.settings-dialog' }],
+      requires: [{ name: 'settings-dialog-dismissed', absent: '.ui-dialog' }],
     },
   },
   {
@@ -310,39 +339,8 @@ export const BASE_SCENES = [
   { name: 'main', steps: [PIN_TAIL] },
   {
     name: 'settings',
-    // The two apps hide Settings in different places: the fork has a labelled
-    // item in the sidebar footer, upstream puts it behind the account menu. Try
-    // the plain route first, then the account-menu route, and let the runner
-    // keep whichever one actually opens the surface.
-    // Every route pins the tail first, so the settings capture also compares the
-    // main surface behind the dialog in one scroll state.
-    // Routes are ordered most-reliable first: the walk accepts the first variant
-    // that CHANGES the surface, so a text route that opens the wrong menu would
-    // win the race and poison the capture. The fork has a stable labelled footer
-    // item; upstream reaches Settings from the account row, whose label follows
-    // the locale (Not signed in / Sign in / 未登录 / 登录).
-    attempts: [
-      [{ action: 'click', selector: '.side-footer-settings', ms: 350 }],
-      [{ action: 'clickText', text: 'Not signed in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
-      [{ action: 'clickText', text: 'Sign in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
-      [{ action: 'clickText', text: '未登录', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
-      [{ action: 'clickText', text: '登录', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
-      [{ action: 'clickText', text: 'Settings', ms: 350 }],
-      [{ action: 'clickText', text: '设置', ms: 350 }],
-      [{ action: 'click', selector: '[aria-label="Settings"]', ms: 350 }],
-      [{ action: 'click', selector: '[aria-label="设置"]', ms: 350 }],
-      // Mobile: neither app has the desktop footer. The fork hides its settings
-      // sheet behind the header control, upstream behind an icon button, so try
-      // the generic routes too - a miss is recorded as a gap, not silently
-      // treated as "settings matched".
-      [{ action: 'click', selector: '[aria-label*="ettings" i]', ms: 350 }],
-      [{ action: 'click', selector: '[aria-label*="设置"]', ms: 350 }],
-      [{ action: 'clickText', text: 'More', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
-      [{ action: 'clickText', text: '更多', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
-      [{ action: 'clickText', text: 'Menu', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
-      [{ action: 'click', selector: 'header button:last-of-type', ms: 350 }],
-      [{ action: 'click', selector: '.topbar button:last-of-type', ms: 350 }],
-    ].map((attempt) => [PIN_TAIL, ...attempt]),
+    // Same route list as the behaviour scene for this pane.
+    attempts: SETTINGS_ROUTES,
     steps: [PIN_TAIL, { action: 'clickText', text: 'Settings', ms: 350 }],
     // The scene must actually LOOK like settings: with several fallback routes,
     // a click that opens some other surface (a model menu, the account menu)
