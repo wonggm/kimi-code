@@ -14,7 +14,8 @@
 // a fold whose key is in the set is rendered as a normal tool-stack instead
 // of collapsing, so the user can drill back into the individual cards.
 
-import type { AssistantRenderBlock, ToolStackItem } from '../components/chatTurnRendering';
+import type { AssistantRenderBlock, RunItem, ToolStackItem } from '../components/chatTurnRendering';
+import { firstRunTool } from '../components/chatTurnRendering';
 
 /** Number of consecutive tool render rows required before we offer a fold.
  *  Below this the run is short enough to keep the cards individually visible. */
@@ -29,7 +30,7 @@ export const TOOL_FOLD_KEY_PREFIX = 'fold:';
  *  block only exists in the COLLAPSED state. */
 export interface ToolFoldBlock {
   kind: 'tool-fold';
-  tools: ToolStackItem[];
+  items: RunItem[];
   sourceIndex: number;
 }
 
@@ -41,8 +42,8 @@ export type FoldedRenderBlock =
 
 /** Build the fold key for a run. Falls back to the first tool's source index
  *  when the tool has no id (defensive — every persisted tool should have one). */
-function foldKeyFor(items: ToolStackItem[]): string {
-  const first = items[0];
+function foldKeyFor(items: RunItem[]): string {
+  const first = firstRunTool(items);
   if (!first) return TOOL_FOLD_KEY_PREFIX + 'empty';
   return TOOL_FOLD_KEY_PREFIX + (first.tool.id || `idx-${first.sourceIndex}`);
 }
@@ -69,7 +70,7 @@ export function foldRenderBlocks(
   if (blocks.length === 0) return [];
 
   const result: FoldedRenderBlock[] = [];
-  let runItems: ToolStackItem[] = [];
+  let runItems: RunItem[] = [];
   let runFirstSourceIndex = -1;
   let runKey: string | null = null;
 
@@ -86,21 +87,22 @@ export function foldRenderBlocks(
     runKey = null;
     runFirstSourceIndex = -1;
 
-    if (enabled && items.length >= TOOL_FOLD_THRESHOLD) {
+    const toolCount = items.filter((item) => item.kind === 'tool').length;
+    if (enabled && toolCount >= TOOL_FOLD_THRESHOLD) {
       // Always emit the chip — even when expanded — so the user has a stable
       // affordance to re-collapse. The expanded view also emits a tool-stack
       // immediately after, so the chips + the cards render side-by-side.
-      result.push({ kind: 'tool-fold', tools: items, sourceIndex: firstIdx });
+      result.push({ kind: 'tool-fold', items, sourceIndex: firstIdx });
       if (!expandedFolds.has(key)) return;
-      result.push({ kind: 'tool-stack', tools: items });
+      result.push({ kind: 'tool-stack', items });
       return;
     }
-    if (items.length === 1) {
-      const only = items[0]!;
+    const only = items[0];
+    if (items.length === 1 && only?.kind === 'tool') {
       result.push({ kind: 'tool', tool: only.tool, sourceIndex: only.sourceIndex });
       return;
     }
-    result.push({ kind: 'tool-stack', tools: items });
+    result.push({ kind: 'tool-stack', items });
   };
 
   for (const block of blocks) {
@@ -109,16 +111,16 @@ export function foldRenderBlocks(
         runKey = TOOL_FOLD_KEY_PREFIX + (block.tool.id || `idx-${block.sourceIndex}`);
         runFirstSourceIndex = block.sourceIndex;
       }
-      runItems.push({ tool: block.tool, sourceIndex: block.sourceIndex });
+      runItems.push({ kind: 'tool', tool: block.tool, sourceIndex: block.sourceIndex });
       continue;
     }
     if (block.kind === 'tool-stack') {
-      const first = block.tools[0];
+      const first = firstRunTool(block.items);
       if (runKey === null && first) {
         runKey = TOOL_FOLD_KEY_PREFIX + (first.tool.id || `idx-${first.sourceIndex}`);
         runFirstSourceIndex = first.sourceIndex;
       }
-      for (const item of block.tools) runItems.push(item);
+      for (const item of block.items) runItems.push(item);
       continue;
     }
     flush();
