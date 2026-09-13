@@ -15,7 +15,7 @@ export type DockPanelKind = 'goal' | 'plan' | 'bash' | 'subagents' | 'todos';
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import type { IconName } from '../../lib/icons';
 import Icon from '../ui/Icon.vue';
 import Menu from '../ui/Menu.vue';
@@ -44,6 +44,28 @@ const open = ref(false);
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const menuRef = ref<InstanceType<typeof Menu> | null>(null);
 const menuStyle = ref<Record<string, string>>({});
+
+/** Upstream's `body-scrolled-up`: the panel's own body scrolled away from its
+    top, which swaps the body's top edge for a fade mask. */
+const bodyRef = ref<HTMLElement | null>(null);
+const bodyScrolledUp = ref(false);
+
+function syncBodyScrolledUp(): void {
+  const body = bodyRef.value;
+  bodyScrolledUp.value = body ? body.scrollTop > 0 : false;
+}
+
+function onBodyScroll(event: Event): void {
+  bodyScrolledUp.value = (event.target as HTMLElement).scrollTop > 0;
+}
+
+watch(
+  () => props.kind,
+  async () => {
+    await nextTick();
+    syncBodyScrolledUp();
+  },
+);
 
 const currentOption = computed(() =>
   props.dropdown?.options.find((option) => option.value === props.dropdown?.value),
@@ -101,7 +123,7 @@ onBeforeUnmount(closeMenu);
 <template>
   <div
     class="dock-work-panel"
-    :class="panelClass"
+    :class="[panelClass, { 'body-scrolled-up': bodyScrolledUp }]"
     :style="{ transformOrigin: `${originX}px 100%` }"
   >
     <div class="dock-work-head">
@@ -140,7 +162,7 @@ onBeforeUnmount(closeMenu);
         <slot name="actions" />
       </span>
     </div>
-    <div class="dock-work-body">
+    <div ref="bodyRef" class="dock-work-body" @scroll="onBodyScroll">
       <slot />
     </div>
   </div>
@@ -200,6 +222,9 @@ onBeforeUnmount(closeMenu);
 .dock-work-panel.panel-goal .dock-work-body {
   margin-top: var(--space-3);
   padding: 0 var(--space-4) var(--space-4);
+}
+.dock-work-panel.body-scrolled-up .dock-work-body {
+  mask-image: linear-gradient(to bottom, transparent, black var(--menu-scroll-fade));
 }
 .wp-head-tab {
   flex: none;

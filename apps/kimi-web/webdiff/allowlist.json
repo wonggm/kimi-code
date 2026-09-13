@@ -479,6 +479,10 @@
     {
       "id": "*::*::missing-text::expand-all-workspaces",
       "reason": "Tooltip lifetime, not the control: both apps carry the label (upstream even renders its bubble text, the fork's is unmounted when the bubble closes) and the same aria-label on the same `.side-section-toggle`. Measured on the fork: the bubble mounts with the text 600ms after the click and the button keeps focus; the capture then runs the harness's own scroll normalisation, and the fork's tooltip hides on scroll (ui/Tooltip.vue onScrollOrResize) while upstream's survives it, so the text is missing from the fork's text inventory in that state."
+    },
+    {
+      "id": "*::*::missing-text::x-ad7828a7a0",
+      "reason": "Chinese counterpart of the sidebar's expand-all tooltip, missing for the same reason as the `expand-all-workspaces` entry above: the fork's bubble is unmounted by the time the walk's scroll normalisation runs, upstream's survives it. The zh capture also carries the text as a hash id rather than a slug, so the English entry does not cover it."
     }
   ],
   "warnings": [
@@ -695,6 +699,26 @@
     {
       "pattern": "CANVAS.doodle-canvas",
       "reason": "New-session doodle implementation: upstream draws its doodle into a canvas that is visible in the captured state; the fork's EmptyDoodle uses Rive with a fallback, and in the harness its canvas sits in a hidden subtree when no frame has been produced, so the digest excludes it while the element is still in the page source. Both apps render the same wordmark."
+    },
+    {
+      "pattern": "SPAN.mono.rvalue",
+      "scenes": ["*::walk-settings-click-01-button*"],
+      "reason": "The Agent defaults thinking row reads differently on purpose: upstream prints a read-only value in its value cell (`Thinking by default` -> \"No default model\", the same string its Default model row shows), while the fork renders a working Switch bound to the daemon's thinking default (`ui-switch is-on`, aria-checked true in the captured state) because the fork's thinking default is a boolean, not a model-derived level. Scoped to this surface: `rvalue` is shared by every value row on every settings panel, and a global rule would retire those comparisons too."
+    },
+    {
+      "pattern": "SPAN.hint",
+      "scenes": ["*::walk-settings-click-05-button*"],
+      "reason": "Advanced panel: upstream's `Auto-fold messages` row is not ported (permanently rejected turn-folding decision, its label and description text already allowlisted), so its hint, its switch and the switch's thumb have no fork counterpart. An element signature carries no row identity, so the rule is scoped to this surface; the rest of the Advanced panel stays compared, and a row that later goes missing still lands as a `missing-text` blocker on its label."
+    },
+    {
+      "pattern": "BUTTON.is-on.ui-switch",
+      "scenes": ["*::walk-settings-click-05-button*"],
+      "reason": "Same unported `Auto-fold messages` row as SPAN.hint above - its toggle, captured in the on state."
+    },
+    {
+      "pattern": "SPAN.ui-switch__thumb",
+      "scenes": ["*::walk-settings-click-05-button*"],
+      "reason": "Same unported `Auto-fold messages` row as SPAN.hint above - the thumb inside its toggle."
     }
   ]
 }
