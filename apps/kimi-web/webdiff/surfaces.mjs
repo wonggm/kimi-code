@@ -343,10 +343,12 @@ export const BASE_SCENES = [
     attempts: SETTINGS_ROUTES,
     steps: [PIN_TAIL, { action: 'clickText', text: 'Settings', ms: 350 }],
     // The scene must actually LOOK like settings: with several fallback routes,
-    // a click that opens some other surface (a model menu, the account menu)
-    // would otherwise be captured under the name "settings" and poison the
-    // comparison. Both locales, since the run covers en and zh.
-    expect: /settings|appearance|theme|language|provider|plugin|permission|account|设置|外观|主题|语言|提供方|插件|权限|账户/i,
+    // a click that opens some other surface (a model menu, the account menu) would
+    // otherwise be captured under the name "settings" and poison the comparison.
+    // The pattern is deliberately narrow — labels only a settings surface carries,
+    // in both locales — because a broad one (it once also matched "permission",
+    // "account", "设置") lets a half-open menu satisfy it.
+    expect: /appearance|font size|外观|字体大小/i,
   },
   ...BEHAVIOUR_SCENES,
 ];
