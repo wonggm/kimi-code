@@ -913,16 +913,18 @@ function archiveTime(iso: string): string {
         <section v-show="activeTab === 'lab'" class="panel">
           <section class="sec">
             <h3 class="sec-title">{{ t('settings.tabs.lab') }}</h3>
-            <div class="row">
-              <span class="rlabel">
-                {{ t('settings.lab.sidebarTabs') }}
-                <span class="hint">{{ t('settings.lab.sidebarTabsHint') }}</span>
-              </span>
-              <Switch
-                :model-value="labSidebarTabs ?? false"
-                :label="t('settings.lab.sidebarTabs')"
-                @update:model-value="emit('setLabSidebarTabs', $event)"
-              />
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.lab.sidebarTabs') }}
+                  <span class="hint">{{ t('settings.lab.sidebarTabsHint') }}</span>
+                </span>
+                <Switch
+                  :model-value="labSidebarTabs ?? false"
+                  :label="t('settings.lab.sidebarTabs')"
+                  @update:model-value="emit('setLabSidebarTabs', $event)"
+                />
+              </div>
             </div>
           </section>
         </section>
