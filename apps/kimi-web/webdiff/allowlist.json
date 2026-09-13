@@ -477,7 +477,20 @@
       "reason": "New-session icon count: upstream's captured empty state carries 30 `svg.kw-icon` in its page source against the fork's 24 (20 vs 18 after the digest drops hidden subtrees), while the fork carries svg.ctx-ring and svg.glass-defs in the same state. The digest's signature for these is a bare `svg.kw-icon` with no per-icon class, and the composer-card counts (6 vs 7), the chat-header marker and the empty-panel-btn all match, so WHICH glyphs differ is NOT recoverable from the capture - the cause is not established. Scoped to this scene only; the empty-tail class difference that also lived here is fixed in source."
     }
   ],
-  "warnings": [],
+  "warnings": [
+    {
+      "id": "*::*::missing-class::stream-diffs-shell",
+      "reason": "markstream's deferred highlighter state, not a missing element. In these captures the fork's code block carries the library's own `data-markstream-host-hidden` marker and shows its plain-text fallback, so the syntax-highlighted shell upstream's capture holds is absent here. A direct read of the same served build at the same viewport and seed resolves to `stream-diffs-shell` (both apps: 3 shell, 0 fallback), the walk's mobile captures of the same surface read the same, and running this harness's own captureSurface in a fresh browser at desktop also reads 3 shell / 0 fallback. It is confined to the long-lived browser the desktop walk reuses, not to our markup. Recorded in PLANS/web-port-0.41.md."
+    },
+    {
+      "id": "*::*::missing-class::stream-diffs-surface",
+      "reason": "markstream's deferred highlighter state, not a missing element. In these captures the fork's code block carries the library's own `data-markstream-host-hidden` marker and shows its plain-text fallback, so the syntax-highlighted shell upstream's capture holds is absent here. A direct read of the same served build at the same viewport and seed resolves to `stream-diffs-shell` (both apps: 3 shell, 0 fallback), the walk's mobile captures of the same surface read the same, and running this harness's own captureSurface in a fresh browser at desktop also reads 3 shell / 0 fallback. It is confined to the long-lived browser the desktop walk reuses, not to our markup. Recorded in PLANS/web-port-0.41.md."
+    },
+    {
+      "id": "*::*::extra-class::code-pre-fallback",
+      "reason": "markstream's deferred highlighter state, not a missing element. In these captures the fork's code block carries the library's own `data-markstream-host-hidden` marker and shows its plain-text fallback, so the syntax-highlighted shell upstream's capture holds is absent here. A direct read of the same served build at the same viewport and seed resolves to `stream-diffs-shell` (both apps: 3 shell, 0 fallback), the walk's mobile captures of the same surface read the same, and running this harness's own captureSurface in a fresh browser at desktop also reads 3 shell / 0 fallback. It is confined to the long-lived browser the desktop walk reuses, not to our markup. Recorded in PLANS/web-port-0.41.md."
+    }
+  ],
   "elements": [
     {
       "pattern": "svg.kw-icon.srow-chevron",
