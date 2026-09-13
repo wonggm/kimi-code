@@ -10,6 +10,7 @@ export default {
     error: 'Error',
     unconfigured: 'Not configured',
   },
+  addProvider: 'Add provider',
   keySet: 'key set',
   keyNotSet: 'key not set',
   modelCount: '{count} models',
