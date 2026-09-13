@@ -14,6 +14,7 @@ import ChatDock from './ChatDock.vue';
 import PanelTabs from './PanelTabs.vue';
 import RightPanelPane from './RightPanelPane.vue';
 import { normalizePanelPreviewPath } from '../../lib/rightPanelTabs';
+import { agentTabTitle } from '../../lib/panelTabs';
 import { PANEL_PREVIEW_MIN, useRightPanel } from '../../composables/useRightPanel';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import EmptyDoodle from './EmptyDoodle.vue';
@@ -48,7 +49,6 @@ const props = defineProps<{
   /** Model-maintained todo list (TodoList tool) — shown as a floating card. */
   todos?: TodoView[];
   goal?: AppGoal | null;
-  goalLive?: { elapsedMs: number; turnsUsed: number; tokensTotal: number } | null;
   activationBadges?: ActivationBadges;
   status: ConversationStatus;
   thinking?: ThinkingLevel;
@@ -229,7 +229,6 @@ const chatPaneRef = ref<InstanceType<typeof ChatPane> | null>(null);
 const emptyComposerRef = ref<ComposerHandle | null>(null);
 const dockedComposerRef = ref<ComposerHandle | null>(null);
 const copyConversationCopied = ref(false);
-const goalExpandSignal = ref(0);
 let copyConversationCopiedTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Load text (and any attachments) into whichever composer is currently mounted
@@ -261,19 +260,20 @@ function handleCopyConversationCopied(): void {
   }, 2000);
 }
 
-function focusGoal(): void {
-  goalExpandSignal.value++;
-}
-
 const bashTasks = computed(() => props.tasks.filter((t) => t.kind !== 'subagent'));
-// The dock lists only BACKGROUND subagents. Foreground subagents render inline
-// in the message flow as the `Agent` tool card, so showing them here too would
-// duplicate them (and foreground ones can't be cancelled from the dock anyway).
+// The dock lists only BACKGROUND subagents, as upstream's does: a foreground
+// subagent renders inline in the message flow as the Agent tool card, and its
+// terminal signal is the tool result rather than a task event.
 const subagentTasks = computed(() =>
   props.tasks.filter((t) => t.kind === 'subagent' && t.runInBackground),
 );
 const bashRunning = computed(() => bashTasks.value.filter((t) => t.state === 'run').length);
 const subagentRunning = computed(() => subagentTasks.value.filter((t) => t.state === 'run').length);
+
+/** The right panel titles an agent tab with the agent it shows. */
+function panelAgentTitle(subagentId: string): string | undefined {
+  return agentTabTitle(props.appTasks ?? [], subagentId);
+}
 
 // Let AgentTool cards know whether their spawning tool-call has a matching live
 // or background subagent task, so the "Open detail" button can be hidden when
@@ -1731,6 +1731,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
       :is-git-repo="!!gitInfo"
       :pr="pr"
       :copied="copyConversationCopied"
+      :panel-open="panel.visible.value"
       @open-changes="emit('openChanges')"
       @open-panel="openPanelFromHeader"
       @copy-all="chatPaneRef?.copyConversation()"
@@ -1824,7 +1825,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
               @open-btw="emit('command', '/btw')"
               @create-goal="emit('createGoal', $event)"
               @control-goal="emit('controlGoal', $event)"
-              @focus-goal="focusGoal"
               @compact="emit('compact')"
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
@@ -1948,8 +1948,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
         :starred-ids="starredIds"
         :skills="skills"
         :goal="goal"
-        :goal-live="goalLive"
-        :goal-expand-signal="goalExpandSignal"
         :bash-tasks="bashTasks"
         :subagent-tasks="subagentTasks"
         :plan-entry="latestPlan"
@@ -1984,7 +1982,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
         @toggle-goal="emit('toggleGoal')"
           @open-btw="emit('command', '/btw')"
           @create-goal="emit('createGoal', $event)"
-          @focus-goal="focusGoal"
           @compact="emit('compact')"
           @pick-model="emit('pickModel')"
           @select-model="emit('selectModel', $event)"
@@ -2037,6 +2034,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
           :no-anim="panelDragging"
           :can-open-diff="changedFiles.length > 0"
           :can-open-side-chat="sessionId !== undefined"
+          :agent-title="panelAgentTitle"
           @activate="panel.activateTab($event)"
           @close="panel.closeTab($event)"
           @add="addPanelTab($event)"

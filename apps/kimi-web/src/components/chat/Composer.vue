@@ -1461,21 +1461,25 @@ function selectModel(modelId: string): void {
                 @keydown="onAddKeydown"
               >
                 <!-- Files / Goal / Plan / Swarm rows — shared with the mobile
-                     bottom-sheet variant below. -->
-                <ComposerAddMenu
-                  :has-upload="hasUpload"
-                  :goal-active="goalActive"
-                  :goal-mode="props.goalMode"
-                  :goal-can-pause="goalCanPause"
-                  :goal-can-resume="goalCanResume"
-                  :plan-on="planOn"
-                  :plan-armed-on="planArmedOn"
-                  :swarm-on="swarmOn"
-                  @files="runAddRow(openFilePicker)"
-                  @goal-main="goalActive ? runAddRow(() => emit('focusGoal')) : runAddRow(() => emit('toggleGoal'))"
-                  @plan="choosePlanRow"
-                  @swarm="chooseSwarmRow"
-                />
+                     bottom-sheet variant below. Upstream wraps them in this
+                     scroll box on desktop and renders them bare in the mobile
+                     sheet, so each surface owns its wrapper. -->
+                <div class="am-scroll" role="menu">
+                  <ComposerAddMenu
+                    :has-upload="hasUpload"
+                    :goal-active="goalActive"
+                    :goal-mode="props.goalMode"
+                    :goal-can-pause="goalCanPause"
+                    :goal-can-resume="goalCanResume"
+                    :plan-on="planOn"
+                    :plan-armed-on="planArmedOn"
+                    :swarm-on="swarmOn"
+                    @files="runAddRow(openFilePicker)"
+                    @goal-main="goalActive ? runAddRow(() => emit('focusGoal')) : runAddRow(() => emit('toggleGoal'))"
+                    @plan="choosePlanRow"
+                    @swarm="chooseSwarmRow"
+                  />
+                </div>
               </div>
             </Teleport>
           </div>
@@ -1701,7 +1705,7 @@ function selectModel(modelId: string): void {
       :model-value="addOpen && isMobile"
       @update:model-value="(open) => { if (!open) closeAdd(); }"
     >
-      <div class="menu-sheet" role="menu" @click.stop @keydown="onAddKeydown">
+      <div class="msheet-add" role="menu" @click.stop @keydown="onAddKeydown">
         <ComposerAddMenu
           :has-upload="hasUpload"
           :goal-active="goalActive"
@@ -2882,10 +2886,34 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   }
 }
 
-/* Mobile bottom-sheet content wrapper for the add / model menus: the sheet
-   own the surface, this just adds the padding the sheet body doesn't. */
-.menu-sheet {
-  padding: var(--space-1);
+/* Upstream's add-menu scroll box: desktop popover only, `.add-menu > .am-scroll`
+   with the rows as its children. Upstream rule for rule; values in the fork's
+   tokens where a token exists, otherwise upstream's literal. */
+.am-scroll {
+  /* Upstream --p-add-menu-h: var(--p-slash-menu-h) → 228px */
+  max-height: 228px;
+  /* Upstream --menu-row-hug: var(--space-1-5) → 6px */
+  margin: 0 -6px;
+  padding: 0 6px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  /* Upstream --menu-rows-seam */
+  gap: 1px;
+}
+.am-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile bottom-sheet content wrapper for the add menu, upstream's `.msheet-add`:
+   the sheet owns the surface, this lays the rows out in a column. Upstream caps
+   nothing here — the list scrolls with the sheet, not inside itself. */
+.msheet-add {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 6px;
   font-family: var(--font-ui);
 }
 

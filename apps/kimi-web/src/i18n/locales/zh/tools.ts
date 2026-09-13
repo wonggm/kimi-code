@@ -22,6 +22,11 @@ export default {
   agent: {
     foreground: '前台',
     background: '后台',
+    status: {
+      running: '运行中',
+      ok: '已完成',
+      error: '失败',
+    },
   },
   waitfor: {
     waitingAny: '等待任一后台任务',
@@ -111,6 +116,7 @@ export default {
   },
   output: {
     waiting: '等待输出…',
+    saved: '已保存的结果',
   },
   plan: {
     review: {

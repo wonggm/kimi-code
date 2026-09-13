@@ -202,14 +202,14 @@ const GOAL_STATUS_KEYS: Record<string, string> = {
   complete: 'status.goalStatusComplete',
 };
 
-function goalStatusLabel(value: unknown): string | undefined {
+export function goalStatusLabel(value: unknown): string | undefined {
   const status = str(value);
   if (!status) return undefined;
   const key = GOAL_STATUS_KEYS[status];
   return key ? t(key) : status;
 }
 
-function goalBudgetSummary(d: Record<string, unknown>): string | undefined {
+export function goalBudgetSummary(d: Record<string, unknown>): string | undefined {
   const value = num(d.value);
   const unit = str(d.unit);
   if (value === undefined || !unit) return undefined;

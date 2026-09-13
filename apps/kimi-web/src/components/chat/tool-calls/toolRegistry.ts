@@ -6,6 +6,7 @@ import AgentTool from './AgentTool.vue';
 import AskUserTool from './AskUserTool.vue';
 import EditTool from './EditTool.vue';
 import GenericTool from './GenericTool.vue';
+import GoalTool from './GoalTool.vue';
 import MediaTool from './MediaTool.vue';
 import SwarmTool from './SwarmTool.vue';
 import TodoTool from './TodoTool.vue';
@@ -27,5 +28,6 @@ export function resolveToolRenderer(tool: ToolCall): ToolRenderer {
   if (name === 'askuserquestion') return AskUserTool;
   if (name === 'todo') return TodoTool;
   if (name === 'waitfor') return WaitForTool;
+  if (name === 'creategoal' || name === 'getgoal' || name === 'setgoalbudget' || name === 'updategoal') return GoalTool;
   return GenericTool;
 }

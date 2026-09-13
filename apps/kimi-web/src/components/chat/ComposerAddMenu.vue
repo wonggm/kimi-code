@@ -75,7 +75,9 @@ const SWARM_ICON =
 </script>
 
 <template>
-  <div class="am-scroll" role="menu">
+  <!-- Rows only: upstream puts `am-scroll` inside its desktop `.add-menu` and
+       renders these rows bare inside the mobile sheet's `.msheet-add`, so each
+       call site supplies its own wrapper (see Composer.vue). -->
     <!-- Files — opens the attachment picker -->
     <button
       v-if="hasUpload"
@@ -161,29 +163,14 @@ const SWARM_ICON =
       <span class="am-name">{{ t('status.swarmLabel') }}</span>
       <span class="am-desc">{{ t('composer.addSwarmDesc') }}</span>
     </button>
-  </div>
 </template>
 
 <style scoped>
 /* Row geometry and colours are upstream's add-menu rules; values in the fork's
    tokens where a token exists, otherwise upstream's literal (the fork's token
    sheet has no --p-slash-menu-h, --space-1-5, --menu-rows-seam or
-   --menu-row-gap-icon). */
-.am-scroll {
-  /* Upstream --p-add-menu-h: var(--p-slash-menu-h) → 228px */
-  max-height: 228px;
-  /* Upstream --menu-row-hug: var(--space-1-5) → 6px */
-  margin: 0 -6px;
-  padding: 0 6px;
-  overflow-y: auto;
-  scrollbar-width: none;
-  display: flex;
-  flex-direction: column;
-  /* Upstream --menu-rows-seam */
-  gap: 1px;
-}
-.am-scroll::-webkit-scrollbar { display: none; }
-
+   --menu-row-gap-icon). The wrapper rules live with the wrappers: `.am-scroll`
+   in Composer.vue's desktop popover, `.msheet-add` in its mobile sheet. */
 .am-row {
   display: flex;
   align-items: center;

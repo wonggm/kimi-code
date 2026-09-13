@@ -24,7 +24,234 @@ export const PRIORITY_CLASS = 'ui-pill';
 // messages" label) and the two apps restore it differently after the seed
 // reload, so an unpinned capture reports two different scroll states as a
 // markup difference. `scrollBottom` is a no-op when the content already fits.
-const PIN_TAIL = { action: 'scrollBottom', selector: '.chat-scroll', ms: 700 };
+const PIN_TAIL = { action: 'scrollBottom', selector: '.chat-scroll', ms: 200 };
+
+// The dock's three pills, addressed by their position in `.dock-workbar` (Goal,
+// Plan, Bash, Background Agent, Progress) rather than by label: upstream has no
+// per-pill attribute and both apps localize the aria-label, so a label step
+// would only work in one locale. The workbar holds exactly these pills as its
+// own children on both apps.
+const DOCK_GOAL_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(1)', ms: 500 };
+const DOCK_BASH_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(3)', ms: 400 };
+const DOCK_AGENT_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(4)', ms: 400 };
+
+// Behaviour scenes. The walk reaches a surface by replaying clicks and then
+// diffs markup, so it cannot see what a control DOES: whether the same control
+// flips state, which pane a pill opens, whether a panel dismisses, what a
+// selection popup offers. Each scene below states the outcome it needs in
+// `requires`, checked on the live page after the steps (see capture.mjs
+// `checkRequirements`); a failed check is reported as a blocker for the app that
+// failed it, so a behaviour the fork does not have fails the run even though
+// every capture it writes still diffs as a plausible surface.
+//
+// `requires` entries:
+//   name     short id; it is part of the finding id, so keep it stable
+//   present  CSS selector that must match `count` visible elements (default 1+)
+//   absent   CSS selector that must match no visible element
+//   text     RegExp that must match the visible text of `within` (default: body)
+//   not      inverts `text`: the scope must NOT contain it. A CSS selector cannot
+//            name a row by its text, so this is how a scene says "this row is
+//            absent" (e.g. a dock panel that must not list a foreground agent).
+//   within   the scope for `text`
+// "Visible" means rendered and not parked off the side of the viewport: both apps
+// keep a closed right panel in the DOM parked at x = innerWidth with a real
+// layout box, so a selector-only test would read the parked panel as open.
+// Vertical position is not part of the test — the transcript scrolls, and a card
+// above or below the fold is still the rendered state.
+//
+// `then` is the second capture point of a transition: the scene's steps are
+// replayed, then `then.steps` are appended, the result is captured under
+// `${name}-${then.name}`, and `then.requires` is checked there. A closed state
+// looks like `main`, so its capture is usually not written (nothing opened) —
+// the requirement check runs regardless and is what reports the dismissal.
+//
+// The scenes pose a desktop interaction (a clickable right panel, a text drag
+// for a popover, a floating panel anchored above the dock). The mobile shell
+// mounts different panes and neither app is being compared there for these
+// behaviours, so `desktopOnly` keeps a mobile combination from reporting both
+// apps as failing a scene neither was written for. `enOnly` does the same for a
+// scene whose steps or requirements name UI label text: a selector cannot say
+// "the pill labelled Bash" without hardcoding a locale, and a requirement that
+// names a label is only true in the locale that spells it that way.
+// `snapshot: false` marks a scene whose evidence is the requirement result only:
+// the surface is gone by the time a capture's settle finishes (the selection
+// popup), so no capture is written and the "opened nothing" bookkeeping is
+// skipped rather than reported as a coverage gap.
+export const BEHAVIOUR_SCENES = [
+  {
+    name: 'behaviour-dock-panel-toggle',
+    desktopOnly: true,
+    // Item 1's own reading: the dock panel opens on its pill and the SAME pill
+    // closes it. Both apps behave this way today; the fork's difference is in the
+    // right pane's control, which `behaviour-right-pane-toggle` poses.
+    steps: [PIN_TAIL, DOCK_BASH_PILL],
+    requires: [{ name: 'dock-panel-open', present: '.dock-work-panel' }],
+    then: {
+      name: 'closed',
+      steps: [DOCK_BASH_PILL],
+      requires: [{ name: 'dock-panel-closed', absent: '.dock-work-panel' }],
+    },
+  },
+  {
+    name: 'behaviour-right-pane-toggle',
+    desktopOnly: true,
+    // Its requirements name UI label text (the panel control's aria-label, the card
+    // subtitle, "Done when"), which only exists in the English locale.
+    enOnly: true,
+    // Upstream's right pane is one control whose label flips open → close (its
+    // header button is replaced by the panel's close control at the same point);
+    // the fork keeps the header button labelled "Open right panel" AND shows the
+    // panel's own close button, so two controls are on screen while it is open.
+    steps: [PIN_TAIL, { action: 'click', selector: '.ch-panel', ms: 600 }],
+    requires: [
+      { name: 'right-pane-open', present: '.pt-shell' },
+      { name: 'right-pane-one-control', present: '[aria-label*="right panel" i]', count: 1 },
+    ],
+    then: {
+      name: 'closed',
+      steps: [{ action: 'click', selector: '.ptb-hide', ms: 600 }],
+      requires: [
+        { name: 'right-pane-closed', absent: '.pt-shell' },
+        { name: 'right-pane-control-restored', present: '[aria-label="Open right panel"]', count: 1 },
+      ],
+    },
+  },
+  {
+    name: 'behaviour-dock-pane-bash',
+    desktopOnly: true,
+    // A bash row in the dock panel hands the task to the side panel: upstream
+    // opens a tab for the task whose pane carries the command and the output
+    // ("$ pytest -q" / "collected 12 items"); the fork only reveals the panel,
+    // which is left showing its empty tab list. Scoped to `.pt-body` so the
+    // dock list's own command text cannot satisfy the check.
+    steps: [PIN_TAIL, DOCK_BASH_PILL, { action: 'click', selector: '.dock-work-panel .tp-open', ms: 600 }],
+    requires: [
+      { name: 'bash-pane-command', within: '.pt-body', text: /\$ pytest -q/ },
+      { name: 'bash-pane-output', within: '.pt-body', text: /collected 12 items/ },
+    ],
+  },
+  {
+    name: 'behaviour-dock-outside-click',
+    desktopOnly: true,
+    // Item 3. The transcript is the neutral region a dismiss must react to: a
+    // click on the sidebar already dismisses the fork's panel, a click inside the
+    // transcript does not. 720,300 is inside the transcript on both desktop
+    // layouts (the chat column spans x≈490–1210, y≈40–850) and below the dock.
+    steps: [PIN_TAIL, DOCK_BASH_PILL],
+    requires: [{ name: 'dock-panel-open', present: '.dock-work-panel' }],
+    then: {
+      name: 'dismissed',
+      steps: [{ action: 'clickPoint', x: 720, y: 300, ms: 500 }],
+      requires: [{ name: 'dock-panel-dismissed', absent: '.dock-work-panel' }],
+    },
+  },
+  {
+    name: 'behaviour-subagent-card',
+    desktopOnly: true,
+    // Its requirements name UI label text (the panel control's aria-label, the card
+    // subtitle, "Done when"), which only exists in the English locale.
+    enOnly: true,
+    // Item 4. The card lives inside the tool run fold, which both apps render
+    // collapsed, so the run is scrolled to and expanded first; the card itself
+    // then has to be expanded for its result body. The two apps reveal the result
+    // from different controls: the fork's head is the disclosure, while upstream's
+    // head opens the right-hand detail panel and a second control on the card
+    // (`.saved-result`) is what mounts `div.result`. So the second variant adds
+    // that click, and `expect` decides which variant the capture keeps — without
+    // it the first variant would be recorded and upstream's result read as missing.
+    expect: /Fit converged/,
+    attempts: [
+      [
+        PIN_TAIL,
+        { action: 'scrollTo', selector: '.ar-head', ms: 300 },
+        { action: 'click', selector: '.ar-head', ms: 500 },
+        { action: 'scrollTo', selector: '.agent-card .head', ms: 300 },
+        { action: 'click', selector: '.agent-card .head', ms: 500 },
+      ],
+      [
+        PIN_TAIL,
+        { action: 'scrollTo', selector: '.ar-head', ms: 300 },
+        { action: 'click', selector: '.ar-head', ms: 500 },
+        { action: 'scrollTo', selector: '.agent-card .head', ms: 300 },
+        { action: 'click', selector: '.agent-card .head', ms: 500 },
+        { action: 'click', selector: '.agent-card .saved-result', ms: 500 },
+      ],
+    ],
+    requires: [
+      { name: 'subagent-card-shape', present: '.agent-card' },
+      { name: 'subagent-card-subtitle', text: /Foreground · coder/ },
+      { name: 'subagent-card-description', text: /Refit the hadronic interaction model/ },
+      { name: 'subagent-card-result', text: /Fit converged: chi2\/ndf = 1\.24/ },
+    ],
+  },
+  {
+    name: 'behaviour-agent-panel-foreground',
+    desktopOnly: true,
+    // Item 5, posed the way upstream actually behaves: the panel lists the
+    // background subagents and must NOT list the foreground one — upstream's dock
+    // filter keeps `kind === 'subagent' && runInBackground` (its rows come from a
+    // task whose `detached` is true). The fixture poses three subagent rows, one
+    // of them foreground, so a list that grows to three fails this check.
+    steps: [PIN_TAIL, DOCK_AGENT_PILL],
+    requires: [
+      { name: 'agent-panel-running-row', within: '.dock-work-panel', text: /Refit the hadronic model/ },
+      { name: 'agent-panel-completed-row', within: '.dock-work-panel', text: /Explore the repo layout/ },
+      { name: 'agent-panel-foreground-excluded', within: '.dock-work-panel', text: /Refit the hadronic interaction model/, not: true },
+    ],
+  },
+  {
+    name: 'behaviour-subagent-transcript',
+    desktopOnly: true,
+    // Item 6. Opening a subagent's card in the Background Agent panel gives the
+    // agent its own transcript in the right panel, headed with that agent's name;
+    // upstream titles the pane with it, the fork labels it "Subagent".
+    steps: [PIN_TAIL, DOCK_AGENT_PILL, { action: 'click', selector: '.sg-grid > .sg-card:nth-of-type(1)', ms: 800 }],
+    requires: [{ name: 'agent-pane-titled', within: '.pt-shell', text: /Refit the hadronic model/ }],
+  },
+  {
+    name: 'behaviour-goal-panel',
+    desktopOnly: true,
+    // Its requirements name UI label text (the panel control's aria-label, the card
+    // subtitle, "Done when"), which only exists in the English locale.
+    enOnly: true,
+    // Item 7, panel shape only. Upstream's goal pill opens a floating
+    // `dock-work-panel.panel-goal` (head with the elapsed time, objective, "Done
+    // when" plus the criterion) above the dock pills; the fork has no goal pill
+    // and renders an in-flow strip instead, so the click misses and the panel
+    // checks fail. Only the panel is asserted here — the fixture poses a single
+    // goal status, so the paused / blocked / complete variants are not posed.
+    steps: [PIN_TAIL, DOCK_GOAL_PILL],
+    requires: [
+      { name: 'goal-panel-open', present: '.dock-work-panel.panel-goal' },
+      { name: 'goal-panel-objective', within: '.dock-work-panel', text: /Reduce the pion-production systematic uncertainty below 3%/ },
+      { name: 'goal-panel-done-when', within: '.dock-work-panel', text: /Done when/ },
+    ],
+  },
+  {
+    name: 'behaviour-selection-popup',
+    desktopOnly: true,
+    // The popup's items are UI labels, so this scene is English-only: its
+    // requirements name the strings themselves, which do not exist in the other
+    // locale. It also writes no capture (`snapshot: false`): both apps dismiss the
+    // popup once the pointer or selection moves on, and the capture's own settle
+    // runs after the requirement check, so the digest would only ever see a
+    // closed popup. The requirement result is the evidence.
+    enOnly: true,
+    snapshot: false,
+    // Item 8. `select` is the harness's one programmatic step: a Range over a
+    // transcript paragraph plus `selectionchange` and `mouseup`, which is what
+    // both apps' selection capture reacts to (a synthetic mouse drag does not
+    // open the popover on either). The step scrolls the block into view itself,
+    // because the tail pin would otherwise leave it above the viewport. "Comment"
+    // is the upstream-only item; the fork offers "Cancel" and "Add to chat" over
+    // a comment box.
+    steps: [PIN_TAIL, { action: 'select', selector: '.paragraph-node', chars: 24, ms: 500 }],
+    requires: [
+      { name: 'selection-menu-comment', text: /Comment/ },
+      { name: 'selection-menu-add-to-chat', text: /Add to chat/ },
+    ],
+  },
+];
 
 export const BASE_SCENES = [
   { name: 'main', steps: [PIN_TAIL] },
@@ -42,34 +269,35 @@ export const BASE_SCENES = [
     // item; upstream reaches Settings from the account row, whose label follows
     // the locale (Not signed in / Sign in / 未登录 / 登录).
     attempts: [
-      [{ action: 'click', selector: '.side-footer-settings', ms: 900 }],
-      [{ action: 'clickText', text: 'Not signed in', ms: 700 }, { action: 'clickText', text: 'Settings', ms: 900 }],
-      [{ action: 'clickText', text: 'Sign in', ms: 700 }, { action: 'clickText', text: 'Settings', ms: 900 }],
-      [{ action: 'clickText', text: '未登录', ms: 700 }, { action: 'clickText', text: '设置', ms: 900 }],
-      [{ action: 'clickText', text: '登录', ms: 700 }, { action: 'clickText', text: '设置', ms: 900 }],
-      [{ action: 'clickText', text: 'Settings', ms: 900 }],
-      [{ action: 'clickText', text: '设置', ms: 900 }],
-      [{ action: 'click', selector: '[aria-label="Settings"]', ms: 900 }],
-      [{ action: 'click', selector: '[aria-label="设置"]', ms: 900 }],
+      [{ action: 'click', selector: '.side-footer-settings', ms: 350 }],
+      [{ action: 'clickText', text: 'Not signed in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+      [{ action: 'clickText', text: 'Sign in', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+      [{ action: 'clickText', text: '未登录', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
+      [{ action: 'clickText', text: '登录', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
+      [{ action: 'clickText', text: 'Settings', ms: 350 }],
+      [{ action: 'clickText', text: '设置', ms: 350 }],
+      [{ action: 'click', selector: '[aria-label="Settings"]', ms: 350 }],
+      [{ action: 'click', selector: '[aria-label="设置"]', ms: 350 }],
       // Mobile: neither app has the desktop footer. The fork hides its settings
       // sheet behind the header control, upstream behind an icon button, so try
       // the generic routes too - a miss is recorded as a gap, not silently
       // treated as "settings matched".
-      [{ action: 'click', selector: '[aria-label*="ettings" i]', ms: 900 }],
-      [{ action: 'click', selector: '[aria-label*="设置"]', ms: 900 }],
-      [{ action: 'clickText', text: 'More', ms: 700 }, { action: 'clickText', text: 'Settings', ms: 900 }],
-      [{ action: 'clickText', text: '更多', ms: 700 }, { action: 'clickText', text: '设置', ms: 900 }],
-      [{ action: 'clickText', text: 'Menu', ms: 700 }, { action: 'clickText', text: 'Settings', ms: 900 }],
-      [{ action: 'click', selector: 'header button:last-of-type', ms: 900 }],
-      [{ action: 'click', selector: '.topbar button:last-of-type', ms: 900 }],
+      [{ action: 'click', selector: '[aria-label*="ettings" i]', ms: 350 }],
+      [{ action: 'click', selector: '[aria-label*="设置"]', ms: 350 }],
+      [{ action: 'clickText', text: 'More', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+      [{ action: 'clickText', text: '更多', ms: 300 }, { action: 'clickText', text: '设置', ms: 350 }],
+      [{ action: 'clickText', text: 'Menu', ms: 300 }, { action: 'clickText', text: 'Settings', ms: 350 }],
+      [{ action: 'click', selector: 'header button:last-of-type', ms: 350 }],
+      [{ action: 'click', selector: '.topbar button:last-of-type', ms: 350 }],
     ].map((attempt) => [PIN_TAIL, ...attempt]),
-    steps: [PIN_TAIL, { action: 'clickText', text: 'Settings', ms: 900 }],
+    steps: [PIN_TAIL, { action: 'clickText', text: 'Settings', ms: 350 }],
     // The scene must actually LOOK like settings: with several fallback routes,
     // a click that opens some other surface (a model menu, the account menu)
     // would otherwise be captured under the name "settings" and poison the
     // comparison. Both locales, since the run covers en and zh.
     expect: /settings|appearance|theme|language|provider|plugin|permission|account|设置|外观|主题|语言|提供方|插件|权限|账户/i,
   },
+  ...BEHAVIOUR_SCENES,
 ];
 
 // A control that only changes computed styles (a plain button hover) is not a

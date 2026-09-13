@@ -1,10 +1,11 @@
 <!-- apps/kimi-web/src/components/chat/RightPanelPane.vue -->
 <!-- What the right panel shows for the active tab. One pane per upstream kind:
      the changed-files view (which drills into one file's diff in place), the
-     turn diff, the file preview, the agent transcript, a compaction summary, a
-     side chat, a terminal. The tab strip and the panel's chrome live in
-     PanelTabs.vue; this file only renders the body, so each pane can be
-     re-shaped against upstream's component on its own. -->
+     turn diff, the file preview, the agent pane (a subagent's transcript, or a
+     bash task's command and output), a compaction summary, a side chat, a
+     terminal. The tab strip and the panel's chrome live in PanelTabs.vue; this
+     file only renders the body, so each pane can be re-shaped against upstream's
+     component on its own. -->
 <script setup lang="ts">
 import { computed, inject } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -19,6 +20,7 @@ import DiffView from './DiffView.vue';
 import ThinkingPanel from './ThinkingPanel.vue';
 import SideChatPanel from './SideChatPanel.vue';
 import AgentDetailPanel from './AgentDetailPanel.vue';
+import BashTaskPanel from './BashTaskPanel.vue';
 import TurnDiffPanel from './TurnDiffPanel.vue';
 import FilePreview from '../FilePreview.vue';
 import Terminal from '../Terminal.vue';
@@ -139,6 +141,11 @@ const compactionText = computed(() => {
     @open-external="preview?.openPreviewInEditor()"
     @reveal="preview?.revealPreviewFile()"
     @refresh="preview?.refreshPreview()"
+  />
+
+  <BashTaskPanel
+    v-else-if="tab.kind === 'agent' && agentMember?.kind === 'bash'"
+    :member="agentMember"
   />
 
   <AgentDetailPanel

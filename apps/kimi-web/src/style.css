@@ -198,6 +198,10 @@ summary {
   --r-md: var(--radius-lg);
   --r-lg: var(--radius-xl);
   --base-ui-font-size: 14px;
+  /* The user's font-size preference shifts every derived type step by the same
+     amount, which is how upstream couples its scale (`--ui-shift` /
+     `--md-shift` off `--base-font`). Zero at the default 14px. */
+  --ui-shift: calc(var(--base-ui-font-size) - 14px);
   --ui-font-size: var(--base-ui-font-size);
   --ui-font-size-sm: calc(var(--ui-font-size) - 1px);
   --ui-font-size-xs: calc(var(--ui-font-size) - 2px);
@@ -570,14 +574,19 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace,
     "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  /* -- type scale (6 levels, design-system §03) --------------------------- */
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-base: 14px;
-  --text-lg: 16px;
-  --text-xl: 18px;
-  --text-2xl: 22px;
+  /* -- type scale (6 levels, design-system §03) ---------------------------
+     Each step rides `--ui-shift`, so raising the font-size preference moves
+     the whole scale together, as upstream's does. At the default 14px the
+     values are the fixed 12/13/14/16/18/22 they have always been. */
+  --text-xs: calc(12px + var(--ui-shift));
+  --text-sm: calc(13px + var(--ui-shift));
+  --text-base: calc(14px + var(--ui-shift));
+  --text-lg: calc(16px + var(--ui-shift));
+  --text-xl: calc(18px + var(--ui-shift));
+  --text-2xl: calc(22px + var(--ui-shift));
   --leading-tight: 1.25;
+  /* Upstream's solid leading, used by single-line rows (its activity summary). */
+  --leading-solid: 1;
   --leading-normal: 1.5;
   --leading-relaxed: 1.7;
   /* Prose line-height, upstream's own token value (`--leading-prose: 1.6`). */
@@ -587,6 +596,8 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --weight-medium: 500;
   --weight-option-label: 475;
   --weight-ui-strong: 525;
+  /* Section label weight, upstream's own token value (`--weight-section-label: 600`). */
+  --weight-section-label: 600;
   --weight-semibold: 700;
   --icon-button-sm: 26px;
 
@@ -1893,11 +1904,17 @@ body {
   font-size: var(--ui-font-size-xs);
 }
 
+/* Narrow screens: upstream raises the prose token itself (`--md-b1 + 2px`), and
+   keeps blockquote/cell text one pixel under it (`--md-b2 + 2px`). Bumping the
+   token covers every prose selector, plus the bubble and the placeholder. */
 @media (max-width: 640px) {
-  .u-bub .u-text,
-  .a-msg .msg,
-  .ph {
-    font-size: max(16px, var(--ui-font-size-xl));
+  :root {
+    --content-font-size: calc(var(--base-ui-font-size) + 2px);
+  }
+  .md .markdown-renderer blockquote,
+  .md .markdown-renderer td,
+  .md .markdown-renderer th {
+    font-size: calc(var(--content-font-size) - 1px);
   }
 }
 

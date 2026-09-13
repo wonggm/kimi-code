@@ -77,6 +77,22 @@ export function cssInventory(distDir) {
 export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, coverage }) {
   const findings = [];
   const combos = [...new Set([...listDirs(path.join(runDir, 'upstream')), ...listDirs(path.join(runDir, 'fork'))])].sort();
+  // Scenes that state their outcome (`requires`, see surfaces.mjs). Such a scene
+  // poses its surface by hand, so its markup diff is the fork's own shape of that
+  // surface — the difference the scene exists to look PAST — and a stated scene
+  // contributes dozens of blocker/warning findings that bury the requirement
+  // findings it exists to produce. Its diff is recorded at info level and its
+  // requirement checks carry the weight; a scene with no requirements is
+  // unaffected.
+  const statedScenes = new Set();
+  for (const value of Object.values(coverage ?? {})) {
+    for (const requirement of value?.requirements ?? []) {
+      statedScenes.add(requirement.scene);
+      // A `then` stage writes a capture under `${scene}-${stage}`; it is judged
+      // by its own requirement, so it is a stated scene too.
+      if (requirement.stage) statedScenes.add(`${requirement.scene}-${requirement.stage}`);
+    }
+  }
 
   for (const combo of combos) {
     const upstreamDir = path.join(runDir, 'upstream', combo);
@@ -85,6 +101,7 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
 
     for (const scene of scenes) {
       const where = `${combo}::${scene}`;
+      const stated = statedScenes.has(scene);
       const upstream = readJson(path.join(upstreamDir, `${scene}.json`));
       const fork = readJson(path.join(forkDir, `${scene}.json`));
       // `walk` is the aggregate of one app's own walk captures, and its
@@ -159,10 +176,10 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
         // is what the no-element branch below already falls back to.
         return Math.hypot(a.x - b.x, a.y - b.y) <= 60;
       })();
-      const softer = isAggregate || (isUnlabelled && !samePlace);
+      const softer = isAggregate || stated || (isUnlabelled && !samePlace);
       if (!upstream || !fork) {
         findings.push({
-          kind: isWalk ? 'info' : 'blocker',
+          kind: isWalk || stated ? 'info' : 'blocker',
           id: `${where}::surface-missing`,
           where: scene,
           message: `${!upstream ? 'upstream' : 'fork'} has this surface, the other app does not`,
@@ -331,7 +348,7 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
         findings.push({ kind: softer ? 'info' : 'blocker', id: `${where}::missing-text::${slugOf(text)}`, where: scene, message: softer && isUnlabelled ? `text "${text}" present upstream, missing on fork (surface paired by tag only - the two apps' walks reached different unlabelled controls here, so the difference is not attributable)` : `text "${text}" present upstream, missing on fork`, text });
       }
       for (const text of extra) {
-        findings.push({ kind: 'warning', id: `${where}::extra-text::${slugOf(text)}`, where: scene, message: `text "${text}" only on fork`, text });
+        findings.push({ kind: stated ? 'info' : 'warning', id: `${where}::extra-text::${slugOf(text)}`, where: scene, message: `text "${text}" only on fork`, text });
       }
 
       const upstreamClasses = readJson(path.join(upstreamDir, `${scene}.classes.json`));
@@ -340,7 +357,7 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
         const missingClasses = onlyIn(Object.keys(upstreamClasses.classes ?? {}), Object.keys(forkClasses.classes ?? {})).slice(0, MAX_PER_KIND);
         const extraClasses = onlyIn(Object.keys(forkClasses.classes ?? {}), Object.keys(upstreamClasses.classes ?? {})).slice(0, MAX_PER_KIND);
         for (const cls of missingClasses) {
-          findings.push({ kind: 'warning', id: `${where}::missing-class::${slugOf(cls)}`, where: scene, message: `class ".${cls}" present upstream, missing on fork`, text: cls });
+          findings.push({ kind: stated ? 'info' : 'warning', id: `${where}::missing-class::${slugOf(cls)}`, where: scene, message: `class ".${cls}" present upstream, missing on fork`, text: cls });
         }
         for (const cls of extraClasses) {
           findings.push({ kind: 'info', id: `${where}::extra-class::${slugOf(cls)}`, where: scene, message: `class ".${cls}" only on fork (design-system divergence or fork-only component)`, text: cls });
@@ -366,7 +383,7 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
       }
       if (drifted.length > 0) {
         findings.push({
-          kind: 'warning',
+          kind: stated ? 'info' : 'warning',
           id: `${where}::style-drift`,
           where: scene,
           message: `computed-style drift on ${drifted.length} selector(s) (expected for glass/token re-expression — check each is intended)`,
@@ -405,7 +422,7 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
     const [comboName, app] = key.split('::');
     for (const scene of value?.notOpened ?? []) {
       findings.push({
-        kind: 'warning',
+        kind: statedScenes.has(scene) ? 'info' : 'warning',
         id: `${comboName}::${scene}::surface-not-opened`,
         where: scene,
         message: `${app}: the scene opened no new surface — its capture is identical to main, so nothing inside it counts as covered`,
@@ -418,6 +435,36 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
         id: `${comboName}::${app}::walk-coverage`,
         where: 'walk',
         message: `${app}: ${walkStats.clickSurfaces} click surface(s), ${walkStats.hoverSurfaces} hover surface(s), ${walkStats.noChange} control action(s) produced no change; phases ${JSON.stringify(walkStats.phases)}`,
+      });
+    }
+    // Scene requirements: what a scene's interaction had to achieve, checked on
+    // the live page (capture.mjs checkRequirements) rather than diffed. A failed
+    // check is a blocker for the app that failed it — that is how a behaviour the
+    // fork does not have reaches the report even though every capture it writes
+    // still diffs as a plausible surface. A scene whose checks all passed gets one
+    // info line, so "both apps satisfy this" is visible instead of silent.
+    const requirementScenes = new Map();
+    for (const requirement of value?.requirements ?? []) {
+      const where = requirement.stage ? `${requirement.scene}-${requirement.stage}` : requirement.scene;
+      if (requirement.ok) {
+        const list = requirementScenes.get(where) ?? [];
+        list.push(requirement);
+        requirementScenes.set(where, list);
+        continue;
+      }
+      findings.push({
+        kind: 'blocker',
+        id: `${comboName}::${where}::requirement::${requirement.name}`,
+        where: requirement.scene,
+        message: `${app}: requirement "${requirement.name}" not met — ${requirement.detail}`,
+      });
+    }
+    for (const [where, list] of requirementScenes) {
+      findings.push({
+        kind: 'info',
+        id: `${comboName}::${where}::requirements-met`,
+        where: list[0].scene,
+        message: `${app}: ${list.length} scene requirement(s) met — ${list.map((requirement) => requirement.name).join(', ')}`,
       });
     }
   }

@@ -22,6 +22,11 @@ export default {
   agent: {
     foreground: 'Foreground',
     background: 'Background',
+    status: {
+      running: 'Running',
+      ok: 'Completed',
+      error: 'Failed',
+    },
   },
   waitfor: {
     waitingAny: 'Waiting for any background task',
@@ -111,6 +116,7 @@ export default {
   },
   output: {
     waiting: 'Waiting for output…',
+    saved: 'Saved result',
   },
   plan: {
     review: {

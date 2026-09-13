@@ -12,11 +12,38 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const SETTLE_GAP_MS = 250;
-const SETTLE_STABLE_READS = 3;
+const SETTLE_GAP_MS = 120;
+// Two consecutive identical reads, not three: the gap below already covers a
+// frame, and the known late-arriving state (upstream's `.scrolling` class, the
+// shiki fallback) is awaited by name rather than by waiting longer for anything.
+const SETTLE_STABLE_READS = 2;
 const SETTLE_TIMEOUT_MS = 25_000;
 const MAX_STYLED_ELEMENTS = 800;
 const MAX_HTML_CHARS = 4_000_000;
+
+// Wall-clock breakdown of a walk, off unless WEB_PORT_TIMING=1. Which phase pays
+// the per-surface cost decides where a speed-up can go: a reload is unavoidable
+// per surface, but a settle that always burns its timeout is not.
+const TIMING = process.env.WEB_PORT_TIMING === '1';
+const timings = new Map();
+async function timed(label, fn) {
+  if (!TIMING) return fn();
+  const t0 = Date.now();
+  try {
+    return await fn();
+  } finally {
+    const dt = Date.now() - t0;
+    const entry = timings.get(label) ?? { count: 0, ms: 0 };
+    entry.count += 1;
+    entry.ms += dt;
+    timings.set(label, entry);
+  }
+}
+export function timingReport() {
+  return [...timings.entries()]
+    .map(([label, { count, ms }]) => ({ label, count, totalMs: ms, avgMs: Math.round(ms / count) }))
+    .sort((a, b) => b.totalMs - a.totalMs);
+}
 
 export const STORAGE = {
   locale: 'kimi-locale',
@@ -45,7 +72,12 @@ export function buildSeed({ app, locale, theme, token }) {
   const seed = {
     [STORAGE.locale]: locale,
     [STORAGE.colorScheme]: theme,
-    [fontKey]: '16',
+    // The two apps store the same preference in different units: upstream keeps
+    // a step name (small|medium|large|xlarge, default medium = 14px) and the
+    // fork keeps a px size. Seeding one value for both left upstream at medium
+    // while the fork went to 16px, so every capture compared two type scales.
+    // 'large' is upstream's 16px step, which is what the fork's 16 means.
+    [fontKey]: app === 'upstream' ? 'large' : '16',
     [STORAGE.onboarded]: '1',
     [STORAGE.credential]: JSON.stringify({
       version: 1,
@@ -217,7 +249,36 @@ export async function normalizeScroll(cdp) {
     }
     return true;
   })()`);
-  await new Promise((resolve) => setTimeout(resolve, SETTLE_GAP_MS * 2));
+  // Upstream marks its scroller `.scrolling` while a scroll is in flight and
+  // drops the class once it goes idle. Capturing inside that window records a
+  // class the other app never has, which the comparison reads as a missing
+  // element — so wait it out, bounded.
+  const idle = Date.now() + 1_000;
+  for (;;) {
+    const live = await cdp.evaluate(`(() => document.querySelectorAll('.scrolling').length)()`);
+    if (live === 0 || Date.now() > idle) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  // The caller settles right after this, and that settle is what decides the
+  // scroll has stopped; this only gives the assignment a frame to land.
+  await new Promise((resolve) => setTimeout(resolve, SETTLE_GAP_MS));
+}
+
+const EFFECT_PROBE = `(() => { const b = document.body; return b ? b.querySelectorAll('*').length + '|' + b.innerText.length : null; })()`;
+
+/** The tree's cheap signature, for waiting on a step's effect. */
+export function domProbe(cdp) {
+  return cdp.evaluate(EFFECT_PROBE);
+}
+
+/** Wait until the tree differs from `before`, capped — the step's own dwell. */
+async function waitForEffect(cdp, before, capMs) {
+  const deadline = Date.now() + capMs;
+  for (;;) {
+    const now = await cdp.evaluate(EFFECT_PROBE);
+    if (now !== before || Date.now() > deadline) return now;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
 }
 
 export async function waitForSettled(cdp, { timeoutMs = SETTLE_TIMEOUT_MS } = {}) {
@@ -297,26 +358,109 @@ async function runStep(cdp, step) {
       return true;
     })()`;
     await cdp.evaluate(pin(`Math.max(0, el.scrollHeight - ${Number(back)})`));
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    // One frame for the app to register the upward scroll, then the tail jump.
+    // The follow flag it arms is awaited after the steps (open:scroll-pin), so
+    // this pause does not need to cover it.
+    await new Promise((resolve) => setTimeout(resolve, 60));
     await cdp.evaluate(pin('el.scrollHeight'));
-    await new Promise((resolve) => setTimeout(resolve, step.ms ?? 600));
+    await new Promise((resolve) => setTimeout(resolve, step.ms ?? 200));
     return null;
   }
   if (step.action === 'press') {
+    const effect = await domProbe(cdp);
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: step.key, code: step.key, windowsVirtualKeyCode: 27 });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: step.key, code: step.key, windowsVirtualKeyCode: 27 });
-    await new Promise((resolve) => setTimeout(resolve, step.ms ?? 200));
+    await waitForEffect(cdp, effect, step.ms ?? 200);
     return null;
+  }
+  // Bring a named element into the viewport. Every scene starts by pinning the
+  // transcript to its tail, so anything further up (the tool-run fold, the long
+  // prose block) is off-screen when its step runs and a coordinate click or a
+  // Range lands nowhere. `scrollBottom` cannot serve here: it pins a scroller,
+  // not an element.
+  if (step.action === 'scrollTo') {
+    const effect = await domProbe(cdp);
+    const found = await cdp.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(step.selector)});
+      if (!el) return false;
+      el.scrollIntoView({ block: ${JSON.stringify(step.block ?? 'center')} });
+      return true;
+    })()`);
+    if (found) await waitForEffect(cdp, effect, step.ms ?? 250);
+    return found ? null : step.selector;
+  }
+  // Select text in a transcript block, which is what raises the selection
+  // popover. Verified on both apps: neither reacts to a synthetic mouse drag
+  // reliably (their selection capture reads a Range off the document), while a
+  // Range plus `selectionchange` and a `mouseup` on the block opens the popover
+  // on both. The first RENDERED match wins: both apps keep a parked copy of prose
+  // in the hidden shell (the sessions sheet's subtitle is a `.paragraph-node` on
+  // upstream with a 0×0 box), and a Range inside a parked block selects nothing
+  // the app can anchor a popover to.
+  //
+  // The block is scrolled into view first, in its own step: a Range built in the
+  // same tick as the scroll leaves the fork's selection capture with no anchor
+  // (measured: no popover at all, while upstream opens one either way), so the
+  // scroll has to land before the selection is built.
+  if (step.action === 'select') {
+    const selector = step.selector ?? '.paragraph-node';
+    const pick = `[...document.querySelectorAll(${JSON.stringify(selector)})].find((node) => {
+      const r = node.getBoundingClientRect();
+      return r.width > 200 && r.height > 20;
+    })`;
+    const found = await cdp.evaluate(`(() => {
+      const el = ${pick};
+      if (!el) return false;
+      el.scrollIntoView({ block: 'center' });
+      return true;
+    })()`);
+    if (!found) return selector;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const effect = await domProbe(cdp);
+    const selected = await cdp.evaluate(`(() => {
+      const el = ${pick};
+      if (!el) return false;
+      let text = null;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        if (walker.currentNode.textContent.trim().length > 20) {
+          text = walker.currentNode;
+          break;
+        }
+      }
+      if (!text) return false;
+      const range = document.createRange();
+      range.setStart(text, 0);
+      range.setEnd(text, Math.min(${Number(step.chars ?? 24)}, text.textContent.length));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const rect = range.getBoundingClientRect();
+      if (rect.width < 4) return false;
+      document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: rect.left + 20, clientY: rect.top + 8 }));
+      return true;
+    })()`);
+    if (selected) await waitForEffect(cdp, effect, step.ms ?? 400);
+    else await new Promise((resolve) => setTimeout(resolve, step.ms ?? 400));
+    return selected ? null : selector;
   }
   let target = null;
   if (step.action === 'clickPoint' || step.action === 'hoverPoint') target = { x: step.x, y: step.y };
   else if (step.action === 'clickText') target = await findClickableByText(cdp, step.text);
   else target = await cdp.elementCenter(step.selector);
   if (!target) return step.selector ?? step.text ?? `point:${step.x},${step.y}`;
+  const effect = await domProbe(cdp);
   if (step.action === 'click' || step.action === 'clickPoint' || step.action === 'clickText') await cdp.click(target.x, target.y);
   else if (step.action === 'hover' || step.action === 'hoverPoint') await cdp.mouseMove(target.x, target.y);
   else if (step.action === 'type') await cdp.typeInto(step.selector, step.text ?? '');
-  await new Promise((resolve) => setTimeout(resolve, step.ms ?? 250));
+  // `step.ms` is a cap, not a dwell: a click that opens a dialog changes the tree
+  // within a frame or two, and waiting for that change to appear is what the
+  // dwell was approximating. The cap still covers the step that opens nothing
+  // (a hover with no tooltip), so a surface that needs the full pause gets it.
+  const cap = step.ms ?? 250;
+  if (effect !== null) await waitForEffect(cdp, effect, cap);
+  else await new Promise((resolve) => setTimeout(resolve, cap));
   return null;
 }
 
@@ -384,29 +528,29 @@ export async function dropBootSplash(cdp) {
 }
 
 export async function openSurface(cdp, { url, steps = [], seed }) {
-  await primeStorage(cdp, seed);
+  await timed('open:storage', () => primeStorage(cdp, seed));
   // Emulate reduced motion BEFORE the load, so the app's first paint already has
   // it. Setting it after `navigate` let the first frame run with real transition
   // durations and made every surface's captured motion state depend on when the
   // override landed.
   await cdp.emulateMedia([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
   // One load: the seed script installs the boot keys before the app's scripts run.
-  await cdp.navigate(url);
+  await timed('open:navigate', () => cdp.navigate(url));
   // Wait for the app to boot BEFORE running the steps. A load event fires long
   // before Vue has rendered the shell, and a step that clicks into that window
   // finds nothing, records a gap, and leaves the surface looking untouched —
   // which is what made the settings scene fail for both apps while a manual
   // click with a 3 s pause opened it every time.
-  await waitForSettled(cdp, { timeoutMs: 20_000 });
+  await timed('open:settle-boot', () => waitForSettled(cdp, { timeoutMs: 20_000 }));
   // Settling is not enough: the fading splash still covers the UI, so wait for
   // it to be gone before any step clicks through to the surface underneath.
-  await waitForBootComplete(cdp);
-  await dropBootSplash(cdp);
+  await timed('open:boot-complete', () => waitForBootComplete(cdp));
+  await timed('open:drop-splash', () => dropBootSplash(cdp));
 
   const reached = [];
   const gaps = [];
   for (const step of steps) {
-    const missing = await runStep(cdp, step);
+    const missing = await timed(`open:step:${step.action}`, () => runStep(cdp, step));
     if (missing) gaps.push({ action: step.action, selector: missing });
     else reached.push({ action: step.action, selector: step.selector ?? step.text ?? `point:${step.x},${step.y}` });
   }
@@ -417,16 +561,19 @@ export async function openSurface(cdp, { url, steps = [], seed }) {
   // after the pin. Waiting for that class rather than for the DOM to stop
   // changing is what keeps the captured scroll state matching the intent.
   if (steps.some((step) => step.action === 'scrollBottom')) {
-    const deadline = Date.now() + 3_000;
-    for (;;) {
-      const pinned = await cdp.evaluate(
-        `(() => { const el = document.querySelector('.chat-scroll'); return !!el && el.classList.contains('is-following'); })()`,
-      );
-      if (pinned || Date.now() > deadline) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    await timed('open:scroll-pin', async () => {
+      // A surface without the chat scroller (the dock, a settings sheet) can
+      // never report the class, so ask once and leave instead of burning the cap.
+      const probe = `(() => { const el = document.querySelector('.chat-scroll'); return el ? el.classList.contains('is-following') : 'absent'; })()`;
+      const deadline = Date.now() + 800;
+      for (;;) {
+        const pinned = await cdp.evaluate(probe);
+        if (pinned === 'absent' || pinned === true || Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    });
   }
-  await waitForCodeBlocksSettled(cdp);
+  await timed('open:codeblocks', () => waitForCodeBlocksSettled(cdp));
   return { reached, gaps };
 }
 
@@ -452,6 +599,119 @@ async function waitForCodeBlocksSettled(cdp, { timeoutMs = 2_000 } = {}) {
     if (count === 0 || Date.now() > deadline) return;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
+}
+
+/**
+ * Scene requirements: the walk compares markup, so an interaction that toggles,
+ * opens or dismisses something never fails a capture — a click that opens
+ * nothing still leaves a plausible tree, and a component the fork renders in its
+ * own shape still produces a capture to diff. A scene states the OUTCOME it
+ * needs instead, and the check runs on the live page after its steps, where the
+ * state actually exists.
+ *
+ * Checks are element-based (an element counts when it is rendered and not parked
+ * off the side of the viewport — both apps park a closed panel at x = innerWidth)
+ * and text-based (a regex over the visible text of `within`, or the body). A
+ * failed check is recorded per app and reported as a blocker for that app.
+ */
+const REQUIRE_EXPR = (serialized) => `(() => {
+  const reqs = ${JSON.stringify(serialized)};
+  // "Visible" = rendered and not parked off the side of the viewport. Both apps
+  // keep a closed right panel in the DOM parked at x = innerWidth with a real
+  // layout box, so a selector-only test would read the parked panel as open.
+  // Vertical position is deliberately not part of the test: the transcript
+  // scrolls, and a card above or below the fold is still the rendered state.
+  const visible = (el) => {
+    if (!el.isConnected) return false;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return false;
+    return r.left < innerWidth && r.right > 0;
+  };
+  const snippet = (text) => String(text ?? '').replace(/\\s+/g, ' ').trim().slice(0, 120);
+  return reqs.map((req) => {
+    const out = { name: req.name, ok: false, count: null, saw: '', error: '' };
+    try {
+      if (req.present || req.absent) {
+        const selector = req.present || req.absent;
+        const count = [...document.querySelectorAll(selector)].filter(visible).length;
+        out.count = count;
+        out.ok = req.present ? (req.count === null ? count > 0 : count === req.count) : count === 0;
+        out.saw = selector + ' (' + count + ' rendered)';
+      } else if (req.text) {
+        const scope = req.within ? document.querySelector(req.within) : document.body;
+        const text = scope ? scope.innerText : null;
+        const matches = scope !== null && new RegExp(req.text.source, req.text.flags).test(text);
+        out.ok = req.not === true ? scope !== null && !matches : matches;
+        out.saw = scope === null ? req.within + ' is absent' : snippet(text);
+      }
+    } catch (error) {
+      out.error = String(error && error.message ? error.message : error);
+    }
+    return out;
+  });
+})()`;
+
+function serializeRequirement(requirement) {
+  return {
+    name: String(requirement?.name ?? ''),
+    present: requirement?.present ? String(requirement.present) : null,
+    absent: requirement?.absent ? String(requirement.absent) : null,
+    within: requirement?.within ? String(requirement.within) : null,
+    count: typeof requirement?.count === 'number' ? requirement.count : null,
+    text: requirement?.text instanceof RegExp ? { source: requirement.text.source, flags: requirement.text.flags } : null,
+    // `not: true` inverts a `text` requirement: the scope must NOT contain it.
+    // A CSS selector cannot name a row by its text, so this is how a scene states
+    // "this row is absent" (e.g. a panel that must not list foreground agents).
+    not: requirement?.not === true,
+  };
+}
+
+/**
+ * Run a scene's requirement checks against the page as it stands, polling until
+ * every requirement is met or `timeoutMs` runs out.
+ *
+ * The poll is what makes the check an outcome rather than a race: the step that
+ * opens a panel returns as soon as the cheap tree probe changes (the pill's
+ * `aria-pressed` flips before the panel mounts), so a single read right after the
+ * step caught upstream's panel mid-mount and reported it missing. A requirement
+ * that is never met still costs the full timeout, so a genuine miss is still a
+ * miss — it just takes a moment to be sure.
+ */
+export async function checkRequirements(cdp, requirements, label = 'main', { timeoutMs = 1_500, intervalMs = 150 } = {}) {
+  const list = (requirements ?? []).filter(Boolean);
+  if (list.length === 0) return [];
+  const serialized = list.map(serializeRequirement);
+  const deadline = Date.now() + timeoutMs;
+  let results;
+  for (;;) {
+    try {
+      results = await timed(`require:${label}`, () => cdp.evaluate(REQUIRE_EXPR(serialized)));
+    } catch (error) {
+      // A dead context (the page navigated, the target went away) must not lose the
+      // rest of a run's captures; the failure is reported as the requirement's own
+      // miss, with the reason, rather than swallowed.
+      results = list.map((requirement) => ({ name: requirement.name, ok: false, saw: '', error: String(error?.message ?? error) }));
+    }
+    if (results.every((result) => result.ok === true) || Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return results.map((result, index) => {
+    const requirement = list[index];
+    const expectation = requirement.present
+      ? `${requirement.count === undefined ? 'at least one' : requirement.count} visible element(s) matching "${requirement.present}"`
+      : requirement.absent
+        ? `no visible element matching "${requirement.absent}"`
+        : `text /${requirement.text?.source ?? ''}/ in ${requirement.within ?? 'the page text'}`;
+    return {
+      name: result.name,
+      ok: result.ok === true,
+      detail: result.error
+        ? `expected ${expectation} — check failed: ${result.error}`
+        : `expected ${expectation}; saw ${result.saw || 'nothing'}`,
+    };
+  });
 }
 
 export function signatureOf(raw) {
@@ -480,25 +740,38 @@ export function changed(before, after) {
  * "clicked a button" into evidence that a popup, menu or dialog appeared, and
  * what stops a scene that opens nothing (a missed click) from being recorded as
  * if it were the surface.
+ *
+ * `requires` is the scene's stated outcome (see checkRequirements). It is checked
+ * here, immediately after the steps, NOT after the settle: a requirement
+ * describes the state the interaction produced, and some of those are transient —
+ * a selection popover is gone once the capture's own scroll normalisation has
+ * run, which made a popover requirement fail on both apps for a reason that had
+ * nothing to do with either of them. With `attempts` the check runs for every
+ * variant tried and the last variant's results are returned; no scene states
+ * requirements together with fallback routes today.
  */
-export async function captureSurface(cdp, { url, outDir, name, steps = [], attempts = null, seed, baseline = null, expect = null }) {
+export async function captureSurface(cdp, { url, outDir, name, steps = [], attempts = null, seed, baseline = null, expect = null, requires = null }) {
   const variants = attempts ?? [steps];
   const matchesTarget = (raw) =>
     expect === null || (raw?.texts?.lines ?? []).some((line) => expect.test(line));
   let last = null;
+  let requirements = [];
 
   for (const variant of variants) {
     const { reached, gaps } = await openSurface(cdp, { url, steps: variant, seed });
-    await waitForSettled(cdp);
-    await normalizeScroll(cdp);
-    await waitForSettled(cdp);
+    requirements = await checkRequirements(cdp, requires, name);
+    await timed('cap:settle', async () => {
+      await waitForSettled(cdp);
+      await normalizeScroll(cdp);
+      await waitForSettled(cdp);
+    });
     // The transcript mounts after the boot settle, so a wait placed earlier sees
     // zero code blocks and returns at once — the block then mounts into its
     // plain-text fallback and the capture photographs that, which reads as
     // `stream-diffs-shell` missing on this app. Wait here, where the blocks are
     // known to be in the tree.
-    await waitForCodeBlocksSettled(cdp);
-    const raw = await cdp.evaluate(DIGEST_EXPR);
+    await timed('cap:codeblocks', () => waitForCodeBlocksSettled(cdp));
+    const raw = await timed('cap:digest', () => cdp.evaluate(DIGEST_EXPR));
     const signature = signatureOf(raw);
     last = { reached, gaps, signature, steps: variant, raw };
     // A change alone is not proof the surface opened: the dock's elapsed-time
@@ -509,12 +782,14 @@ export async function captureSurface(cdp, { url, outDir, name, steps = [], attem
 
   const { reached, gaps, signature, steps: usedSteps, raw } = last;
   const opened = (baseline === null || changed(baseline, signature)) && matchesTarget(raw);
-  if (!opened) return { scene: null, gaps, signature, opened, steps: usedSteps };
+  if (!opened) return { scene: null, gaps, signature, opened, steps: usedSteps, requirements };
 
-  const html = await cdp.evaluate(
-    `(() => { const h = document.documentElement.outerHTML; return h.length > ${MAX_HTML_CHARS} ? h.slice(0, ${MAX_HTML_CHARS}) : h; })()`,
+  const html = await timed('cap:html', () =>
+    cdp.evaluate(
+      `(() => { const h = document.documentElement.outerHTML; return h.length > ${MAX_HTML_CHARS} ? h.slice(0, ${MAX_HTML_CHARS}) : h; })()`,
+    ),
   );
-  const png = await cdp.screenshot();
+  const png = await timed('cap:screenshot', () => cdp.screenshot());
 
   fs.mkdirSync(outDir, { recursive: true });
   const scene = {
@@ -548,5 +823,5 @@ export async function captureSurface(cdp, { url, outDir, name, steps = [], attem
   fs.writeFileSync(path.join(outDir, `${name}.html`), html);
   fs.writeFileSync(path.join(outDir, `${name}.png`), png);
 
-  return { scene, gaps, signature, opened, steps: usedSteps };
+  return { scene, gaps, signature, opened, steps: usedSteps, requirements };
 }

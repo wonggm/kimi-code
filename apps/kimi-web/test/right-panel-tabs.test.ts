@@ -5,6 +5,7 @@ import {
   turnFilesForTurn,
 } from '../src/lib/rightPanelTabs';
 import {
+  agentTabTitle,
   closePanelTab,
   deserializeRestorableTabs,
   nextSideChatSeq,
@@ -259,6 +260,29 @@ describe('panelTabs model', () => {
       () => 'x',
     );
     expect(rebuilt).toEqual([{ id: 'x', kind: 'compaction', turnId: 't9' }]);
+  });
+
+  it('titles an agent tab with the agent it shows', () => {
+    const task = (over: Partial<AppTask>): AppTask => ({
+      id: 'agent-1',
+      sessionId: 's1',
+      kind: 'subagent',
+      description: 'Explore the repo layout',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      ...over,
+    });
+    expect(agentTabTitle([task({})], 'agent-1')).toBe('Explore the repo layout');
+    // The tab key can be the wire agent id or the spawning tool call's id.
+    expect(agentTabTitle([task({ id: 't9', agentId: 'agent-1' })], 'agent-1')).toBe('Explore the repo layout');
+    expect(agentTabTitle([task({ id: 't9', parentToolCallId: 'tc1' })], 'tc1')).toBe('Explore the repo layout');
+    // A bash task's tab carries its description too.
+    expect(agentTabTitle([task({ id: 'b1', kind: 'bash', description: 'Run the test suite' })], 'b1')).toBe(
+      'Run the test suite',
+    );
+    // No row (or no description) leaves the pane on its i18n label.
+    expect(agentTabTitle([], 'agent-1')).toBeUndefined();
+    expect(agentTabTitle([task({ description: '' })], 'agent-1')).toBeUndefined();
   });
 });
 

@@ -104,7 +104,8 @@ function toggle(): void {
   color: var(--color-text-faint);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
-  line-height: var(--leading-tight);
+  /* Upstream's `--leading-solid`: its summary row is 30px tall, not 32. */
+  line-height: var(--leading-solid);
   cursor: pointer;
   text-align: left;
 }

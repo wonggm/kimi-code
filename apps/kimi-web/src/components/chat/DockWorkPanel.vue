@@ -9,9 +9,9 @@
      kind. Callers pass the dropdown form as `dropdown`, or slot the segmented
      control into `#filter`; both land inside `span.filter-control`. -->
 <script lang="ts">
-/** The four kinds a dock pill can open. `subagents` is the pill's id; upstream
+/** The kinds a dock pill can open. `subagents` is the pill's id; upstream
     names the panel `panel-subagent`. */
-export type DockPanelKind = 'plan' | 'bash' | 'subagents' | 'todos';
+export type DockPanelKind = 'goal' | 'plan' | 'bash' | 'subagents' | 'todos';
 </script>
 
 <script setup lang="ts">
@@ -182,7 +182,8 @@ onBeforeUnmount(closeMenu);
    list can run edge to edge like upstream's. */
 .dock-work-panel.panel-bash .dock-work-head,
 .dock-work-panel.panel-subagent .dock-work-head,
-.dock-work-panel.panel-todos .dock-work-head {
+.dock-work-panel.panel-todos .dock-work-head,
+.dock-work-panel.panel-goal .dock-work-head {
   padding: var(--space-4) var(--space-4) 0;
   border-bottom: none;
 }
@@ -195,7 +196,8 @@ onBeforeUnmount(closeMenu);
 }
 .dock-work-panel.panel-bash .dock-work-body,
 .dock-work-panel.panel-subagent .dock-work-body,
-.dock-work-panel.panel-todos .dock-work-body {
+.dock-work-panel.panel-todos .dock-work-body,
+.dock-work-panel.panel-goal .dock-work-body {
   margin-top: var(--space-3);
   padding: 0 var(--space-4) var(--space-4);
 }

@@ -151,9 +151,11 @@ export function useDetailPanel({ client }: UseDetailPanelOptions) {
     if (seededSubagentIds.has(id)) return;
     seededSubagentIds.add(id);
     const task = client.activeAppTasks.value.find((tk) => tk.id === id);
-    const hasBody =
-      task !== undefined && ((task.text?.length ?? 0) > 0 || (task.outputLines?.length ?? 0) > 0);
-    if (!task || hasBody) return;
+    // A bash task has no transcript of its own — its pane shows the command and
+    // the captured output, so there is nothing to seed.
+    if (!task || task.kind !== 'subagent') return;
+    const hasBody = (task.text?.length ?? 0) > 0 || (task.outputLines?.length ?? 0) > 0;
+    if (hasBody) return;
     const sid = client.activeSessionId.value;
     if (sid) void client.seedTaskBody(sid, task);
   }, { immediate: true });

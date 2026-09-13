@@ -24,6 +24,13 @@ interface TodoItem {
   status: string;
 }
 
+/** Kimi's TodoList reports a finished item as `done`; Claude-style TodoWrite
+ *  says `completed`. The row/glyph vocabulary below is the latter. */
+function normalizeStatus(raw: unknown): string {
+  if (raw === 'done' || raw === 'completed') return 'completed';
+  return typeof raw === 'string' ? raw : 'pending';
+}
+
 const todos = computed<TodoItem[]>(() => {
   try {
     const raw = JSON.parse(props.tool.arg) as { todos?: unknown };
@@ -32,7 +39,7 @@ const todos = computed<TodoItem[]>(() => {
       const rec = (entry ?? {}) as Record<string, unknown>;
       return {
         title: typeof rec['title'] === 'string' ? rec['title'] : '',
-        status: typeof rec['status'] === 'string' ? rec['status'] : 'pending',
+        status: normalizeStatus(rec['status']),
       };
     });
   } catch {

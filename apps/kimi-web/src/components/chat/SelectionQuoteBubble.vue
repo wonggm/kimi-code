@@ -1,6 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/SelectionQuoteBubble.vue -->
-<!-- The single app-wide selection popover: a multi-line auto-growing comment
-     box over a right-aligned Cancel / Add to chat row. Mounted once by
+<!-- The single app-wide selection popover, in upstream's two-step shape: a menu
+     of Comment / Add to chat, where Comment swaps the menu for a comment box
+     over a right-aligned Cancel / Add to chat row. Mounted once by
      ConversationPane and driven by the app-wide selectionAnchor; surfaces that
      can hold a selection register with useSelectionCapture instead of mounting
      their own bubble. Teleported to body with a z token so a glass /
@@ -9,10 +10,13 @@
      there is no room below (and anchored by its bottom edge then, so it grows
      upward instead of forcing a second scrollbar). -->
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from '../ui/Button.vue';
+import Icon from '../ui/Icon.vue';
 import Kbd from '../ui/Kbd.vue';
+import Menu from '../ui/Menu.vue';
+import MenuItem from '../ui/MenuItem.vue';
 import {
   clearSelectionAnchor,
   quoteSelectionIntoChat,
@@ -25,7 +29,10 @@ const GAP = 6;
 const MARGIN = 8;
 const MIN_AVAILABLE = 96;
 
-const rootRef = ref<HTMLElement | null>(null);
+// The menu is the first step; only the Comment item reveals the box, and every
+// new selection starts back on the menu.
+const mode = ref<'menu' | 'comment'>('menu');
+const menuRef = ref<InstanceType<typeof Menu> | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const comment = ref('');
 const bubbleStyle = ref<Record<string, string>>({});
@@ -33,8 +40,12 @@ const bubbleStyle = ref<Record<string, string>>({});
 // untargeted static position.
 const ready = ref(false);
 
+// The Menu primitive owns the surface element; measurement and the
+// outside-click test need that element, not the component instance.
+const surface = computed<HTMLElement | null>(() => menuRef.value?.el ?? null);
+
 function position(): void {
-  const el = rootRef.value;
+  const el = surface.value;
   const anchor = selectionAnchor.value;
   if (!el || !anchor) return;
   // Measure the natural height: a cap left over from the previous placement
@@ -94,14 +105,11 @@ function autosize(): void {
 watch(selectionAnchor, (anchor) => {
   if (anchor === null) return;
   ready.value = false;
+  mode.value = 'menu';
   comment.value = '';
   void nextTick(() => {
-    autosize();
     position();
     ready.value = true;
-    // Focus once the ready class has actually landed — a hidden element
-    // cannot take focus.
-    void nextTick(() => textareaRef.value?.focus({ preventScroll: true }));
   });
 });
 
@@ -109,10 +117,34 @@ function close(): void {
   clearSelectionAnchor();
 }
 
+// Comment: swap the menu for the comment box and focus it.
+async function openComment(): Promise<void> {
+  mode.value = 'comment';
+  await nextTick();
+  autosize();
+  position();
+  textareaRef.value?.focus({ preventScroll: true });
+}
+
+// Add to chat: quote the selection with no comment.
+function addToChat(): void {
+  const anchor = selectionAnchor.value;
+  if (!anchor) return;
+  quoteSelectionIntoChat(anchor.text);
+  close();
+}
+
+// An empty comment is what the menu's "Add to chat" is for, so Add only sends
+// once there is one — same gate as upstream's disabled button.
 function confirm(): void {
   const anchor = selectionAnchor.value;
   if (!anchor) return;
-  quoteSelectionIntoChat(anchor.text, comment.value);
+  const body = comment.value.trim();
+  if (body === '') {
+    textareaRef.value?.focus();
+    return;
+  }
+  quoteSelectionIntoChat(anchor.text, body);
   close();
 }
 
@@ -134,7 +166,7 @@ function onKeydown(event: KeyboardEvent): void {
 // swallow the app-level Escape (panel close / interrupt) unconditionally.
 function onDocMousedown(event: MouseEvent): void {
   if (selectionAnchor.value === null) return;
-  if (rootRef.value?.contains(event.target as Node)) return;
+  if (surface.value?.contains(event.target as Node)) return;
   close();
 }
 
@@ -146,7 +178,7 @@ function onDocKeydown(event: KeyboardEvent): void {
 
 function onDocScroll(event: Event): void {
   if (selectionAnchor.value === null) return;
-  if (rootRef.value?.contains(event.target as Node)) return;
+  if (surface.value?.contains(event.target as Node)) return;
   close();
 }
 
@@ -167,60 +199,73 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div
+    <Menu
       v-if="selectionAnchor"
-      ref="rootRef"
-      class="sqb lg-glass"
+      ref="menuRef"
+      class="sqb"
       :class="{ 'is-ready': ready }"
       :style="bubbleStyle"
-      role="dialog"
-      :aria-label="t('conversation.selection.label')"
+      :role="mode === 'menu' ? 'menu' : 'dialog'"
+      :aria-label="mode === 'menu' ? t('conversation.selection.label') : t('conversation.selection.comment')"
       @mousedown.stop
       @mouseup.stop
     >
-      <textarea
-        ref="textareaRef"
-        v-model="comment"
-        class="sqb-input"
-        rows="1"
-        :placeholder="t('conversation.selection.placeholder')"
-        :aria-label="t('conversation.selection.placeholder')"
-        @input="onInput"
-        @keydown="onKeydown"
-      />
-      <div class="sqb-actions">
-        <Button size="sm" variant="ghost" @click="close">
-          {{ t('conversation.selection.cancel') }}
-        </Button>
-        <Button size="sm" variant="primary" @click="confirm">
+      <template v-if="mode === 'menu'">
+        <MenuItem @click="openComment">
+          <Icon name="message" size="sm" />
+          {{ t('conversation.selection.comment') }}
+        </MenuItem>
+        <MenuItem @click="addToChat">
+          <Icon name="plus" size="sm" />
           {{ t('conversation.selection.addToChat') }}
-          <Kbd aria-hidden="true" :keys="['↵']" />
-        </Button>
+        </MenuItem>
+      </template>
+      <div v-else class="sqb-comment">
+        <textarea
+          ref="textareaRef"
+          v-model="comment"
+          class="sqb-input"
+          rows="1"
+          :placeholder="t('conversation.selection.commentPlaceholder')"
+          :aria-label="t('conversation.selection.commentPlaceholder')"
+          @input="onInput"
+          @keydown="onKeydown"
+        />
+        <div class="sqb-actions">
+          <Button size="sm" variant="ghost" @click="close">
+            {{ t('conversation.selection.cancel') }}
+          </Button>
+          <Button size="sm" variant="primary" :disabled="comment.trim() === ''" @click="confirm">
+            {{ t('conversation.selection.addToChat') }}
+            <Kbd aria-hidden="true" :keys="['↵']" />
+          </Button>
+        </div>
       </div>
-    </div>
+    </Menu>
   </Teleport>
 </template>
 
 <style scoped>
+/* Positioning only: the Menu primitive supplies the surface (background,
+   border, radius, shadow, padding). */
 .sqb {
   position: fixed;
   z-index: var(--z-overlay);
   visibility: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  box-sizing: border-box;
-  width: 280px;
   max-width: calc(100vw - 2 * var(--space-4));
-  padding: var(--space-2);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  overflow-y: auto;
 }
 .sqb.is-ready {
   visibility: visible;
+}
+
+.sqb-comment {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: 280px;
+  max-width: 100%;
+  padding: var(--space-1);
 }
 
 .sqb-input {

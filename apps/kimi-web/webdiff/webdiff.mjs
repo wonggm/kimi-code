@@ -126,10 +126,21 @@ for (const breakpoint of breakpoints) {
   }
 }
 
-const mocks = {
-  upstream: await startMock({ root: upstreamDist, port: basePort, token }),
-  fork: await startMock({ root: forkDist, port: basePort + 1, token }),
-};
+// Which app to capture. A walk normally captures both against their own mock;
+// `--apps fork` captures only one, so the two apps of the same combination can
+// run as two processes instead of one after the other. The merged run needs both
+// halves (see .tmp/par/merge.mjs); a single-app run therefore skips its own
+// comparison and only contributes its captures.
+const appFilter = argList('apps', ['upstream', 'fork']);
+const MOCK_PORT_OFFSET = { upstream: 0, fork: 1 };
+const mocks = {};
+for (const app of appFilter) {
+  mocks[app] = await startMock({
+    root: app === 'upstream' ? upstreamDist : forkDist,
+    port: basePort + MOCK_PORT_OFFSET[app],
+    token,
+  });
+}
 let chrome;
 let cdp;
 let exitCode = 0;
@@ -142,8 +153,7 @@ async function shutdown() {
     /* ignore */
   }
   killChrome(chrome);
-  await mocks.upstream.stop();
-  await mocks.fork.stop();
+  for (const app of Object.keys(mocks)) await mocks[app].stop();
 }
 process.on('exit', () => {
   try {
@@ -170,6 +180,16 @@ async function captureApp(app, combo, scenes) {
   const signatures = {};
   const resolvedSteps = {};
   const notOpened = [];
+  const requirements = [];
+
+  // A scene's requirements are checked inside captureSurface, on the live page in
+  // the state its steps left behind — for a `then` stage, the second state of the
+  // transition. They are recorded even when no capture was written: a scene whose
+  // surface never opened (the fork has no goal pill) is exactly the case the
+  // requirement exists to report.
+  const collect = (scene, stage, checks) => {
+    for (const check of checks ?? []) requirements.push({ scene: scene.name, stage, ...check });
+  };
 
   for (const scene of scenes) {
     // Non-root scenes must pass the root scene's signature as the baseline.
@@ -187,6 +207,7 @@ async function captureApp(app, combo, scenes) {
       seed,
       baseline: scene.name === 'main' ? null : (signatures.main ?? null),
       expect: scene.expect instanceof RegExp ? scene.expect : null,
+      requires: scene.requires ?? null,
     });
     signatures[scene.name] = result.signature;
     resolvedSteps[scene.name] = result.steps ?? scene.steps;
@@ -195,7 +216,7 @@ async function captureApp(app, combo, scenes) {
     const lines = result.scene?.texts?.lines ?? [];
     const expect = scene.expect instanceof RegExp ? scene.expect : null;
     const looksLikeTarget = !expect || lines.some((line) => expect.test(line));
-    if (scene.name !== 'main' && (!changedFromMain || !looksLikeTarget)) {
+    if (scene.name !== 'main' && scene.snapshot !== false && (!changedFromMain || !looksLikeTarget)) {
       notOpened.push(scene.name);
       process.stdout.write(
         `webdiff: ${app} ${combo.name} ${scene.name} NOT OPENED — ${!changedFromMain ? 'identical to main' : 'changed, but the surface does not look like its target'}\n`,
@@ -203,15 +224,40 @@ async function captureApp(app, combo, scenes) {
     } else {
       process.stdout.write(`webdiff: ${app} ${combo.name} ${scene.name} (gaps: ${result.gaps.length})\n`);
     }
+    collect(scene, null, result.requirements);
+
+    if (scene.then) {
+      // The second capture point of a transition: replay what opened the surface,
+      // then the extra action. `expect` is dropped (it describes the first state)
+      // and the closed state is usually identical to main, so nothing is written;
+      // the requirement check is the point of the stage.
+      const stageName = scene.then.name ?? 'after';
+      const thenResult = await captureSurface(cdp, {
+        url: origin,
+        outDir: dir,
+        name: `${scene.name}-${stageName}`,
+        steps: [...(result.steps ?? scene.steps), ...(scene.then.steps ?? [])],
+        seed,
+        baseline: signatures.main ?? null,
+        requires: scene.then.requires ?? null,
+      });
+      collect(scene, stageName, thenResult.requirements);
+      process.stdout.write(`webdiff: ${app} ${combo.name} ${scene.name}-${stageName}\n`);
+    }
   }
 
-  if (!walk) return { notOpened, walk: null };
+  if (!walk) return { notOpened, walk: null, requirements };
 
   const stats = { phases: {}, hoverSurfaces: 0, clickSurfaces: 0, noChange: 0 };
   const produced = [];
   const cap = Math.min(maxWalk, MAX_WALK_SURFACES);
 
-  for (const phase of scenes) {
+  // A phase is a container whose contents are worth discovering. A scene that
+  // states requirements poses one interaction instead ("open the pill, assert the
+  // pane"), so walking inside it discovers nothing new — its panels are already
+  // reachable from the main phase — and would pay a phase's cost for each
+  // behaviour scene. Its captures are judged by its requirements.
+  for (const phase of scenes.filter((scene) => !scene.requires)) {
     const baseline = signatures[phase.name];
     const phaseSteps = resolvedSteps[phase.name] ?? phase.steps;
     const phaseStats = { discovered: 0, walkable: 0, skipped: 0, hovered: 0, clicked: 0 };
@@ -245,12 +291,14 @@ async function captureApp(app, combo, scenes) {
         const name = `walk-${phase.name}-${kind}-${slug(entry.label, entry.tag, entry.nameIndex)}`;
         // A control hidden until hover must be revealed first, exactly as a user
         // would: move onto it, then act.
-        const reveal = entry.hidden ? [{ action: 'hoverPoint', x: entry.x, y: entry.y, ms: 400 }] : [];
+        const reveal = entry.hidden ? [{ action: 'hoverPoint', x: entry.x, y: entry.y, ms: 250 }] : [];
+        // The dwell only covers the input event's own render; the capture's own
+        // settle is what decides the surface has stopped moving.
         const result = await captureSurface(cdp, {
           url: origin,
           outDir: dir,
           name,
-          steps: [...phaseSteps, ...reveal, { action: kind === 'hover' ? 'hoverPoint' : 'clickPoint', x: entry.x, y: entry.y, ms: 700 }],
+          steps: [...phaseSteps, ...reveal, { action: kind === 'hover' ? 'hoverPoint' : 'clickPoint', x: entry.x, y: entry.y, ms: 350 }],
           seed,
           baseline,
         });
@@ -286,20 +334,37 @@ async function captureApp(app, combo, scenes) {
   fs.writeFileSync(path.join(dir, 'walk.json'), `${JSON.stringify({ dom: { pageHash: hash(produced.map((w) => w.name).join('\n')), elementCount: produced.length, serializedCount: classNames.length }, styles: { perElement: [], styledCount: 0 }, texts: { pageHash: hash(sorted.join('\n')), lineCount: sorted.length, lines: sorted }, coverage: { opened: true, reached: produced.map((w) => ({ action: w.kind, selector: `${w.phase}:${w.label || w.name}` })), gaps: [], notOpened } }, null, 1)}\n`);
   fs.writeFileSync(path.join(dir, 'walk.classes.json'), `${JSON.stringify({ pageHash: hash(classNames.join('\n')), classCount: classNames.length, classes }, null, 1)}\n`);
   fs.writeFileSync(path.join(dir, 'walk.html'), html.join('\n'));
-  return { notOpened, walk: { ...stats, produced: produced.map((entry) => entry.name) } };
+  return { notOpened, walk: { ...stats, produced: produced.map((entry) => entry.name) }, requirements };
 }
 
 try {
-  chrome = await launchChrome(chromeDebugPort);
+  // A launch can lose the race for memory when several workers start together
+  // (the debug endpoint then never answers). One retry keeps a whole job — and
+  // with single-app jobs, half a combination — from being thrown away for a
+  // transient failure.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      chrome = await launchChrome(chromeDebugPort);
+      break;
+    } catch (error) {
+      if (attempt >= 1) throw error;
+      console.error(`webdiff: chrome launch failed (${error.message}); retrying`);
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+    }
+  }
   cdp = await connectPage(chromeDebugPort);
 
   const scenes = BASE_SCENES.filter((scene) => sceneFilter.length === 0 || sceneFilter.includes(scene.name));
 
   for (const combo of combos) {
     await applyViewport(combo.breakpoint);
-    for (const app of ['upstream', 'fork']) {
-      const result = await captureApp(app, combo, scenes);
-      coverage[`${combo.name}::${app}`] = { notOpened: result.notOpened, walk: result.walk };
+    // A behaviour scene poses one shell's interaction; see surfaces.mjs.
+    const comboScenes = scenes.filter(
+      (scene) => (!scene.desktopOnly || combo.breakpoint === 'desktop') && (!scene.enOnly || combo.locale === 'en'),
+    );
+    for (const app of appFilter) {
+      const result = await captureApp(app, combo, comboScenes);
+      coverage[`${combo.name}::${app}`] = { notOpened: result.notOpened, walk: result.walk, requirements: result.requirements };
     }
   }
 
@@ -322,7 +387,7 @@ try {
   await shutdown();
 }
 
-for (const app of ['upstream', 'fork']) {
+for (const app of appFilter) {
   const dist = app === 'upstream' ? upstreamDist : forkDist;
   const inventory = cssInventory(dist);
   fs.writeFileSync(path.join(runDir, app, 'static-css.json'), `${JSON.stringify(inventory, null, 1)}\n`);
@@ -338,10 +403,9 @@ fs.writeFileSync(
       token: `wd-${hash(runDir).slice(0, 16)}`,
       opts: { walk, breakpoints, locales, themes, upstream: upstreamDist, fork: forkDist, scenes: BASE_SCENES.map((scene) => scene.name), real: realUrl || null },
       bootKeys: BOOT_KEYS,
-      cssInventory: {
-        upstream: JSON.parse(fs.readFileSync(path.join(runDir, 'upstream', 'static-css.json'), 'utf8')),
-        fork: JSON.parse(fs.readFileSync(path.join(runDir, 'fork', 'static-css.json'), 'utf8')),
-      },
+      cssInventory: Object.fromEntries(
+        appFilter.map((app) => [app, JSON.parse(fs.readFileSync(path.join(runDir, app, 'static-css.json'), 'utf8'))]),
+      ),
       combos: combos.map((combo) => combo.name),
       coverage,
     },
@@ -351,15 +415,33 @@ fs.writeFileSync(
 );
 
 const allowlist = fs.existsSync(allowlistPath) ? JSON.parse(fs.readFileSync(allowlistPath, 'utf8')) : { blockers: [], warnings: [] };
-const report = compareRun({ runDir, relRunDir: path.relative(REPO, runDir), allowlistPath: path.relative(REPO, allowlistPath), allowlist, coverage });
-if (realUrl) report.real = { url: realUrl, combos: combos.map((combo) => combo.name) };
-// The state every pair was captured in. Liquid glass is the fork's own system
-// and upstream has none, so the fork's boot key seeds it off (see buildSeed) —
-// recorded here because a reader of the report cannot see the seed.
-report.comparison = { forkLiquidGlass: 'off', seededBy: 'webdiff/capture.mjs buildSeed' };
-fs.writeFileSync(path.join(runDir, 'report.json'), `${JSON.stringify(report, null, 1)}\n`);
-fs.writeFileSync(path.join(runDir, 'report.md'), renderMarkdown(report));
+// A single-app run is half a comparison by construction; its report is written
+// by the merge that pairs it with the other app's captures.
+const report =
+  appFilter.length < 2
+    ? null
+    : compareRun({ runDir, relRunDir: path.relative(REPO, runDir), allowlistPath: path.relative(REPO, allowlistPath), allowlist, coverage });
+if (report) {
+  if (realUrl) report.real = { url: realUrl, combos: combos.map((combo) => combo.name) };
+  // The state every pair was captured in. Liquid glass is the fork's own system
+  // and upstream has none, so the fork's boot key seeds it off (see buildSeed) —
+  // recorded here because a reader of the report cannot see the seed.
+  report.comparison = { forkLiquidGlass: 'off', seededBy: 'webdiff/capture.mjs buildSeed' };
+  fs.writeFileSync(path.join(runDir, 'report.json'), `${JSON.stringify(report, null, 1)}\n`);
+  fs.writeFileSync(path.join(runDir, 'report.md'), renderMarkdown(report));
 
-console.log(`webdiff: run ${path.relative(REPO, runDir)} — blocker=${report.summary.blocker} warning=${report.summary.warning} info=${report.summary.info} suppressed=${report.summary.suppressed}`);
-if (report.summary.blocker > 0) exitCode = 1;
+  console.log(`webdiff: run ${path.relative(REPO, runDir)} — blocker=${report.summary.blocker} warning=${report.summary.warning} info=${report.summary.info} suppressed=${report.summary.suppressed}`);
+  if (report.summary.blocker > 0) exitCode = 1;
+} else {
+  console.log(`webdiff: run ${path.relative(REPO, runDir)} — captured ${appFilter.join(',')} only, no comparison`);
+}
+if (process.env.WEB_PORT_TIMING === '1') {
+  const { timingReport } = await import('./capture.mjs');
+  const rows = timingReport();
+  const total = rows.reduce((sum, row) => sum + row.totalMs, 0);
+  console.log('webdiff: timing (ms)');
+  for (const row of rows) console.log(`  ${row.label.padEnd(24)} ${String(row.count).padStart(5)} calls  ${String(row.avgMs).padStart(6)} avg  ${String(row.totalMs).padStart(8)} total`);
+  console.log(`  ${'TOTAL'.padEnd(24)} ${''.padStart(5)}        ${''.padStart(6)}      ${String(total).padStart(8)}`);
+}
+if (report && report.summary.blocker > 0) exitCode = 1;
 process.exit(exitCode);

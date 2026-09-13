@@ -287,8 +287,8 @@ onUnmounted(() => {
             </ul>
 
             <h3 class="sub">Type scale &amp; weight</h3>
-            <p>The user font-size preference writes <code>--base-ui-font-size</code>. Compact UI chrome and the sidebar follow it through <code>--ui-font-size</code>, while chat reading surfaces derive one readable step above it through <code>--content-font-size</code>.</p>
-            <p>The fixed product type tokens still define component defaults: <b>UI controls / buttons / forms</b> use <code>--text-base</code> (14px); <b>reading body — including chat Markdown, message bubbles, etc.</b> stays one step larger than compact chrome for readability; the <b>sidebar session list</b> follows that same readable step while keeping list density.
+            <p>The user font-size preference writes <code>--base-ui-font-size</code>, and every derived step rides <code>--ui-shift</code> (its distance from 14px), the way upstream couples its scale to <code>--base-font</code>. Compact UI chrome and the sidebar follow it through <code>--ui-font-size</code>; chat reading surfaces use <code>--content-font-size</code>, which is the same size as that base — upstream's prose token is its base, not a step above it.</p>
+            <p>The product type tokens define component defaults and scale with the preference: <b>UI controls / buttons / forms</b> use <code>--text-base</code> (14px at the default preference); <b>reading body — including chat Markdown, message bubbles, etc.</b> uses <code>--content-font-size</code>; the <b>sidebar session list</b> follows the same size while keeping list density.
             Drop stray <code>font-weight: 650 / 750</code>; converge on two weights, 400 / 500 (regular / emphasis).</p>
             <div class="panel panel-pad" style="margin:16px 0">
               <div class="type-row"><div class="type-sample" style="font-size:22px;font-weight:500">Page Title</div><div class="type-meta">--text-2xl · 22 / 500</div></div>
@@ -304,7 +304,8 @@ onUnmounted(() => {
                 <tr><td class="tk">--font-ui</td><td class="val">"Inter Variable", "Inter", "Helvetica Neue", Arial…</td><td>UI &amp; body (Inter first)</td></tr>
                 <tr><td class="tk">--font-mono</td><td class="val">JetBrains Mono…</td><td>code, tool names, line numbers, diffs</td></tr>
                 <tr><td class="tk">--base-ui-font-size</td><td class="val">14px user preference</td><td>root setting that drives UI, reading body, and sidebar font sizes</td></tr>
-                <tr><td class="tk">--content-font-size</td><td class="val">calc(base + 1px)</td><td>chat Markdown, message bubbles, composer</td></tr>
+                <tr><td class="tk">--content-font-size</td><td class="val">var(--base-ui-font-size)</td><td>chat Markdown, message bubbles, composer</td></tr>
+                <tr><td class="tk">--ui-shift</td><td class="val">calc(--base-ui-font-size − 14px)</td><td>distance every derived type step rides</td></tr>
                 <tr><td class="tk">--leading-tight/normal/relaxed</td><td class="val">1.25 / 1.5 / 1.7</td><td>headings / UI / long text</td></tr>
                 <tr><td class="tk">--weight-regular/caption/medium</td><td class="val">400 / 450 / 500</td><td>body / captions and menu descriptions / emphasis</td></tr>
               </tbody>

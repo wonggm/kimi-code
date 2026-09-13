@@ -7,6 +7,7 @@
 // Pure on purpose: the panel's state and its transitions stay unit-testable
 // without Vue (the same reason the previous `rpt-*` model lived in lib/).
 
+import type { AppTask } from '../api/types';
 import type { IconName } from './icons';
 
 export type PanelTabKind = 'diff' | 'turn-diff' | 'file' | 'agent' | 'compaction' | 'btw' | 'term';
@@ -85,6 +86,21 @@ export function openPanelTab(tabs: readonly PanelTab[], tab: PanelTab): PanelTab
 /** The next side-chat sequence number — upstream titles them "Side chat 2", … */
 export function nextSideChatSeq(tabs: readonly PanelTab[]): number {
   return tabs.filter((tab) => tab.kind === 'btw').length + 1;
+}
+
+/** Upstream titles an agent tab with the agent itself: its own `I(type, payload)`
+ *  looks the tab key up in the live task rows and returns the row's
+ *  description, falling back to the pane's i18n label. The tab key is a task id,
+ *  an agent id or the spawning `Agent` call's id, so all three are tried. */
+export function agentTabTitle(
+  tasks: readonly AppTask[],
+  subagentId: string,
+): string | undefined {
+  const task =
+    tasks.find((tk) => tk.id === subagentId) ??
+    tasks.find((tk) => tk.agentId === subagentId) ??
+    tasks.find((tk) => tk.parentToolCallId === subagentId);
+  return task?.description || undefined;
 }
 
 /** Close a tab and report the tab that should take focus. Upstream keeps the
