@@ -9,6 +9,7 @@ export default {
   reveal: 'Reveal',
   download: 'Download',
   close: 'Close',
+  refresh: 'Refresh',
   search: 'Search',
   prevMatch: 'Previous match',
   nextMatch: 'Next match',

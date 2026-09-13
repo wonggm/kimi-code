@@ -30,7 +30,6 @@ export default {
   drillAgentLabel: 'Subagent detail',
   drillFileLabel: 'File preview',
   turnDiffEmpty: 'No files changed in this turn',
-  turnDiffUnavailable: 'Turn diff unavailable',
   terminalUnavailable: 'Terminal is not available in this build',
   workbarLabel: 'Open {name}',
   openPanel: 'Open right panel',

@@ -1,52 +1,37 @@
 <!-- apps/kimi-web/src/components/chat/AgentDetailPanel.vue -->
-<!-- A subagent's full detail in the right-side panel (App's shared slot — opening
-     this replaces a thinking/compaction/file view and vice versa).
-     Content layers, top to bottom:
-       - identity strip: subagent type / model / effort + suspension reason;
-       - live-progress strip: while the subagent is actively working the panel
-         streams its `Calling …` tool lines and assistant output here (same
-         projection state as before — no per-keystroke transcript recompute);
-       - transcript section: the subagent's own turns fetched over REST
-         (`GET /sessions/{id}/transcript?agent_id=…`) when the panel opens,
-         rendered as distinct blocks — thinking blocks are collapsible
-         (default expanded while working, collapsed once the subagent settles;
-         click toggles via a component-local map keyed by block id, nothing
-         persisted). When REST gives nothing (cold restart / failed read), the
-         section falls back to the live-projected progress snapshot.
-
-Mirrors the thinking panel: the content is reactive, so a still-running
-subagent keeps streaming its progress here, and the live strip follows its own
-bottom edge as long as the user hasn't scrolled past it into the transcript. -->
+<!-- A subagent's detail in the right panel. Element structure, class names and
+     the prompt-bubble clamp follow upstream's own AgentDetailPanel:
+       - meta line: subagent type · model · effort;
+       - prompt bubble: the task text, collapsed to a few lines until expanded;
+       - body: either the subagent's transcript (the fork reads it over REST —
+         `GET /sessions/{id}/transcript?agent_id=…`) or, when there is none
+         yet, upstream's fallback block: the suspended reason / output /
+         summary lines plus the "waiting for output" rows.
+     Upstream feeds a ChatPane from panel-held turns; the fork's engine has no
+     turn store for a subagent, so the REST transcript keeps its own renderer
+     inside upstream's transcript containers. -->
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getKimiWebApi } from '../../api';
 import type { AppTask, TranscriptItem } from '../../api/types';
 import type { AgentMember, FilePreviewRequest, ToolMedia } from '../../types';
 import { normalizeToolName, toolLabel, toolSummary } from '../../lib/toolMeta';
-import Badge from '../ui/Badge.vue';
 import Icon from '../ui/Icon.vue';
 import Markdown from './Markdown.vue';
-import PanelHeader from '../ui/PanelHeader.vue';
+import MoonSpinner from '../ui/MoonSpinner.vue';
 import Spinner from '../ui/Spinner.vue';
 
-const props = withDefaults(
-  defineProps<{
-    member: AgentMember;
-    /** Active session id — the transcript REST read is per-session. */
-    sessionId?: string;
-    /** Live session tasks: resolve the member's wire agent id (`task.agentId`,
-     *  else the task id) for the transcript fetch. */
-    tasks?: AppTask[];
-    /** Show the PanelHeader close button. The right-panel drill usage passes
-     *  `false` so the tab bar's back chevron / ✕ are the only controls. */
-    closable?: boolean;
-  }>(),
-  { closable: true },
-);
+const props = defineProps<{
+  member: AgentMember;
+  /** Active session id — the transcript REST read is per-session. */
+  sessionId?: string;
+  /** Live session tasks: resolve the member's wire agent id (`task.agentId`,
+   *  else the task id) for the transcript fetch. */
+  tasks?: AppTask[];
+}>();
 
 const emit = defineEmits<{
-  close: [];
   /** Open a file referenced by a transcript tool frame (edit/write/read). */
   openFile: [target: FilePreviewRequest];
   /** Open a media frame (read_media) whose input carries a file-store id. */
@@ -58,61 +43,11 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 // ---------------------------------------------------------------------------
-// Live strip (existing projection state — reused unchanged)
+// Meta line + prompt bubble
 // ---------------------------------------------------------------------------
 
-const progressLines = computed(() =>
-  (props.member.outputLines ?? [])
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0),
-);
-
-// The subagent's concatenated live output (assistant deltas). Trim trailing
-// whitespace for display; grows in real time as deltas stream in.
-const liveText = computed(() => (props.member.text ?? '').trimEnd());
-
-interface ProgressGroup {
-  key: string;
-  /** The "Calling …" tool-call line, or '' for output with no preceding call. */
-  call: string;
-  output: string[];
-}
-
-/** Group flat progress lines into tool-call groups: a "Calling …" line starts a
- *  group and subsequent non-call lines are its output. */
-function groupProgress(lines: string[]): ProgressGroup[] {
-  const groups: ProgressGroup[] = [];
-  let current: ProgressGroup | null = null;
-  let idx = 0;
-  for (const line of lines) {
-    if (line.startsWith('Calling ')) {
-      current = { key: `g${idx++}`, call: line, output: [] };
-      groups.push(current);
-    } else if (current) {
-      current.output.push(line);
-    } else {
-      current = { key: `g${idx++}`, call: '', output: [line] };
-      groups.push(current);
-    }
-  }
-  return groups;
-}
-
-const progressGroups = computed(() => groupProgress(progressLines.value));
-
-function phaseLabel(phase: AgentMember['phase']): string {
-  switch (phase) {
-    case 'queued': return t('tools.swarm.phaseQueued');
-    case 'working': return t('tools.swarm.phaseWorking');
-    case 'suspended': return t('tools.swarm.phaseSuspended');
-    case 'completed': return t('tools.swarm.phaseCompleted');
-    case 'failed': return t('tools.swarm.phaseFailed');
-  }
-}
-
-// Trim a `provider/alias` model alias down to its short name for display
-// (e.g. `opencode-go/deepseek-v4-flash` → `deepseek-v4-flash`). Shows the whole
-// alias when no provider prefix is present.
+/** Trim a `provider/alias` model alias down to its short name (e.g.
+ *  `opencode-go/deepseek-v4-flash` → `deepseek-v4-flash`). */
 const displayModel = computed(() => {
   const model = props.member.model;
   if (typeof model !== 'string' || model.length === 0) return undefined;
@@ -120,7 +55,93 @@ const displayModel = computed(() => {
   return lastSlash >= 0 && lastSlash < model.length - 1 ? model.slice(lastSlash + 1) : model;
 });
 
-const isWorking = computed(() => props.member.phase === 'working');
+/** `Subagent · model · effort`, each part dropped when the daemon did not
+ *  report it — upstream joins the same three fields with ` · `. */
+const metaLine = computed(() => {
+  const type = props.member.subagentType?.trim();
+  const named = type ? type.charAt(0).toUpperCase() + type.slice(1) : '';
+  const binding = [displayModel.value, props.member.thinkingEffort].filter(
+    (part): part is string => typeof part === 'string' && part.length > 0,
+  );
+  return [named, binding.join(' · ')].filter((part) => part.length > 0).join(' · ');
+});
+
+const prompt = computed(() => {
+  const text = props.member.prompt;
+  return text !== undefined && text.trim() !== '' ? text : undefined;
+});
+
+// Upstream clamps the bubble to six lines and offers an expand/collapse toggle
+// only when the text overflows that clamp.
+const PROMPT_CLAMP_LINES = 6;
+const promptTextEl = ref<HTMLElement | null>(null);
+const promptOverflows = ref(false);
+const promptExpanded = ref(false);
+
+function measurePrompt(): void {
+  const el = promptTextEl.value;
+  if (!el) return;
+  const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight);
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+  promptOverflows.value = el.scrollHeight > lineHeight * PROMPT_CLAMP_LINES + 1;
+}
+
+let promptObserver: ResizeObserver | null = null;
+watch(promptTextEl, (el, previous) => {
+  if (previous) promptObserver?.unobserve(previous);
+  promptObserver ??= typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(() => measurePrompt());
+  if (el) promptObserver?.observe(el);
+  measurePrompt();
+});
+watch(prompt, () => {
+  promptExpanded.value = false;
+  void nextTick(measurePrompt);
+});
+onBeforeUnmount(() => promptObserver?.disconnect());
+
+const promptClamped = computed(() => promptOverflows.value && !promptExpanded.value);
+
+function togglePrompt(): void {
+  promptExpanded.value = !promptExpanded.value;
+}
+
+// ---------------------------------------------------------------------------
+// Fallback lines — upstream projects the member's suspension reason, live text,
+// tool-progress lines and summary into one deduplicated line list.
+// ---------------------------------------------------------------------------
+
+const promptCommandLine = computed(() => {
+  const text = props.member.prompt?.trim();
+  return text ? `$ ${text}` : null;
+});
+
+const fallbackLines = computed(() => {
+  const seen = new Set<string>();
+  const joined: string[] = [];
+  const sources = [
+    props.member.suspendedReason,
+    props.member.text,
+    props.member.outputLines?.join('\n'),
+    props.member.summary,
+  ];
+  for (const source of sources) {
+    const text = source?.trim();
+    if (!text || seen.has(text)) continue;
+    if (promptCommandLine.value !== null && text === promptCommandLine.value) continue;
+    seen.add(text);
+    joined.push(text);
+  }
+  return joined.flatMap((text) => text.split('\n'));
+});
+
+const isWorking = computed(
+  () =>
+    props.member.status === 'running' &&
+    props.member.phase !== 'queued' &&
+    props.member.phase !== 'suspended',
+);
 
 // ---------------------------------------------------------------------------
 // Transcript section (REST per-agent transcript, fetched on panel open)
@@ -177,9 +198,23 @@ async function fetchTranscript(): Promise<void> {
   }
 }
 
+// While no transcript exists the pane shows the fallback block: upstream gates
+// it on the turn list being empty and the load having settled, which for the
+// fork's REST read is the same "nothing yet" condition.
+const showFallback = computed(
+  () =>
+    !hasTranscript.value &&
+    (transcriptError.value || fallbackLines.value.length > 0 || transcriptLoading.value),
+);
+
+/** "Working…" once the run has produced something, "Requesting…" until then. */
+const workingLabel = computed(() =>
+  fallbackLines.value.length > 0 ? t('conversation.working') : t('conversation.requesting'),
+);
+
 // ---------------------------------------------------------------------------
 // Transcript view model — built from the static fetch result, so it never
-// recomputes while the subagent streams (the live strip owns the moving parts).
+// recomputes while the subagent streams.
 // ---------------------------------------------------------------------------
 
 interface ViewTool {
@@ -392,13 +427,6 @@ function thinkTeaser(text: string): string {
 
 const bodyEl = ref<HTMLElement | null>(null);
 
-// Follow the live strip's bottom edge as the tool progress / live text grows —
-// but only while the user's view still ends at or above the strip's bottom
-// (reading the transcript below never gets yanked back). Without a loaded
-// transcript the strip ends at the body bottom, so this is the old
-// "follow-the-bottom" behavior.
-// Follow the live strip ONLY while the user is already pinned at the bottom
-// (within 40px). Any manual scroll up releases the follow until they return.
 const pinnedBottom = ref(true);
 function onBodyScroll(): void {
   const b = bodyEl.value;
@@ -407,7 +435,7 @@ function onBodyScroll(): void {
 }
 
 watch(
-  () => progressLines.value.length + liveText.value.length,
+  () => fallbackLines.value.length + (props.member.text?.length ?? 0),
   () => {
     void nextTick(() => {
       const body = bodyEl.value;
@@ -419,7 +447,7 @@ watch(
 );
 
 // Fresh transcript lands at the top of the scroller (a new panel starts at the
-// subagent's first turn, or the live strip while running).
+// subagent's first turn, or the live block while running).
 watch(transcriptItems, (next, prev) => {
   if (!next || next.length === 0) return;
   if (prev !== null) return;
@@ -435,6 +463,7 @@ watch(
   (next, prev) => {
     if (next === prev) return;
     thinkingOverride.value = new Map();
+    promptExpanded.value = false;
     void fetchTranscript();
   },
   { immediate: true },
@@ -442,70 +471,41 @@ watch(
 </script>
 
 <template>
-  <div class="ap">
-    <PanelHeader
-      :title="t('common.preview')"
-      :subtitle="member.name"
-      :closable="closable"
-      :close-label="t('thinking.close')"
-      @close="emit('close')"
-    >
-      <Badge variant="neutral" size="sm" class="ap-phase">{{ phaseLabel(member.phase) }}</Badge>
-    </PanelHeader>
-    <div ref="bodyEl" class="ap-body" @scroll.passive="onBodyScroll">
-      <!-- Identity strip: subagent type / model / effort + suspension reason -->
-      <div v-if="member.subagentType || member.suspendedReason" class="ap-id">
-        <div v-if="member.subagentType" class="ap-type">{{ member.subagentType }}<span v-if="displayModel"> ({{ displayModel }}<span v-if="member.thinkingEffort">, {{ member.thinkingEffort }}</span>)</span><span v-else-if="member.thinkingEffort"> ({{ member.thinkingEffort }})</span></div>
-        <div v-if="member.suspendedReason" class="ap-reason">{{ member.suspendedReason }}</div>
-      </div>
+  <div class="agent-panel">
+    <div ref="bodyEl" class="agent-transcript" @scroll.passive="onBodyScroll">
+      <div class="agent-transcript-inner">
+        <div v-if="metaLine" class="agent-meta">
+          <span class="agent-meta-text">{{ metaLine }}</span>
+        </div>
 
-      <!-- Live progress strip: only while actively working, or as the frozen
-           fallback snapshot when the REST transcript gave nothing. -->
-      <div
-        v-if="isWorking || !hasTranscript"
-        class="ap-live-strip"
-      >
-        <div v-if="member.prompt" class="ap-field">
-          <span class="ap-field-label">Task</span>
-          <div class="ap-field-body">{{ member.prompt }}</div>
-        </div>
-        <div v-if="liveText" class="ap-field">
-          <span class="ap-field-label">Output</span>
-          <div class="ap-field-body ap-live">
-            <Markdown :text="liveText" :streaming="isWorking" :open-file="(target) => emit('openFile', target)" />
-          </div>
-        </div>
-        <div v-if="progressGroups.length > 0" class="ap-field">
-          <span class="ap-field-label">Progress</span>
-          <div class="ap-field-body ap-progress">
-            <div v-for="group in progressGroups" :key="group.key" class="ap-group">
-              <div v-if="group.call" class="ap-call">
-                <Icon name="chevron-right" size="sm" class="ap-glyph" />
-                {{ group.call }}
+        <section v-if="prompt" class="agent-prompt">
+          <div class="agent-prompt-bubble">
+            <div class="agent-prompt-wrap" :class="{ 'is-clamped': promptClamped }">
+              <div ref="promptTextEl" class="agent-prompt-text">
+                <Markdown :text="prompt" :open-file="(target) => emit('openFile', target)" />
               </div>
-              <div v-if="group.output.length > 0" class="ap-output">
-                <div v-for="(line, li) in group.output" :key="li" class="ap-out-line">{{ line }}</div>
-              </div>
+              <button
+                v-if="promptOverflows"
+                type="button"
+                class="agent-prompt-toggle"
+                :aria-expanded="!promptClamped"
+                @click="togglePrompt"
+              >
+                <span>{{ promptClamped ? t('tasks.expand') : t('tasks.collapse') }}</span>
+                <Icon
+                  class="agent-prompt-toggle-car"
+                  :class="{ open: !promptClamped }"
+                  name="chevron-down"
+                  size="sm"
+                  aria-hidden="true"
+                />
+              </button>
             </div>
           </div>
-        </div>
-        <div v-if="member.summary" class="ap-field">
-          <span class="ap-field-label">Result</span>
-          <div class="ap-field-body">
-            <Markdown :text="member.summary" :open-file="(target) => emit('openFile', target)" />
-          </div>
-        </div>
-      </div>
+        </section>
 
-      <!-- Transcript: the subagent's own turns, thinking blocks collapsible -->
-      <div class="ap-transcript">
-        <div v-if="transcriptLoading" class="ap-transcript-note">
-          <Spinner size="sm" />
-        </div>
-        <div v-else-if="transcriptError" class="ap-transcript-note ap-transcript-error">
-          {{ t('tasks.transcriptLoadError') }}
-        </div>
-        <template v-else-if="hasTranscript">
+        <!-- Transcript: the subagent's own turns, thinking blocks collapsible -->
+        <template v-if="hasTranscript">
           <div v-for="turn in viewTurns" :key="turn.id" class="ap-turn">
             <div v-if="turnStateLabel(turn.state)" class="ap-turn-state">{{ turnStateLabel(turn.state) }}</div>
             <div
@@ -544,127 +544,213 @@ watch(
             </div>
           </div>
         </template>
+
+        <!-- Fallback: nothing readable yet, so show what the run has said so far.
+             This pane only ever shows a subagent, so upstream's `prose` variant
+             (which switches the output block to the UI font) always applies. -->
+        <div v-else-if="showFallback" class="agent-fallback prose">
+          <div v-if="transcriptError" class="agent-error">{{ t('tasks.transcriptLoadError') }}</div>
+          <div v-if="fallbackLines.length > 0" class="op">
+            <div v-for="(line, index) in fallbackLines" :key="index">{{ line }}</div>
+          </div>
+          <div v-if="transcriptLoading" class="agent-output-state">
+            <Spinner size="sm" />
+            <span>{{ t('tools.output.waiting') }}</span>
+          </div>
+          <div v-if="isWorking" class="working-indicator" role="status">
+            <span class="wi-mascot" aria-hidden="true"><MoonSpinner size="lg" /></span>
+            <span class="wi-label">{{ workingLabel }}</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ap {
+.agent-panel {
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  position: relative;
   background: var(--color-bg);
 }
-.ap-phase { flex: none; }
 
-.ap-body {
+.agent-transcript {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 14px;
-  font: var(--text-base)/var(--leading-normal) var(--font-ui);
-  color: var(--color-text-muted);
+  padding-bottom: var(--pfc-host-h, 0px);
 }
-.ap-id {
-  margin-bottom: 8px;
-}
-.ap-type {
-  font: var(--text-xs) var(--font-mono);
-  color: var(--color-text-muted);
-  margin-bottom: 8px;
-}
-.ap-reason {
-  color: var(--color-warning);
-  margin-bottom: 8px;
-}
-.ap-live-strip + .ap-transcript {
-  margin-top: 20px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-line);
-}
-.ap-field + .ap-field {
-  margin-top: 12px;
-}
-.ap-field-label {
-  display: block;
-  color: var(--color-text-muted);
-  font: var(--text-xs) var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
-}
-.ap-field-body {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.ap-progress {
+.agent-transcript-inner {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font: var(--text-base)/var(--leading-relaxed) var(--font-mono);
-  color: var(--color-text);
-  min-width: 0;
+  min-height: 100%;
+  width: 100%;
+  max-width: var(--p-content-max);
+  margin-inline: auto;
 }
-.ap-live {
-  font: var(--text-base)/var(--leading-relaxed) var(--font-mono);
-  color: var(--color-text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.ap-group {
-  min-width: 0;
-}
-.ap-call {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-  font-weight: var(--weight-medium);
-  color: var(--color-text);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-.ap-glyph {
+
+/* ---- Meta line (rules either side of the type · model · effort text) ---- */
+.agent-meta {
   flex: none;
-  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  user-select: none;
 }
-.ap-output {
-  margin: 2px 0 0 16px;
-  padding-left: 8px;
+.agent-meta::before,
+.agent-meta::after {
+  content: '';
+  flex: 1;
+  height: 0.5px;
+  background: var(--color-line);
+}
+.agent-meta-text {
+  font-size: var(--text-xs);
+  line-height: 1;
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-  border-left: 2px solid var(--color-line);
+  white-space: nowrap;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.ap-out-line {
-  min-width: 0;
-  overflow-wrap: anywhere;
+
+/* ---- Prompt bubble ---- */
+.agent-prompt {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-3) var(--space-2);
+}
+.agent-prompt-bubble {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-end;
+  max-width: 78%;
+  padding: 10px 12px;
+  background: var(--color-user-bubble-bg);
+  border-radius: var(--radius-lg);
+}
+.agent-prompt-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.agent-prompt-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--content-font-size);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+}
+.agent-prompt-wrap.is-clamped > .agent-prompt-text {
+  max-height: 6lh;
+  overflow: hidden;
+}
+.agent-prompt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: center;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--ui-font-size-sm);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: box-shadow var(--duration-base) var(--ease-out);
+}
+.agent-prompt-toggle:hover { box-shadow: var(--shadow-md); }
+.agent-prompt-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.agent-prompt-wrap.is-clamped .agent-prompt-toggle {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 0;
+}
+.agent-prompt-toggle-car { transition: transform var(--duration-base) var(--ease-out); }
+.agent-prompt-toggle-car.open { transform: rotate(180deg); }
+
+/* ---- Fallback block ---- */
+.agent-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.agent-error {
+  color: var(--color-danger);
+  font: var(--text-sm)/var(--leading-normal) var(--font-ui);
+}
+.agent-output-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-faint);
+  font-style: italic;
+}
+
+/* Upstream's OutputPanel: one row per projected line. */
+.op {
+  font-family: var(--font-mono);
+  font-size: calc(var(--content-font-size) - 2px);
+  line-height: 1.6;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+  font-variant-ligatures: none;
+  color: var(--color-text);
+  background: var(--color-well);
+  border: 0.5px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 12lh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.agent-fallback.prose .op { font-family: var(--font-ui); }
+
+/* Send → first-token indicator, upstream's WorkingIndicator layout. */
+.working-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  font: var(--text-sm)/var(--leading-normal) var(--font-ui);
+  color: var(--color-text-muted);
+}
+.wi-mascot {
+  flex: none;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wi-label { animation: wi-breathe 1.6s var(--ease-in-out) infinite; }
+
+@keyframes wi-breathe {
+  50% { opacity: 0.55; }
 }
 
 /* ---- Transcript section ---- */
-.ap-transcript {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-.ap-transcript-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-text-faint);
-  font: var(--text-sm) var(--font-ui);
-  padding: 8px 0;
-}
-.ap-transcript-error {
-  color: var(--color-danger);
-}
 .ap-turn {
   min-width: 0;
+  padding: 0 var(--space-3);
 }
 .ap-turn + .ap-turn {
   margin-top: 14px;
@@ -759,9 +845,7 @@ watch(
   color: var(--color-text-muted);
   font: var(--text-sm)/var(--leading-normal) var(--font-mono);
 }
-.ap-tool.clickable {
-  cursor: pointer;
-}
+.ap-tool.clickable { cursor: pointer; }
 .ap-tool.clickable:hover,
 .ap-tool.clickable:focus-visible {
   border-color: var(--color-accent);

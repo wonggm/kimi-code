@@ -353,6 +353,10 @@ fs.writeFileSync(
 const allowlist = fs.existsSync(allowlistPath) ? JSON.parse(fs.readFileSync(allowlistPath, 'utf8')) : { blockers: [], warnings: [] };
 const report = compareRun({ runDir, relRunDir: path.relative(REPO, runDir), allowlistPath: path.relative(REPO, allowlistPath), allowlist, coverage });
 if (realUrl) report.real = { url: realUrl, combos: combos.map((combo) => combo.name) };
+// The state every pair was captured in. Liquid glass is the fork's own system
+// and upstream has none, so the fork's boot key seeds it off (see buildSeed) —
+// recorded here because a reader of the report cannot see the seed.
+report.comparison = { forkLiquidGlass: 'off', seededBy: 'webdiff/capture.mjs buildSeed' };
 fs.writeFileSync(path.join(runDir, 'report.json'), `${JSON.stringify(report, null, 1)}\n`);
 fs.writeFileSync(path.join(runDir, 'report.md'), renderMarkdown(report));
 

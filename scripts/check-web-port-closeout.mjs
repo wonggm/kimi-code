@@ -24,14 +24,24 @@ const plans = path.join(ROOT, plansRel);
 if (!fs.existsSync(plans)) {
   failures.push(`${plansRel} is missing — the round has no verdict table`);
 } else {
-  const rows = fs
-    .readFileSync(plans, 'utf8')
-    .split('\n')
-    .filter((line) => line.trimStart().startsWith('|'))
-    // Drop the separator row and any header row, so a verdict file with several
-    // tables (one per upstream sync commit) is counted row by row.
-    .filter((line) => !/^\s*\|[\s:|-]+\|\s*$/.test(line))
-    .filter((line) => !/verdict/i.test(line) && !/^\s*\|\s*blurb\b/i.test(line));
+  // Only tables that HAVE a verdict column are accounted. A verdict file also
+  // holds tables that are not about verdicts at all (a measured before/after
+  // comparison, a token table), and counting their rows as "without a verdict"
+  // made a complete file look incomplete.
+  const rows = [];
+  let tableHeader = null;
+  for (const line of fs.readFileSync(plans, 'utf8').split('\n')) {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith('|')) {
+      tableHeader = null;
+      continue;
+    }
+    if (tableHeader === null) tableHeader = trimmed;
+    if (line === tableHeader) continue; // the header itself
+    if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) continue; // the separator row
+    if (!/verdict/i.test(tableHeader)) continue; // not a verdict table
+    rows.push(line);
+  }
   const unaccounted = rows.filter((row) => !VERDICTS.some((v) => row.includes(v)));
   if (rows.length === 0) failures.push(`${plansRel} has no verdict rows`);
   if (unaccounted.length > 0) {

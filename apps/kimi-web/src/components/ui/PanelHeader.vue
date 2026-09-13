@@ -9,7 +9,12 @@ import Icon from './Icon.vue';
 import Tooltip from './Tooltip.vue';
 
 withDefaults(defineProps<{
-  title: string;
+  /** The header's title. Falsy renders no title element at all, as upstream's
+   *  header does when the pane titles itself with its own leading slot. */
+  title?: string;
+  /** Hover text for the title when the title is a shortened form (upstream's
+   *  `titleTooltip`: the diff heads show the basename and tip the full path). */
+  titleTooltip?: string;
   subtitle?: string;
   closable?: boolean;
   closeLabel?: string;
@@ -25,7 +30,8 @@ defineEmits<{ close: [] }>();
 
 <template>
   <div class="ui-panel-header" :class="{ wrap }">
-    <Tooltip :text="title">
+    <slot name="leading" />
+    <Tooltip v-if="title" :text="titleTooltip ?? title">
       <span class="ui-panel-header__title">{{ title }}</span>
     </Tooltip>
     <Tooltip :text="subtitle">

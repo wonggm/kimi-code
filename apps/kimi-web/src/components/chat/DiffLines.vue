@@ -1,19 +1,22 @@
 <!-- apps/kimi-web/src/components/chat/DiffLines.vue -->
-<!-- Pure line-by-line diff renderer. Shared by the ~/diff panel (DiffView) and
-     inline tool-call edit previews (ToolCall). Owns only the rows + their
-     styling; the parent controls the surrounding height / scroll. -->
+<!-- Unified-diff renderer: upstream's shared code renderer in its `lines`
+     shape (`hl-code.gutter > hl-body > hl-row.row-<type>` with an old/new
+     gutter pair, a sign and the text). Shared by the ~/diff panel (DiffView),
+     the turn-diff panel and the inline tool-call edit previews; owns only the
+     rows + their styling, the parent controls the surrounding height/scroll. -->
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { DiffViewLine } from '../../types';
 import { useSelectionCapture } from '../../composables/useSelectionQuote';
 
-defineProps<{
+const props = defineProps<{
   lines: DiffViewLine[];
+  /** Wrap long lines onto the next row instead of scrolling horizontally. */
+  wrap?: boolean;
 }>();
 
 // Diff text selections open the app-wide quote bubble — one mount covers the
-// changes panel, the per-turn diff tab and the tool-diff preview, all of which
-// render through this component.
+// changes panel, the per-turn diff tab and the tool-diff preview.
 const rootRef = ref<HTMLElement | null>(null);
 useSelectionCapture(() => rootRef.value);
 
@@ -23,115 +26,135 @@ function oldGutter(line: DiffViewLine): string {
 function newGutter(line: DiffViewLine): string {
   return line.newNo !== undefined ? String(line.newNo) : '';
 }
-function rowClass(line: DiffViewLine): string {
-  return `dl-${line.type}`;
+function sign(line: DiffViewLine): string {
+  return line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' ';
 }
+
+// The gutter column is sized to the widest line number (upstream sets
+// --gutter-ch from the same measure, with a 4-character floor).
+const gutterCh = computed(() => {
+  let max = 0;
+  for (const line of props.lines) {
+    if (line.oldNo !== undefined && line.oldNo > max) max = line.oldNo;
+    if (line.newNo !== undefined && line.newNo > max) max = line.newNo;
+  }
+  return Math.max(4, String(max).length);
+});
 </script>
 
 <template>
-  <div ref="rootRef" class="diff-lines">
-    <div v-for="(line, i) in lines" :key="i" class="dl" :class="rowClass(line)">
-      <template v-if="line.type === 'hunk'">
-        <span class="hunk-text">{{ line.text }}</span>
-      </template>
-      <template v-else>
-        <span class="dl-gutter old">{{ oldGutter(line) }}</span>
-        <span class="dl-gutter new">{{ newGutter(line) }}</span>
-        <span class="dl-sign">{{ line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' ' }}</span>
-        <span class="dl-text">{{ line.text }}</span>
-      </template>
+  <div
+    ref="rootRef"
+    class="hl-code gutter"
+    :class="{ wrap }"
+    :style="{ '--gutter-ch': `${gutterCh}ch` }"
+  >
+    <div class="hl-body">
+      <div
+        v-for="(line, i) in lines"
+        :key="i"
+        class="hl-row"
+        :class="`row-${line.type}`"
+      >
+        <span class="hl-gutter">{{ oldGutter(line) }}</span>
+        <span class="hl-gutter new">{{ newGutter(line) }}</span>
+        <span class="hl-sign">{{ sign(line) }}</span>
+        <span class="hl-text">{{ line.text }}</span>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.diff-lines {
-  padding: 4px 0 12px;
-  font-size: var(--ui-font-size);
-  line-height: 1.5;
-  -webkit-overflow-scrolling: touch;
-  /* Grow to the longest line so every row can fill one uniform width — this
-     keeps add/del backgrounds continuous across the whole horizontal scroll. */
-  width: max-content;
-  min-width: 100%;
+.hl-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  font-feature-settings: 'liga' 0, 'calt' 0;
+  font-variant-ligatures: none;
 }
 
-.dl {
+.hl-body {
+  width: max-content;
+  min-width: 100%;
+  padding: var(--space-1) 0 var(--space-2);
+}
+
+.hl-row {
   display: flex;
   align-items: flex-start;
-  min-height: 18px;
+  min-height: calc(1em * var(--leading-normal));
   white-space: pre;
-  /* Fill the (uniform) width of .diff-lines so the add/del background paints
-     end-to-end, even for a short line sitting next to a long one. */
   width: 100%;
 }
 
-.dl-gutter {
+.hl-gutter {
   flex: none;
-  width: 40px;
-  padding: 0 6px;
+  box-sizing: content-box;
+  min-width: var(--gutter-ch, 4ch);
+  padding: 0 var(--space-2);
   text-align: right;
-  color: var(--faint, #aeb4bc);
-  background: var(--panel, #fafbfc);
+  color: var(--color-text-faint);
   user-select: none;
-  border-right: 1px solid var(--line2, #eef1f4);
+  border-right: 0.5px solid var(--color-line);
   font-variant-numeric: tabular-nums;
 }
 
-.dl-gutter.new { border-right: 1px solid var(--line, #e7eaee); }
-
-.dl-sign {
+.hl-sign {
   flex: none;
   width: 16px;
   text-align: center;
-  color: var(--muted);
+  color: var(--color-text-muted);
   user-select: none;
 }
 
-.dl-text {
-  /* Do not shrink: the container is sized to the longest line (see .diff-lines
-     width: max-content), so the text keeps its full width and rows line up. */
+.hl-text {
   flex: none;
   padding-right: 14px;
   white-space: pre;
   color: var(--color-text);
 }
-
-/* Added / removed lines: a faint background plus a left accent bar mark the
-   change, while the code TEXT keeps the normal ink colour. Washing the whole
-   line in green/red competed with reading the code itself; the sign (+/-) and
-   the accent carry the colour so the content stays legible. */
-.dl-add {
-  background: var(--color-success-soft);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-success) 55%, transparent);
+.hl-gutter + .hl-text {
+  padding-left: var(--space-2);
 }
-.dl-add .dl-sign {
+
+.row-add {
+  background: var(--color-diff-add-bg);
+}
+.row-add .hl-sign {
   color: var(--color-success);
 }
 
-.dl-del {
-  background: var(--color-danger-soft);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-danger) 55%, transparent);
+.row-del {
+  background: var(--color-diff-del-bg);
 }
-.dl-del .dl-sign {
+.row-del .hl-sign {
   color: var(--color-danger);
 }
 
-/* Hunk header — muted band spanning the whole row. */
-.dl-hunk {
-  background: var(--panel2, #f3f5f8);
+.row-hunk {
+  background: var(--color-surface-sunken);
 }
-.dl-hunk .hunk-text {
-  flex: 1;
-  padding: 1px 12px;
-  color: var(--muted, #8b929b);
-  font-style: normal;
+.row-hunk .hl-text {
+  color: var(--color-text-muted);
 }
 
-@media (max-width: 640px) {
-  .diff-lines {
-    overflow-x: auto;
-    font-size: var(--ui-font-size);
-  }
+/* A left accent bar marks the change while the code text keeps its ink. */
+.hl-code.gutter .row-add {
+  box-shadow: inset 2px 0 color-mix(in srgb, var(--color-success) 55%, transparent);
+}
+.hl-code.gutter .row-del {
+  box-shadow: inset 2px 0 color-mix(in srgb, var(--color-danger) 55%, transparent);
+}
+
+/* Word wrap: the rows take the pane width and long lines fold. */
+.hl-code.wrap .hl-body {
+  width: 100%;
+}
+.hl-code.wrap .hl-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>

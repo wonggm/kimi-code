@@ -1,5 +1,8 @@
 export default {
   quote: '引用',
+  // Thinking block head (upstream: thinking.panelTitle / thinking.streaming).
+  thinkingTitle: '思考过程',
+  thinkingStreaming: '思考中…',
   selection: {
     label: '所选内容操作',
     placeholder: '添加评论…（可选）',
@@ -61,11 +64,13 @@ export default {
   retryAttempt: '重试中 — 第 {attempt} 次，共 {max} 次',
   modelRequestFailed: '模型请求失败',
   resumeRetry: '继续 / 重试',
-  changedFiles: {
-    title: '已更改文件',
-    showMore: '显示更多',
-    showLess: '显示更少',
+  turnFiles: {
+    rebuilding: '正在加载本轮改动…',
+    diffUnavailable: '该文件的改动无法逐行显示',
+    openFile: '打开文件',
   },
+  requesting: '请求中…',
+  working: '处理中…',
   cron: {
     fired: '定时任务已触发',
     missed: '错过的定时提醒',
