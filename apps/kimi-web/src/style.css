@@ -1540,7 +1540,7 @@ html[data-liquid-glass="on"] .model-dropdown .effort-segments {
    root (.sd); the primary CTA keeps its solid accent fill, like the
    composer's Send button. Existing border-radius is kept — settings controls
    stay rectangular. */
-html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button, .ui-select) {
+html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button, .ui-select, .sm-picker) {
   --lg-tint: color-mix(in srgb, var(--color-text) 8%, transparent);
   --lg-tint-top: color-mix(in srgb, var(--color-text) 4%, transparent);
   --lg-bg: linear-gradient(
@@ -1558,17 +1558,16 @@ html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-ic
     background var(--duration-base),
     box-shadow var(--duration-base);
 }
-/* The full gradient background only on real buttons: on .ui-select the
-   `background` shorthand would wipe the component's chevron background-image,
-   so selects take the tint as background-color (the chevron SVG is
-   transparent and lets it show through). */
+/* The full gradient background only on real buttons: the `background` shorthand
+   would wipe the select's own chevron painting, so selects take the tint as
+   background-color. */
 html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button) {
   background: var(--lg-bg);
 }
-html[data-liquid-glass="on"] .sd .ui-select {
+html[data-liquid-glass="on"] .sd :is(.ui-select, .sm-picker) {
   background-color: var(--lg-tint);
 }
-html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button, .ui-select):hover:not(:disabled) {
+html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button, .ui-select, .sm-picker):hover:not(:disabled) {
   --lg-tint: color-mix(in srgb, var(--color-text) 13%, transparent);
   --lg-tint-top: color-mix(in srgb, var(--color-text) 8%, transparent);
 }

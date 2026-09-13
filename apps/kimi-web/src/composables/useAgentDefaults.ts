@@ -93,6 +93,11 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
 
   const defaultModelGroups = computed(() => toMenuGroups(modelGroups.value));
 
+  // The global subagent-model picker lists models only: an unset value is its
+  // placeholder state (`settings.noSecondaryModel`), so it carries no inherit
+  // entry of its own.
+  const secondaryModelGroups = computed(() => toMenuGroups(modelGroups.value));
+
   // Subagent pins get an unlabeled leading "Inherit (session model)" row whose
   // value is '' (setSubagentModel treats '' the same as null: delete the key).
   const subagentModelGroups = computed(() => [
@@ -144,6 +149,39 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
 
   function effortGroupsForProfile(profile: AgentProfileInfo, modelAlias: string): { options: { value: string; label: string }[] }[] {
     return subagentEffortGroups(profile, modelAlias);
+  }
+
+  // Global subagent-model default (`[secondary_model]`): the model every
+  // unpinned subagent uses. Empty alias means the subagent inherits the primary
+  // model, which is what the picker's placeholder shows.
+  const secondaryModelAlias = computed(() => config.value?.secondaryModel?.model ?? '');
+  const secondaryModelEffort = computed(() => config.value?.secondaryModel?.defaultEffort ?? '');
+
+  function secondaryEffortGroups(modelAlias: string): { options: { value: string; label: string }[] }[] {
+    const stored = config.value?.secondaryModel;
+    // With no alias pinned, the stored entry is the only description of what
+    // subagents run, so its capability block stays the reference.
+    const representative = modelAlias === '' ? stored : modelThinkingInfoForAlias(modelAlias);
+    return [
+      {
+        options: [
+          { value: '', label: t('settings.secondaryModelEffortAuto') },
+          ...subagentEffortOptions(representative, stored?.defaultEffort).map((effort) => ({
+            value: effort,
+            label: effortLabel(effort),
+          })),
+        ],
+      },
+    ];
+  }
+
+  function setSecondaryModel(alias: string, effort?: string): void {
+    const nextEffort = effort ?? secondaryModelEffort.value;
+    if (alias === secondaryModelAlias.value && nextEffort === secondaryModelEffort.value) return;
+    // The API rejects null, so an unset effort is an absent key.
+    opts.updateConfig({
+      secondaryModel: nextEffort ? { model: alias, defaultEffort: nextEffort } : { model: alias },
+    });
   }
 
   const defaultPermissionMode = computed<DefaultPermissionMode>(() => {
@@ -324,8 +362,13 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
     config,
     modelGroups,
     defaultModelGroups,
+    secondaryModelGroups,
     subagentModelGroups,
     effortGroupsForProfile,
+    secondaryModelAlias,
+    secondaryModelEffort,
+    secondaryEffortGroups,
+    setSecondaryModel,
     defaultPermissionMode,
     permissionLabelKey,
     configBool,

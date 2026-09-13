@@ -29,6 +29,14 @@ let backendProxyOpts: { target?: unknown } | null = null;
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')) as {
   version: string;
 };
+// The app whose version the settings pane reports is the CLI (the web bundle
+// ships inside it), not this web package: upstream's settings row prints its
+// release version and the moment it was built, and the web package's own version
+// ("0.1.2") is neither.
+const appPkg = JSON.parse(readFileSync(new URL('../kimi-code/package.json', import.meta.url), 'utf-8')) as {
+  version: string;
+};
+const buildTime = new Date().toISOString();
 
 /**
  * Dev-only backend switcher. Two endpoints let the web UI read and move the
@@ -141,6 +149,10 @@ export default defineConfig({
     // Named backend presets for the Sidebar switcher menu (dev only).
     __KIMI_DEV_BACKENDS__: JSON.stringify(backendPresets),
     __KIMI_WEB_VERSION__: JSON.stringify(pkg.version),
+    // The app release and its build moment (see `appPkg` above): the settings
+    // pane's "App version" row reports these, as upstream's does.
+    __KIMI_APP_VERSION__: JSON.stringify(appPkg.version),
+    __KIMI_APP_BUILD_TIME__: JSON.stringify(buildTime),
     // True only for the web bundle embedded in the Kimi Desktop app (set by the
     // desktop-build workflow). Gates an "internal testing build" banner. When
     // false (default) the banner is tree-shaken out of the production bundle.

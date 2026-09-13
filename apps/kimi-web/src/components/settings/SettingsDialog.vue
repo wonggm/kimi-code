@@ -107,6 +107,17 @@ const tabs: { id: SettingsTab; labelKey: string; icon: IconName }[] = [
 ];
 
 const daemonEndpoint = serverEndpointLabel();
+// Upstream pairs the app version with a build time; both come from Vite's
+// `define` (see vite.config.ts): the CLI's release version and this build's
+// timestamp, formatted as upstream shows it ("0.41.0 · 2026-09-09 13:40").
+const appVersion = `${__KIMI_APP_VERSION__} · ${formatBuildTime(__KIMI_APP_BUILD_TIME__)}`;
+
+function formatBuildTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
 const backendLabel = computed(() =>
   props.backend === 'v2' ? 'v2 (kap-server)' : 'v1 (server)',
 );
@@ -118,7 +129,12 @@ const {
   modelGroups,
   defaultModelGroups,
   subagentModelGroups,
+  secondaryModelGroups,
   effortGroupsForProfile,
+  secondaryModelAlias,
+  secondaryModelEffort,
+  secondaryEffortGroups,
+  setSecondaryModel,
   defaultPermissionMode,
   permissionLabelKey,
   configBool,
@@ -526,160 +542,96 @@ function archiveTime(iso: string): string {
             </div>
 
             <template v-if="config">
-              <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.defaultModel') }}
-                  <span class="hint">{{ t('settings.defaultModelHint') }}</span>
-                </span>
-                <div v-if="modelGroups.length > 0" class="select-wrap">
-                  <MenuSelect
-                    :model-value="config.defaultModel ?? ''"
-                    :groups="defaultModelGroups"
-                    :placeholder="t('settings.noDefaultModel')"
-                    :disabled="configSaving"
-                    :aria-label="t('settings.defaultModel')"
-                    @update:model-value="setDefaultModel"
-                  />
-                </div>
-                <span v-else class="rvalue mono">{{ config.defaultModel ?? t('settings.noDefaultModel') }}</span>
-              </div>
-
-              <template v-if="backend === 'v2' && agentProfiles && agentProfiles.length > 0">
-                <h4 class="sec-title subagent-title">{{ t('settings.subagentModels') }}</h4>
-                <p class="hint subagent-hint">{{ t('settings.subagentModelsHint') }}</p>
-                <div v-for="profile in agentProfiles" :key="profile.name" class="row subagent-row">
+              <div class="settings-group">
+                <div class="row">
                   <span class="rlabel">
-                    {{ profile.name }}
-                    <Tooltip
-                      v-if="profile.whenToUse"
-                      :text="profile.whenToUse"
-                      placement="top"
-                      :max-width="360"
-                    >
-                      <span class="hint subagent-desc">{{ profile.whenToUse }}</span>
-                    </Tooltip>
+                    {{ t('settings.defaultModel') }}
+                    <span class="hint">{{ t('settings.defaultModelHint') }}</span>
                   </span>
-                  <div class="profile-selects">
-                    <div class="select-wrap">
-                      <ModelEffortSelect
-                        :model-value="config.subagentModels?.[profile.name] ?? ''"
-                        :effort-value="config.subagentEfforts?.[profile.name] ?? ''"
-                        :groups="subagentModelGroups"
-                        :effort-groups="(modelAlias) => effortGroupsForProfile(profile, modelAlias)"
-                        :disabled="configSaving"
-                        :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
-                        @update:model-value="setSubagentModel(profile.name, $event)"
-                        @update:effort-value="setSubagentEffort(profile.name, $event)"
-                      />
-                    </div>
+                  <div v-if="modelGroups.length > 0" class="select-wrap">
+                    <MenuSelect
+                      :model-value="config.defaultModel ?? ''"
+                      :groups="defaultModelGroups"
+                      :placeholder="t('settings.noDefaultModel')"
+                      :disabled="configSaving"
+                      :aria-label="t('settings.defaultModel')"
+                      @update:model-value="setDefaultModel"
+                    />
                   </div>
-                  <div class="subagent-compaction">
-                    <Tooltip :text="t('settings.subagentCompactionHint')" placement="top">
-                      <span class="hint">{{ t('settings.subagentCompaction') }}</span>
-                    </Tooltip>
-                    <label class="num-field">
-                      <input
-                        class="num-input"
-                        type="number"
-                        min="50"
-                        max="99"
-                        step="1"
-                        :value="subagentTriggerRatioPercent(profile.name)"
-                        placeholder="—"
-                        :disabled="configSaving"
-                        :aria-label="t('settings.subagentCompactionTrigger')"
-                        @change="setSubagentTriggerRatio(profile.name, ($event.target as HTMLInputElement).value)"
-                      />
-                      <span class="num-unit">%</span>
-                    </label>
-                    <label class="num-field">
-                      <input
-                        class="num-input num-input-tokens"
-                        type="number"
-                        min="0"
-                        step="1"
-                        :value="subagentReservedSize(profile.name)"
-                        placeholder="—"
-                        :disabled="configSaving"
-                        :aria-label="t('settings.subagentCompactionReserved')"
-                        @change="setSubagentReservedSize(profile.name, ($event.target as HTMLInputElement).value)"
-                      />
-                      <span class="num-unit">{{ t('settings.subagentCompactionReservedUnit') }}</span>
-                    </label>
-                  </div>
+                  <span v-else class="rvalue mono">{{ config.defaultModel ?? t('settings.noDefaultModel') }}</span>
                 </div>
-              </template>
 
-              <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.defaultPermission') }}
-                  <span class="hint">{{ t('settings.defaultPermissionHint') }}</span>
-                </span>
-                <SegmentedControl
-                  :model-value="defaultPermissionMode"
-                  :options="permissionModes.map((m) => ({ value: m, label: t(permissionLabelKey[m]) }))"
-                  @update:model-value="setDefaultPermissionMode($event as 'manual' | 'auto' | 'yolo')"
-                />
-              </div>
-
-              <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.defaultThinking') }}
-                  <span class="hint">{{ t('settings.defaultThinkingHint') }}</span>
-                </span>
-                <Switch
-                  :model-value="thinkingEnabled()"
-                  :disabled="configSaving"
-                  :label="t('settings.defaultThinking')"
-                  @update:model-value="toggleDefaultThinking()"
-                />
-              </div>
-
-              <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.defaultPlanMode') }}
-                  <span class="hint">{{ t('settings.defaultPlanModeHint') }}</span>
-                </span>
-                <Switch
-                  :model-value="configBool(config.defaultPlanMode)"
-                  :disabled="configSaving"
-                  :label="t('settings.defaultPlanMode')"
-                  @update:model-value="toggleConfigBoolean('defaultPlanMode')"
-                />
-              </div>
-
-              <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.mergeSkills') }}
-                  <span class="hint">{{ t('settings.mergeSkillsHint') }}</span>
-                </span>
-                <Switch
-                  :model-value="configBool(config.mergeAllAvailableSkills)"
-                  :disabled="configSaving"
-                  :label="t('settings.mergeSkills')"
-                  @update:model-value="toggleConfigBoolean('mergeAllAvailableSkills')"
-                />
-              </div>
-
-              <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.compactionThreshold') }}
-                  <span class="hint">{{ t('settings.compactionThresholdHint') }}</span>
-                </span>
-                <label class="num-field">
-                  <input
-                    class="num-input"
-                    type="number"
-                    min="50"
-                    max="99"
-                    step="1"
-                    :value="compactionThresholdPercent"
-                    :disabled="configSaving"
-                    :aria-label="t('settings.compactionThreshold')"
-                    @change="setCompactionThreshold(($event.target as HTMLInputElement).value)"
+                <div class="row">
+                  <span class="rlabel">
+                    {{ t('settings.defaultPermission') }}
+                    <span class="hint">{{ t('settings.defaultPermissionHint') }}</span>
+                  </span>
+                  <SegmentedControl
+                    :model-value="defaultPermissionMode"
+                    :options="permissionModes.map((m) => ({ value: m, label: t(permissionLabelKey[m]) }))"
+                    @update:model-value="setDefaultPermissionMode($event as 'manual' | 'auto' | 'yolo')"
                   />
-                  <span class="num-unit">%</span>
-                </label>
+                </div>
+
+                <div class="row">
+                  <span class="rlabel">
+                    {{ t('settings.defaultThinking') }}
+                    <span class="hint">{{ t('settings.defaultThinkingHint') }}</span>
+                  </span>
+                  <Switch
+                    :model-value="thinkingEnabled()"
+                    :disabled="configSaving"
+                    :label="t('settings.defaultThinking')"
+                    @update:model-value="toggleDefaultThinking()"
+                  />
+                </div>
+
+                <div class="row">
+                  <span class="rlabel">
+                    {{ t('settings.defaultPlanMode') }}
+                    <span class="hint">{{ t('settings.defaultPlanModeHint') }}</span>
+                  </span>
+                  <Switch
+                    :model-value="configBool(config.defaultPlanMode)"
+                    :disabled="configSaving"
+                    :label="t('settings.defaultPlanMode')"
+                    @update:model-value="toggleConfigBoolean('defaultPlanMode')"
+                  />
+                </div>
+
+                <div class="row">
+                  <span class="rlabel">
+                    {{ t('settings.mergeSkills') }}
+                    <span class="hint">{{ t('settings.mergeSkillsHint') }}</span>
+                  </span>
+                  <Switch
+                    :model-value="configBool(config.mergeAllAvailableSkills)"
+                    :disabled="configSaving"
+                    :label="t('settings.mergeSkills')"
+                    @update:model-value="toggleConfigBoolean('mergeAllAvailableSkills')"
+                  />
+                </div>
+
+                <div class="row">
+                  <span class="rlabel">
+                    {{ t('settings.compactionThreshold') }}
+                    <span class="hint">{{ t('settings.compactionThresholdHint') }}</span>
+                  </span>
+                  <label class="num-field">
+                    <input
+                      class="num-input"
+                      type="number"
+                      min="50"
+                      max="99"
+                      step="1"
+                      :value="compactionThresholdPercent"
+                      :disabled="configSaving"
+                      :aria-label="t('settings.compactionThreshold')"
+                      @change="setCompactionThreshold(($event.target as HTMLInputElement).value)"
+                    />
+                    <span class="num-unit">%</span>
+                  </label>
+                </div>
               </div>
             </template>
 
@@ -687,67 +639,182 @@ function archiveTime(iso: string): string {
               {{ t('settings.configUnavailable') }}
             </div>
           </section>
+
+          <!-- Subagents: the default subagent model, plus one pin per agent profile
+               (v2 backend only — the profile catalog comes from GET /agent_profiles). -->
+          <section v-if="config" class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">{{ t('settings.secondaryModelSection') }}</h3>
+            </div>
+            <p v-if="agentProfiles && agentProfiles.length > 0" class="hint subagent-hint">
+              {{ t('settings.subagentModelsHint') }}
+            </p>
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.secondaryModel') }}
+                  <span class="hint">{{ t('settings.secondaryModelHint') }}</span>
+                </span>
+                <div class="select-wrap">
+                  <ModelEffortSelect
+                    :model-value="secondaryModelAlias"
+                    :effort-value="secondaryModelEffort"
+                    :groups="secondaryModelGroups"
+                    :effort-groups="secondaryEffortGroups"
+                    :placeholder="t('settings.noSecondaryModel')"
+                    :disabled="configSaving"
+                    :aria-label="t('settings.secondaryModel')"
+                    @update:model-value="setSecondaryModel($event)"
+                    @update:effort-value="setSecondaryModel(secondaryModelAlias, $event)"
+                  />
+                </div>
+              </div>
+              <div v-for="profile in agentProfiles ?? []" :key="profile.name" class="row subagent-row">
+                <span class="rlabel">
+                  {{ profile.name }}
+                  <Tooltip
+                    v-if="profile.whenToUse"
+                    :text="profile.whenToUse"
+                    placement="top"
+                    :max-width="360"
+                  >
+                    <span class="hint subagent-desc">{{ profile.whenToUse }}</span>
+                  </Tooltip>
+                </span>
+                <div class="profile-selects">
+                  <div class="select-wrap">
+                    <ModelEffortSelect
+                      :model-value="config.subagentModels?.[profile.name] ?? ''"
+                      :effort-value="config.subagentEfforts?.[profile.name] ?? ''"
+                      :groups="subagentModelGroups"
+                      :effort-groups="(modelAlias) => effortGroupsForProfile(profile, modelAlias)"
+                      :disabled="configSaving"
+                      :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
+                      @update:model-value="setSubagentModel(profile.name, $event)"
+                      @update:effort-value="setSubagentEffort(profile.name, $event)"
+                    />
+                  </div>
+                </div>
+                <div class="subagent-compaction">
+                  <Tooltip :text="t('settings.subagentCompactionHint')" placement="top">
+                    <span class="hint">{{ t('settings.subagentCompaction') }}</span>
+                  </Tooltip>
+                  <label class="num-field">
+                    <input
+                      class="num-input"
+                      type="number"
+                      min="50"
+                      max="99"
+                      step="1"
+                      :value="subagentTriggerRatioPercent(profile.name)"
+                      placeholder="—"
+                      :disabled="configSaving"
+                      :aria-label="t('settings.subagentCompactionTrigger')"
+                      @change="setSubagentTriggerRatio(profile.name, ($event.target as HTMLInputElement).value)"
+                    />
+                    <span class="num-unit">%</span>
+                  </label>
+                  <label class="num-field">
+                    <input
+                      class="num-input num-input-tokens"
+                      type="number"
+                      min="0"
+                      step="1"
+                      :value="subagentReservedSize(profile.name)"
+                      placeholder="—"
+                      :disabled="configSaving"
+                      :aria-label="t('settings.subagentCompactionReserved')"
+                      @change="setSubagentReservedSize(profile.name, ($event.target as HTMLInputElement).value)"
+                    />
+                    <span class="num-unit">{{ t('settings.subagentCompactionReservedUnit') }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
         </section>
 
-        <!-- Advanced: diagnostics + data/privacy -->
+        <!-- Advanced: version/connection, data & privacy, diagnostics -->
         <section v-show="activeTab === 'advanced'" class="panel">
           <section class="sec">
-            <h3 class="sec-title">{{ t('settings.advanced') }}</h3>
-            <div class="row">
-              <span class="rlabel">
-                {{ t('sidebar.daemon') }}
-                <span class="hint">{{ t('settings.serverAddressHint') }}</span>
-              </span>
-              <span class="rcopy">
-                <span class="rvalue mono">{{ daemonEndpoint }}</span>
-                <IconButton
-                  size="sm"
-                  :label="copiedField === 'address' ? t('settings.copied') : t('settings.copyServerAddress')"
-                  @click="copyValue('address', daemonEndpoint)"
-                >
-                  <Icon :name="copiedField === 'address' ? 'check' : 'copy'" size="sm" />
-                </IconButton>
-              </span>
+            <h3 class="sec-title">{{ t('settings.versionAndUpdates') }}</h3>
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.appVersion') }}
+                  <span class="hint">{{ t('settings.appVersionHint') }}</span>
+                </span>
+                <span class="rvalue">{{ appVersion }}</span>
+              </div>
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.serverVersion') }}
+                  <span class="hint">{{ t('settings.serverVersionHint') }}</span>
+                </span>
+                <span class="rvalue-wrap">
+                  <span class="rvalue mono">{{ serverVersion || '-' }}</span>
+                  <IconButton
+                    size="sm"
+                    :label="copiedField === 'version' ? t('settings.copied') : t('settings.copyServerVersion')"
+                    @click="copyValue('version', serverVersion || '')"
+                  >
+                    <Icon :name="copiedField === 'version' ? 'check' : 'copy'" size="sm" />
+                  </IconButton>
+                </span>
+              </div>
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.serverAddress') }}
+                  <span class="hint">{{ t('settings.serverAddressHint') }}</span>
+                </span>
+                <span class="rvalue-wrap">
+                  <span class="rvalue mono">{{ daemonEndpoint }}</span>
+                  <IconButton
+                    size="sm"
+                    :label="copiedField === 'address' ? t('settings.copied') : t('settings.copyServerAddress')"
+                    @click="copyValue('address', daemonEndpoint)"
+                  >
+                    <Icon :name="copiedField === 'address' ? 'check' : 'copy'" size="sm" />
+                  </IconButton>
+                </span>
+              </div>
+              <div class="row">
+                <span class="rlabel">{{ t('settings.backend') }}</span>
+                <span class="rvalue mono">{{ backendLabel }}</span>
+              </div>
             </div>
-            <div class="row">
-              <span class="rlabel">{{ t('settings.backend') }}</span>
-              <span class="rvalue mono">{{ backendLabel }}</span>
+          </section>
+
+          <section v-if="config" class="sec">
+            <h3 class="sec-title">{{ t('settings.privacy') }}</h3>
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.telemetry') }}
+                  <span class="hint">{{ t('settings.telemetryHint') }}</span>
+                  <span class="hint">{{ t('settings.telemetryRestartHint') }}</span>
+                </span>
+                <Switch
+                  :model-value="config.telemetry !== false"
+                  :disabled="configSaving"
+                  :label="t('settings.telemetry')"
+                  @update:model-value="toggleTelemetry()"
+                />
+              </div>
             </div>
-            <div class="row">
-              <span class="rlabel">
-                {{ t('settings.serverVersion') }}
-                <span class="hint">{{ t('settings.serverVersionHint') }}</span>
-              </span>
-              <span class="rcopy">
-                <span class="rvalue mono">{{ serverVersion || '-' }}</span>
-                <IconButton
-                  size="sm"
-                  :label="copiedField === 'version' ? t('settings.copied') : t('settings.copyServerVersion')"
-                  @click="copyValue('version', serverVersion || '')"
-                >
-                  <Icon :name="copiedField === 'version' ? 'check' : 'copy'" size="sm" />
-                </IconButton>
-              </span>
-            </div>
-            <div v-if="config" class="row">
-              <span class="rlabel">
-                {{ t('settings.telemetry') }}
-                <span class="hint">{{ t('settings.telemetryHint') }}</span>
-                <span class="hint">{{ t('settings.telemetryRestartHint') }}</span>
-              </span>
-              <Switch
-                :model-value="config.telemetry !== false"
-                :disabled="configSaving"
-                :label="t('settings.telemetry')"
-                @update:model-value="toggleTelemetry()"
-              />
-            </div>
-            <div class="row">
-              <span class="rlabel">
-                {{ t('settings.exportLog') }}
-                <span v-if="!isTraceEnabled()" class="hint">{{ t('settings.logHint') }}</span>
-              </span>
-              <Button variant="secondary" size="sm" @click="exportLog">{{ t('settings.exportLogBtn') }}</Button>
+          </section>
+
+          <section class="sec">
+            <h3 class="sec-title">{{ t('settings.diagnostics') }}</h3>
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.exportLog') }}
+                  <span class="hint">{{ t('settings.exportLogHint') }}</span>
+                  <span v-if="!isTraceEnabled()" class="hint">{{ t('settings.logHint') }}</span>
+                </span>
+                <Button variant="secondary" size="sm" @click="exportLog">{{ t('settings.exportLogBtn') }}</Button>
+              </div>
             </div>
           </section>
 
@@ -979,9 +1046,18 @@ function archiveTime(iso: string): string {
   white-space: nowrap;
 }
 .rvalue.mono { font-family: var(--font-mono); font-size: var(--text-xs); }
-/* Value + copy button group for the copyable info rows (daemon address,
-   server version). */
-.rcopy { display: flex; align-items: center; gap: var(--space-2); flex: none; min-width: 0; }
+/* Value + copy button group for the copyable info rows (server address,
+   server version). Capped like upstream's, with the inner value uncapped so a
+   short address is shown in full. */
+.rvalue-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-width: 0;
+  max-width: 60%;
+}
+.rvalue-wrap .rvalue { max-width: none; }
 .hint { font-family: var(--font-ui); font-size: var(--text-xs); color: var(--color-text-faint); }
 
 .num-field {
@@ -1039,7 +1115,6 @@ function archiveTime(iso: string): string {
 .subagent-compaction .hint { white-space: nowrap; }
 .subagent-compaction .num-field { height: 34px; padding: 0 var(--space-2); }
 
-.subagent-title { margin: var(--space-3) 0 var(--space-1); }
 .subagent-hint { margin: 0 0 var(--space-2); }
 
 .empty-config {
