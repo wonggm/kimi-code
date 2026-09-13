@@ -110,6 +110,9 @@ export default {
     answered: '已回答',
     more: '（还有 {count} 个）',
   },
+  output: {
+    waiting: '等待输出…',
+  },
   plan: {
     review: {
       pending: '待确认',

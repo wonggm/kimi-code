@@ -12,8 +12,6 @@ import Button from './ui/Button.vue';
 import IconButton from './ui/IconButton.vue';
 import Icon from './ui/Icon.vue';
 import PanelHeader from './ui/PanelHeader.vue';
-import Tooltip from './ui/Tooltip.vue';
-import { FILE_PREVIEW_REFRESH_KEY } from '../composables/useFilePreview';
 
 const { t } = useI18n();
 
@@ -77,8 +75,14 @@ const props = defineProps<{
   error?: string | null;
   line?: number;
   downloadUrl?: string | null;
+  /** The path to title the header with, when the app knows an absolute one. */
+  displayPath?: string;
   closable?: boolean;
   externalActions?: boolean;
+  /** The previewed file is out of date and can be re-read. */
+  stale?: boolean;
+  /** A re-read is in flight (dims the body). */
+  refreshing?: boolean;
   /** Open a linked file from inside a Markdown preview (resolved against the
       current file's directory before being called). */
   openFile?: (target: FilePreviewRequest) => void;
@@ -88,32 +92,35 @@ const emit = defineEmits<{
   close: [];
   openExternal: [];
   reveal: [];
+  refresh: [];
 }>();
 
-// Staleness rides on the injected refresh handle (published by useFilePreview)
-// rather than a prop: the same preview component is rendered by more than one
-// pane, and only the pane owning the open preview should advertise a refresh.
-const refreshHandle = inject(FILE_PREVIEW_REFRESH_KEY, null);
-
-function samePreviewPath(a: string, b: string): boolean {
-  const left = a.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
-  const right = b.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
-  if (left === '' || right === '') return false;
-  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
-}
-
-const showRefresh = computed(() => {
-  const handle = refreshHandle;
-  const path = props.file?.path;
-  if (!handle || !handle.stale.value || !path || handle.path.value === null) return false;
-  return samePreviewPath(handle.path.value, path);
-});
-
-const refreshBusy = computed(() => refreshHandle?.refreshing.value ?? false);
+// The refresh control keeps its slot in the header (hidden) unless the app
+// reports a stale read, exactly as upstream's does.
+const showRefresh = computed(() => props.stale === true);
+const refreshBusy = computed(() => props.refreshing === true);
 
 function onRefresh(): void {
-  refreshHandle?.refresh();
+  emit('refresh');
 }
+
+/** Header title / tooltip: the path, minus a leading slash for the title. The
+ *  title is clipped by CSS from the left, so the tail stays readable. */
+const displayTooltip = computed(() => props.displayPath ?? props.file?.path ?? '');
+const displayTitle = computed(() => {
+  const path = displayTooltip.value;
+  return path.startsWith('/') ? path.slice(1) : path;
+});
+
+/** Upstream offers the wrap toggle for every body it renders as raw code. */
+const canWrap = computed(
+  () =>
+    contentKind.value === 'text' ||
+    contentKind.value === 'json' ||
+    (contentKind.value === 'html' && htmlMode.value === 'source') ||
+    (contentKind.value === 'markdown' && markdownMode.value === 'source'),
+);
+const wrap = ref(false);
 
 function handleMarkdownOpenFile(target: { path: string; line?: number }): void {
   props.openFile?.(resolveMarkdownFileTarget(target));
@@ -433,19 +440,10 @@ function highlightLine(line: string): string {
   html = html.replace(/(\/\/.*)$/g, '<span class="tok-comment">$1</span>');
   return html;
 }
-
-// ---------------------------------------------------------------------------
-// Path display (truncate-left for long paths)
-// ---------------------------------------------------------------------------
-
-function truncatePath(path: string, maxLen = 55): string {
-  if (!path || path.length <= maxLen) return path;
-  return '…' + path.slice(path.length - maxLen + 1);
-}
 </script>
 
 <template>
-  <div ref="rootRef" class="file-preview">
+  <div ref="rootRef" class="file-preview panel-file-head" :class="{ 'fp-refreshing': refreshing }">
     <!-- Empty state: nothing selected -->
     <div v-if="error && !loading" class="fp-empty fp-error">
       <span>{{ error }}</span>
@@ -466,17 +464,16 @@ function truncatePath(path: string, maxLen = 55): string {
 
     <!-- File loaded -->
     <template v-else-if="file">
-      <!-- Header: shared "Preview" title; the path is the subtitle -->
+      <!-- Header: the path IS the title (clipped from the left by CSS), the
+           full path its tooltip — upstream's own shape. -->
       <PanelHeader
         wrap
-        :title="t('common.preview')"
+        :title="displayTitle"
+        :title-tooltip="displayTooltip"
         :closable="closable"
         :close-label="t('filePreview.close')"
         @close="emit('close')"
       >
-        <Tooltip :text="file.path">
-          <span class="fp-path">{{ truncatePath(file.path) }}</span>
-        </Tooltip>
         <span class="fp-meta">
           <span v-if="file.lineCount" class="fp-lines">{{ t('filePreview.lineCount', { count: file.lineCount }) }}</span>
           <span class="fp-size">{{ formatSize(file.size) }}</span>
@@ -511,6 +508,15 @@ function truncatePath(path: string, maxLen = 55): string {
           ]"
           @update:model-value="setImageFit"
         />
+        <IconButton
+          v-if="canWrap"
+          size="sm"
+          :label="wrap ? t('conversation.codeBlock.unwrapCode') : t('conversation.codeBlock.wrapCode')"
+          :aria-pressed="wrap"
+          @click="wrap = !wrap"
+        >
+          <Icon :name="wrap ? 'text-wrap-disabled' : 'text-wrap'" size="md" />
+        </IconButton>
         <div v-if="contentKind === 'text' || contentKind === 'json' || contentKind === 'html' || contentKind === 'csv'" class="fp-search">
           <input
             v-model="searchQuery"
@@ -529,16 +535,17 @@ function truncatePath(path: string, maxLen = 55): string {
           </IconButton>
         </div>
         <!-- Icon actions: text labels made the header wrap to two rows at the
-             default panel width — icon-only buttons keep it single-line. -->
+             default panel width — icon-only buttons keep it single-line. The
+             refresh control appears only while the app reports a stale read. -->
         <IconButton
           v-if="showRefresh"
           size="sm"
           class="fp-refresh"
           :disabled="refreshBusy"
-          :label="t('app.refreshPreview')"
+          :label="t('filePreview.refresh')"
           @click="onRefresh"
         >
-          <Icon name="undo" size="md" />
+          <Icon name="refresh" size="md" />
         </IconButton>
         <IconButton size="sm" :class="{ copied: copiedPath }" :label="copiedPath ? t('filePreview.copied') : t('filePreview.copyPath')" @click="copyPath">
           <Icon v-if="!copiedPath" name="link" size="md" />
@@ -580,34 +587,38 @@ function truncatePath(path: string, maxLen = 55): string {
           :text="decodedContent"
           :open-file="props.openFile ? handleMarkdownOpenFile : undefined"
         />
-        <div v-else class="fp-code">
-          <div class="fp-line-table">
-            <div
-              v-for="(line, idx) in lines"
-              :key="idx"
-              class="fp-line-row"
-              :class="lineClass(idx + 1)"
-              :data-line="idx + 1"
-            >
-              <span class="fp-gutter">{{ idx + 1 }}</span>
-              <span class="fp-line-text" v-html="highlightLine(line)"></span>
+        <div v-else class="fp-code" :class="{ wrap }">
+          <div class="hl-code">
+            <div class="hl-body">
+              <div
+                v-for="(line, idx) in lines"
+                :key="idx"
+                class="hl-row"
+                :class="lineClass(idx + 1)"
+                :data-line="idx + 1"
+              >
+                <span class="hl-gutter">{{ idx + 1 }}</span>
+                <span class="hl-text" v-html="highlightLine(line)"></span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Body: JSON -->
-      <div v-else-if="contentKind === 'json'" class="fp-body fp-code">
-        <div class="fp-line-table">
-          <div
-            v-for="(line, idx) in lines"
-            :key="idx"
-            class="fp-line-row"
-            :class="lineClass(idx + 1)"
-            :data-line="idx + 1"
-          >
-            <span class="fp-gutter">{{ idx + 1 }}</span>
-            <span class="fp-line-text" v-html="highlightLine(line)"></span>
+      <div v-else-if="contentKind === 'json'" class="fp-body fp-code" :class="{ wrap }">
+        <div class="hl-code">
+          <div class="hl-body">
+            <div
+              v-for="(line, idx) in lines"
+              :key="idx"
+              class="hl-row"
+              :class="lineClass(idx + 1)"
+              :data-line="idx + 1"
+            >
+              <span class="hl-gutter">{{ idx + 1 }}</span>
+              <span class="hl-text" v-html="highlightLine(line)"></span>
+            </div>
           </div>
         </div>
       </div>
@@ -621,17 +632,19 @@ function truncatePath(path: string, maxLen = 55): string {
           :srcdoc="htmlSrcdoc"
           :title="file.path"
         ></iframe>
-        <div v-else class="fp-code">
-          <div class="fp-line-table">
-            <div
-              v-for="(line, idx) in lines"
-              :key="idx"
-              class="fp-line-row"
-              :class="lineClass(idx + 1)"
-              :data-line="idx + 1"
-            >
-              <span class="fp-gutter">{{ idx + 1 }}</span>
-              <span class="fp-line-text" v-html="highlightLine(line)"></span>
+        <div v-else class="fp-code" :class="{ wrap }">
+          <div class="hl-code">
+            <div class="hl-body">
+              <div
+                v-for="(line, idx) in lines"
+                :key="idx"
+                class="hl-row"
+                :class="lineClass(idx + 1)"
+                :data-line="idx + 1"
+              >
+                <span class="hl-gutter">{{ idx + 1 }}</span>
+                <span class="hl-text" v-html="highlightLine(line)"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -689,17 +702,19 @@ function truncatePath(path: string, maxLen = 55): string {
       </div>
 
       <!-- Body: Text/Code (with line numbers) -->
-      <div v-else-if="contentKind === 'text'" class="fp-body fp-code">
-        <div class="fp-line-table">
-          <div
-            v-for="(line, idx) in lines"
-            :key="idx"
-            class="fp-line-row"
-            :class="lineClass(idx + 1)"
-            :data-line="idx + 1"
-          >
-            <span class="fp-gutter">{{ idx + 1 }}</span>
-            <span class="fp-line-text" v-html="highlightLine(line)"></span>
+      <div v-else-if="contentKind === 'text'" class="fp-body fp-code" :class="{ wrap }">
+        <div class="hl-code">
+          <div class="hl-body">
+            <div
+              v-for="(line, idx) in lines"
+              :key="idx"
+              class="hl-row"
+              :class="lineClass(idx + 1)"
+              :data-line="idx + 1"
+            >
+              <span class="hl-gutter">{{ idx + 1 }}</span>
+              <span class="hl-text" v-html="highlightLine(line)"></span>
+            </div>
           </div>
         </div>
       </div>
@@ -746,25 +761,13 @@ function truncatePath(path: string, maxLen = 55): string {
 
 /* ---- Header ----
    Structure comes from PanelHeader (wrap mode). Only the slot content
-   (path subtitle, supplementary meta, inline search) is styled here. */
-
-/* The path is the SUBTITLE — supplementary next to the shared panel title.
-   nowrap is load-bearing: without it a long path wraps INSIDE the span and
-   stretches the header to multiple lines (ellipsis only works on one line). */
-.fp-path {
-  /* Low BASIS on purpose: flex-wrap packs lines by basis, so a big basis here
-     pushed the actions onto a second row at the default panel width. The path
-     then GROWS into whatever space the row has left. */
-  flex: 1 1 60px;
-  min-width: 40px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+   (supplementary meta, inline search) is styled here. */
+/* The path is the header's title — clipped from the left so the tail (the file
+   name) stays readable, upstream's own file-head treatment. */
+.file-preview.panel-file-head :deep(.ui-panel-header__title) {
+  font: 400 var(--text-xs) var(--font-ui);
   direction: rtl;
   text-align: left;
-  font-size: var(--ui-font-size-xs);
-  color: var(--muted);
-  font-weight: 400;
 }
 
 .fp-meta {
@@ -864,75 +867,101 @@ function truncatePath(path: string, maxLen = 55): string {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding-bottom: var(--pfc-host-h, 0px);
 }
+/* A re-read of a stale file dims the body instead of unmounting it. */
+.file-preview.fp-refreshing .fp-body { opacity: 0.6; }
 
 /* ---- Markdown ---- */
 .fp-markdown {
   padding: 16px 20px;
 }
 
-/* ---- Code / text with line numbers ---- */
+/* ---- Code / text with line numbers ----
+   The rows come from the shared code renderer's markup (upstream's
+   `hl-code > hl-body > hl-row > hl-gutter + hl-text`), so the metrics here are
+   its own: the body sizes itself to the longest line, each gutter is a fixed
+   column sized by `--gutter-ch`, and the text keeps the code column. */
 .fp-code {
   background: var(--bg);
 }
 
-.fp-line-table {
-  display: table;
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--ui-font-size);
-  line-height: 1.6;
+.hl-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  font-feature-settings: 'liga' 0, 'calt' 0;
+  font-variant-ligatures: none;
 }
 
-.fp-line-row {
-  display: table-row;
+.hl-body {
+  width: max-content;
+  min-width: 100%;
+  padding: var(--space-1) 0 var(--space-2);
 }
-.fp-line-row.hit .fp-line-text,
+
+.hl-row {
+  display: flex;
+  align-items: flex-start;
+  min-height: calc(1em * var(--leading-normal));
+  white-space: pre;
+  width: 100%;
+}
+
+.hl-row.hit .hl-text,
 .fp-table tr.hit td {
   background: var(--fp-search-hit-bg);
 }
-.fp-line-row.active .fp-line-text,
+.hl-row.active .hl-text,
 .fp-table tr.active td {
   background: var(--fp-search-active-bg);
 }
-.fp-line-row.target .fp-gutter,
-.fp-line-row.target .fp-line-text,
+.hl-row.target .hl-gutter,
+.hl-row.target .hl-text,
 .fp-table tr.target th,
 .fp-table tr.target td {
   background: var(--color-accent-soft);
 }
 
-.fp-gutter {
-  display: table-cell;
-  width: 44px;
-  padding: 0 10px 0 12px;
+.hl-gutter {
+  flex: none;
+  box-sizing: content-box;
+  min-width: var(--gutter-ch, 4ch);
+  padding: 0 var(--space-2);
   text-align: right;
-  color: var(--faint);
+  color: var(--color-text-faint);
   user-select: none;
-  font-size: var(--text-base);
-  white-space: nowrap;
-  border-right: 1px solid var(--line2);
-  vertical-align: top;
+  border-right: 0.5px solid var(--color-line);
+  font-variant-numeric: tabular-nums;
 }
 
-.fp-line-text {
-  display: table-cell;
-  padding: 0 12px;
-  color: var(--color-text);
+.hl-text {
+  flex: none;
+  padding-right: 14px;
   white-space: pre;
-  vertical-align: top;
+  color: var(--color-text);
 }
-.fp-line-text :deep(.tok-key),
-.fp-line-text :deep(.tok-keyword) {
+.hl-gutter + .hl-text {
+  padding-left: var(--space-2);
+}
+/* Word wrap: long lines fold inside the pane instead of scrolling sideways. */
+.fp-code.wrap .hl-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hl-text :deep(.tok-key),
+.hl-text :deep(.tok-keyword) {
   color: var(--fp-token-keyword);
   font-weight: 500;
 }
-.fp-line-text :deep(.tok-string) { color: var(--fp-token-string); }
-.fp-line-text :deep(.tok-number),
-.fp-line-text :deep(.tok-literal) { color: var(--fp-token-literal); }
-.fp-line-text :deep(.tok-comment) { color: var(--muted); font-style: italic; }
-.fp-line-text :deep(.tok-tag) { color: var(--fp-token-tag); font-weight: 500; }
-.fp-line-text :deep(.tok-attr) { color: var(--fp-token-literal); }
+.hl-text :deep(.tok-string) { color: var(--fp-token-string); }
+.hl-text :deep(.tok-number),
+.hl-text :deep(.tok-literal) { color: var(--fp-token-literal); }
+.hl-text :deep(.tok-comment) { color: var(--muted); font-style: italic; }
+.hl-text :deep(.tok-tag) { color: var(--fp-token-tag); font-weight: 500; }
+.hl-text :deep(.tok-attr) { color: var(--fp-token-literal); }
 
 /* ---- HTML / PDF ---- */
 .fp-html-frame,

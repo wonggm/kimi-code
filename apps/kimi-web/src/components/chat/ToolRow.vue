@@ -117,7 +117,11 @@ function onHeadClick(): void {
   color: var(--color-text);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
-  line-height: var(--leading-tight);
+  /* Upstream's row is 24px tall: 13px text on a line-height of exactly 1. The
+     fork's --leading-tight (1.25) made every tool row 2px taller than
+     upstream's. */
+  line-height: 1;
+  text-align: left;
 }
 .tl-head.clickable { cursor: pointer; user-select: none; }
 .tl-ic {
@@ -143,6 +147,12 @@ function onHeadClick(): void {
 .tl-status.ok { color: var(--color-success); }
 .tl-status.err { color: var(--color-danger); }
 .tl-status.run { color: var(--color-text-muted); }
+/* The chevron's wrapper is a plain span, whose line box added a pixel over the
+   16px button and made every tool row 25px where upstream's is 24px. */
+.tl-main > .ui-tip {
+  display: inline-flex;
+  align-items: center;
+}
 .tl-car {
   display: inline-flex;
   align-items: center;

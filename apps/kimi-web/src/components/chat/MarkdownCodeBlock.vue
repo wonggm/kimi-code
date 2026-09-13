@@ -22,6 +22,14 @@ const props = defineProps<{
   // actually sets need declaring; an undeclared key becomes a DOM attribute on
   // the wrapper instead of reaching the renderer.
   monacoOptions?: Record<string, unknown>;
+  /** `loading` and `stream` gate CodeBlockNode's skeleton: it marks the
+   *  container `is-rendering` (and arms its shimmer placeholder) while
+   *  `loading` is true, and `loading` defaults to TRUE. Undeclared, the
+   *  `loading: false` the caller passes never reached the renderer — it landed
+   *  on this wrapper as a DOM attribute — so every settled block stayed
+   *  `is-rendering`, which upstream's blocks are not. */
+  loading?: boolean;
+  stream?: boolean;
   // The shiki theme reaches the settled renderer through these; undeclared,
   // they stop at the wrapper and the renderer silently falls back to its own
   // default (github-dark), whatever theme the app asked for.
@@ -436,9 +444,11 @@ const ACTION_BTN_CLASS =
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-ui);
-  /* upstream's .code-header-title renders at 15px (its header row is 14px);
-     the fork's scale jumps 14 -> 16, so this is the literal step between. */
-  font-size: calc(var(--text-base) + 1px);
+  /* Upstream's title measures 13px — the same size as its code text, one step
+     under its 14px body scale. Ours is --text-sm (13px), so the label takes it
+     directly rather than the +1px step off the base that predates this
+     measurement. */
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
 }
 .mdcb-glyph {

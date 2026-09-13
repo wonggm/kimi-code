@@ -27,6 +27,8 @@ import type { Component } from 'vue';
 
 // Components (Kimi collection) ----------------------------------------------
 import KimiAddConversation from '~icons/kimi/add-conversation';
+import KimiArrowLeft from '~icons/kimi/arrow-left';
+import KimiLink from '~icons/kimi/link';
 import KimiFolder from '~icons/kimi/folder';
 import KimiFolderOpen from '~icons/kimi/folder-open';
 import KimiHand from '~icons/kimi/hand';
@@ -40,6 +42,7 @@ import KimiFlask from '~icons/kimi/flask';
 import KimiMicroscope from '~icons/kimi/microscope';
 import KimiRobot from '~icons/kimi/robot';
 import KimiSearch from '~icons/kimi/search';
+import KimiThinking from '~icons/kimi/thinking';
 import KimiSend from '~icons/kimi/send';
 import KimiPencilFilled from '~icons/kimi/pencil-filled';
 import KimiTerminalFilled from '~icons/kimi/terminal-filled';
@@ -57,6 +60,7 @@ import TablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand';
 import TablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand';
 import TablerPaperclip from '~icons/tabler/paperclip';
 import TablerListNumbers from '~icons/tabler/list-numbers';
+import TablerRefresh from '~icons/tabler/refresh';
 import TablerTextWrap from '~icons/tabler/text-wrap';
 import TablerTextWrapDisabled from '~icons/tabler/text-wrap-disabled';
 
@@ -96,7 +100,6 @@ import RiGitPullRequestLine from '~icons/ri/git-pull-request-line';
 import RiGlobalLine from '~icons/ri/global-line';
 import RiImageLine from '~icons/ri/image-line';
 import RiInformationLine from '~icons/ri/information-line';
-import RiLinksLine from '~icons/ri/links-line';
 import RiListCheck from '~icons/ri/list-check';
 import RiListUnordered from '~icons/ri/list-unordered';
 import RiLoginBoxLine from '~icons/ri/login-box-line';
@@ -120,9 +123,11 @@ import RiUserLine from '~icons/ri/user-line';
 
 // Raw SVG strings (Kimi collection) -----------------------------------------
 import RawKimiAddConversation from '~icons/kimi/add-conversation?raw';
+import RawKimiArrowLeft from '~icons/kimi/arrow-left?raw';
 import RawKimiChevronDown from '~icons/kimi/chevron-down?raw';
 import RawKimiCircleCheck from '~icons/kimi/circle-check?raw';
 import RawKimiPanelCollapseRight from '~icons/kimi/panel-collapse-right?raw';
+import RawKimiLink from '~icons/kimi/link?raw';
 import RawKimiFolder from '~icons/kimi/folder?raw';
 import RawKimiFolderOpen from '~icons/kimi/folder-open?raw';
 import RawKimiHand from '~icons/kimi/hand?raw';
@@ -133,6 +138,7 @@ import RawKimiFlask from '~icons/kimi/flask?raw';
 import RawKimiMicroscope from '~icons/kimi/microscope?raw';
 import RawKimiRobot from '~icons/kimi/robot?raw';
 import RawKimiSearch from '~icons/kimi/search?raw';
+import RawKimiThinking from '~icons/kimi/thinking?raw';
 import RawKimiSend from '~icons/kimi/send?raw';
 import RawKimiPencilFilled from '~icons/kimi/pencil-filled?raw';
 import RawKimiTerminalFilled from '~icons/kimi/terminal-filled?raw';
@@ -150,6 +156,7 @@ import RawTablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand
 import RawTablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand?raw';
 import RawTablerPaperclip from '~icons/tabler/paperclip?raw';
 import RawTablerListNumbers from '~icons/tabler/list-numbers?raw';
+import RawTablerRefresh from '~icons/tabler/refresh?raw';
 import RawTablerTextWrap from '~icons/tabler/text-wrap?raw';
 import RawTablerTextWrapDisabled from '~icons/tabler/text-wrap-disabled?raw';
 
@@ -189,7 +196,6 @@ import RawGitPullRequestLine from '~icons/ri/git-pull-request-line?raw';
 import RawGlobalLine from '~icons/ri/global-line?raw';
 import RawImageLine from '~icons/ri/image-line?raw';
 import RawInformationLine from '~icons/ri/information-line?raw';
-import RawLinksLine from '~icons/ri/links-line?raw';
 import RawListCheck from '~icons/ri/list-check?raw';
 import RawListUnordered from '~icons/ri/list-unordered?raw';
 import RawLoginBoxLine from '~icons/ri/login-box-line?raw';
@@ -241,6 +247,8 @@ export type IconName =
   | 'arrow-up'
   | 'arrow-down'
   | 'arrow-right'
+  | 'arrow-left'
+  | 'refresh'
   | 'minus'
   | 'panel-collapse'
   | 'panel-expand'
@@ -285,6 +293,7 @@ export type IconName =
   | 'shield-exclamation'
   | 'trash'
   | 'robot'
+  | 'thinking'
   | 'microscope'
   | 'flask'
   | 'view-flat'
@@ -331,7 +340,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   archive: entry(RiArchiveLine, RawArchiveLine),
   search: entry(KimiSearch, RawKimiSearch),
   copy: entry(RiFileCopyLine, RawFileCopyLine),
-  link: entry(RiLinksLine, RawLinksLine),
+  link: entry(KimiLink, RawKimiLink),
   'external-link': entry(RiExternalLinkLine, RawExternalLinkLine),
   download: entry(RiDownloadLine, RawDownloadLine),
   undo: entry(RiArrowGoBackLine, RawArrowGoBackLine),
@@ -347,6 +356,8 @@ export const ICONS: Record<IconName, IconEntry> = {
   'arrow-up': entry(RiArrowUpLine, RawArrowUpLine),
   'arrow-down': entry(RiArrowDownLine, RawArrowDownLine),
   'arrow-right': entry(RiArrowRightLine, RawArrowRightLine),
+  'arrow-left': entry(KimiArrowLeft, RawKimiArrowLeft),
+  refresh: entry(TablerRefresh, RawTablerRefresh),
   minus: entry(RiSubtractLine, RawSubtractLine),
   'panel-collapse': entry(TablerSidebarLeftCollapse, RawTablerSidebarLeftCollapse),
   'panel-expand': entry(TablerSidebarLeftExpand, RawTablerSidebarLeftExpand),
@@ -391,6 +402,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'shield-exclamation': entry(KimiShieldExclamation, RawKimiShieldExclamation),
   trash: entry(KimiTrash, RawKimiTrash),
   robot: entry(KimiRobot, RawKimiRobot),
+  thinking: entry(KimiThinking, RawKimiThinking),
   'pencil-filled': entry(KimiPencilFilled, RawKimiPencilFilled),
   'terminal-filled': entry(KimiTerminalFilled, RawKimiTerminalFilled),
   'agent-filled': entry(KimiAgentFilled, RawKimiAgentFilled),
@@ -453,6 +465,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'settings',
       'sliders',
       'robot',
+      'thinking',
       'microscope',
       'flask',
       'view-flat',

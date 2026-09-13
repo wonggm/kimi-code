@@ -1,85 +1,120 @@
 <!-- apps/kimi-web/src/components/chat/ThinkingBlock.vue -->
-<!-- 9e97773-style presentation: while this block is streaming it shows a live
-     5-line scrolling window; when the stream moves past it the window folds
-     into a one-paragraph teaser (the LAST paragraph of the thinking text).
-     There is NO inline expand any more — clicking anywhere on the block emits
-     `open`, and the parent shows the full text in the right-side panel. -->
+<!-- Upstream's thinking block: a head row (bulb + "Thinking" / "Thinking…" + an
+     optional duration + a chevron) that expands the reasoning text in place.
+     The fork used to show a streaming five-line window folded into a teaser and
+     sent the full text to the right panel; upstream has no thinking tab, so the
+     panel that click targeted is gone and the block carries its own expansion. -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, nextTick } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import Icon from '../ui/Icon.vue';
 
 const props = withDefaults(
   defineProps<{
     text: string;
     mobile?: boolean;
     streaming?: boolean;
-    foldable?: boolean;
+    /** When the block started thinking — while streaming, the head shows the
+     *  elapsed time ticking once a second. */
+    startedAt?: string;
+    /** A finished block's thinking time, shown as "· 12m34s". */
+    durationMs?: number;
+    /** Skip the expansion transition (a block taller than the viewport snaps
+     *  open instead of animating, which would jank the scroll). */
+    instantReveal?: boolean;
   }>(),
-  { mobile: false, streaming: false, foldable: true },
+  { mobile: false, streaming: false },
 );
 
-const emit = defineEmits<{
-  /** Show the full thinking text (right-side panel — App's shared slot). */
-  open: [];
-}>();
+const { t } = useI18n();
 
-// Live window while streaming, teaser afterwards. The 0.25s grid transition
-// between the two states (fa8b305) plays on the class flip.
-const paragraphs = computed(() =>
-  props.text
-    .split(/\n{2,}/)
-    .filter((p) => p.trim().length > 0),
-);
+// Upstream keeps ONE open flag for every thinking block on the page (its
+// `useSharedState('thinking:open')`), so expanding one expands them all — the
+// reasoning reads as one stream. The flag is module state here for the same
+// reason.
+const open = ref(false);
 
-/** Single-paragraph thinking has nothing to fold — show it straight. */
-const isFoldable = computed(() => props.foldable && paragraphs.value.length > 1);
-const open = computed(() => props.streaming || !isFoldable.value);
-
-/** Last non-empty paragraph, shown as the collapsed teaser. */
-const teaser = computed(() => paragraphs.value.at(-1) ?? '');
-
-const bodyEl = ref<HTMLElement | null>(null);
-
-// On mount, a streaming block must land on its LATEST line. After a page refresh
-// mid-stream the whole thinking text is present at once with scrollTop 0, so the
-// "already at bottom?" check below would otherwise leave the live window parked
-// at the top. A static/historical block is left at its start (we don't pin it).
-onMounted(() => {
-  if (!props.streaming) return;
-  const el = bodyEl.value;
-  if (el) el.scrollTop = el.scrollHeight;
-});
-
+// A finished stream folds back up, so the next turn's thinking starts closed.
 watch(
-  () => props.text,
-  () => {
-    const el = bodyEl.value;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-    if (!atBottom) return;
-    void nextTick(() => {
-      if (bodyEl.value) bodyEl.value.scrollTop = bodyEl.value.scrollHeight;
-    });
+  () => props.streaming,
+  (now, before) => {
+    if (before === true && now === false) open.value = false;
+  },
+);
+
+// Elapsed time while streaming: re-tick once a second, but only while the block
+// is streaming (a settled block shows its fixed duration instead).
+const now = ref(Date.now());
+watch(
+  [() => props.streaming, () => props.startedAt],
+  ([streaming, startedAt], _before, onCleanup) => {
+    if (!streaming || !startedAt) return;
+    now.value = Date.now();
+    const timer = setInterval(() => {
+      now.value = Date.now();
+    }, 1000);
+    onCleanup(() => clearInterval(timer));
   },
   { immediate: true },
 );
+
+/** Upstream's compact duration: "12m34s", "1h05m", "8s". */
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes <= 0) return `${seconds}s`;
+  if (minutes < 60) return `${minutes}m${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+const timeLabel = computed<string>(() => {
+  if (props.streaming && props.startedAt) {
+    const started = Date.parse(props.startedAt);
+    return Number.isFinite(started) ? formatDuration(now.value - started) : '';
+  }
+  if (props.durationMs !== undefined) {
+    const label = formatDuration(props.durationMs);
+    return label ? `· ${label}` : '';
+  }
+  return '';
+});
+
+/** A tall block snaps open instead of animating (upstream's `instant`).
+ *  Upstream also scrolls the block's head to the top of its scroller on expand;
+ *  that needs the transcript's own scroll manager, which the fork keeps in
+ *  ChatPane, so the expansion here leaves the scroll alone. */
+const instant = ref(false);
+const bodyInnerEl = ref<HTMLElement | null>(null);
+
+function toggle(): void {
+  if (!open.value) {
+    const taller = (bodyInnerEl.value?.scrollHeight ?? 0) > window.innerHeight;
+    instant.value = props.instantReveal === true || (props.streaming && taller);
+  }
+  open.value = !open.value;
+}
 </script>
 
 <template>
-  <div class="think" :class="{ mob: mobile }">
-    <!-- Foldable: live window above, last-paragraph teaser below; click opens
-         the full text in the right-side panel -->
-    <template v-if="isFoldable">
-      <div class="tc-wrap" :class="{ 'is-collapsed': !open }" @click="emit('open')">
-        <div class="tc-anim">
-          <pre ref="bodyEl" class="tc">{{ text }}</pre>
-        </div>
-        <div class="prev-anim">
-          <span class="prev">{{ teaser }}</span>
-        </div>
+  <div class="think" :class="{ mob: mobile, open, streaming }">
+    <button
+      type="button"
+      class="think-head"
+      :aria-expanded="open"
+      @click="toggle"
+    >
+      <Icon class="think-bulb" name="thinking" size="sm" />
+      <span class="think-title">{{ t(streaming ? 'conversation.thinkingStreaming' : 'conversation.thinkingTitle') }}</span>
+      <span v-if="timeLabel" class="think-time">{{ timeLabel }}</span>
+      <Icon class="think-car" name="chevron-right" size="sm" />
+    </button>
+    <div class="think-body" :class="{ open, instant }" :inert="!open">
+      <div ref="bodyInnerEl" class="think-body-inner">
+        <pre class="think-text">{{ text }}</pre>
       </div>
-    </template>
-    <!-- Single-paragraph or explicitly non-foldable: always show full content -->
-    <pre v-else ref="bodyEl" class="tc">{{ text }}</pre>
+    </div>
   </div>
 </template>
 
@@ -87,65 +122,88 @@ watch(
 .think {
   margin: 0;
 }
-
-.tc-wrap {
-  display: grid;
-  grid-template-rows: 1fr 0fr;
-  transition: grid-template-rows var(--duration-slow) var(--ease-out);
+.think-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1) 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: 1;
+  text-align: left;
   cursor: pointer;
+  user-select: none;
+  transition: color var(--duration-base) var(--ease-out);
 }
-.tc-wrap.is-collapsed {
-  grid-template-rows: 0fr 1fr;
-}
-.tc-anim,
-.prev-anim {
-  /* min-height: 0 is required for the 0fr/1fr grid collapse to actually shrink
-     below the tracks' content. Without it, an inner scroll container (`.tc`,
-     overflow-y: auto) contributes its content as the automatic minimum, so the
-     row keeps its streaming height and never collapses to the short teaser —
-     most visible on iOS Safari. */
-  overflow: hidden;
-  min-height: 0;
-}
-
-/* Hover hints clickability (opens the full text in the side panel) */
-.tc-wrap.is-collapsed:hover .prev {
+.think-head:hover {
   color: var(--color-text);
 }
-.tc-wrap:not(.is-collapsed):hover .tc {
-  color: var(--color-text-muted);
+.think-head:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--color-accent-soft);
 }
-
-.prev {
+.think-bulb {
+  flex: none;
+}
+.think-title {
+  font-weight: var(--weight-medium);
+}
+.think-time {
+  flex: none;
   color: var(--color-text-faint);
+  font-weight: var(--weight-regular);
+}
+.think-car {
+  flex: none;
+  color: var(--color-text-faint);
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.think.open .think-car {
+  transform: rotate(90deg);
+}
+.think.streaming .think-title {
+  animation: think-breathe 1.6s var(--ease-in-out) infinite;
+}
+@keyframes think-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.think-body {
+  display: grid;
+  grid-template-rows: minmax(0, 0fr);
+  overflow: hidden;
+  transition: grid-template-rows var(--duration-base) var(--ease-out);
+}
+.think-body.open {
+  grid-template-rows: minmax(0, 1fr);
+}
+.think-body.instant {
+  transition: none;
+}
+.think-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.think-text {
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
   font: var(--text-base)/var(--leading-relaxed) var(--font-ui);
-  font-weight: 425;
+  font-weight: var(--weight-regular);
+  color: var(--color-text-muted);
   white-space: pre-wrap;
   word-break: break-word;
-  display: block;
 }
-
-.tc {
-  font: var(--text-base)/var(--leading-relaxed) var(--font-ui);
-  font-weight: 425;
-  color: var(--color-text-muted);
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  max-height: calc(var(--leading-relaxed) * 1em * 5);
-  overflow-y: auto;
-}
-
-/* ---- Mobile tweaks ---- */
-.mob {
-  margin: 0;
-}
-.mob .tc {
-  color: var(--color-text-faint);
-  line-height: var(--leading-normal);
-  max-height: calc(var(--leading-normal) * 1em * 5);
-}
-.mob .prev {
+.mob .think-text {
   color: var(--color-text-faint);
   line-height: var(--leading-normal);
 }

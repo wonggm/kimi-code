@@ -110,3 +110,32 @@ export function normalizePanelPreviewPath(
   if (parts.includes('..')) return { error: 'outsideWorkspace' };
   return parts.length > 0 ? { path: parts.join('/') } : { error: 'emptyPath' };
 }
+
+// ---------------------------------------------------------------------------
+// Turn-diff header paths — upstream's `uQ` / `cQ` pair, which turn the path a
+// tool call wrote into the one the pane's header shows (the tooltip) and the
+// one it titles itself with (the same path without its leading slash).
+// ---------------------------------------------------------------------------
+
+function isAbsolutePanelPath(path: string): boolean {
+  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\');
+}
+
+/** Upstream's `uQ({ path, cwd })`: the tool's path resolved against the session
+ *  cwd when it is relative, left as-is when it is already absolute. */
+export function panelDiffFullPath(path: string, cwd?: string): string {
+  if (/^\/(?!\/)/.test(path) && cwd) {
+    const root =
+      /^([a-zA-Z]:)[\\/]/.exec(cwd)?.[1] ?? /^(\\\\[^\\/]+\\[^\\/]+)(?=[\\/]|$)/.exec(cwd)?.[1];
+    if (root !== undefined) return `${root}${path}`;
+  }
+  const base = isAbsolutePanelPath(path) || !cwd ? '' : cwd;
+  if (!base) return path;
+  return /[/\\]$/.test(base) ? `${base}${path}` : `${base}/${path}`;
+}
+
+/** Upstream's `cQ(uQ(...))`: the header's clipped title. */
+export function panelDiffPathLabel(path: string, cwd?: string): string {
+  const full = panelDiffFullPath(path, cwd);
+  return full.startsWith('/') ? full.slice(1) : full;
+}

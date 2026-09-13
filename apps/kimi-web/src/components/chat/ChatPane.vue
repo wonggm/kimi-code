@@ -24,6 +24,7 @@ import Tooltip from '../ui/Tooltip.vue';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
 import { toQuoteBlock, useSelectionCapture } from '../../composables/useSelectionQuote';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { formatMessageTime } from '../../lib/formatMessageTime';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import { getKimiWebApi } from '../../api';
 import {
@@ -560,8 +561,6 @@ const emit = defineEmits<{
   openFile: [target: FilePreviewRequest];
   openMedia: [media: ToolMedia];
   copyConversationCopied: [];
-  /** Show a thinking block's full text in the right-side panel. */
-  openThinking: [target: { turnId: string; blockIndex: number }];
   /** Show a compaction divider's summary text in the right-side panel. */
   openCompaction: [target: { turnId: string }];
   /** Show a subagent's live detail in the right-side panel (keyed by the
@@ -827,6 +826,13 @@ function isAssistantRunEnd(index: number): boolean {
 // One shared timer: copying B within 1.4s of copying A must not let A's stale
 // timer hide B's checkmark early. Cleared on unmount.
 let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+/** Upstream's footer time (`span.a-time`): the short local form of the turn's
+ *  timestamp — today "HH:MM" — from the same helper the user row's `msg-time`
+ *  uses, so the two rows never disagree. */
+function messageTimeLabel(createdAt: string): string {
+  return formatMessageTime(createdAt, t('conversation.yesterday'));
+}
+
 function copyAssistantRun(index: number): void {
   const turn = props.turns[index];
   if (!turn) return;
@@ -1030,14 +1036,19 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
             </div>
             <!-- User input renders verbatim (pre-wrap), never through Markdown;
                  @-mentioned files/folders/skills render as icon pills. Shown
-                 alongside attachments (the chips above are not exclusive). -->
-            <div v-if="!turn.pluginCommand && turn.text" class="u-text">
-              <MentionText
-                :text="turn.text"
-                :open-file="forwardOpenFile"
-                :probe-path="probeMentionPath"
-                :resolve-skill="resolveSkillMention"
-              />
+                 alongside attachments (the chips above are not exclusive).
+                 Upstream wraps the text in `u-text-wrap` (a plain div it also
+                 uses for the quoted-reply case); ours goes straight into
+                 `u-text`, so the wrapper is what the two rows differed by. -->
+            <div v-if="!turn.pluginCommand && turn.text" class="u-text-wrap">
+              <div class="u-text">
+                <MentionText
+                  :text="turn.text"
+                  :open-file="forwardOpenFile"
+                  :probe-path="probeMentionPath"
+                  :resolve-skill="resolveSkillMention"
+                />
+              </div>
             </div>
           </div>
           <div v-if="turn.createdAt || canEditTurn(turn)" class="u-meta">
@@ -1115,7 +1126,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
       >
         <template v-if="isTurnHeavyContentMounted(turn)">
           <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
-            <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
+            <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
             <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
             <ToolGroup
               v-else-if="blk.kind === 'tool-stack'"
@@ -1155,7 +1166,11 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         </template>
         <div v-else class="turn-content-placeholder" :style="placeholderStyle(turn.id)" aria-hidden="true" />
         <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && assistantRunFinalText(ti).trim().length > 0" class="a-msg-ft">
-          <MessageTime v-if="turn.createdAt" :time="turn.createdAt" />
+          <!-- Upstream's footer is the turn's time followed by one copy control
+               inside its tooltip. Ours showed a click-to-expand time button and
+               two bare buttons, so the time lost upstream's `a-time` element and
+               the copy button lost its tooltip wrapper. -->
+          <span v-if="turn.createdAt" class="a-time">{{ messageTimeLabel(turn.createdAt) }}</span>
           <button
             v-if="assistantRunFinalText(ti).trim().length > 0"
             class="a-cpbtn"
@@ -1165,15 +1180,16 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
           >
             <Icon name="message" size="sm" />
           </button>
-          <button
-            v-if="assistantRunFinalText(ti).trim().length > 0"
-            class="a-cpbtn"
-            :aria-label="t('filePreview.copy')"
-            @click="copyAssistantRun(ti)"
-          >
-            <Icon v-if="copiedTurn !== turn.id" name="copy" size="sm" />
-            <Icon v-else name="check" size="sm" />
-          </button>
+          <Tooltip v-if="assistantRunFinalText(ti).trim().length > 0" :text="t('filePreview.copy')">
+            <button
+              class="a-cpbtn"
+              :aria-label="t('filePreview.copy')"
+              @click="copyAssistantRun(ti)"
+            >
+              <Icon v-if="copiedTurn !== turn.id" name="copy" size="sm" />
+              <Icon v-else name="check" size="sm" />
+            </button>
+          </Tooltip>
         </div>
       </div>
     </template>
@@ -1576,6 +1592,15 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
   height: auto;
   margin-top: var(--chat-block-gap);
   overflow: visible;
+}
+
+/* Upstream's footer time (`.a-time`), which the copy control follows. */
+.a-time {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: var(--text-base);
+  line-height: 1;
 }
 
 /* Copy button — icon-only, shares the undo button's muted→hover style so the

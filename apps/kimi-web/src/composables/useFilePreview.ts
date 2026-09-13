@@ -5,7 +5,7 @@
 // tab and calls `loadFilePreview` — upstream wires the same pair (its panel tab
 // watcher calls `filePreview.openFilePreview` / `closeFilePreview`).
 
-import { computed, provide, ref, watch, type InjectionKey, type Ref } from 'vue';
+import { computed, provide, ref, watch, type InjectionKey } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { turnFilesForTurn } from '../lib/rightPanelTabs';
 import { useRightPanel } from './useRightPanel';
@@ -14,21 +14,6 @@ import type { useKimiWebClient } from './useKimiWebClient';
 
 type KimiWebClient = ReturnType<typeof useKimiWebClient>;
 
-/** Refresh handle published by useFilePreview so the preview component can show
- *  a refresh control when the file changed after it was loaded. Injected rather
- *  than prop-drilled because the preview is rendered from more than one pane. */
-export interface FilePreviewRefreshHandle {
-  /** Normalized path of the currently-open preview, null when none. */
-  path: Ref<string | null>;
-  /** Whether the loaded content is behind a change made in the session. */
-  stale: Ref<boolean>;
-  /** Whether a refresh request is in flight. */
-  refreshing: Ref<boolean>;
-  refresh: () => void;
-}
-
-export const FILE_PREVIEW_REFRESH_KEY: InjectionKey<FilePreviewRefreshHandle> =
-  Symbol('kimi-web:file-preview-refresh');
 /** The preview's own state, provided by the composable so a pane that lives
  *  elsewhere in the tree (the right panel's file tab) can render the same
  *  preview instead of keeping a second one alive. */
@@ -258,15 +243,6 @@ export function useFilePreview({ client }: UseFilePreviewOptions) {
     if (!path) return;
     void client.revealWorkspaceFile(path);
   }
-
-  provide(FILE_PREVIEW_REFRESH_KEY, {
-    path: previewNormalizedPath,
-    stale: previewStale,
-    refreshing: previewRefreshing,
-    refresh: () => {
-      void refreshPreview();
-    },
-  });
 
   const api = {
     previewTarget,

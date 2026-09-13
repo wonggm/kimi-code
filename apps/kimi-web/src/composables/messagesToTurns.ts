@@ -452,6 +452,10 @@ interface Group {
   approvalId: string | undefined;
   /** Client-side measured duration from turn.started to turn.ended (ms). */
   durationMs?: number;
+  /** When the group's first assistant message arrived. The assistant footer
+   *  shows it as upstream's `a-time`; without it the footer had no time at all
+   *  (only user turns carried a `createdAt`). */
+  createdAt?: string;
   /**
    * Normalized signatures already folded into this group, used to drop a
    * duplicate assistant message. The same logical reply can reach us under two
@@ -714,6 +718,7 @@ export function messagesToTurns(
       approval: g.approval,
       approvalId: g.approvalId,
       durationMs: g.durationMs,
+      createdAt: g.createdAt,
     });
   }
 
@@ -1071,6 +1076,7 @@ export function messagesToTurns(
         approvalId: undefined,
         foldedSigs: [],
         durationMs: msg.durationMs,
+        createdAt: msg.createdAt,
       };
     } else if (pendingGroup !== null && pendingGroup.promptId === undefined && pid !== undefined) {
       pendingGroup.promptId = pid;

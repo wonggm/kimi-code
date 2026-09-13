@@ -1869,3 +1869,44 @@ Inventory taken first, in `.tmp/transcript-appearance-diff.md` (294 lines, famil
 5. Upstream's assistant footer carries `<span class="a-time">`; the fork omits the timestamp and adds a Quote button.
 
 Constraint carried into the scope: the fork's eviction / reconcile / memoisation stay untouched — the scope is appearance only.
+
+**The pane bodies match upstream, on the served pages (same round).** Worked as a separate pass per pane kind, each one compared as page source against the other app (normalised: strip `data-v-*`, collapse whitespace) with glass off, then measured.
+
+- `diff` list — the fork's `ChangedFilesCard` was a bare list. Replaced by upstream's view: `changes-pane` → `ui-panel-header` with `br-heading`/`br-icon`/`br-name`/`sync-info`/`ahead`/`dv-change-count`, the `ui-seg ui-seg--sm dv-view-mode` List/Tree control, and `ch-row` rows. The drill moved in-pane, where upstream has it: a row opens `detailDiffMode='detail'` with a back control in the header's leading slot (the fork used to open a separate `file` tab). `detailDiffMode`/`detailDiffPath` moved to module scope so the pane and the app layer share one drill state.
+- `diff` detail — the fork rendered its own `diff-lines`/`dl-*` vocabulary at 14px on 21px rows with a 40px gutter. Now upstream's shared code renderer: `hl-code.gutter[--gutter-ch]` → `hl-body` → `hl-row.row-{context,add,del,hunk}` → `hl-gutter` + `hl-gutter.new` + `hl-sign` + `hl-text`. Measured on both apps: font 14px/21px → **12px/18px**, row height 21px → **18px**, gutter 40px → **46px**, body padding `4px 12px` → `4px 0 8px`. The hunk row carries two empty gutters and its `@@ … @@` starts at the code column, as upstream's does. The only residue in the normalised diff is upstream's own `<!---->` slots, its `orange-soft`/`xs` Button variants (the fork's primitives lack them) and Shiki's token spans.
+- `turn-diff` — new `TurnDiffPanel.vue` with upstream's `div.td.panel-file-head` (path title + full-path tooltip, wrap toggle, open-file) over `td-body`.
+- `file` — root is `file-preview panel-file-head`; the header title is the path (tooltip = full path) rather than "Preview"; `fp-refreshing`, the refresh glyph, wrap toggle and `.fp-body` padding follow upstream. Still differing, deliberately: the fork's header keeps four controls upstream folds into a menu (in-file search, download, copy content, open in editor) plus a line/size meta chip.
+- `compaction` — upstream renders `div.tp > pre.tp-body`; the fork had added a `common.preview` header. Removed, with the subtitle and close props.
+- `agent` — containers are upstream's (`agent-panel > agent-transcript > agent-transcript-inner`), the identity strip is `agent-meta`, live progress is `agent-fallback.prose` with a `div.op` line list, and the prompt bubble is there. Engine gaps, recorded rather than faked: load-older pagination (the route takes a cursor the web client never sends), the bash branch (only subagent rows reach this pane), and `JumpToBottomPill` / `ChatPane read-only` — the pane keeps its REST transcript inside upstream's containers.
+- `btw` — upstream's header-less body, absolutely-positioned composer over the measured body padding, and its `working-indicator`/`wi-mascot`/`wi-label` loading line.
+- `term` — fork-only, kept (upstream's component map `L9t` has six panes and no `term`).
+
+**Two structural things the panes fixed beyond their own content.** The fork wrapped every pane body in `div.pane`; upstream's `.pt-body` holds the pane component directly, so the wrapper is gone (measured: every pane's height now equals the body's). And the List/Tree glyphs, the Back arrow, Refresh and the file-link icon now use upstream's exact path data (three of them byte-for-byte from upstream's assets), with the deliberate exception of `check`/`copy`/`download`/`external-link`, which 17/8/8/5 other files share — swapping those would change tool cards, chat chrome and dialogs outside this scope.
+
+Gauntlet: `vue-tsc` clean, kimi-web 1009/1009, `check:style` **47** (baseline 50).
+
+## Transcript appearance — the measured differences and what closed them
+
+The inventory in `.tmp/transcript-appearance-diff.md` was taken from page-source dumps, and three of its items did not survive a live re-measure (the dumps had caught code blocks mid-highlight): `stream-diffs-shell`/`code-editor-layer` are present **3 and 3 on both apps**, `md-code-tip` is 0 on both, and upstream does render `u-atts` (its bundle defines it; the mock row had no attachments). What a live A/B did show, and what changed:
+
+| surface | before (fork → upstream) | now |
+|---|---|---|
+| code block background | `rgb(243,245,248)` → `rgb(245,245,245)` | equal |
+| code block border | `rgb(231,234,238)` → `rgba(0,0,0,.13)` | equal |
+| code header background | `rgb(250,251,252)` → `rgb(245,245,245)` | equal |
+| `.code-header-title` | 15px `rgb(107,114,128)` → 13px `rgba(0,0,0,.6)` | equal |
+| `code-block-container` classes | `… border is-rendering` → `… border` | equal |
+| user row | `u-text` → `u-text-wrap > u-text` | wrapper added |
+| assistant footer | `[a-cpbtn, a-cpbtn]` → `[a-time, ui-tip]` | `[a-time, a-cpbtn, ui-tip]` |
+| footer time | absent → `Yesterday 23:16` | equal |
+| tool row height | 26px → 24px | equal |
+
+Three findings behind those rows are worth keeping:
+
+- **`is-rendering` was a real bug, not a state artefact.** markstream's CodeBlockNode marks its container `is-rendering` while its `loading` prop is true, and `loading` defaults to true — and the fork's custom `code_block` wrapper never declared `loading`, so the `loading: false` the app passed landed on the wrapper as a *DOM attribute* instead of reaching the renderer. Every settled block was therefore in the rendering state (and its skeleton gate armed). Declaring `loading` and `stream` on the wrapper is the fix; the comment in `Markdown.vue` that claimed the prop was already doing this was wrong.
+- **The code block's surfaces are upstream's neutral greys, deliberately not the fork's bluish ones.** Upstream's light palette is neutral (`--color-surface` and `--color-surface-sunken` are both `#f5f5f5`, `--color-line` is `rgba(0,0,0,.13)`, `--color-text-muted` is `rgba(0,0,0,.6)`); the fork's light palette is blue-tinted. In dark the two agree exactly. Because the user's comparison target is upstream's code block, it now carries upstream's values through three code-scoped tokens (`--code-surface`, `--code-line`, `--code-ink-muted`), so nothing else in the light palette moves. **Open, recorded:** the rest of the fork's light palette still differs from upstream's by the same tint (`--color-surface` `#fafbfc` vs `#f5f5f5`, `--color-line` `#e7eaee` vs `rgba(0,0,0,.13)`, `--color-text-muted` `#6b7280` vs `rgba(0,0,0,.6)`), which is what remains of the thinking block's text ink and of every light-mode surface. Retuning it is a whole-theme change and is left as a decision, not slipped in here.
+- **The assistant footer's time had no data to show.** The fork's mapper built assistant turns without `createdAt` (only user/cron/task turns carried one), so upstream's `a-time` element could never render. The mapper now carries the group's first message timestamp onto the turn, and the footer shows upstream's short form from the same `formatMessageTime` helper the user row uses.
+
+**The thinking block expands in place again (upstream's own block).** The fork's version showed a streaming five-line window that folded into a teaser and sent the full text to the right panel — a panel that this round deleted, so a foldable block had become unreadable. It is now upstream's structure, taken from its bundle: `think > think-head` (bulb + "Thinking" / "Thinking…" + optional duration + chevron) and `think-body` (`grid-template-rows` 0fr↔1fr, `inert` while closed), one shared open flag for every block, the streaming breathe animation, and the `instant` flag for a block taller than the viewport. Measured against upstream on the same content (both apps given a thinking frame through the mock, which is how this could be posed at all): classes, head height 22, head 13px/14px, chevron rotation, body 0→96px with `inert` toggling, text 14px/21px and padding all equal. Two recorded residues: `.think-time` has no data source in the fork's transcript (it renders only when a caller supplies a start or a duration), and upstream scrolls the head to the top of its own scroller on expand, which needs the transcript's scroll manager and is not wired.
+
+**Left deliberately:** the fork's Quote buttons (user row and assistant footer) are extras upstream does not have, and the fork's tool rows sit in upstream's `activity-run` (upstream renders one too, so the earlier "fork wraps flat rows" reading was wrong).

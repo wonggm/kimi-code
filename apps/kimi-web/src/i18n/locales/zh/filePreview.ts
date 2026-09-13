@@ -9,6 +9,7 @@ export default {
   reveal: '显示',
   download: '下载',
   close: '关闭',
+  refresh: '刷新',
   search: '搜索',
   prevMatch: '上一个匹配',
   nextMatch: '下一个匹配',

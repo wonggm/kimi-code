@@ -1,25 +1,15 @@
 <!-- apps/kimi-web/src/components/chat/ThinkingPanel.vue -->
-<!-- Full thinking text in the right-side panel (App's shared preview slot —
-     opening this replaces a file preview and vice versa). Content is reactive:
-     while the block is still streaming the text keeps growing, and the body
-     follows the bottom as long as the user hasn't scrolled up. -->
+<!-- Body-sized scrolling text in the right panel — the compaction summary.
+     Content is reactive: while the block is still streaming the text keeps
+     growing, and the body follows the bottom as long as the user hasn't
+     scrolled up. Upstream's own compaction pane is exactly this element pair
+     (`div.tp > pre.tp-body`), with no pane header of its own. -->
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
-import { useI18n } from 'vue-i18n';
-import PanelHeader from '../ui/PanelHeader.vue';
 
 const props = defineProps<{
   text: string;
-  /** Header label override — defaults to the thinking panel title. Lets the
-      panel double as the compaction-summary viewer. */
-  subtitle?: string;
 }>();
-
-const emit = defineEmits<{
-  close: [];
-}>();
-
-const { t } = useI18n();
 
 const bodyEl = ref<HTMLElement | null>(null);
 watch(
@@ -39,12 +29,6 @@ watch(
 
 <template>
   <div class="tp">
-    <PanelHeader
-      :title="t('common.preview')"
-      :subtitle="subtitle ?? t('thinking.panelTitle')"
-      :close-label="t('thinking.close')"
-      @close="emit('close')"
-    />
     <pre ref="bodyEl" class="tp-body">{{ text }}</pre>
   </div>
 </template>
@@ -64,8 +48,9 @@ watch(
   overflow-y: auto;
   margin: 0;
   padding: 12px 14px;
+  padding-bottom: max(12px, var(--pfc-host-h, 0px));
   font: var(--text-base)/var(--leading-relaxed) var(--font-ui);
-  font-weight: 425;
+  font-weight: 400;
   color: var(--color-text-muted);
   white-space: pre-wrap;
   word-break: break-word;

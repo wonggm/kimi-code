@@ -26,6 +26,11 @@ export const STORAGE = {
   // The two apps disagree on this key name; seeding the wrong one silently
   // drops the font-scale dimension from the comparison.
   fontScale: { upstream: 'kimi-web.font-scale', fork: 'kimi-web.ui-font-size' },
+  // Liquid glass is the fork's own system (upstream has none), so every
+  // comparison is taken with it OFF — otherwise the fork's glass surfaces
+  // differ from upstream's for a reason that is not under comparison. The app
+  // reads `'false'` as off (useAppearance.loadLiquidGlass).
+  glass: 'kimi-web.liquid-glass',
 };
 
 export const BOOT_KEYS = {
@@ -37,7 +42,7 @@ export const BOOT_KEYS = {
 
 export function buildSeed({ app, locale, theme, token }) {
   const fontKey = STORAGE.fontScale[app] ?? STORAGE.fontScale.fork;
-  return {
+  const seed = {
     [STORAGE.locale]: locale,
     [STORAGE.colorScheme]: theme,
     [fontKey]: '16',
@@ -48,6 +53,8 @@ export function buildSeed({ app, locale, theme, token }) {
       expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     }),
   };
+  if (app === 'fork') seed[STORAGE.glass] = 'false';
+  return seed;
 }
 
 export function hash(text) {
@@ -419,7 +426,32 @@ export async function openSurface(cdp, { url, steps = [], seed }) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
+  await waitForCodeBlocksSettled(cdp);
   return { reached, gaps };
+}
+
+/**
+ * Code blocks highlight asynchronously (shiki), and the plain-text fence
+ * fallback that paints first keeps the same element count and text length — so
+ * `waitForSettled` reports "stable" while the block is still unhighlighted. The
+ * fork's capture then lacks `stream-diffs-shell` / `stream-diffs-surface` and
+ * upstream's has them, which the comparison reads as a class the fork is
+ * missing. Wait for the fallback to clear, briefly: a surface that legitimately
+ * keeps the plain renderer (the fork's heavy-message path) simply pays the cap.
+ */
+async function waitForCodeBlocksSettled(cdp, { timeoutMs = 8_000 } = {}) {
+  const pending = `(() => document.querySelectorAll('.code-pre-fallback').length)()`;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    let count = 0;
+    try {
+      count = await cdp.evaluate(pending);
+    } catch {
+      return;
+    }
+    if (count === 0 || Date.now() > deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
 }
 
 export function signatureOf(raw) {
