@@ -439,7 +439,7 @@ export async function openSurface(cdp, { url, steps = [], seed }) {
  * missing. Wait for the fallback to clear, briefly: a surface that legitimately
  * keeps the plain renderer (the fork's heavy-message path) simply pays the cap.
  */
-async function waitForCodeBlocksSettled(cdp, { timeoutMs = 8_000 } = {}) {
+async function waitForCodeBlocksSettled(cdp, { timeoutMs = 2_000 } = {}) {
   const pending = `(() => document.querySelectorAll('.code-pre-fallback').length)()`;
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -492,6 +492,12 @@ export async function captureSurface(cdp, { url, outDir, name, steps = [], attem
     await waitForSettled(cdp);
     await normalizeScroll(cdp);
     await waitForSettled(cdp);
+    // The transcript mounts after the boot settle, so a wait placed earlier sees
+    // zero code blocks and returns at once — the block then mounts into its
+    // plain-text fallback and the capture photographs that, which reads as
+    // `stream-diffs-shell` missing on this app. Wait here, where the blocks are
+    // known to be in the tree.
+    await waitForCodeBlocksSettled(cdp);
     const raw = await cdp.evaluate(DIGEST_EXPR);
     const signature = signatureOf(raw);
     last = { reached, gaps, signature, steps: variant, raw };
