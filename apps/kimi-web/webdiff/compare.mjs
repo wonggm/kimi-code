@@ -234,17 +234,29 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
         // glob patterns over the element signature, so one entry covers every
         // combo, breakpoint and surface. They are dropped before the diff, and
         // the excluded count is reported, so nothing disappears silently.
-        const elementRules = (allowlist?.elements ?? []).map((entry) => ({
-          pattern: String(entry?.pattern ?? ''),
-          re: new RegExp(
-            `^${String(entry?.pattern ?? '')
+        const globRe = (pattern) =>
+          new RegExp(
+            `^${String(pattern)
               .split('*')
               .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
               .join('.*')}$`,
-          ),
+          );
+        // An entry may also carry `scenes` — globs over the surface name. A
+        // signature like `SPAN.hint` or `BUTTON.is-on.ui-switch` is shared by
+        // every settings row, so a global rule would retire the comparison of
+        // every toggle on every surface; scoping it to the one surface whose
+        // difference it records keeps the rest compared.
+        const elementRules = (allowlist?.elements ?? []).map((entry) => ({
+          pattern: String(entry?.pattern ?? ''),
+          re: globRe(entry?.pattern ?? ''),
+          scenes: Array.isArray(entry?.scenes) ? entry.scenes.map(globRe) : null,
           reason: entry?.reason ?? '',
         }));
-        const ruleFor = (element) => elementRules.find((rule) => rule.re.test(element));
+        const ruleFor = (element) =>
+          elementRules.find(
+            (rule) =>
+              (!rule.scenes || rule.scenes.some((re) => re.test(String(where)))) && rule.re.test(element),
+          );
         const comparedUpstream = upstreamElements.filter((element) => !ruleFor(element));
         const excludedCount = upstreamElements.length - comparedUpstream.length;
         // Split a signature into tag + classes. Classes are dot-joined in the
