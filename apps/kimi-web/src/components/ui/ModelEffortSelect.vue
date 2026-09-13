@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Menu from './Menu.vue';
 import MenuItem from './MenuItem.vue';
+import Icon from './Icon.vue';
 
 export type ModelEffortOption = { value: string; label: string; disabled?: boolean };
 export type ModelEffortGroup = { label?: string; options: ModelEffortOption[] };
@@ -230,77 +231,91 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <button
-    ref="triggerRef"
-    type="button"
-    class="ui-select ms-trigger"
-    :class="[`ms-trigger--${size}`, { 'ms-trigger--placeholder': !hasSelection, 'ms-trigger--open': open }]"
-    :disabled="disabled"
-    aria-haspopup="menu"
-    :aria-expanded="open"
-    :aria-label="ariaLabel"
-    @click.stop="toggle"
-    @keydown.enter.prevent="toggle"
-    @keydown.space.prevent="toggle"
-  >
-    <span class="ms-trigger-label">{{ selectedLabel }}</span>
-  </button>
+  <div class="sm-picker">
+    <button
+      ref="triggerRef"
+      type="button"
+      class="sm-picker__trigger ms-trigger"
+      :class="[`ms-trigger--${size}`, { 'ms-trigger--placeholder': !hasSelection, 'ms-trigger--open': open }]"
+      :disabled="disabled"
+      aria-haspopup="menu"
+      :aria-expanded="open"
+      :aria-label="ariaLabel"
+      @click.stop="toggle"
+      @keydown.enter.prevent="toggle"
+      @keydown.space.prevent="toggle"
+    >
+      <span class="sm-picker__value" :class="{ 'is-placeholder': !hasSelection }">
+        <span class="sm-picker__value-text ms-trigger-label">{{ selectedLabel }}</span>
+      </span>
+      <Icon class="sm-picker__chevron" name="chevron-down" size="sm" />
+    </button>
 
-  <Teleport to="body">
-    <div v-if="open" class="ms-anchor" :style="menuStyle">
-      <Menu ref="menuRef" class="ms-panel">
-        <template v-for="(group, gi) in groups" :key="gi">
-          <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
-          <div
-            v-for="(option, oi) in group.options"
-            :key="`${gi}-${oi}`"
-            :ref="(element) => setItemRef(option.value, element)"
-            class="ms-item-anchor"
-            @mouseenter="activateModel(option.value)"
-            @focusin="activateModel(option.value)"
-          >
+    <Teleport to="body">
+      <div v-if="open" class="ms-anchor" :style="menuStyle">
+        <Menu ref="menuRef" class="ms-panel">
+          <template v-for="(group, gi) in groups" :key="gi">
+            <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
+            <div
+              v-for="(option, oi) in group.options"
+              :key="`${gi}-${oi}`"
+              :ref="(element) => setItemRef(option.value, element)"
+              class="ms-item-anchor"
+              @mouseenter="activateModel(option.value)"
+              @focusin="activateModel(option.value)"
+            >
+              <MenuItem
+                :active="option.value === modelValue"
+                :disabled="option.disabled"
+                :aria-label="option.label"
+                @click="selectModel(option.value)"
+              >
+                <span class="ms-option-label">{{ option.label }}</span>
+                <span class="ms-submenu-arrow" aria-hidden="true">›</span>
+              </MenuItem>
+            </div>
+          </template>
+        </Menu>
+        <Menu
+          v-if="submenuOpen"
+          ref="submenuRef"
+          class="ms-submenu"
+          :style="submenuStyle"
+          aria-label="Effort"
+          @keydown="onSubmenuKeydown"
+        >
+          <template v-for="(group, gi) in activeEffortGroups" :key="gi">
+            <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
             <MenuItem
-              :active="option.value === modelValue"
+              v-for="(option, oi) in group.options"
+              :key="`${gi}-${oi}`"
+              :active="option.value === effortValue"
               :disabled="option.disabled"
               :aria-label="option.label"
-              @click="selectModel(option.value)"
+              @click="selectEffort(option.value)"
             >
-              <span class="ms-option-label">{{ option.label }}</span>
-              <span class="ms-submenu-arrow" aria-hidden="true">›</span>
+              {{ option.label }}
             </MenuItem>
-          </div>
-        </template>
-      </Menu>
-      <Menu
-        v-if="submenuOpen"
-        ref="submenuRef"
-        class="ms-submenu"
-        :style="submenuStyle"
-        aria-label="Effort"
-        @keydown="onSubmenuKeydown"
-      >
-        <template v-for="(group, gi) in activeEffortGroups" :key="gi">
-          <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
-          <MenuItem
-            v-for="(option, oi) in group.options"
-            :key="`${gi}-${oi}`"
-            :active="option.value === effortValue"
-            :disabled="option.disabled"
-            :aria-label="option.label"
-            @click="selectEffort(option.value)"
-          >
-            {{ option.label }}
-          </MenuItem>
-        </template>
-      </Menu>
-    </div>
-  </Teleport>
+          </template>
+        </Menu>
+      </div>
+    </Teleport>
+  </div>
 </template>
 
 <style scoped>
+/* Wrapper carries the `sm-picker` identity and the radius the glass rim and
+   outer shadow in style.css (`.sd .sm-picker`) follow — same pattern as
+   ui/MenuSelect.vue. */
+.sm-picker {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-full);
+}
 .ms-trigger {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
   cursor: pointer;
@@ -310,15 +325,13 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   border-radius: var(--radius-full);
   padding: 0 var(--space-4);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--space-4) center;
-  background-size: 16px 16px;
 }
 .ms-trigger--md { height: 38px; }
 .ms-trigger--sm { height: 32px; font-size: var(--text-sm); }
-.ms-trigger-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: calc(16px + var(--space-2)); }
-.ms-trigger--placeholder { color: var(--color-text-faint); }
+.sm-picker__value { flex: 1; display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.ms-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-trigger--placeholder, .sm-picker__value.is-placeholder { color: var(--color-text-faint); }
+.sm-picker__chevron { flex: none; color: var(--color-text-muted); }
 .ms-trigger--open, .ms-trigger:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
 .ms-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
 .ms-anchor { position: fixed; top: 0; left: 0; z-index: calc(var(--z-modal) + 1); }
@@ -328,6 +341,4 @@ onBeforeUnmount(() => {
 .ms-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-submenu-arrow { color: var(--color-text-muted); font-size: var(--text-lg); line-height: 1; }
 .ms-group-label { font-family: var(--font-ui); font-size: var(--text-xs); font-weight: var(--weight-medium); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); padding: var(--space-2) var(--space-2) var(--space-1); }
-html[data-color-scheme="dark"] .ms-trigger { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa0a8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E"); }
-@media (prefers-color-scheme: dark) { html[data-color-scheme="system"] .ms-trigger { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa0a8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E"); } }
 </style>

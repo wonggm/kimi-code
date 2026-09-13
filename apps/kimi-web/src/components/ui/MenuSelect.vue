@@ -11,6 +11,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Menu from './Menu.vue';
 import MenuItem from './MenuItem.vue';
+import Icon from './Icon.vue';
 
 type Option = { value: string; label: string; disabled?: boolean };
 type Group = { label?: string; options: Option[] };
@@ -191,51 +192,65 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <button
-    ref="triggerRef"
-    type="button"
-    class="ui-select ms-trigger"
-    :class="[`ms-trigger--${size}`, { 'ms-trigger--placeholder': !hasSelection, 'ms-trigger--open': open }]"
-    :disabled="disabled"
-    aria-haspopup="menu"
-    :aria-expanded="open"
-    :aria-label="ariaLabel"
-    @click.stop="toggle"
-    @keydown.enter.prevent="toggle"
-    @keydown.space.prevent="toggle"
-  >
-    <span class="ms-trigger-label">{{ selectedLabel }}</span>
-  </button>
+  <div class="ui-select" :class="`ui-select--${size}`">
+    <button
+      ref="triggerRef"
+      type="button"
+      class="ui-select__trigger ms-trigger"
+      :class="[`ms-trigger--${size}`, { 'ms-trigger--placeholder': !hasSelection, 'ms-trigger--open': open }]"
+      :disabled="disabled"
+      aria-haspopup="menu"
+      :aria-expanded="open"
+      :aria-label="ariaLabel"
+      @click.stop="toggle"
+      @keydown.enter.prevent="toggle"
+      @keydown.space.prevent="toggle"
+    >
+      <span class="ui-select__value">
+        <span class="ui-select__value-text ms-trigger-label">{{ selectedLabel }}</span>
+      </span>
+      <Icon class="ui-select__chevron" name="chevron-down" size="sm" />
+    </button>
 
-  <Teleport to="body">
-    <div v-if="open" class="ms-anchor" :style="menuStyle">
-      <Menu ref="menuRef" class="ms-panel">
-        <template v-for="(group, gi) in groups" :key="gi">
-          <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
-          <MenuItem
-            v-for="(opt, oi) in group.options"
-            :key="`${gi}-${oi}`"
-            :active="opt.value === modelValue"
-            :disabled="opt.disabled"
-            @click="select(opt.value)"
-            @mouseenter="setHighlight(opt)"
-          >
-            {{ opt.label }}
-          </MenuItem>
-        </template>
-      </Menu>
-    </div>
-  </Teleport>
+    <Teleport to="body">
+      <div v-if="open" class="ms-anchor" :style="menuStyle">
+        <Menu ref="menuRef" class="ms-panel">
+          <template v-for="(group, gi) in groups" :key="gi">
+            <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
+            <MenuItem
+              v-for="(opt, oi) in group.options"
+              :key="`${gi}-${oi}`"
+              :active="opt.value === modelValue"
+              :disabled="opt.disabled"
+              @click="select(opt.value)"
+              @mouseenter="setHighlight(opt)"
+            >
+              {{ opt.label }}
+            </MenuItem>
+          </template>
+        </Menu>
+      </div>
+    </Teleport>
+  </div>
 </template>
 
 <style scoped>
+/* Wrapper carries only the `ui-select` identity and the capsule radius the
+   glass rim/outer shadow in style.css (`.sd .ui-select`) follows; the trigger
+   below paints the visible control, exactly as before. */
+.ui-select {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-full);
+}
+
 /* Trigger: visual twin of ui/Select.vue so the closed state is identical.
    Select.vue's styles are scoped and don't reach this component, so we
-   reproduce them here. Keeping `ui-select` in the class list also picks up
-   the `.sd .ui-select` glass tint from style.css. */
+   reproduce them here. */
 .ms-trigger {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
   cursor: pointer;
@@ -251,36 +266,24 @@ onBeforeUnmount(() => {
 }
 .ms-trigger--md { height: 38px; }
 .ms-trigger--sm { height: 32px; font-size: var(--text-sm); }
-.ms-trigger-label {
+.ui-select__value {
   flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+.ms-trigger-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Inset from the chevron reserved on the right. */
-  padding-right: calc(16px + var(--space-2));
 }
 .ms-trigger--placeholder { color: var(--color-text-faint); }
-
-/* Chevron: same SVG trick as Select.vue (inline SVG can't read CSS vars).
-   Stroke is hardcoded per theme. */
-.ms-trigger {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--space-4) center;
-  background-size: 16px 16px;
-}
+.ui-select__chevron { flex: none; color: var(--color-text-muted); }
 .ms-trigger--open { border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
 .ms-trigger:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
 .ms-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
-html[data-color-scheme="dark"] .ms-trigger {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa0a8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-}
-@media (prefers-color-scheme: dark) {
-  html[data-color-scheme="system"] .ms-trigger {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239aa0a8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-  }
-}
 
 /* Teleported anchor — menu surface sits inside this so position:fixed works
    against the viewport. The Menu primitive provides the glass styling.
