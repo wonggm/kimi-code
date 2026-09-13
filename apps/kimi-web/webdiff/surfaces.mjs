@@ -328,6 +328,15 @@ export const DISCOVER_EXPR = `(() => {
     // it here would silently drop those controls from coverage.
     const hidden = cs.visibility === 'hidden' || cs.opacity === '0';
     if (cs.display === 'none') continue;
+    // A control a modal covers cannot be acted on: the click lands on the dialog
+    // (or on its backdrop, which closes it), so the state the walk records is not
+    // the control's surface at all. With the settings dialog open, both apps then
+    // reported ~50 phantom differences per state, because one app's dialog covered
+    // the discovered pill's coordinates and the other's did not.
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const cover = document.elementFromPoint(cx, cy);
+    if (cover && cover !== el && !el.contains(cover) && !cover.contains(el)) continue;
     const label = (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 60);
     const classes = Array.from(el.classList).sort();
     const key = el.tagName + '#' + (el.id || '') + '.' + classes.join('.') + ':' + label;
@@ -338,8 +347,8 @@ export const DISCOVER_EXPR = `(() => {
       tag: el.tagName,
       classes: classes.slice(0, 4),
       hidden,
-      x: Math.round(r.left + r.width / 2),
-      y: Math.round(r.top + r.height / 2),
+      x: Math.round(cx),
+      y: Math.round(cy),
     });
     if (out.length >= ${MAX_DISCOVERED}) break;
   }
