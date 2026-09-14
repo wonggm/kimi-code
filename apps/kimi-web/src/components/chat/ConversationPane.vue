@@ -1709,7 +1709,12 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
         <Icon name="panel-right" size="sm" />
       </IconButton>
     </template>
-    <div ref="chatLayoutRef" class="chat-layout" :style="chatLayoutStyle">
+    <div
+      ref="chatLayoutRef"
+      class="chat-layout"
+      :class="{ 'panel-expanded': panel.expanded.value && panel.visible.value }"
+      :style="chatLayoutStyle"
+    >
       <!-- Chat column: header + transcript + dock. A sibling wrapper so the
            floating right panel (absolutely positioned over .chat-layout)
            never participates in the column's flex layout. -->
@@ -2199,6 +2204,17 @@ html[data-liquid-glass="on"] .panes.has-header {
   height: 100%;
   min-height: 0;
   position: relative;
+}
+
+/* An expanded right panel takes the whole row, as upstream's does. Upstream's
+   conversation column collapses to zero width there and paints nothing; a
+   zero-width column here still painted its transcript, squashed into the strip
+   beside the panel, so the column leaves the row instead. Its composer stays
+   visible upstream (the dock is positioned against the transcript, so keeping
+   ours without that placement work put the pills and the composer on top of the
+   panel — recorded as a follow-up rather than shipped half-broken). */
+.chat-layout.panel-expanded > .chat-main {
+  display: none;
 }
 
 .chat-main {

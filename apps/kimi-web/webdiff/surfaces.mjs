@@ -34,6 +34,9 @@ const PIN_TAIL = { action: 'scrollBottom', selector: '.chat-scroll', ms: 200 };
 const DOCK_GOAL_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(1)', ms: 500 };
 const DOCK_BASH_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(3)', ms: 400 };
 const DOCK_AGENT_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(4)', ms: 400 };
+/** The conversation header's control that opens the right panel while it is
+    closed; the panel's own close control replaces it once open. */
+const OPEN_PANEL = { action: 'click', selector: '.ch-panel', ms: 600 };
 
 // Behaviour scenes. The walk reaches a surface by replaying clicks and then
 // diffs markup, so it cannot see what a control DOES: whether the same control
@@ -141,6 +144,42 @@ export const BEHAVIOUR_SCENES = [
         { name: 'right-pane-control-restored', present: '[aria-label="Open right panel"]', count: 1 },
       ],
     },
+  },
+  {
+    name: 'behaviour-panel-launcher',
+    desktopOnly: true,
+    // The panel with no tab open shows its launcher: two rows. Upstream composes
+    // them from its menu-item primitive, which carries its own border and radius;
+    // ours were bare `.ui-button`s that fell back to the browser's button chrome
+    // whenever the glass rim that used to supply a border was off.
+    steps: [PIN_TAIL, OPEN_PANEL, { action: 'wait', ms: 500 }],
+    requires: [{ name: 'launcher-rows', present: '.pl .ui-menu-item', count: 2 }],
+  },
+  {
+    name: 'behaviour-panel-expand',
+    desktopOnly: true,
+    // Expand must make the panel span the row it sits in, as upstream's does.
+    // A layout outcome is what no element or text check can state, so this is a
+    // width ratio against the panel's own container. The panel only offers the
+    // control once a tab is open, and a tab comes from the launcher menu's first
+    // row (`.panel-add-menu button`), which is locale-free by position.
+    steps: [
+      PIN_TAIL,
+      OPEN_PANEL,
+      { action: 'click', selector: '.ptb-add', ms: 400 },
+      { action: 'click', selector: '.panel-add-menu button', ms: 700 },
+      { action: 'click', selector: '.ptb-expand', ms: 900 },
+    ],
+    requires: [{ name: 'panel-spans-row', within: '.global-preview', minWidthRatioOf: '.chat-layout' }],
+  },
+  {
+    name: 'behaviour-panel-tail-tooltip',
+    desktopOnly: true,
+    // The panel's tail buttons carry tooltips upstream. Ours set an aria-label
+    // only, so hovering showed nothing — an element that exists only while the
+    // pointer is on the control, which a capture cannot see.
+    steps: [PIN_TAIL, OPEN_PANEL, { action: 'hover', selector: '.ptb-hide', ms: 800 }],
+    requires: [{ name: 'tail-tooltip', present: '.ui-tip__bubble' }],
   },
   {
     name: 'behaviour-dock-pane-bash',

@@ -1,26 +1,39 @@
 <!-- apps/kimi-web/src/components/chat/AgentDetailPanel.vue -->
-<!-- A subagent's detail in the right panel. Element structure, class names and
-     the prompt-bubble clamp follow upstream's own AgentDetailPanel:
-       - meta line: subagent type · model · effort;
+<!-- A subagent's detail in the right panel. Element structure and the
+     prompt-bubble clamp follow upstream's own AgentDetailPanel:
        - prompt bubble: the task text, collapsed to a few lines until expanded;
-       - body: either the subagent's transcript (the fork reads it over REST —
-         `GET /sessions/{id}/transcript?agent_id=…`) or, when there is none
-         yet, upstream's fallback block: the suspended reason / output /
-         summary lines plus the "waiting for output" rows.
+       - body: the subagent's transcript (the fork reads it over REST —
+         `GET /sessions/{id}/transcript?agent_id=…`) rendered with the main
+         conversation's own turn/run primitives, or, when there is none yet,
+         upstream's fallback block: the suspended reason / output / summary
+         lines plus the "waiting for output" rows.
      Upstream feeds a ChatPane from panel-held turns; the fork's engine has no
-     turn store for a subagent, so the REST transcript keeps its own renderer
-     inside upstream's transcript containers. -->
+     turn store for a subagent, so the REST transcript is mapped onto the same
+     ChatTurn model ChatPane renders and put through ChatPane's block pipeline
+     (assistantRenderBlocks → foldRenderBlocks → ThinkingBlock / Markdown /
+     ToolCall / ActivityRun), which is what makes the two transcripts alike. -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getKimiWebApi } from '../../api';
-import type { AppTask, TranscriptItem } from '../../api/types';
-import type { AgentMember, FilePreviewRequest, ToolMedia } from '../../types';
-import { normalizeToolName, toolLabel, toolSummary } from '../../lib/toolMeta';
+import type { AppTask, TranscriptFrame, TranscriptItem } from '../../api/types';
+import type { AgentMember, ChatTurn, FilePreviewRequest, ToolCall, ToolMedia, TurnBlock } from '../../types';
 import Icon from '../ui/Icon.vue';
 import Markdown from './Markdown.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
 import Spinner from '../ui/Spinner.vue';
+import ActivityRun from './ActivityRun.vue';
+import ToolCallCard from './ToolCall.vue';
+import ThinkingBlock from './ThinkingBlock.vue';
+import {
+  assistantRenderBlocks,
+  firstRunTool,
+  renderBlockKey,
+  toolFoldBlockKey,
+  type RunItem,
+} from '../chatTurnRendering';
+import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX, type FoldedRenderBlock } from '../../lib/toolFold';
+import { activityRunFolding } from '../../lib/conversationPrefs';
 
 const props = defineProps<{
   member: AgentMember;
@@ -32,39 +45,20 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** Open a file referenced by a transcript tool frame (edit/write/read). */
+  /** Open a file referenced from the transcript — a tool card's path link, or
+   *  a file link in the prompt / reply markdown. */
   openFile: [target: FilePreviewRequest];
   /** Open a media frame (read_media) whose input carries a file-store id. */
   openMedia: [media: ToolMedia];
-  /** Open a nested subagent spawned by an agent tool frame. */
+  /** Open a subagent spawned by this transcript's own `Agent` tool call. */
   openAgent: [toolCallId: string];
 }>();
 
 const { t } = useI18n();
 
 // ---------------------------------------------------------------------------
-// Meta line + prompt bubble
+// Prompt bubble
 // ---------------------------------------------------------------------------
-
-/** Trim a `provider/alias` model alias down to its short name (e.g.
- *  `opencode-go/deepseek-v4-flash` → `deepseek-v4-flash`). */
-const displayModel = computed(() => {
-  const model = props.member.model;
-  if (typeof model !== 'string' || model.length === 0) return undefined;
-  const lastSlash = model.lastIndexOf('/');
-  return lastSlash >= 0 && lastSlash < model.length - 1 ? model.slice(lastSlash + 1) : model;
-});
-
-/** `Subagent · model · effort`, each part dropped when the daemon did not
- *  report it — upstream joins the same three fields with ` · `. */
-const metaLine = computed(() => {
-  const type = props.member.subagentType?.trim();
-  const named = type ? type.charAt(0).toUpperCase() + type.slice(1) : '';
-  const binding = [displayModel.value, props.member.thinkingEffort].filter(
-    (part): part is string => typeof part === 'string' && part.length > 0,
-  );
-  return [named, binding.join(' · ')].filter((part) => part.length > 0).join(' · ');
-});
 
 const prompt = computed(() => {
   const text = props.member.prompt;
@@ -163,15 +157,6 @@ const transcriptError = ref(false);
 
 const hasTranscript = computed(() => (transcriptItems.value?.length ?? 0) > 0);
 
-/** Extract a displayable note from a marker item's payload (`{ text }`). */
-function markerText(item: { payload?: unknown }): string | undefined {
-  const payload = item.payload;
-  if (payload === null || typeof payload !== 'object') return undefined;
-  const text = (payload as Record<string, unknown>)['text'];
-  if (typeof text !== 'string' || text.trim().length === 0) return undefined;
-  return text;
-}
-
 let fetchToken = 0;
 async function fetchTranscript(): Promise<void> {
   const sid = props.sessionId;
@@ -209,88 +194,98 @@ const showFallback = computed(
 
 /** "Working…" once the run has produced something, "Requesting…" until then. */
 const workingLabel = computed(() =>
-  fallbackLines.value.length > 0 ? t('conversation.working') : t('conversation.requesting'),
+  hasTranscript.value || fallbackLines.value.length > 0
+    ? t('conversation.working')
+    : t('conversation.requesting'),
 );
 
 // ---------------------------------------------------------------------------
-// Transcript view model — built from the static fetch result, so it never
-// recomputes while the subagent streams.
+// Transcript → ChatTurn mapping. The pane renders the subagent's turns with the
+// same model and block pipeline the main conversation uses, so the two
+// transcripts read alike (see ChatPane's assistant row for the template shape).
 // ---------------------------------------------------------------------------
 
-interface ViewTool {
-  toolCallId: string;
-  name: string;
-  /** Normalized tool kind (see toolMeta). */
-  kind: string;
-  label: string;
-  summary: string;
-  /** File path an edit/write/read frame references (click → openFile). */
-  path?: string;
-  /** Browser-loadable media a read_media frame references, when derivable. */
-  media?: ToolMedia;
+/** A tool frame's fields beyond the shape the local wire type declares: the
+ *  server's transcript contract also carries the call's state and its output. */
+type WireToolFrame = Extract<TranscriptFrame, { kind: 'tool' }> & {
+  state?: 'running' | 'done' | 'error';
+  output?: unknown;
+};
+
+const FRAME_STATUS: Record<string, ToolCall['status']> = {
+  running: 'running',
+  done: 'ok',
+  error: 'error',
+};
+
+/** A tool result as the tool cards' line array; other shapes stay invisible. */
+function frameOutputLines(output: unknown): string[] | undefined {
+  if (typeof output === 'string') return output.length > 0 ? output.split('\n') : undefined;
+  if (Array.isArray(output) && output.every((line): line is string => typeof line === 'string')) {
+    return output;
+  }
+  return undefined;
 }
 
-type ViewBlock =
-  | { kind: 'thinking'; id: string; text: string }
-  | { kind: 'text'; role: 'assistant' | 'user'; text: string }
-  | { kind: 'tool'; tool: ViewTool }
-  | { kind: 'notice'; text: string };
-
-interface ViewTurn {
-  id: string;
-  state?: string;
-  blocks: ViewBlock[];
+/** One tool frame as the conversation's tool card model. */
+function toToolCall(frame: WireToolFrame): ToolCall {
+  const arg = frame.inputText ?? (frame.input !== undefined ? JSON.stringify(frame.input) : '');
+  return {
+    id: frame.toolCallId,
+    name: frame.name,
+    arg,
+    status: FRAME_STATUS[frame.state ?? ''] ?? 'ok',
+    output: frameOutputLines(frame.output),
+    media: frameMedia(frame.name, arg),
+  };
 }
 
-const VIEW_TEXT = 'text';
-const VIEW_THINKING = 'thinking';
-const VIEW_TOOL = 'tool';
-const VIEW_NOTICE = 'notice';
-
-const viewTurns = computed<ViewTurn[]>(() =>
-  (transcriptItems.value ?? []).map((item) => {
+const transcriptTurns = computed<ChatTurn[]>(() => {
+  const turns: ChatTurn[] = [];
+  for (const item of transcriptItems.value ?? []) {
     if (item.kind !== 'turn') {
       // Marker items (compaction/undo checkpoints) ride the transcript stream
-      // with no steps — surface the marker text as a notice instead of
-      // crashing the render on the missing steps array.
-      const text = markerText(item);
-      const blocks: ViewBlock[] = text !== undefined ? [{ kind: VIEW_NOTICE, text }] : [];
-      return { id: item.markerId, blocks };
+      // with no steps: render one as the conversation's compaction divider.
+      turns.push({ id: item.markerId, role: 'compaction', no: 0, text: '' });
+      continue;
     }
-    const blocks: ViewBlock[] = [];
-    if (item.prompt?.trim()) {
-      blocks.push({ kind: VIEW_TEXT, role: 'user', text: item.prompt });
-    }
-    let thinkingIndex = 0;
+    const blocks: TurnBlock[] = [];
     for (const step of item.steps) {
       for (const frame of step.frames) {
         switch (frame.kind) {
-          case VIEW_THINKING:
-            blocks.push({
-              kind: VIEW_THINKING,
-              // Stable across recomputes: the fetch result is static, so the
-              // per-turn index is enough to key the collapse state.
-              id: `${item.turnId}:${thinkingIndex++}`,
-              text: frame.text,
-            });
+          case 'thinking':
+            if (frame.text.trim().length > 0) blocks.push({ kind: 'thinking', thinking: frame.text });
             break;
-          case VIEW_TEXT:
-            if (frame.text.trim().length > 0) {
-              blocks.push({ kind: VIEW_TEXT, role: frame.role, text: frame.text });
+          case 'tool':
+            blocks.push({ kind: 'tool', tool: toToolCall(frame as WireToolFrame) });
+            break;
+          case 'text':
+            // A user frame is the subagent's own prompt echo: it renders as a
+            // user turn, the shape the main conversation gives the same text.
+            if (frame.text.trim().length === 0) break;
+            if (frame.role === 'user') {
+              turns.push({ id: `${item.turnId}:u${turns.length}`, role: 'user', no: 0, text: frame.text });
+            } else {
+              blocks.push({ kind: 'text', text: frame.text });
             }
-            break;
-          case VIEW_TOOL:
-            blocks.push({ kind: VIEW_TOOL, tool: toViewTool(frame) });
-            break;
-          case VIEW_NOTICE:
-            if (frame.text?.trim()) blocks.push({ kind: VIEW_NOTICE, text: frame.text });
             break;
         }
       }
     }
-    return { id: item.turnId, state: item.state, blocks };
-  }),
-);
+    // A turn with nothing readable left to show (the mock's prompt-only turn,
+    // an empty step) would render as an empty row, so it is dropped.
+    if (blocks.length === 0) continue;
+    turns.push({
+      id: item.turnId,
+      role: 'assistant',
+      no: 0,
+      text: blocks.flatMap((blk) => (blk.kind === 'text' ? [blk.text] : [])).join('\n\n'),
+      blocks,
+      createdAt: item.startedAt,
+    });
+  }
+  return turns;
+});
 
 const READ_MEDIA_RE = /^read[_-]?media(?:file)?$/i;
 const FILE_STORE_ID_RE =
@@ -347,78 +342,51 @@ function mediaKindFromPath(path: string): 'image' | 'video' | 'audio' {
   return 'image';
 }
 
-function toViewTool(frame: {
-  toolCallId?: string;
-  name: string;
-  input?: unknown;
-  inputText?: string;
-}): ViewTool {
-  const name = frame.name;
-  const kind = normalizeToolName(name);
-  const arg = frame.inputText ?? (frame.input !== undefined ? JSON.stringify(frame.input) : '');
-  const tool: ViewTool = {
-    toolCallId: frame.toolCallId ?? '',
-    name,
-    kind,
-    label: toolLabel(name),
-    summary: arg.trim().length > 0 ? toolSummary(name, arg) : '',
-  };
-  if (kind === 'edit' || kind === 'write' || kind === 'read') {
-    const path = framePath(arg);
-    if (path) tool.path = path;
-  }
-  const media = frameMedia(name, arg);
-  if (media) tool.media = media;
-  return tool;
-}
-
-/** The interaction a clickable transcript tool frame triggers, if any. */
-function frameAction(tool: ViewTool): (() => void) | undefined {
-  if (tool.kind === 'task' && tool.toolCallId) {
-    return () => emit('openAgent', tool.toolCallId);
-  }
-  if (tool.media) {
-    return () => emit('openMedia', tool.media!);
-  }
-  if (tool.path) {
-    return () => emit('openFile', { path: tool.path! });
-  }
-  return undefined;
-}
-
-function turnStateLabel(state: string | undefined): string | undefined {
-  switch (state) {
-    case 'failed': return t('tools.swarm.phaseFailed');
-    case 'running': return t('tools.swarm.phaseWorking');
-    case 'suspended': return t('tools.swarm.phaseSuspended');
-    default: return undefined;
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Thinking-block collapse. Default: expanded while the subagent is actively
-// working (so live thinking stays visible), collapsed once it settles. The
-// local map holds the user's per-block override (keyed by stable block id);
-// nothing persists, and switching to another subagent clears it.
+// Activity-run expansion. ChatPane keeps this state in the shared
+// `toolExpandState` map because its rows are evicted and re-mounted; the pane
+// never unmounts a row, so a local set is enough. The Map (not a reactive
+// object) is read at expand time only, so a tick invalidates the computed.
 // ---------------------------------------------------------------------------
 
-const thinkingOverride = ref<Map<string, boolean>>(new Map());
+const openRuns = new Set<string>();
+const runTick = ref(0);
 
-function isThinkingExpanded(id: string): boolean {
-  const override = thinkingOverride.value.get(id);
-  return override !== undefined ? override : isWorking.value;
+function onRunToggle(key: string, open: boolean): void {
+  if (open) openRuns.add(key);
+  else openRuns.delete(key);
+  runTick.value++;
 }
 
-function toggleThinking(id: string): void {
-  const next = new Map(thinkingOverride.value);
-  next.set(id, !isThinkingExpanded(id));
-  thinkingOverride.value = next;
+const expandedRuns = computed<Set<string>>(() => {
+  void runTick.value;
+  return new Set(openRuns);
+});
+
+/** Run identity, shared by both run shapes — same rule as ChatPane's: a short
+ *  run (`tool-stack`) carries no source index of its own, so its first tool's
+ *  id anchors it. */
+function runKeyFor(block: { items: RunItem[]; sourceIndex?: number }): string {
+  const first = firstRunTool(block.items);
+  return `${TOOL_FOLD_KEY_PREFIX}${first?.tool.id ?? `idx-${first?.sourceIndex ?? block.sourceIndex}`}`;
 }
 
-/** Collapsed thinking's teaser: the last non-empty paragraph. */
-function thinkTeaser(text: string): string {
-  const paragraphs = text.split(/\n{2,}/).filter((p) => p.trim().length > 0);
-  return paragraphs.at(-1) ?? text.trim();
+/** The pane matches ChatPane's render pipeline: straight from the turn's block
+ *  order through the run grouping, then the fold pass. No expanded folds are
+ *  passed to the fold helper — the run's rows render inside ActivityRun, so the
+ *  helper must not also emit a follow-up tool-stack for an open run. */
+function renderBlocksFor(turn: ChatTurn): FoldedRenderBlock[] {
+  return foldRenderBlocks(assistantRenderBlocks(turn), new Set(), activityRunFolding.value);
+}
+
+function renderBlockKeyFor(block: FoldedRenderBlock, index: number): string {
+  return block.kind === 'tool-fold' ? toolFoldBlockKey(block) : renderBlockKey(block, index);
+}
+
+/** Stable handler for Markdown's `open-file` event (a per-render closure would
+ *  churn Markdown's props on every re-render of the row). */
+function forwardOpenFile(target: FilePreviewRequest): void {
+  emit('openFile', target);
 }
 
 // ---------------------------------------------------------------------------
@@ -457,12 +425,13 @@ watch(transcriptItems, (next, prev) => {
 });
 
 // Panel switches to another subagent (or the session changes) without
-// unmounting: reset the transcript + collapse state and fetch the new agent.
+// unmounting: reset the transcript + run expansion and fetch the new agent.
 watch(
   () => `${props.member.id}|${props.sessionId ?? ''}`,
   (next, prev) => {
     if (next === prev) return;
-    thinkingOverride.value = new Map();
+    openRuns.clear();
+    runTick.value++;
     promptExpanded.value = false;
     void fetchTranscript();
   },
@@ -474,15 +443,11 @@ watch(
   <div class="agent-panel">
     <div ref="bodyEl" class="agent-transcript" @scroll.passive="onBodyScroll">
       <div class="agent-transcript-inner">
-        <div v-if="metaLine" class="agent-meta">
-          <span class="agent-meta-text">{{ metaLine }}</span>
-        </div>
-
         <section v-if="prompt" class="agent-prompt">
           <div class="agent-prompt-bubble">
             <div class="agent-prompt-wrap" :class="{ 'is-clamped': promptClamped }">
               <div ref="promptTextEl" class="agent-prompt-text">
-                <Markdown :text="prompt" :open-file="(target) => emit('openFile', target)" />
+                <Markdown :text="prompt" :open-file="forwardOpenFile" />
               </div>
               <button
                 v-if="promptOverflows"
@@ -504,46 +469,56 @@ watch(
           </div>
         </section>
 
-        <!-- Transcript: the subagent's own turns, thinking blocks collapsible -->
-        <template v-if="hasTranscript">
-          <div v-for="turn in viewTurns" :key="turn.id" class="ap-turn">
-            <div v-if="turnStateLabel(turn.state)" class="ap-turn-state">{{ turnStateLabel(turn.state) }}</div>
-            <div
-              v-for="(blk, bi) in turn.blocks"
-              :key="`${turn.id}:${bi}`"
-              class="ap-block"
-            >
-              <div v-if="blk.kind === 'thinking'" class="ap-think">
-                <button
-                  type="button"
-                  class="ap-think-head"
-                  :aria-expanded="isThinkingExpanded(blk.id)"
-                  :aria-label="isThinkingExpanded(blk.id) ? t('tasks.collapse') : t('tasks.expand')"
-                  @click="toggleThinking(blk.id)"
-                >
-                  <Icon :name="isThinkingExpanded(blk.id) ? 'chevron-down' : 'chevron-right'" size="sm" />
-                  <span class="ap-think-title">{{ t('thinking.panelTitle') }}</span>
-                </button>
-                <div v-if="isThinkingExpanded(blk.id)" class="ap-think-body">{{ blk.text }}</div>
-                <div v-else class="ap-think-teaser">{{ thinkTeaser(blk.text) }}</div>
-              </div>
-              <div v-else-if="blk.kind === 'text'" class="ap-text" :class="{ user: blk.role === 'user' }"><Markdown :text="blk.text" :open-file="(target) => emit('openFile', target)" /></div>
-              <div
-                v-else-if="blk.kind === 'tool'"
-                class="ap-tool"
-                :class="{ clickable: frameAction(blk.tool) !== undefined }"
-                role="button"
-                :tabindex="frameAction(blk.tool) !== undefined ? 0 : undefined"
-                @click="frameAction(blk.tool)?.()"
-                @keydown.enter="frameAction(blk.tool)?.()"
-              >
-                <span class="ap-tool-label">{{ blk.tool.label }}</span>
-                <span v-if="blk.tool.summary" class="ap-tool-summary">{{ blk.tool.summary }}</span>
-              </div>
-              <div v-else class="ap-notice">{{ blk.text }}</div>
+        <!-- Transcript: the subagent's own turns, rendered with the same
+             turn/run primitives as the main conversation, in the same template
+             shape ChatPane's assistant row uses. -->
+        <div v-if="hasTranscript" class="agent-turns">
+          <template v-for="turn in transcriptTurns" :key="turn.id">
+            <div v-if="turn.role === 'compaction'" class="compact-divider" role="separator">
+              <span class="cd-line" aria-hidden="true" />
+              <span class="cd-label">{{ t('conversation.compactedPlain') }}</span>
+              <span class="cd-line" aria-hidden="true" />
             </div>
-          </div>
-        </template>
+            <div v-else-if="turn.role === 'user'" class="u-turn">
+              <div class="u-bub turn-anchor" :data-turn-id="turn.id">
+                <div class="u-text">{{ turn.text }}</div>
+              </div>
+            </div>
+            <div v-else class="a-msg turn-anchor" :data-turn-id="turn.id">
+              <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
+                <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile />
+                <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :open-file="forwardOpenFile" /></div>
+                <ToolCallCard
+                  v-else-if="blk.kind === 'tool'"
+                  :tool="blk.tool"
+                  mobile
+                  @open-media="emit('openMedia', $event)"
+                  @open-file="emit('openFile', $event)"
+                  @open-agent="emit('openAgent', $event)"
+                />
+                <!-- A run of tool calls (like the thinking block that opened it)
+                     behind one head row; its rows are inert while it is closed. -->
+                <ActivityRun
+                  v-else-if="blk.kind === 'tool-stack' || blk.kind === 'tool-fold'"
+                  :items="blk.items"
+                  :run-key="runKeyFor(blk)"
+                  :expanded="expandedRuns.has(runKeyFor(blk))"
+                  @toggle-fold="onRunToggle"
+                >
+                  <template #default="{ item }">
+                    <ToolCallCard
+                      :tool="item.tool"
+                      mobile
+                      @open-media="emit('openMedia', $event)"
+                      @open-file="emit('openFile', $event)"
+                      @open-agent="emit('openAgent', $event)"
+                    />
+                  </template>
+                </ActivityRun>
+              </template>
+            </div>
+          </template>
+        </div>
 
         <!-- Fallback: nothing readable yet, so show what the run has said so far.
              This pane only ever shows a subagent, so upstream's `prose` variant
@@ -557,10 +532,13 @@ watch(
             <Spinner size="sm" />
             <span>{{ t('tools.output.waiting') }}</span>
           </div>
-          <div v-if="isWorking" class="working-indicator" role="status">
-            <span class="wi-mascot" aria-hidden="true"><MoonSpinner size="lg" /></span>
-            <span class="wi-label">{{ workingLabel }}</span>
-          </div>
+        </div>
+
+        <!-- In flight: upstream's trailing working indicator, below whatever the
+             transcript already shows. -->
+        <div v-if="isWorking" class="working-indicator" role="status">
+          <span class="wi-mascot" aria-hidden="true"><MoonSpinner size="lg" /></span>
+          <span class="wi-label">{{ workingLabel }}</span>
         </div>
       </div>
     </div>
@@ -590,33 +568,6 @@ watch(
   width: 100%;
   max-width: var(--p-content-max);
   margin-inline: auto;
-}
-
-/* ---- Meta line (rules either side of the type · model · effort text) ---- */
-.agent-meta {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-3) var(--space-2);
-  user-select: none;
-}
-.agent-meta::before,
-.agent-meta::after {
-  content: '';
-  flex: 1;
-  height: 0.5px;
-  background: var(--color-line);
-}
-.agent-meta-text {
-  font-size: var(--text-xs);
-  line-height: 1;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---- Prompt bubble ---- */
@@ -747,120 +698,82 @@ watch(
   50% { opacity: 0.55; }
 }
 
-/* ---- Transcript section ---- */
-.ap-turn {
-  min-width: 0;
-  padding: 0 var(--space-3);
+/* ---- Transcript turns: the main conversation's own row shape ---- */
+.agent-turns {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
-.ap-turn + .ap-turn {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-line);
-}
-.ap-turn-state {
-  color: var(--color-danger);
-  font: var(--text-xs) var(--font-mono);
-  margin-bottom: 6px;
-}
-.ap-block {
-  min-width: 0;
-}
-.ap-block + .ap-block {
-  margin-top: 8px;
+.agent-turns > * + * {
+  margin-top: var(--space-4);
 }
 
-/* Collapsible thinking block */
-.ap-think {
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  overflow: hidden;
+/* Assistant turn — left-aligned plain column, no role label (ChatPane's
+   `.a-msg`); its blocks stack in call order with the same gap ChatPane gives
+   them. */
+.a-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  align-self: flex-start;
+  width: 94%;
+  max-width: 94%;
 }
-.ap-think-head {
+.a-msg .msg {
+  font-size: var(--ui-font-size);
+  line-height: 1.6;
+  color: var(--color-text);
+  font-weight: 500;
+}
+.a-msg .msg :deep(p) { margin: 0; }
+.a-msg .msg :deep(p + p) { margin-top: var(--space-2); }
+
+/* User turn — right-aligned bubble, the shape the main conversation gives the
+   same prompt echo. */
+.u-turn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  align-self: flex-start;
+  width: 100%;
+}
+.u-bub {
+  align-self: flex-end;
+  max-width: 78%;
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent-bd);
+  color: var(--color-text);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl);
+  padding: 11px 15px;
+  font-size: var(--content-font-size);
+  line-height: var(--leading-normal);
+  box-shadow: var(--shadow-xs);
+}
+.u-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Compaction divider — the separator ChatPane renders for a compaction turn. */
+.compact-divider {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
+  align-self: stretch;
   width: 100%;
-  padding: 5px 8px;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  color: var(--color-text-muted);
-  font: var(--text-xs) var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-align: left;
 }
-.ap-think-head:hover {
-  color: var(--color-text);
-  background: var(--color-hover);
+.cd-line {
+  flex: 1;
+  height: 1px;
+  background: var(--color-line);
 }
-.ap-think-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ap-think-body {
-  padding: 0 10px 8px;
-  color: var(--color-text-muted);
-  font: var(--text-sm)/var(--leading-relaxed) var(--font-ui);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 240px;
-  overflow-y: auto;
-}
-.ap-think-teaser {
-  padding: 0 10px 8px 26px;
-  color: var(--color-text-faint);
-  font: var(--text-sm)/var(--leading-relaxed) var(--font-ui);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* Text / notice blocks */
-.ap-text {
-  color: var(--color-text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.ap-text.user {
-  color: var(--color-text-muted);
-  font: var(--text-sm)/var(--leading-normal) var(--font-mono);
-}
-.ap-notice {
-  color: var(--color-text-faint);
-  font: var(--text-sm) var(--font-mono);
-}
-
-/* Tool frame */
-.ap-tool {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font: var(--text-sm)/var(--leading-normal) var(--font-mono);
-}
-.ap-tool.clickable { cursor: pointer; }
-.ap-tool.clickable:hover,
-.ap-tool.clickable:focus-visible {
-  border-color: var(--color-accent);
-  color: var(--color-text);
-  outline: none;
-}
-.ap-tool-label {
+.cd-label {
   flex: none;
-  color: var(--color-accent);
-  font-weight: var(--weight-medium);
-}
-.ap-tool-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 80%;
+  font-size: var(--text-base);
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 </style>

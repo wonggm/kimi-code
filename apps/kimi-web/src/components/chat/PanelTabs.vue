@@ -279,6 +279,7 @@ function onResizeKey(event: KeyboardEvent): void {
           <Tooltip :text="t('panel.newTab')">
             <IconButton
               ref="addBtnRef"
+              class="ptb-add"
               size="sm"
               :label="t('panel.newTab')"
               :aria-haspopup="'menu'"
@@ -290,6 +291,7 @@ function onResizeKey(event: KeyboardEvent): void {
           </Tooltip>
           <Tooltip v-if="canExpand && tabs.length > 0" :text="expanded ? t('panel.collapse') : t('panel.expand')">
             <IconButton
+              class="ptb-expand"
               size="sm"
               :label="expanded ? t('panel.collapse') : t('panel.expand')"
               @click="emit('toggle-expanded')"
