@@ -175,7 +175,24 @@ const DIGEST_EXPR = `(() => {
         box: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
         hasGlass: cs.backdropFilter !== 'none' || cs.webkitBackdropFilter !== 'none',
         backdropFilter: cs.backdropFilter,
-        fingerprint: [cs.borderRadius, cs.backgroundColor, cs.boxShadow, cs.fontSize, cs.color, cs.borderColor].join('|'),
+        // Border width and style are part of the fingerprint because a control
+        // whose only border came from a gated rule falls back to the browser's
+        // own button chrome (2px outset) without moving any of the other six
+        // properties — with that gap, the right panel's launcher rows and the
+        // settings selects read as identical to upstream's while looking
+        // nothing like them.
+        fingerprint: [
+          cs.borderRadius,
+          cs.backgroundColor,
+          cs.boxShadow,
+          cs.fontSize,
+          cs.color,
+          cs.borderColor,
+          cs.borderTopWidth,
+          cs.borderTopStyle,
+          cs.borderBottomWidth,
+          cs.borderBottomStyle,
+        ].join('|'),
       });
     }
   }
@@ -656,6 +673,21 @@ const REQUIRE_EXPR = (serialized) => `(() => {
         const matches = scope !== null && new RegExp(req.text.source, req.text.flags).test(text);
         out.ok = req.not === true ? scope !== null && !matches : matches;
         out.saw = scope === null ? req.within + ' is absent' : snippet(text);
+      } else if (req.minWidthRatioOf) {
+        // A layout outcome, which no element or text check can state: "this
+        // control's effect is that its panel now spans its row". The element
+        // measured is the requirement's scope; the reference is the other field.
+        const el = req.within ? document.querySelector(req.within) : null;
+        const ref = document.querySelector(req.minWidthRatioOf);
+        if (!el || !ref) {
+          out.saw = (el ? req.minWidthRatioOf : req.within) + ' is absent';
+        } else {
+          const elW = el.getBoundingClientRect().width;
+          const refW = ref.getBoundingClientRect().width;
+          const ratio = refW > 0 ? elW / refW : 0;
+          out.ok = ratio >= (req.ratio === undefined ? 0.98 : req.ratio);
+          out.saw = Math.round(elW) + 'px of ' + Math.round(refW) + 'px (ratio ' + ratio.toFixed(2) + ')';
+        }
       }
     } catch (error) {
       out.error = String(error && error.message ? error.message : error);
@@ -676,6 +708,10 @@ function serializeRequirement(requirement) {
     // A CSS selector cannot name a row by its text, so this is how a scene states
     // "this row is absent" (e.g. a panel that must not list foreground agents).
     not: requirement?.not === true,
+    // A layout outcome: `within` must be at least `ratio` (default 0.98) of the
+    // width of `minWidthRatioOf`.
+    minWidthRatioOf: requirement?.minWidthRatioOf ? String(requirement.minWidthRatioOf) : null,
+    ratio: typeof requirement?.ratio === 'number' ? requirement.ratio : null,
   };
 }
 
