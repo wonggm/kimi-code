@@ -1,9 +1,10 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/AgentTool.vue -->
 <!-- The single-subagent `Agent` tool, rendered as upstream's card: the agent
      glyph, the description as the title, the muted `Foreground · coder` mode
-     line, the `saved-result` control, and the result body behind it or the
-     head's disclosure. The fork's own "Open" button jumps to the subagent's
-     live progress in the detail panel. -->
+     line, the `saved-result` control, the result body behind it or the head's
+     disclosure, and upstream's right-hand go-slot: an arrow into the
+     subagent's live progress in the detail panel when the card links to a
+     task, the disclosure chevron otherwise. -->
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -71,9 +72,10 @@ const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as '
 const statusLabel = computed(() => t(`tools.agent.status.${status.value}`));
 const title = computed(() => input.value.description || input.value.subagentType || toolLabel(props.tool.name));
 
-// Hide the "Open detail" button when no live/background subagent task matches
-// this tool call (e.g. a completed foreground subagent after a page refresh) —
-// otherwise the button emits into a panel that silently no-ops.
+// Show the go-slot's arrow only when a live/background subagent task matches
+// this tool call (e.g. a completed foreground subagent after a page refresh has
+// none) — otherwise the arrow would emit into a panel that silently no-ops, so
+// the slot falls back to the disclosure chevron.
 const resolveAgentTaskId = inject<(toolCallId: string) => string | undefined>('resolveAgentTaskId');
 const canOpenAgent = computed(() => {
   if (!resolveAgentTaskId) return true;
@@ -153,10 +155,19 @@ watch(
       >
         {{ t('tasks.sendToBackground') }}
       </button>
-      <button v-if="canOpenAgent" type="button" class="at-action" @click.stop="emit('openAgent', tool.id)">
-        {{ t('tasks.openDetail') }}
+      <!-- Upstream's go-slot: one right-hand control, an arrow into the agent's
+           pane when the card links to one and the disclosure chevron otherwise.
+           The arrow carries the Open label as its accessible name. -->
+      <button
+        v-if="canOpenAgent"
+        type="button"
+        class="go-slot"
+        :aria-label="t('tasks.openDetail')"
+        @click.stop="emit('openAgent', tool.id)"
+      >
+        <Icon class="go" name="arrow-right" size="sm" />
       </button>
-      <span class="go-slot" aria-hidden="true" @click="toggle">
+      <span v-else class="go-slot" aria-hidden="true" @click="toggle">
         <Icon v-if="canExpand" class="go car" :class="{ open }" name="chevron-right" size="sm" />
       </span>
     </div>
@@ -250,10 +261,17 @@ watch(
 .go-slot {
   display: inline-flex;
   align-items: center;
-  padding-right: var(--space-3);
+  /* Upstream's span box: the resets below only neutralise the button element
+     the arrow branch needs for its accessible name and keyboard access. */
+  padding: 0 var(--space-3) 0 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
   flex: none;
 }
+.go-slot:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 .go { color: var(--color-text-faint); transition: color var(--duration-base) var(--ease-out); }
 .car { transition: transform var(--duration-base) var(--ease-out); }
 .car.open { transform: rotate(90deg); }

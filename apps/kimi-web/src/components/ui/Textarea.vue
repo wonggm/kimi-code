@@ -8,8 +8,11 @@ withDefaults(defineProps<{
   disabled?: boolean;
   readonly?: boolean;
   error?: boolean;
+  /** Allow the user to drag the box taller; off for a box that autosizes. */
+  resize?: boolean;
 }>(), {
   rows: 3,
+  resize: true,
 });
 
 const emit = defineEmits<{
@@ -26,7 +29,7 @@ function onInput(event: Event) {
 <template>
   <textarea
     class="ui-textarea"
-    :class="{ 'has-error': error }"
+    :class="{ 'has-error': error, 'no-resize': !resize }"
     :value="modelValue"
     :rows="rows"
     :placeholder="placeholder"
@@ -56,6 +59,7 @@ function onInput(event: Event) {
     box-shadow var(--duration-base) var(--ease-out);
 }
 .ui-textarea::placeholder { color: var(--color-text-faint); }
+.ui-textarea.no-resize { resize: none; }
 .ui-textarea:hover:not(:disabled):not(:focus) { border-color: var(--color-line-strong); }
 .ui-textarea:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
 .ui-textarea:disabled { opacity: 0.5; cursor: not-allowed; }

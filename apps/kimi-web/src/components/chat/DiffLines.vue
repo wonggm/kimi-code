@@ -10,10 +10,17 @@ import type { DiffViewLine } from '../../types';
 import { useSelectionCapture } from '../../composables/useSelectionQuote';
 
 const props = defineProps<{
-  lines: DiffViewLine[];
+  lines?: DiffViewLine[];
+  /** Plain code with no diff marks or line numbers — upstream's renderer takes
+   *  either a diff's `lines` or a whole file's `code`. */
+  code?: string;
   /** Wrap long lines onto the next row instead of scrolling horizontally. */
   wrap?: boolean;
 }>();
+
+// Plain code (the file body of an approval card) renders as rows without the
+// gutter pair or the +/- sign.
+const codeLines = computed(() => (props.code === undefined ? null : props.code.split('\n')));
 
 // Diff text selections open the app-wide quote bubble — one mount covers the
 // changes panel, the per-turn diff tab and the tool-diff preview.
@@ -34,7 +41,7 @@ function sign(line: DiffViewLine): string {
 // --gutter-ch from the same measure, with a 4-character floor).
 const gutterCh = computed(() => {
   let max = 0;
-  for (const line of props.lines) {
+  for (const line of props.lines ?? []) {
     if (line.oldNo !== undefined && line.oldNo > max) max = line.oldNo;
     if (line.newNo !== undefined && line.newNo > max) max = line.newNo;
   }
@@ -45,22 +52,29 @@ const gutterCh = computed(() => {
 <template>
   <div
     ref="rootRef"
-    class="hl-code gutter"
-    :class="{ wrap }"
-    :style="{ '--gutter-ch': `${gutterCh}ch` }"
+    class="hl-code"
+    :class="{ gutter: !codeLines, wrap }"
+    :style="codeLines ? undefined : { '--gutter-ch': `${gutterCh}ch` }"
   >
     <div class="hl-body">
-      <div
-        v-for="(line, i) in lines"
-        :key="i"
-        class="hl-row"
-        :class="`row-${line.type}`"
-      >
-        <span class="hl-gutter">{{ oldGutter(line) }}</span>
-        <span class="hl-gutter new">{{ newGutter(line) }}</span>
-        <span class="hl-sign">{{ sign(line) }}</span>
-        <span class="hl-text">{{ line.text }}</span>
-      </div>
+      <template v-if="codeLines">
+        <div v-for="(line, i) in codeLines" :key="i" class="hl-row">
+          <span class="hl-text">{{ line }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div
+          v-for="(line, i) in lines ?? []"
+          :key="i"
+          class="hl-row"
+          :class="`row-${line.type}`"
+        >
+          <span class="hl-gutter">{{ oldGutter(line) }}</span>
+          <span class="hl-gutter new">{{ newGutter(line) }}</span>
+          <span class="hl-sign">{{ sign(line) }}</span>
+          <span class="hl-text">{{ line.text }}</span>
+        </div>
+      </template>
     </div>
   </div>
 </template>
