@@ -786,6 +786,14 @@ function createHandler({ root, token, env, fixtures }) {
                   { kind: 'text', frameId: 'f1', role: 'assistant', text: CODE_MD },
                 ], startedAt: now, endedAt: now },
               ], startedAt: now, endedAt: now },
+              // A non-turn marker. The daemon records one for every such event
+              // (`hook`, `skill`, `cron.fired`, `compaction`, `undo`,
+              // `interruption`, `notice`, `goal`, `plan.revision`) and upstream
+              // draws a row for a compaction and nothing for the rest. The
+              // fixture carried none at all, so a renderer that drew a row for
+              // every marker — which the subagent pane did, printing "Context
+              // compacted" for skills and hooks — compared clean.
+              { kind: 'marker', markerId: 'm_skill_1', marker: 'skill', payload: { origin: { kind: 'skill_activation', skillName: 'mock-skill', skillArgs: '' } }, at: now },
             ],
             has_more: false,
             // Upstream's dock reads its task pills from the transcript page's
