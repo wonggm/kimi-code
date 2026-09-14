@@ -262,6 +262,11 @@ onBeforeUnmount(() => {
      --radius-md doesn't reach this component — scoped). The deeper side
      padding keeps the label and chevron clear of the curved ends. */
   border-radius: var(--radius-full);
+  /* The trigger declares its own hairline, as upstream's does. The rim used to
+     come from the glass rule in style.css, which the liquid-glass toggle gates
+     — with the toggle off the button fell back to the browser's own border
+     (measured: `2px outset`, radius 0). */
+  border: var(--p-hairline) solid var(--color-line-strong);
   padding: 0 var(--space-4);
 }
 .ms-trigger--md { height: 38px; }

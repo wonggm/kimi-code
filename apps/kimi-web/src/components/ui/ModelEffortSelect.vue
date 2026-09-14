@@ -324,6 +324,9 @@ onBeforeUnmount(() => {
   line-height: var(--leading-normal);
   color: var(--color-text);
   border-radius: var(--radius-full);
+  /* Its own hairline, as upstream's select has; the glass rule in style.css
+     supplied the rim before and the toggle gates it. */
+  border: var(--p-hairline) solid var(--color-line-strong);
   padding: 0 var(--space-4);
 }
 .ms-trigger--md { height: 38px; }
