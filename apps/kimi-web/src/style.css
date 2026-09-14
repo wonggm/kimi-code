@@ -285,7 +285,7 @@ html[data-color-scheme="dark"] {
   --blue2: #79b8ff;
   --soft: #1f2937;
   --bd: #1f6feb;
-  --logo: #58a6ff;
+  --logo: #1a88ff;
   --bluebg: #292929;
   --blueln: #1f4f7a;
   --ok: #3fb950;
@@ -312,7 +312,7 @@ html[data-color-scheme="dark"] {
     --blue2: #79b8ff;
     --soft: #1f2937;
     --bd: #1f6feb;
-    --logo: #58a6ff;
+    --logo: #1a88ff;
     --bluebg: #292929;
     --blueln: #1f4f7a;
     --ok: #3fb950;
@@ -1427,13 +1427,16 @@ html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
   }
 }
 
-/* ---- Always-on overlay scrim ----------------------------------------------
-   The shared defocus layer behind modal / sheet / lightbox floating windows.
-   NOT gated by the liquid-glass toggle (the scrim survives with glass off —
-   design-system §06 "three named tiers + scrims"); Dialog, Sheet,
-   BottomSheet, ServerAuthDialog, the Composer attachment lightbox and
-   MediaPreview all carry .lg-scrim instead of hand-writing the recipe. */
-.lg-scrim {
+/* ---- Overlay scrim --------------------------------------------------------
+   The shared defocus layer behind modal / sheet / lightbox floating windows:
+   Dialog, Sheet, BottomSheet, ServerAuthDialog, the Composer attachment
+   lightbox and MediaPreview all carry .lg-scrim instead of hand-writing the
+   recipe. Gated on the liquid-glass toggle: the blur is a glass feature, and
+   upstream draws these same overlays as a flat translucent colour with no
+   backdrop-filter, so the toggle now takes the fork to upstream's rendering
+   rather than leaving a defocus behind (amends the earlier always-on
+   decision). */
+html[data-liquid-glass="on"] .lg-scrim {
   -webkit-backdrop-filter: blur(10px) saturate(140%);
   backdrop-filter: blur(10px) saturate(140%);
 }
@@ -1986,4 +1989,75 @@ html[data-liquid-glass="on"] .sheet-root:not(.step-2) .sheet-panel.sheet-panel {
     black calc(100% - var(--menu-scroll-fade)),
     transparent 100%
   );
+}
+
+/* ---- right panel toggle: upstream's `kimi-right-panel` art -----------------
+   Upstream draws the open/close control as three paths with fixed ids, and the
+   hover state is a keyframe on the arrow while the divider slides and half-
+   collapses. The art carries the ids so these global rules reach it; the
+   timings are upstream's own. */
+:root {
+  --anim-leftbar: 0.5333s;
+  --anim-leftbar-shrink: 0.2s;
+}
+#rbar-divider {
+  transform-box: view-box;
+  transform-origin: 14.7px 12px;
+  transition: transform var(--anim-leftbar-shrink) linear;
+}
+svg:hover #rbar-divider,
+button:hover #rbar-divider {
+  transform: translate(1.5px) scaleY(0.5);
+}
+#rbar-arrow,
+#rbar-arrow-expand {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transform: translate(47.91667%, 50.625%) scale(0);
+}
+svg:hover #rbar-arrow,
+button:hover #rbar-arrow {
+  animation: rightbar-arrow var(--anim-leftbar) linear 1 forwards;
+}
+svg:hover #rbar-arrow-expand,
+button:hover #rbar-arrow-expand {
+  animation: rightbar-arrow-expand var(--anim-leftbar) linear 1 forwards;
+}
+@keyframes rightbar-arrow-expand {
+  0% {
+    transform: translate(62.97083%, 50.625%) scale(-0.6);
+    opacity: 0;
+  }
+  3.125% {
+    transform: translate(62.97083%, 50.625%) scale(-0.6);
+    opacity: 1;
+  }
+  15.625% {
+    transform: translate(59.0125%, 50.625%) scale(-1);
+    opacity: 1;
+  }
+  37.5%,
+  to {
+    transform: translate(47.91667%, 50.625%) scale(-1);
+    opacity: 1;
+  }
+}
+@keyframes rightbar-arrow {
+  0% {
+    transform: translate(37.02917%, 50.625%) scale(0.6);
+    opacity: 0;
+  }
+  3.125% {
+    transform: translate(37.02917%, 50.625%) scale(0.6);
+    opacity: 1;
+  }
+  15.625% {
+    transform: translate(40.9875%, 50.625%) scale(1);
+    opacity: 1;
+  }
+  37.5%,
+  to {
+    transform: translate(47.91667%, 50.625%) scale(1);
+    opacity: 1;
+  }
 }

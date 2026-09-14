@@ -366,7 +366,7 @@ function togglePin(): void {
       :label="t('panel.openPanel')"
       @click="emit('openPanel')"
     >
-      <Icon name="panel-right" size="sm" />
+      <Icon name="right-panel-expand" size="sm" />
     </IconButton>
 
   </header>

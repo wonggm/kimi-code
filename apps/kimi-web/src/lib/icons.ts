@@ -36,6 +36,8 @@ import KimiListLines from '~icons/kimi/list-lines';
 import KimiChevronDown from '~icons/kimi/chevron-down';
 import KimiCircleCheck from '~icons/kimi/circle-check';
 import KimiPanelCollapseRight from '~icons/kimi/panel-collapse-right';
+import KimiRightPanel from '~icons/kimi/right-panel';
+import KimiRightPanelExpand from '~icons/kimi/right-panel-expand';
 import KimiMore from '~icons/kimi/more';
 import KimiPlus from '~icons/kimi/plus';
 import KimiFlask from '~icons/kimi/flask';
@@ -127,6 +129,8 @@ import RawKimiArrowLeft from '~icons/kimi/arrow-left?raw';
 import RawKimiChevronDown from '~icons/kimi/chevron-down?raw';
 import RawKimiCircleCheck from '~icons/kimi/circle-check?raw';
 import RawKimiPanelCollapseRight from '~icons/kimi/panel-collapse-right?raw';
+import RawKimiRightPanel from '~icons/kimi/right-panel?raw';
+import RawKimiRightPanelExpand from '~icons/kimi/right-panel-expand?raw';
 import RawKimiLink from '~icons/kimi/link?raw';
 import RawKimiFolder from '~icons/kimi/folder?raw';
 import RawKimiFolderOpen from '~icons/kimi/folder-open?raw';
@@ -228,6 +232,8 @@ export type IconName =
   | 'check'
   | 'circle-check'
   | 'panel-collapse-right'
+  | 'right-panel'
+  | 'right-panel-expand'
   | 'archive'
   | 'search'
   | 'copy'
@@ -337,6 +343,8 @@ export const ICONS: Record<IconName, IconEntry> = {
   check: entry(RiCheckLine, RawCheckLine),
   'circle-check': entry(KimiCircleCheck, RawKimiCircleCheck),
   'panel-collapse-right': entry(KimiPanelCollapseRight, RawKimiPanelCollapseRight),
+  'right-panel': entry(KimiRightPanel, RawKimiRightPanel),
+  'right-panel-expand': entry(KimiRightPanelExpand, RawKimiRightPanelExpand),
   archive: entry(RiArchiveLine, RawArchiveLine),
   search: entry(KimiSearch, RawKimiSearch),
   copy: entry(RiFileCopyLine, RawFileCopyLine),

@@ -18,6 +18,7 @@ import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
 import Menu from '../ui/Menu.vue';
 import MenuItem from '../ui/MenuItem.vue';
+import Tooltip from '../ui/Tooltip.vue';
 
 const props = defineProps<{
   tabs: PanelTab[];
@@ -275,27 +276,32 @@ function onResizeKey(event: KeyboardEvent): void {
           </div>
         </div>
         <div class="ptb-tail">
-          <IconButton
-            ref="addBtnRef"
-            size="sm"
-            :label="t('panel.newTab')"
-            :aria-haspopup="'menu'"
-            :aria-expanded="addOpen"
-            @click="toggleAdd"
-          >
-            <Icon name="plus" />
-          </IconButton>
-          <IconButton
-            v-if="canExpand && tabs.length > 0"
-            size="sm"
-            :label="expanded ? t('panel.collapse') : t('panel.expand')"
-            @click="emit('toggle-expanded')"
-          >
-            <Icon :name="expanded ? 'collapse' : 'expand'" />
-          </IconButton>
-          <IconButton class="ptb-hide" size="sm" :label="t('panel.hide')" @click="emit('hide')">
-            <Icon :name="mobile ? 'close' : 'panel-collapse-right'" />
-          </IconButton>
+          <Tooltip :text="t('panel.newTab')">
+            <IconButton
+              ref="addBtnRef"
+              size="sm"
+              :label="t('panel.newTab')"
+              :aria-haspopup="'menu'"
+              :aria-expanded="addOpen"
+              @click="toggleAdd"
+            >
+              <Icon name="plus" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip v-if="canExpand && tabs.length > 0" :text="expanded ? t('panel.collapse') : t('panel.expand')">
+            <IconButton
+              size="sm"
+              :label="expanded ? t('panel.collapse') : t('panel.expand')"
+              @click="emit('toggle-expanded')"
+            >
+              <Icon :name="expanded ? 'collapse' : 'expand'" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip :text="t('panel.hide')">
+            <IconButton class="ptb-hide" size="sm" :label="t('panel.hide')" @click="emit('hide')">
+              <Icon :name="mobile ? 'close' : 'right-panel'" />
+            </IconButton>
+          </Tooltip>
         </div>
         <Menu v-if="addOpen" class="panel-add-menu">
           <MenuItem :size="mobile ? 'lg' : 'md'" :disabled="!canOpenSideChat" @click="pick('btw')">
@@ -309,25 +315,18 @@ function onResizeKey(event: KeyboardEvent): void {
 
       <div class="pt-body">
         <slot v-if="activeTabId" />
+        <!-- Upstream composes the launcher from its menu-item primitive, which
+             carries its own border and radius. A bare `.ui-button` here picked
+             up the user-agent button chrome instead (measured with the glass
+             toggle off: `2px outset`, radius 0, against upstream's
+             `ui-menu-item` at radius 8 with no border). -->
         <div v-else-if="tabs.length === 0" class="pl" role="group" :aria-label="t('panel.launcherAria')">
-          <button
-            type="button"
-            role="button"
-            class="ui-button"
-            :disabled="!canOpenDiff"
-            @click="emit('add', 'diff')"
-          >
+          <MenuItem :size="mobile ? 'lg' : 'md'" :disabled="!canOpenDiff" @click="emit('add', 'diff')">
             <Icon name="git-fork" size="sm" /> {{ t('panel.tabs.diff') }}
-          </button>
-          <button
-            type="button"
-            role="button"
-            class="ui-button"
-            :disabled="!canOpenSideChat"
-            @click="emit('add', 'btw')"
-          >
+          </MenuItem>
+          <MenuItem :size="mobile ? 'lg' : 'md'" :disabled="!canOpenSideChat" @click="emit('add', 'btw')">
             <Icon name="message" size="sm" /> {{ t('sideChat.title') }}
-          </button>
+          </MenuItem>
         </div>
       </div>
 
@@ -354,7 +353,13 @@ function onResizeKey(event: KeyboardEvent): void {
 .global-preview.open {
   width: var(--preview-w);
 }
+/* Upstream's panel is a grid item, so its `width: auto` on expand fills the
+   rest of the row and the conversation column collapses to nothing. Ours is a
+   flex row, where `width: auto` resolves to the content width — the panel
+   shrank on expand (measured 585 → 462px against upstream's 585 → 1170). A
+   full-width basis reproduces upstream's geometry. */
 .global-preview.expanded {
+  flex: 1 0 100%;
   width: auto;
 }
 .global-preview.no-anim {
@@ -480,6 +485,11 @@ function onResizeKey(event: KeyboardEvent): void {
   box-shadow: var(--p-focus-ring);
 }
 .ptb-x {
+  /* Upstream positions this button and its touch-target `::after` against
+     itself. Without this the `::after` below anchors to `.ptb-tab`, so the
+     close control's hit area covered the whole tab and a click on the tab
+     closed it (measured: the tab's centre hit-tested to the close button). */
+  position: relative;
   width: var(--panel-tab-x-size);
   height: var(--panel-tab-x-size);
   flex: none;
