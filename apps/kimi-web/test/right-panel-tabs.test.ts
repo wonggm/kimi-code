@@ -329,11 +329,14 @@ describe('useRightPanel state', () => {
     expect(panel.tabs.value).toEqual([]);
     expect(panel.visible.value).toBe(false);
 
-    // Coming back, the restorable tab is rebuilt and the rest are not.
+    // Coming back, the restorable tab is rebuilt and the rest are not. The
+    // panel itself stays closed: upstream closes it on every session change and
+    // persists nothing, so a session whose panel the user closed comes back
+    // closed — the stored tab is revealed again only when the panel is opened.
     panel.bindSession('session-a');
     expect(panel.tabs.value.map((tab) => tab.kind)).toEqual(['agent']);
     expect(panel.tabs.value[0]).toMatchObject({ kind: 'agent', subagentId: 'agent-1' });
-    expect(panel.visible.value).toBe(true);
+    expect(panel.visible.value).toBe(false);
   });
 
   it('persists only what it can rebuild', () => {

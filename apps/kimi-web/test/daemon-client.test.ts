@@ -243,6 +243,11 @@ describe('DaemonKimiWebApi.getAgentTranscript', () => {
         items: [{ kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', steps: [] }],
         has_more: false,
         seq: 12,
+        // The transcript contract is camelCase here (prompts are not part of
+        // the snake_case REST protocol).
+        prompts: [
+          { promptId: 'pr_1', status: 'queued', content: [{ type: 'text', text: 'waiting' }], createdAt: '2026-01-01T00:00:00Z' },
+        ],
       }),
     );
     const page = await createApi().getAgentTranscript('sess_1', 'agent-1');
@@ -253,8 +258,21 @@ describe('DaemonKimiWebApi.getAgentTranscript', () => {
       agentId: 'agent-1',
       items: [{ kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', steps: [] }],
       hasMore: false,
+      prompts: [
+        { promptId: 'pr_1', status: 'queued', content: [{ type: 'text', text: 'waiting' }], createdAt: '2026-01-01T00:00:00Z' },
+      ],
       seq: 12,
     });
+  });
+
+  it('asks for a smaller page when the caller only wants the prompt list', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({ agent_id: 'main', items: [], has_more: false, prompts: [] }),
+    );
+    await createApi().getAgentTranscript('sess_1', 'main', { pageSize: 1 });
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      'http://daemon.test/api/v1/sessions/sess_1/transcript?agent_id=main&page_size=1',
+    );
   });
 });
 

@@ -1583,15 +1583,14 @@ function selectModel(modelId: string): void {
           <!-- Send + stop — one toolbar slot. Desktop: `display: contents`, so
                the two keep their own slots exactly as before (stop only visible
                while running). Mobile: both stack in one cell and cross-fade.
-               Both buttons also carry `lg-glass` so they pick up the glass
-               material when the liquid-glass toggle is ON; the class is inert
-               with glass OFF (the consuming rule is gated on
-               html[data-liquid-glass="on"]), so the solid accent / danger fills
-               stay as the fallback. -->
+               No `lg-glass` on either: they are solid discs, not chips, and
+               upstream draws them opaque — the glass wash overrode the disabled
+               fill (upstream's faint neutral wash) with a full-strength accent
+               one, so a disabled Send read as the primary action. -->
           <div class="send-stop">
             <Tooltip :text="running ? t('composer.interruptTitle') : null">
               <button
-                class="stop lg-glass"
+                class="stop"
                 :class="{ 'is-off': !running }"
                 :aria-label="t('composer.interrupt')"
                 :aria-hidden="stopHidden ? 'true' : undefined"
@@ -1603,7 +1602,7 @@ function selectModel(modelId: string): void {
             </Tooltip>
             <Tooltip :text="sendLabel">
               <button
-                class="send lg-glass"
+                class="send"
                 :class="{ 'is-starting': starting, 'is-off': running }"
                 :aria-label="sendLabel"
                 :aria-hidden="sendHidden ? 'true' : undefined"
@@ -1645,14 +1644,17 @@ function selectModel(modelId: string): void {
           />
         </div>
       </div>
-      <!-- Composer footer — upstream's `.composer-footer`. The new-session state
-           puts the workspace chip here (see the ws-bar markup ConversationPane
-           slots in); the wrapper only renders when that slot has content, so it
-           adds no element on any other surface. -->
-      <div v-if="$slots.footer" class="composer-footer">
-        <slot name="footer" />
-      </div>
-  </div>
+    </div>
+    <!-- Composer footer — upstream's `.composer-footer`, the card's SIBLING
+         (not its child): the ws-bar's -16px top margin tucks it under the card's
+         bottom edge, so the card keeps its own height instead of growing to
+         wrap the chip row. The new-session state puts the workspace chip here
+         (see the ws-bar markup ConversationPane slots in); the wrapper only
+         renders when that slot has content, so it adds no element on any other
+         surface. -->
+    <div v-if="$slots.footer" class="composer-footer">
+      <slot name="footer" />
+    </div>
   <!-- Full-window drop target affordance: shown while files are dragged anywhere
        over the app (document-level listeners in useAttachmentUpload). Pure CSS
        show/hide — a Vue <Transition> can strand an invisible node when the drag
@@ -2056,41 +2058,35 @@ function selectModel(modelId: string): void {
    Empty input / sending: upstream disables the control and paints it with
    --color-send-bg-disabled; the fork mirrors that in .send:disabled below,
    while restarting the enabled fill for the sending spinner.
-
-   Glass split: the `lg-glass` class on the element is inert with the
-   liquid-glass toggle OFF — the consuming rule is gated on
-   html[data-liquid-glass="on"], so the solid fill above stays the resting
-   look. With glass ON, the shared consuming rule paints the glass material
-   (tint + backdrop blur + edge rim + drop shadow), and the scoped
-   .send.lg-glass.lg-glass rule below retargets --lg-tint / --lg-tint-top
-   toward var(--color-accent) so the wash reads as a blue-tinted glass
-   rather than the neutral text-tinted wash the other composer pills get via
-   the global composer-card rule. The icon drops to --color-text in glass
-   mode (see the shared glass-mode glyph colour rule below) because the solid
-   resting glyph colour on the pale accent-tinted wash collapses the contrast
-   in light mode; the blue identity is carried by the wash itself, not the
-   icon. */
+   Geometry, shadow and motion are upstream's rule for rule: --radius-full, the
+   --shadow-send / --shadow-send-hover pair, and the background / transform /
+   box-shadow transition. The disc carries no glass class — the glass wash
+   replaced the disabled fill with a full-strength accent one. */
 .send {
   width: var(--composer-send-size);
   height: var(--composer-send-size);
-  border-radius: 50%;
+  min-width: var(--composer-send-size);
+  border-radius: var(--radius-full);
   background: var(--color-send-bg, var(--color-accent));
   color: var(--color-bg);
   border: none;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-send);
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  margin-left: var(--space-2);
-  transition: background 0.25s ease, transform 0.12s ease;
+  transition:
+    background var(--duration-slow) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-slow) var(--ease-out);
   position: relative;
 }
 
 .send:hover:not(:disabled) {
   background: var(--color-send-bg-hover, var(--color-accent-hover));
+  box-shadow: var(--shadow-send-hover);
 }
 
 .send:active {
@@ -2098,10 +2094,7 @@ function selectModel(modelId: string): void {
 }
 
 /* Empty input: no text and no ready attachment. Upstream paints the disc with
-   its disabled background token and the glyph with --color-send-icon-disabled.
-   The .lg-glass class on the button is inert with the liquid-glass toggle OFF
-   (every consuming glass rule is gated on html[data-liquid-glass="on"]), so
-   this rule is the only painter of the disc in the user's glass-off case. */
+   its disabled background token and the glyph with --color-send-icon-disabled. */
 .send:disabled {
   cursor: not-allowed;
   background: var(--color-send-bg-disabled, rgba(255, 255, 255, 0.1));
@@ -2119,11 +2112,8 @@ function selectModel(modelId: string): void {
   transform: none;
 }
 
-/* Spinner-on-send: recolor the ring so the arc reads on the fill (solid mode).
-   In glass mode the shared glass-mode glyph colour rule below retargets these
-   same properties to --color-text so the arc and track stay high-contrast
-   against the tinted wash. Spinner.vue styles are scoped, so pierce them with
-   :deep(). */
+/* Spinner-on-send: recolor the ring so the arc reads on the fill.
+   Spinner.vue styles are scoped, so pierce them with :deep(). */
 .send.is-starting :deep(.ui-spinner) {
   color: var(--color-bg);
 }
@@ -2138,48 +2128,18 @@ function selectModel(modelId: string): void {
   height: var(--p-ic-lg);
 }
 
-/* Send in glass mode — retarget the tint vars from the neutral text-tinted
-   wash (set by the global `.composer-card .lg-glass.lg-glass:is(button,...)`
-   rule in style.css) toward the accent colour, mirroring the
-   `.dock-workbar button.ui-pill.is-active` pattern. Doubled `.lg-glass` plus
-   `.composer-card` outranks the global composer-card glass rule (0,6,1) so
-   the accent identity wins; the `--lg-bg` shorthand on the consuming rule
-   recomputes from these vars, so the `background` flip is implicit. The
-   global hover lift (--lg-tint-a: 50%, translateY(-1px)) still rides on
-   top — only the resting tint stops are retargeted here, so the hover
-   deepens them naturally. */
-html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass {
-  --lg-tint: color-mix(in srgb, var(--color-accent) 28%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-accent) 16%, transparent);
-}
-/* Hover bump — keeps the accent identity while deepening the glass tint, so
-   the user feels the click without losing the blue-glass read. The global
-   --lg-tint-a:50% hover lift is left to ride on top (it raises the alpha of
-   whatever tint we set here). */
-html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass:hover {
-  --lg-tint: color-mix(in srgb, var(--color-accent) 40%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-accent) 24%, transparent);
-}
-
-/* Stop button — sibling of Send, shown only while running. Red at rest so the
-   destructive action is easy to spot; fills solid danger on hover. Kept softer
-   than the Send disc so Send stays the primary action.
-
-   Same glass split as Send: `lg-glass` is inert with the toggle OFF, so the
-   soft-danger fill + danger border stays as the resting look; with glass ON,
-   the consuming rule paints the glass material and the scoped rule below
-   retargets --lg-tint / --lg-tint-top toward var(--color-danger) so the wash
-   reads as a red-tinted glass. The icon colour drops to --color-text in
-   glass mode (see the shared glass-mode glyph colour rule further down)
-   because --color-danger on a red-tinted wash collapses the contrast — the
-   danger identity is carried by the wash itself, not the icon. */
+/* Stop button — sibling of Send, shown only while running. Upstream rule for
+   rule: a neutral --color-subtle disc carrying the danger-tinted glyph
+   (--color-stop-glyph), which fills solid danger and flips the glyph to
+   --color-text-on-accent on hover. */
 .stop {
   width: var(--composer-send-size);
   height: var(--composer-send-size);
-  border-radius: 50%;
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  border: 1px solid var(--color-danger-bd);
+  min-width: var(--composer-send-size);
+  border-radius: var(--radius-full);
+  background: var(--color-subtle);
+  color: var(--color-stop-glyph);
+  border: none;
   box-shadow: var(--shadow-xs);
   padding: 0;
   display: flex;
@@ -2187,13 +2147,15 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass:hover {
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  margin-left: var(--space-2);
-  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
+  position: relative;
+  transition:
+    background var(--duration-base) ease,
+    color var(--duration-base) ease,
+    transform var(--duration-fast) ease;
 }
 .stop:hover {
   background: var(--color-danger);
-  color: var(--surface-light);
-  border-color: var(--color-danger);
+  color: var(--color-text-on-accent);
 }
 .stop:active {
   transform: scale(0.92);
@@ -2202,42 +2164,6 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass:hover {
   flex: none;
   width: var(--p-ic-lg);
   height: var(--p-ic-lg);
-}
-
-/* Stop in glass mode — mirror of Send above, but retargeted toward the danger
-   colour. The 1px border keeps its width from the base rule (the consuming
-   rule overrides border-color to the glass line-strong tint, so the border
-   blends with the rim instead of fighting it). */
-html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass {
-  --lg-tint: color-mix(in srgb, var(--color-danger) 24%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-danger) 12%, transparent);
-}
-html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass:hover {
-  --lg-tint: color-mix(in srgb, var(--color-danger) 34%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-danger) 18%, transparent);
-}
-
-/* Glass-mode glyph colour — the resting `--color-bg` glyph on the near-white
-   send disc and `--color-danger` for stop were tuned for opaque fills, where
-   the high-contrast color sat on top of a solid background. On the translucent
-   accent-tinted glass wash, that envelope collapses: a dark glyph on pale blue
-   reads as low-contrast in light mode, and red on red-tinted glass reads as
-   low-contrast in any mode. Drop the icon to the main text colour so the glyph
-   stays high-contrast against the tinted glass in both themes — the accent
-   identity is carried by the wash itself (see the .send / .stop retarget rules
-   above), not the icon. The :deep() pierces scoping so the Spinner's scoped
-   rules above the base `.send` block follow the same retarget on the
-   `is-starting` state (the arc and track agree with the resting icon, not the
-   solid fill). */
-html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass,
-html[data-liquid-glass="on"] .composer-card .stop.lg-glass.lg-glass {
-  color: var(--color-text);
-}
-html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-spinner) {
-  color: var(--color-text);
-}
-html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-spinner__track) {
-  stroke: color-mix(in srgb, var(--color-text) 32%, transparent);
 }
 
 /* Send / stop live in one toolbar slot. On desktop the slot is `display:
@@ -2257,6 +2183,10 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* Upstream's --space-2 row gap. It reads as nothing in a two-item row, but it
+     is what makes the flexed toolbar-right exactly 8px narrower than the row's
+     free width — the width upstream's own rows measure. */
+  gap: var(--space-2);
   padding: var(--space-1) var(--composer-send-inset) var(--composer-send-inset);
   position: relative;
 }
@@ -2274,9 +2204,9 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  /* Upstream's --space-1 — the gap every pill in the row is spaced by. */
+  gap: var(--space-1);
   min-width: 0;
-  overflow: hidden;
 }
 /* Narrow-window crush fix: the left group never shrinks (it clips its own
    overflow when the row is truly out of space — the add button is the control
@@ -2286,33 +2216,59 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
 .toolbar-left {
   flex: none;
   padding-right: var(--space-2);
+  overflow: hidden;
 }
 .toolbar-right {
   flex: 1 1 auto;
   justify-content: flex-end;
 }
 
-/* Permission pill */
+/* Permission pill — upstream's metrics: a full-height capsule
+   (--composer-control-size) with the label at --ui-font-size-sm on a 1
+   line-height, a wider right pad than left (the asymmetric pad that seats the
+   glyph), and the hover painted by an ::after overlay. The overlay is the
+   upstream mechanism (the element's own background stays untouched), which is
+   why a hover reads on both sides of the liquid-glass toggle — a plain
+   `.perm-pill:hover { background }` would be outranked by the global glass
+   rule in style.css and vanish whenever glass is on. */
 .perm-pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
+  gap: var(--space-1);
+  height: var(--composer-control-size);
+  padding: 0 var(--space-3) 0 var(--space-2);
   /* Transparent hairline reserves the 1px slot for the liquid-glass rim without
      adding a visible border when the feature is off. */
   border: 1px solid transparent;
-  border-radius: 999px;
-  font-size: var(--ui-font-size);
+  border-radius: var(--radius-full);
+  font-size: var(--ui-font-size-sm);
+  line-height: 1;
   color: var(--color-text);
   cursor: pointer;
   user-select: none;
-  transition: background 0.1s, color 0.15s;
+  transition:
+    background var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out);
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
   /* Sized to its content (upstream's `.perm-pill` is `flex: none`): the label
      must never be squeezed to nothing. A too-long label truncates through
      .perm-pill-label's ellipsis at narrow widths; the glyph stays fixed. */
   flex: none;
+}
+.perm-pill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-hover);
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+  pointer-events: none;
+}
+.perm-pill:hover::after {
+  opacity: 1;
 }
 .perm-pill-icon {
   flex: none;
@@ -2323,11 +2279,8 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Hover background is now handled by the global `.lg-glass.lg-glass:is(button,
-   [role="button"], a):hover` rule in style.css (higher specificity) — the
-   glass overlay recomputes its tint vars on hover, so no per-component
-   override is needed. The "open" state still wants the accent wash so the
-   active dropdown is unmistakable. */
+/* The "open" state wants the accent wash so the active dropdown is
+   unmistakable. */
 .perm-pill.open {
   background: var(--color-accent-soft);
 }
@@ -2356,7 +2309,9 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  padding: 2px 4px;
+  /* Upstream pads the group vertically only — the ring's own inset supplies the
+     horizontal breathing room. */
+  padding: 2px 0;
   border-radius: var(--radius-xs);
 }
 .ctx-group:focus-visible {
@@ -2392,31 +2347,54 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
   line-height: 16px;
 }
 
-/* Model pill */
+/* Model pill — upstream's metrics, same capsule geometry as the permission
+   pill. The hover is the upstream ::after overlay, not a background on the
+   element: the glass rule outranks any `.model-pill:hover` background, so a
+   component-level background would never paint. */
 .model-pill {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px;
+  gap: var(--space-1);
+  height: var(--composer-control-size);
+  padding: 0 var(--space-3);
   /* Transparent hairline reserves the 1px slot for the liquid-glass rim without
      adding a visible border when the feature is off. */
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-size: var(--ui-font-size);
   line-height: var(--leading-normal);
-  color: var(--dim);
+  color: var(--color-text);
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
   cursor: pointer;
   user-select: none;
-  transition: background 0.1s;
+  transition:
+    background var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
   position: relative;
   overflow: hidden;
+  max-width: 100%;
   /* Yields to the row: the label truncates (min-width:0 on .mp-name) well
      before the pill ever pushes its neighbours out. */
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 100%;
+}
+.model-pill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-hover);
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+  pointer-events: none;
+}
+.model-pill:hover::after {
+  opacity: 1;
+}
+.model-pill:active {
+  transform: scale(0.97);
 }
 /* Icon-only collapse — the model label gives way to a bare chevron pill in
    very narrow rows (see modelPillCollapsed); the interlocking .lg-glass
@@ -2431,14 +2409,6 @@ html[data-liquid-glass="on"] .composer-card .send.lg-glass.lg-glass :deep(.ui-sp
 .model-pill.icon-only .mp-name,
 .model-pill.icon-only .think-suffix {
   display: none;
-}
-.model-pill:hover {
-  /* Hover background now lifted to the global `.lg-glass.lg-glass:is(button,
-     [role="button"], a):hover` rule in style.css — its (0,4,1) specificity
-     wins over this (0,2,0) one, so any tint-var change here would be
-     masked. Keep the color shift only, so the label still reads as
-     "engaged" even if the user has the liquid-glass toggle OFF. */
-  color: var(--color-text);
 }
 .model-pill.open {
   background: var(--color-accent-soft);

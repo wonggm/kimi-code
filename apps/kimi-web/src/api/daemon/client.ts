@@ -654,16 +654,22 @@ export class DaemonKimiWebApi implements KimiWebApi {
   // GET /sessions/{id}/transcript — the turn-granular transcript of a single
   // agent (the main agent or a subagent) in timeline order. Used to seed a
   // subagent detail panel whose live progress frames were missed (page reload
-  // / resync) even though the server holds the full transcript.
-  async getAgentTranscript(sessionId: string, agentId: string): Promise<TranscriptPage> {
+  // / resync) even though the server holds the full transcript, and to read the
+  // agent's prompts: they ride on every page regardless of the turn window.
+  async getAgentTranscript(
+    sessionId: string,
+    agentId: string,
+    options?: { pageSize?: number },
+  ): Promise<TranscriptPage> {
     const data = await this.http.get<WireTranscriptPage>(
       `/sessions/${encodeURIComponent(sessionId)}/transcript`,
-      { agent_id: agentId, page_size: 100 },
+      { agent_id: agentId, page_size: options?.pageSize ?? 100 },
     );
     return {
       agentId: data.agent_id,
       items: data.items,
       hasMore: data.has_more,
+      prompts: data.prompts ?? [],
       seq: data.seq,
     };
   }
