@@ -17,9 +17,12 @@
 //   MOCK_GOAL_STATUS=active|paused|blocked|complete
 //                      the goal's state; the apps draw a different panel per
 //                      state, so each is a separate pass (default active)
-//   MOCK_PENDING=1     add the pending question + approval cards. Off by
-//                      default: the fork's ChatDock renders `<Composer v-else>`,
-//                      so a pending card replaces the composer entirely.
+//   MOCK_PENDING=1     add the pending question + approval cards to the original
+//                      session. Off by default: the fork's ChatDock renders
+//                      `<Composer v-else>`, so a pending card replaces the
+//                      composer entirely. The two extra session rows below carry
+//                      one card each unconditionally, so a pending card can be
+//                      inspected without this switch.
 //   MOCK_NOTICES=1     add the two warning toasts. Off by default: they anchor
 //                      above the composer and overlap the goal strip.
 //   MOCK_NO_TASKS=1    empty every task-bearing payload: the REST task list, the
@@ -31,6 +34,17 @@
 //                      the Plan and Progress pills.
 //   MOCK_SEED=0        don't inject the boot seed into index.html
 //   MOCK_SEED=force    re-write the seeded keys on every page load
+//
+// The session list carries three rows in one workspace: the rich fixture session
+// ("Code block header probe") plus two rows that exist so either app can show a
+// pending card — "Pending question (mock)" and "Pending approval (mock)". Each of
+// the two serves every per-session route with the rich transcript and one pending
+// card at the bottom of it.
+//   MOCK_EXTRA_SESSIONS=0  list the original session alone. webdiff sets this for
+//                      its own mocks: the walk treats every sidebar row as a
+//                      control, and the two extra rows move its coordinate
+//                      targets, so one app ends up walking a pending-card
+//                      session while the other walks the original.
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -79,6 +93,12 @@ And a previewable page:
 
 const WORKSPACE_ID = 'wd_mock0000000000000000000000000';
 const SESSION_ID = 'session_mock00000000000000000000000';
+// The two pending-card rows. Distinct ids so each row's routes and card are its
+// own; the titles are what a manual pass clicks in the sidebar.
+const QUESTION_SESSION_ID = 'session_mock_question0000000000';
+const APPROVAL_SESSION_ID = 'session_mock_approval0000000000';
+const QUESTION_SESSION_TITLE = 'Pending question (mock)';
+const APPROVAL_SESSION_TITLE = 'Pending approval (mock)';
 
 const HEARTBEAT_MS = 30000;
 const PING_INTERVAL_MS = 15000;
@@ -141,6 +161,79 @@ function goalMock(status = 'active') {
     budgetLimit: 500000,
     wallClockMs: 12 * 60 * 1000 + 34 * 1000,
     budget: { tokenBudget: 500000, remainingTokens: 317660, turnBudget: null, remainingTurns: null, wallClockBudgetMs: null, remainingWallClockMs: null, overBudget: false },
+  };
+}
+
+/** The pending question card: the shape the fork reads from the snapshot's
+ *  `pending_questions`. `sessionId` is stamped per session, so a session's card
+ *  never names another row. */
+function questionMock(sessionId, now) {
+  return {
+    question_id: 'q_mock_1',
+    session_id: sessionId,
+    turn_id: 2,
+    tool_call_id: 'tc_ask_1',
+    questions: [
+      {
+        id: 'q_mock_1_1',
+        header: 'Approach',
+        question: 'Which approach should the mock take?',
+        options: [
+          { id: 'opt_a', label: 'Approach A', description: 'The conservative one.' },
+          { id: 'opt_b', label: 'Approach B', description: 'The fast one.', recommended: true },
+        ],
+        multi_select: false,
+        allow_other: true,
+      },
+    ],
+    created_at: now,
+  };
+}
+
+/** The pending approval card: the shape the fork reads from the snapshot's
+ *  `pending_approvals`. */
+function approvalMock(sessionId, now) {
+  return {
+    approval_id: 'appr_mock_1',
+    session_id: sessionId,
+    turn_id: 2,
+    tool_call_id: 'tc_bash_1',
+    tool_name: 'Bash',
+    action: 'Run the mock command `rm -rf build`',
+    tool_input_display: { kind: 'bash', command: 'rm -rf build' },
+    expires_at: now,
+    created_at: now,
+  };
+}
+
+/** The same question as an upstream transcript interaction: upstream builds its
+ *  pending cards from the transcript page's `interactions` (state `pending`),
+ *  reading `request.questions`, not from the snapshot. Derived from the card so
+ *  the two routes cannot drift apart. */
+function questionInteraction(card) {
+  return {
+    interactionId: card.question_id,
+    interactionKind: 'question',
+    toolCallId: card.tool_call_id,
+    state: 'pending',
+    request: { turnId: card.turn_id, questions: card.questions },
+  };
+}
+
+/** The same approval as an upstream transcript interaction: upstream reads
+ *  `request.toolName`, `request.action` and `request.display` off it. */
+function approvalInteraction(card) {
+  return {
+    interactionId: card.approval_id,
+    interactionKind: 'approval',
+    toolCallId: card.tool_call_id,
+    state: 'pending',
+    request: {
+      toolName: card.tool_name,
+      action: card.action,
+      turnId: card.turn_id,
+      display: card.tool_input_display,
+    },
   };
 }
 
@@ -321,46 +414,43 @@ function buildFixtures(env) {
     // Pending cards are opt-in (MOCK_PENDING=1): the fork renders `<Composer
     // v-else>` after them, so with either card present the composer is absent
     // from the DOM. On by default they would hide the composer — the element a
-    // manual pass is usually looking at.
-    pending_approvals: (env.MOCK_RICH === '0' || env.MOCK_PENDING !== '1' ? [] : [
-      {
-        approval_id: 'appr_mock_1',
-        session_id: SESSION_ID,
-        turn_id: 2,
-        tool_call_id: 'tc_bash_1',
-        tool_name: 'Bash',
-        action: 'Run the mock command `rm -rf build`',
-        tool_input_display: { kind: 'bash', command: 'rm -rf build' },
-        expires_at: now,
-        created_at: now,
-      },
-    ]),
-    pending_questions: (env.MOCK_RICH === '0' || env.MOCK_PENDING !== '1' ? [] : [
-      {
-        question_id: 'q_mock_1',
-        session_id: SESSION_ID,
-        turn_id: 2,
-        tool_call_id: 'tc_ask_1',
-        questions: [
-          {
-            id: 'q_mock_1_1',
-            header: 'Approach',
-            question: 'Which approach should the mock take?',
-            options: [
-              { id: 'opt_a', label: 'Approach A', description: 'The conservative one.' },
-              { id: 'opt_b', label: 'Approach B', description: 'The fast one.', recommended: true },
-            ],
-            multi_select: false,
-            allow_other: true,
-          },
-        ],
-        created_at: now,
-      },
-    ]),
+    // manual pass is usually looking at. The two extra sessions below show one
+    // card each without the switch.
+    pending_approvals: env.MOCK_RICH === '0' || env.MOCK_PENDING !== '1' ? [] : [approvalMock(SESSION_ID, now)],
+    pending_questions: env.MOCK_RICH === '0' || env.MOCK_PENDING !== '1' ? [] : [questionMock(SESSION_ID, now)],
     subagents: env.MOCK_NO_TASKS === '1'
       ? []
       : env.MOCK_RICH === '0' ? [subagentTask] : [subagentRunning, subagentTask],
   };
+
+  // The two pending-card rows: the same session body, each with its own id and
+  // title and the one card it is named after, so that card is on without
+  // MOCK_PENDING. `messages` and `subagents` are re-stamped with the row's own id,
+  // because a session's body should not name another session. The transcript page
+  // carries the matching upstream interaction (`interactions`, state `pending`),
+  // which is where upstream reads its pending cards from.
+  const variant = (id, title, approvals, questions, interactions) => ({
+    session: {
+      ...session,
+      id,
+      title,
+      meta: { ...session.meta, title },
+    },
+    snapshot: {
+      ...snapshot,
+      messages: { ...snapshot.messages, items: snapshot.messages.items.map((m) => ({ ...m, session_id: id })) },
+      subagents: snapshot.subagents.map((s) => ({ ...s, session_id: id })),
+      pending_approvals: approvals,
+      pending_questions: questions,
+    },
+    transcriptInteractions: interactions,
+    transcriptPendingIds: interactions.map((entry) => entry.interactionId),
+  });
+
+  const questionCard = questionMock(QUESTION_SESSION_ID, now);
+  const approvalCard = approvalMock(APPROVAL_SESSION_ID, now);
+  const questionVariant = variant(QUESTION_SESSION_ID, QUESTION_SESSION_TITLE, [], [questionCard], [questionInteraction(questionCard)]);
+  const approvalVariant = variant(APPROVAL_SESSION_ID, APPROVAL_SESSION_TITLE, [approvalCard], [], [approvalInteraction(approvalCard)]);
 
   const config = {
     providers: { example: { type: '', base_url: 'https://example.com/v1', has_api_key: true } },
@@ -473,13 +563,13 @@ function buildFixtures(env) {
   };
   rich.fsBrowse = rich.fsHome;
 
-  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, config, rich };
+  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich };
 }
 
 function createHandler({ root, token, env, fixtures }) {
-  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, config, rich } = fixtures;
-  // MOCK_RICH=0 turns the extra fixtures off, leaving the single-session fixture
-  // the walk was originally built against.
+  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich } = fixtures;
+  // MOCK_RICH=0 turns the extra fixtures off, leaving the fixture body the walk
+  // was originally built against; the three session rows are always listed.
   const richOn = env.MOCK_RICH !== '0';
 
   // `buildFixtures` stamps created_at/updated_at once, when the mock server
@@ -541,6 +631,48 @@ function createHandler({ root, token, env, fixtures }) {
     meta: { ...session.meta, created_at: iso, updated_at: iso },
   });
   const nowIso = () => new Date().toISOString();
+  // The same per-response re-stamp for the two extra rows, which carry no
+  // runtime-mutable state of their own.
+  const freshRow = (row, iso) => ({
+    ...row,
+    created_at: iso,
+    updated_at: iso,
+    meta: { ...row.meta, created_at: iso, updated_at: iso },
+  });
+
+  // One entry per session row. The two extra entries carry the pending card they
+  // are named after, in both the snapshot shape (the fork) and the transcript
+  // interaction shape (upstream); the original keeps the snapshot built above,
+  // whose cards stay behind MOCK_PENDING. The original row also carries the
+  // state the profile route writes, the two extra rows do not.
+  // The two pending-card rows are for a manual pass. The comparison walk is
+  // told to list only the original session (webdiff starts its own mocks with
+  // MOCK_EXTRA_SESSIONS=0): it discovers every sidebar row as a control, and a
+  // third and fourth row shift what its coordinate clicks land on, so one app
+  // ends up walking a pending-card session while the other walks the original —
+  // seven blockers of noise, and no comparison of the surfaces they meant to
+  // capture.
+  const sessions = [
+    { id: SESSION_ID, session, snapshot, transcriptInteractions: [], transcriptPendingIds: [] },
+    ...(env.MOCK_EXTRA_SESSIONS === '0'
+      ? []
+      : [
+          { id: QUESTION_SESSION_ID, ...questionVariant },
+          { id: APPROVAL_SESSION_ID, ...approvalVariant },
+        ]),
+  ];
+  const sessionById = new Map(sessions.map((entry) => [entry.id, entry]));
+  const rowOf = (entry, iso) => (entry.id === SESSION_ID ? freshSession(iso) : freshRow(entry.session, iso));
+  // Every row of one response carries the SAME stamp. Both apps sort the list by
+  // updated_at descending and pick the session to open from that order, so
+  // per-row stamps that differ by a millisecond (the calls cross a millisecond
+  // boundary at random) would make one app open the original session and the
+  // other a pending-card session, and every surface captured after boot would
+  // compare two different sessions.
+  const sessionRows = () => {
+    const iso = nowIso();
+    return sessions.map((entry) => rowOf(entry, iso));
+  };
 
   return (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -611,87 +743,96 @@ function createHandler({ root, token, env, fixtures }) {
         });
       }
       if (p === '/api/v1/workspaces') {
-        return json(res, { items: [{ id: WORKSPACE_ID, root: '/tmp/mock-workspace', name: 'mock', created_at: now, last_opened_at: now, session_count: 1 }], has_more: false });
+        return json(res, { items: [{ id: WORKSPACE_ID, root: '/tmp/mock-workspace', name: 'mock', created_at: now, last_opened_at: now, session_count: sessions.length }], has_more: false });
       }
+      // The sidebar list. The fork reads /api/v1/sessions and upstream the newer
+      // v2 surface, so both shapes carry every row — the two pending-card
+      // sessions appear on either app.
       if (p === '/api/v1/sessions') {
-        return json(res, { items: [freshSession(nowIso())], has_more: false });
+        return json(res, { items: sessionRows(), has_more: false });
       }
-      // upstream's bundle lists sessions via the newer v2 surface; answer with
-      // the same single session in each requested shape.
       if (p === '/api/v2/sessions') {
         if (url.searchParams.get('view') === 'by_workspace') {
-          return json(res, { groups: [{ workspace: { id: WORKSPACE_ID, cwd: '/tmp/mock-workspace', name: 'mock' }, sessions: [freshSession(nowIso())] }], has_more: false, next_page_token: null, total: 1 });
+          return json(res, { groups: [{ workspace: { id: WORKSPACE_ID, cwd: '/tmp/mock-workspace', name: 'mock' }, sessions: sessionRows() }], has_more: false, next_page_token: null, total: sessions.length });
         }
-        return json(res, { items: [freshSession(nowIso())], has_more: false, next_page_token: null, total: 1 });
+        return json(res, { items: sessionRows(), has_more: false, next_page_token: null, total: sessions.length });
       }
-      if (p === `/api/v2/sessions/${SESSION_ID}/snapshot` || p === `/api/v2/sessions/${SESSION_ID}`) return json(res, { ...snapshot, session: freshSession(nowIso()) });
-      if (p === `/api/v1/sessions/${SESSION_ID}/snapshot`) return json(res, { ...snapshot, session: freshSession(nowIso()) });
-      // The bare session row. Upstream fetches it as the watermark row before
-      // subscribing to session events; a null body throws there and upstream
-      // then skips the whole WebSocket subscription, which leaves its dock
-      // without any bash / subagent / todo pills. The fork's deep-link load
-      // reads the same route.
-      if (p === `/api/v1/sessions/${SESSION_ID}`) {
-        return json(res, {
-          ...freshSession(nowIso()),
-          last_seq: snapshot.as_of_seq,
-          lastSeq: snapshot.as_of_seq,
-        });
-      }
-      if (p === `/api/v1/sessions/${SESSION_ID}/tasks`)
-        return json(res, {
-          items: env.MOCK_NO_TASKS === '1'
-            ? []
-            : richOn
-              ? [bashTask, bashTaskExited, subagentRunning, subagentTask, subagentForeground]
-              : [bashTask, subagentTask],
-        });
-      if (p === `/api/v1/sessions/${SESSION_ID}/media/mock_media_1`) {
-        const mode = env.MOCK_MEDIA ?? 'ok';
-        console.log('MEDIA request, mode =', mode);
-        if (mode === 'hang') return; // never respond — simulates a wedged server stream
-        if (mode === '404') {
-          res.writeHead(404, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ code: 40404, msg: 'file not found', data: null, request_id: 'mock' }));
+      // Every per-session route, `/api/v{1,2}/sessions/<id>[/<sub>]`: the id picks
+      // the variant, so all three sessions answer the same set of surfaces.
+      const sessionMatch = /^\/api\/(?:v1|v2)\/sessions\/([^/]+)(?:\/(.*))?$/.exec(p);
+      if (sessionMatch) {
+        const entry = sessionById.get(decodeURIComponent(sessionMatch[1]));
+        if (entry === undefined) return json(res, null);
+        const sub = sessionMatch[2] ?? '';
+        const row = () => rowOf(entry, nowIso());
+        // The v2 bare route answers with the snapshot body, the v1 bare route with
+        // the session row itself. Upstream fetches the row as the watermark before
+        // subscribing to session events; a null body throws there and upstream
+        // then skips the whole WebSocket subscription, which leaves its dock
+        // without any bash / subagent / todo pills. The fork's deep-link load
+        // reads the same route.
+        if (sub === '') {
+          if (p.startsWith('/api/v2/')) return json(res, { ...entry.snapshot, session: row() });
+          return json(res, {
+            ...row(),
+            last_seq: entry.snapshot.as_of_seq,
+            lastSeq: entry.snapshot.as_of_seq,
+          });
+        }
+        if (sub === 'snapshot') return json(res, { ...entry.snapshot, session: row() });
+        if (sub === 'tasks')
+          return json(res, {
+            items: env.MOCK_NO_TASKS === '1'
+              ? []
+              : richOn
+                ? [bashTask, bashTaskExited, subagentRunning, subagentTask, subagentForeground]
+                : [bashTask, subagentTask],
+          });
+        if (sub === 'media/mock_media_1') {
+          const mode = env.MOCK_MEDIA ?? 'ok';
+          console.log('MEDIA request, mode =', mode);
+          if (mode === 'hang') return; // never respond — simulates a wedged server stream
+          if (mode === '404') {
+            res.writeHead(404, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ code: 40404, msg: 'file not found', data: null, request_id: 'mock' }));
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'image/png', 'content-length': PIXEL_PNG.length });
+          res.end(PIXEL_PNG);
           return;
         }
-        res.writeHead(200, { 'content-type': 'image/png', 'content-length': PIXEL_PNG.length });
-        res.end(PIXEL_PNG);
-        return;
-      }
-      if (p.startsWith('/api/v1/sessions/')) {
-        const base = `/api/v1/sessions/${SESSION_ID}`;
         // Session metadata write (the fork posts the pin / emoji / title here;
         // upstream posts the same shape). Recorded so the next GET reflects it.
-        if (p.endsWith('/profile') && req.method === 'POST') {
+        if (sub === 'profile' && req.method === 'POST') {
           readBody(req).then((body) => {
             if (typeof body?.title === 'string') sessionState.title = body.title;
             const pinned = body?.metadata?.pinned;
             if (typeof pinned === 'boolean') sessionState.pinned = pinned;
             const emoji = body?.metadata?.emoji;
             if (typeof emoji === 'string') sessionState.emoji = emoji;
-            json(res, freshSession(nowIso()));
+            json(res, row());
           });
           return;
         }
         // Feature fetches (goal/todos/plans/transcript): graceful empty shapes.
-        if (p.endsWith('/goal') && (env.MOCK_GOAL === '1' || (richOn && env.MOCK_GOAL !== '0'))) {
+        if (sub === 'goal' && (env.MOCK_GOAL === '1' || (richOn && env.MOCK_GOAL !== '0'))) {
           return json(res, goalMock(env.MOCK_GOAL_STATUS));
         }
         if (richOn) {
           // Live status: the source of truth for the status line, and the driver
           // for the context ring and the mode pills.
-          if (p === base + '/status') return json(res, rich.status);
-          if (p === base + '/warnings') return json(res, { warnings: rich.warnings });
-          if (p === base + '/skills') return json(res, { skills: rich.skills });
-          if (p === base + '/terminals') return json(res, { items: rich.terminals });
-          if (p === base + '/children') return json(res, { items: rich.children });
+          if (sub === 'status') return json(res, rich.status);
+          if (sub === 'warnings') return json(res, { warnings: rich.warnings });
+          if (sub === 'skills') return json(res, { skills: rich.skills });
+          if (sub === 'terminals') return json(res, { items: rich.terminals });
+          if (sub === 'children') return json(res, { items: rich.children });
           // Right panel: the change list, the per-turn file history and the diff
-          // card all read one of these.
-          if (p === base + '/fs:git_status') return json(res, rich.gitStatus);
-          if (p.includes('/file-history')) return json(res, rich.fileChanges);
+          // card all read one of these. Upstream asks for
+          // `file-history/changes` and `file-history/content`.
+          if (sub === 'fs:git_status') return json(res, rich.gitStatus);
+          if (sub.startsWith('file-history')) return json(res, rich.fileChanges);
         }
-        if (p === base + '/fs:diff') {
+        if (sub === 'fs:diff') {
           // The diff pane's per-file route (POST .../fs:diff), so the drill into
           // one file shows lines instead of its "no line changes" state.
           readBody(req).then((body) => {
@@ -714,7 +855,7 @@ function createHandler({ root, token, env, fixtures }) {
           });
           return;
         }
-        if (p === base + '/fs:read') {
+        if (sub === 'fs:read') {
           // The file preview's route (POST .../fs:read). Serving it is what makes
           // the panel's file tab and the transcript's file links show content
           // instead of their load-error state.
@@ -736,8 +877,8 @@ function createHandler({ root, token, env, fixtures }) {
           });
           return;
         }
-        if (p.includes('/transcript/plan')) return json(res, { agent_id: 'main', plans: richOn ? rich.plans : [] });
-        if (p.includes('/transcript')) {
+        if (sub === 'transcript/plan') return json(res, { agent_id: 'main', plans: richOn ? rich.plans : [] });
+        if (sub === 'transcript') {
           // Transcript contract page (zod-validated by upstream's bundle):
           // user turn with the prompt, assistant turn whose single step carries
           // the markdown as a text frame.
@@ -808,7 +949,10 @@ function createHandler({ root, token, env, fixtures }) {
                   { taskId: subagentForeground.id, kind: 'subagent', state: 'running', detached: false, description: subagentForeground.description, agentId: subagentForeground.id, outputTail: '', startedAt: now },
                 ]
               : [],
-            interactions: [],
+            // Upstream builds its pending cards from this array (state
+            // `pending`), not from the snapshot, so the two pending sessions
+            // carry their card here as well.
+            interactions: entry.transcriptInteractions,
             // The dock's todos pill counts items with status "done"; the
             // transcript todo item status enum is pending | in_progress | done.
             todos: richOn
@@ -828,7 +972,7 @@ function createHandler({ root, token, env, fixtures }) {
               budgetLimit: goal.budgetLimit,
             } },
             agents: [{ agentId: 'main', type: 'main' }],
-            pending_interactions: [],
+            pending_interactions: entry.transcriptPendingIds,
           });
         }
         return json(res, null);
