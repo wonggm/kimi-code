@@ -16,6 +16,10 @@ import {
 import { mergeWorkspaces } from '../lib/mergeWorkspaces';
 import { workspaceRootKey } from '../lib/rootKey';
 import { mergeSnapshotMessages } from '../lib/snapshotMessages';
+import {
+  applyRecoveredPromptMessages,
+  recoveredPromptMessages,
+} from '../lib/transcriptPrompts';
 import { mergeSnapshotSubagents } from '../lib/taskMerge';
 import { bareDuration } from '../lib/bareDuration';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
@@ -1477,6 +1481,25 @@ async function pullSessionWarnings(sessionId: string): Promise<void> {
   }
 }
 
+async function rehydrateHeldPrompts(sessionId: string): Promise<void> {
+  // The snapshot carries no prompt the daemon is holding (a prompt it accepted
+  // but has not started, or one steered into the turn that was running), so the
+  // user's own message is missing from the transcript after a reload. Rebuild
+  // those bubbles from the agent's transcript page, whose prompt list rides on
+  // any page (pageSize 1 keeps the request to the prompt list itself).
+  try {
+    const page = await getKimiWebApi().getAgentTranscript(sessionId, 'main', { pageSize: 1 });
+    if (!rawState.sessions.some((session) => session.id === sessionId)) return;
+    const recovered = recoveredPromptMessages(page, new Date().toISOString());
+    updateSessionMessages(sessionId, (messages) =>
+      applyRecoveredPromptMessages(messages, recovered, sessionId),
+    );
+  } catch {
+    // Best-effort repair of state no other route carries: a failed read leaves
+    // the transcript exactly as the snapshot described it.
+  }
+}
+
 async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionResult> {
   // A snapshot that races a local turn start must not overwrite that turn.
   const turnStartAtRequest = workspaceState.localTurnStartState(sessionId);
@@ -1611,6 +1634,7 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
       eventConn.subscribe(sessionId, { seq: snap.asOfSeq, epoch: snap.epoch });
       retainWsSubscription(sessionId);
     }
+    void rehydrateHeldPrompts(sessionId);
     sessionsWithStaleCursor.delete(sessionId);
     // The snapshot carries placeholder usage, so a preserved cached value may
     // itself be stale — resync / stale-socket recovery reach here without
@@ -2213,6 +2237,24 @@ const turnActive = computed<boolean>(() => {
  *  submitted-but-not-terminated (`inFlight`) or a main turn in flight
  *  (`turnActive`). */
 const working = computed<boolean>(() => inFlight.value || turnActive.value);
+
+/** Wall-clock start of the exchange the working moon is counting, or null when
+ *  none is running. Stamped when the working flag rises (the optimistic submit,
+ *  the turn's own start, or a snapshot that arrives mid-turn) and dropped when
+ *  it falls, so the indicator's elapsed time counts from the exchange's start
+ *  rather than from whenever this client happened to hear about it. */
+const exchangeStartedAt = ref<number | null>(null);
+
+watch(working, (active, before) => {
+  if (active === before) return;
+  exchangeStartedAt.value = active ? Date.now() : null;
+});
+
+// A session switch mid-exchange restarts the count for the new session's
+// exchange; without this the new session would inherit the old one's start.
+watch(activeSessionId, () => {
+  exchangeStartedAt.value = working.value ? Date.now() : null;
+});
 
 const tasks = computed<TaskItem[]>(() => {
   // Touch the clock so a running task's elapsed time recomputes each tick.
@@ -3191,6 +3233,7 @@ export function useKimiWebClient() {
     turnActive,
     inFlight,
     working,
+    exchangeStartedAt,
     isStartingFirstPrompt,
     fastMoon: appearance.fastMoon,
 

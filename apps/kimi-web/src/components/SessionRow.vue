@@ -73,6 +73,9 @@ const kebabRef = ref<InstanceType<typeof IconButton> | null>(null);
 const menuRef = ref<InstanceType<typeof Menu> | null>(null);
 // Fixed-position style for the teleported kebab menu, anchored to the ⋯ button.
 const menuStyle = ref<Record<string, string>>({});
+// Where a right-click opened the menu: set, the panel anchors to the pointer
+// instead of to the ⋯ button (upstream's row context menu).
+const menuAt = ref<{ x: number; y: number } | null>(null);
 
 function onDocClick(e: MouseEvent): void {
   const target = e.target as Node;
@@ -85,20 +88,30 @@ function onDocClick(e: MouseEvent): void {
 // is rendered through a body teleport so ancestor `overflow: hidden` (notably the
 // collapsing `.group-sessions` list) can't clip it.
 function positionMenu(): void {
-  const btn = kebabRef.value?.el;
-  if (!btn) return;
   const menu = menuRef.value?.el;
-  const r = btn.getBoundingClientRect();
   const gap = 4;
   const margin = 8;
   const menuH = menu?.offsetHeight ?? 0;
   const menuW = menu?.offsetWidth ?? 0;
-  let top = r.bottom + gap;
-  if (top + menuH > window.innerHeight - margin) {
-    top = Math.max(margin, r.top - menuH - gap);
+  let top: number;
+  let left: number;
+  if (menuAt.value) {
+    top = menuAt.value.y;
+    left = menuAt.value.x;
+    if (top + menuH > window.innerHeight - margin) top = window.innerHeight - margin - menuH;
+    if (left + menuW > window.innerWidth - margin) left = window.innerWidth - margin - menuW;
+  } else {
+    const btn = kebabRef.value?.el;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    top = r.bottom + gap;
+    if (top + menuH > window.innerHeight - margin) {
+      top = Math.max(margin, r.top - menuH - gap);
+    }
+    left = r.right - menuW;
   }
-  let left = r.right - menuW;
   if (left < margin) left = margin;
+  if (top < margin) top = margin;
   menuStyle.value = {
     top: `${Math.round(top)}px`,
     left: `${Math.round(left)}px`,
@@ -111,6 +124,22 @@ async function toggleMenu(e: Event): Promise<void> {
     closeMenu();
     return;
   }
+  menuAt.value = null;
+  await openMenu();
+}
+
+// Right-click anywhere on the row opens the same list at the pointer.
+async function openContextMenu(e: MouseEvent): Promise<void> {
+  menuAt.value = { x: e.clientX, y: e.clientY };
+  if (menuOpen.value) {
+    await nextTick();
+    positionMenu();
+    return;
+  }
+  await openMenu();
+}
+
+async function openMenu(): Promise<void> {
   menuOpen.value = true;
   // Defer so the current click doesn't immediately close the menu.
   setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
@@ -121,6 +150,7 @@ async function toggleMenu(e: Event): Promise<void> {
 }
 function closeMenu(): void {
   menuOpen.value = false;
+  menuAt.value = null;
   document.removeEventListener('mousedown', onDocClick);
   window.removeEventListener('resize', closeMenu);
 }
@@ -239,7 +269,12 @@ defineExpose({ closeMenu });
 </script>
 
 <template>
-  <div class="se" :class="{ on: active }" @click="emit('select', session.id)">
+  <div
+    class="se"
+    :class="{ on: active }"
+    @click="emit('select', session.id)"
+    @contextmenu.prevent.stop="openContextMenu"
+  >
     <div class="row">
       <!-- Leading status slot (in the gutter left of the title): a spinner
            while the session runs, otherwise an unread blue dot. Fixed width
@@ -344,22 +379,26 @@ defineExpose({ closeMenu });
            way (Done rows read as reopen — the same actions the kebab carries). -->
       <span class="act">
         <span v-if="!renaming" class="ha">
-          <IconButton
-            size="sm"
-            class="pin-btn"
-            :label="session.pinned ? t('sidebar.unpin') : t('sidebar.pin')"
-            @click.stop="togglePinned"
-          >
-            <Icon :name="session.pinned ? 'star' : 'star-outline'" />
-          </IconButton>
-          <IconButton
-            size="sm"
-            class="archive-btn"
-            :label="archived ? t('sidebar.reopen') : t('sidebar.archive')"
-            @click.stop="startArchive"
-          >
-            <Icon :name="archived ? 'undo' : 'archive'" />
-          </IconButton>
+          <Tooltip :text="session.pinned ? t('sidebar.unpin') : t('sidebar.pin')">
+            <IconButton
+              size="sm"
+              class="pin-btn"
+              :label="session.pinned ? t('sidebar.unpin') : t('sidebar.pin')"
+              @click.stop="togglePinned"
+            >
+              <Icon :name="session.pinned ? 'pin' : 'pin-outline'" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip :text="archived ? t('sidebar.reopen') : t('sidebar.archive')">
+            <IconButton
+              size="sm"
+              class="archive-btn"
+              :label="archived ? t('sidebar.reopen') : t('sidebar.archive')"
+              @click.stop="startArchive"
+            >
+              <Icon :name="archived ? 'undo' : 'archive'" />
+            </IconButton>
+          </Tooltip>
         </span>
         <span class="ts">{{ session.time }}</span>
         <IconButton
@@ -398,10 +437,6 @@ defineExpose({ closeMenu });
         <MenuItem @click="setEmoji">
           {{ t('sidebar.setEmoji') }}
         </MenuItem>
-        <MenuItem @click="togglePinned">
-          <Icon :name="session.pinned ? 'star' : 'star-outline'" size="sm" />
-          {{ session.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}
-        </MenuItem>
         <MenuItem @click="forkRow">
           <Icon name="git-fork" size="sm" />
           {{ t('sidebar.fork') }}
@@ -409,6 +444,10 @@ defineExpose({ closeMenu });
         <MenuItem @click="exportRow">
           <Icon name="download" size="sm" />
           {{ t('sidebar.export') }}
+        </MenuItem>
+        <MenuItem @click="togglePinned">
+          <Icon :name="session.pinned ? 'pin' : 'pin-outline'" size="sm" />
+          {{ session.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}
         </MenuItem>
         <MenuItem :danger="!archived" @click="startArchive">
           <Icon :name="archived ? 'undo' : 'archive'" size="sm" />
@@ -565,7 +604,12 @@ defineExpose({ closeMenu });
 .se.on .ha::after {
   background: var(--color-selected);
 }
-.ha > * {
+/* The buttons sit above the layer's `::after` backing. The tooltip wrapper is
+   `display: contents` (and a fragment root, so it carries no scope id), hence
+   the `:deep` — without this the buttons fall below the ::after and stop
+   hit-testing. */
+.ha > *,
+.ha :deep(.ui-tip > *) {
   position: relative;
   z-index: 1;
 }

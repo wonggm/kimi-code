@@ -32,9 +32,8 @@ const props = withDefaults(
 
 const GAP = 6;
 const MARGIN = 8;
-// Long enough that merely passing the mouse over a trigger does not pop the
-// hint — the hint is for a deliberate hover.
-const SHOW_DELAY = 400;
+// Upstream's own delay (its tooltip bubble waits 150ms before appearing).
+const SHOW_DELAY = 150;
 
 const trigger = ref<HTMLElement>();
 const bubble = ref<HTMLElement>();
@@ -210,9 +209,8 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   pointer-events: none;
   opacity: 0;
-  /* Opacity clamps, so the responsive curve's overshoot tail would be dead
-     time on a pure fade — gentle is the fade preset. */
-  transition: opacity var(--duration-spring-gentle) var(--spring-gentle);
+  /* Upstream's fade: 120ms out-curve, no overshoot (opacity clamps). */
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 .ui-tip__bubble.positioned { opacity: 1; }
 /* Glass fallback background is light/translucent — restore dark-on-light text

@@ -92,7 +92,11 @@ function persistTabs(): void {
 /** Switch sessions, as upstream's own watcher does: every tab of the previous
  *  session goes (its terminal included — upstream keeps terminals only in the
  *  draft-promotion case, where the "new" session is the same work continuing),
- *  and the new session's restorable tabs are rebuilt from what was stored. */
+ *  and the new session's restorable tabs are rebuilt from what was stored.
+ *  Visibility does NOT follow the tabs: upstream's panel is closed by every
+ *  session change and is never persisted, so a session whose panel the user
+ *  closed comes back closed (the stored tabs are its tab list, not a statement
+ *  that the panel was showing — the header control still reveals them). */
 function bindSession(sessionId: string | null): void {
   if (sessionId === currentSessionId) return;
   currentSessionId = sessionId;
@@ -102,9 +106,7 @@ function bindSession(sessionId: string | null): void {
       ? deserializeRestorableTabs(stored as Parameters<typeof deserializeRestorableTabs>[0], nextId)
       : [];
   tabs.value = restored;
-  // Upstream restores the session's panel visibility with its tabs: a session
-  // that had tabs open comes back with them showing.
-  visible.value = restored.length > 0;
+  visible.value = false;
   activeTabId.value = restored.at(-1)?.id ?? null;
   persistTabs();
 }

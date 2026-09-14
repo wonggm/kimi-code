@@ -86,6 +86,9 @@ const props = defineProps<{
    *  Drives the empty-session "starting conversation…" loading state. */
   starting?: boolean;
   fastMoon?: boolean;
+  /** Wall-clock start (ms) of the running exchange — the working indicator
+   *  ticks the elapsed time from it. */
+  exchangeStartedAt?: number;
   /** Mobile shell: compact chrome. */
   mobile?: boolean;
   /** True while switching sessions and the turns array is not yet loaded. */
@@ -1799,6 +1802,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
               ref="emptyComposerRef"
               class="empty-composer"
               :session-id="sessionId"
+              :hide-context="true"
               :running="running"
               :queued="queued"
               :search-files="searchFiles"
@@ -1845,7 +1849,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
                         :aria-expanded="wsPickOpen"
                         @click.stop="wsPickOpen = !wsPickOpen"
                       >
-                        <Icon name="folder" size="sm" />
+                        <Icon name="folder" size="md" />
                         <span class="ws-chip-name">{{ activeWorkspaceLabel }}</span>
                         <Icon class="ws-chip-chev" :class="{ open: wsPickOpen }" name="chevron-down" size="sm" />
                       </button>
@@ -1901,6 +1905,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
               :retry-progress="retryProgress"
               :failure="failure"
               :fast-moon="fastMoon"
+              :exchange-started-at="exchangeStartedAt"
               :session-loading="sessionLoading"
               :compaction="compaction"
               :has-more-messages="hasMoreMessages"
@@ -2278,6 +2283,24 @@ html[data-liquid-glass="on"] .panes.has-header {
 
 /* Empty-workspace spacers: push the centred Composer to the vertical middle. */
 .empty-spacer { flex: 1; }
+/* The trailing spacer carries upstream's bottom pad, so the composer sits the
+   same distance above the pane's floor as upstream's does (without it the two
+   flex:1 spacers come out equal and the card rests 8px lower). */
+.empty-tail {
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+  box-sizing: border-box;
+}
+
+/* New-session input floor — upstream's rule: the empty composer's editor rests
+   at three lines (3lh) instead of the one-line 36px floor a running
+   conversation's editor uses, and the card shrinks back to one line the moment
+   the first message lands. The scoped attribute stops at `.empty-composer`, so
+   :deep() reaches the Composer's own `.ph`. */
+.empty-composer:not(.expanded) :deep(.ph) {
+  min-height: 3lh;
+}
 
 /* Empty-session counterparts of the header. With no header there is nothing to
    drag the macOS window by and no header control to open the right panel with,

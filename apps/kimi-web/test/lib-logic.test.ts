@@ -12,6 +12,10 @@ import { buildDiffLines } from '../src/lib/diffLines';
 import { buildEditDiffLines } from '../src/lib/toolDiff';
 import { createCoalescedAsyncRunner } from '../src/lib/snapshotSync';
 import { mergeSnapshotMessages } from '../src/lib/snapshotMessages';
+import {
+  applyRecoveredPromptMessages,
+  recoveredPromptMessages,
+} from '../src/lib/transcriptPrompts';
 import { keepLiveSubagents, mergeSnapshotSubagents } from '../src/lib/taskMerge';
 import { normalizeToolName, toolSummary } from '../src/lib/toolMeta';
 import { collapsePrompt, humanizeCron } from '../src/lib/cronHumanize';
@@ -28,7 +32,7 @@ import {
   modelThinkingAvailability,
   segmentsFor,
 } from '../src/lib/modelThinking';
-import type { AppMessage, AppModel, AppTask } from '../src/api/types';
+import type { AppMessage, AppModel, AppTask, TranscriptItem, TranscriptPage, TranscriptPrompt } from '../src/api/types';
 import { resolveToolRenderer } from '../src/components/chat/tool-calls/toolRegistry';
 import AgentTool from '../src/components/chat/tool-calls/AgentTool.vue';
 import EditTool from '../src/components/chat/tool-calls/EditTool.vue';
@@ -720,6 +724,131 @@ describe('mergeSnapshotMessages', () => {
     const loaded = [optimisticUser('msg_opt_1', '2026-01-02T23:59:59.000Z', 'hello', 'msg_8')];
     const snapshot = [realUser('msg_9', '2026-01-03T00:00:00.000Z', 'hello')];
     expect(mergeSnapshotMessages(loaded, snapshot).map((m) => m.id)).toEqual(['msg_opt_1', 'msg_9']);
+  });
+});
+
+describe('recoveredPromptMessages', () => {
+  const NOW = '2026-01-01T00:10:00.000Z';
+
+  function page(over: Partial<TranscriptPage> = {}): TranscriptPage {
+    return { agentId: 'main', items: [], hasMore: false, prompts: [], ...over };
+  }
+
+  function queuedTurn(turnId: string, prompt: string, triggerPromptId?: string): TranscriptItem {
+    return { kind: 'turn', turnId, ordinal: 0, state: 'queued', prompt, triggerPromptId, steps: [] };
+  }
+
+  function prompt(over: Partial<TranscriptPrompt> & { promptId: string }): TranscriptPrompt {
+    return { status: 'completed', createdAt: NOW, ...over };
+  }
+
+  it('reads a prompt the daemon has accepted but not started', () => {
+    const recovered = recoveredPromptMessages(
+      page({
+        items: [queuedTurn('t3', 'Queued behind the running turn.', 'pr_q1')],
+        prompts: [prompt({ promptId: 'pr_q1', status: 'queued', content: [{ type: 'text', text: 'Queued behind the running turn.' }] })],
+      }),
+      NOW,
+    );
+    expect(recovered).toEqual([
+      { key: 'pr_q1', text: 'Queued behind the running turn.', createdAt: NOW },
+    ]);
+  });
+
+  it('reads a prompt steered into the turn that was already running', () => {
+    const recovered = recoveredPromptMessages(
+      page({
+        prompts: [
+          prompt({ promptId: 'pr_s1', steeredAt: NOW, finishedAt: NOW, content: [{ type: 'text', text: 'steered' }] }),
+        ],
+      }),
+      NOW,
+    );
+    expect(recovered).toEqual([{ key: 'pr_s1', text: 'steered', createdAt: NOW }]);
+  });
+
+  it('ignores a started turn, a running prompt and a prompt that ran its own turn', () => {
+    const recovered = recoveredPromptMessages(
+      page({
+        items: [
+          { kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', prompt: 'done', steps: [] },
+          { kind: 'turn', turnId: 't2', ordinal: 1, state: 'running', prompt: 'running', steps: [] },
+        ],
+        prompts: [
+          prompt({ promptId: 'pr_run', status: 'running', content: [{ type: 'text', text: 'running' }] }),
+          // Steered, then ran to completion on its own — it has a turn already.
+          prompt({ promptId: 'pr_own', steeredAt: NOW, finishedAt: '2026-01-01T00:20:00.000Z', content: [{ type: 'text', text: 'own turn' }] }),
+        ],
+      }),
+      NOW,
+    );
+    expect(recovered).toEqual([]);
+  });
+
+  it('reports the queued prompt before the steered one, and skips empty text', () => {
+    const recovered = recoveredPromptMessages(
+      page({
+        items: [
+          queuedTurn('t9', '   '),
+          queuedTurn('t8', 'second', 'pr_2'),
+        ],
+        prompts: [
+          // An attachment-only steer has no text to show.
+          prompt({ promptId: 'pr_1', steeredAt: NOW, finishedAt: NOW, content: [{ type: 'image' }] }),
+          prompt({ promptId: 'pr_3', steeredAt: NOW, finishedAt: NOW, content: [{ type: 'text', text: 'steered' }] }),
+        ],
+      }),
+      NOW,
+    );
+    // The queued prompt comes first, then the steered one — the order upstream
+    // renders them in (the queued turn is part of the transcript, the steered
+    // prompt is rebuilt after it).
+    expect(recovered).toEqual([
+      { key: 'pr_2', text: 'second', createdAt: NOW },
+      { key: 'pr_3', text: 'steered', createdAt: NOW },
+    ]);
+  });
+
+  describe('applyRecoveredPromptMessages', () => {
+    function userMessage(id: string, text: string, over: Partial<AppMessage> = {}): AppMessage {
+      return {
+        id,
+        sessionId: 's1',
+        role: 'user',
+        content: [{ type: 'text', text }],
+        createdAt: NOW,
+        ...over,
+      };
+    }
+
+    it('appends the rebuilt bubble and keeps it across a snapshot merge', () => {
+      const rebuilt = recoveredPromptMessages(
+        page({ items: [queuedTurn('t3', 'queued text', 'pr_q1')] }),
+        NOW,
+      );
+      const applied = applyRecoveredPromptMessages([userMessage('m1', 'hello')], rebuilt, 's1');
+      expect(applied.map((m) => m.id)).toEqual(['m1', 'msg_opt_prompt_pr_q1']);
+      expect(applied[1]?.metadata?.['kimiWeb.optimisticUserMessage']).toBe(true);
+      // A later snapshot merge keeps the rebuilt bubble (the snapshot cannot
+      // carry a prompt that has no message yet).
+      const merged = mergeSnapshotMessages(applied, [userMessage('m2', 'reply')]);
+      expect(merged.some((m) => m.id === 'msg_opt_prompt_pr_q1')).toBe(true);
+    });
+
+    it('replaces a stale bubble when the prompt is no longer held', () => {
+      const held = applyRecoveredPromptMessages(
+        [],
+        recoveredPromptMessages(page({ items: [queuedTurn('t3', 'queued text', 'pr_q1')] }), NOW),
+        's1',
+      );
+      expect(applyRecoveredPromptMessages(held, [], 's1')).toEqual([]);
+    });
+
+    it('never doubles a prompt the snapshot already carries as a message', () => {
+      const held = recoveredPromptMessages(page({ items: [queuedTurn('t3', 'queued text', 'pr_q1')] }), NOW);
+      const messages = [userMessage('um_1', 'queued text', { promptId: 'pr_q1' })];
+      expect(applyRecoveredPromptMessages(messages, held, 's1').map((m) => m.id)).toEqual(['um_1']);
+    });
   });
 });
 

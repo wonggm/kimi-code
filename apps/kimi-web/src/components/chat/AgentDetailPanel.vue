@@ -547,7 +547,7 @@ watch(
         <!-- In flight: upstream's trailing working indicator, below whatever the
              transcript already shows. -->
         <div v-if="isWorking" class="working-indicator" role="status">
-          <span class="wi-mascot" aria-hidden="true"><MoonSpinner size="lg" /></span>
+          <MoonSpinner />
           <span class="wi-label">{{ workingLabel }}</span>
         </div>
       </div>
@@ -686,21 +686,17 @@ watch(
 }
 .agent-fallback.prose .op { font-family: var(--font-ui); }
 
-/* Send → first-token indicator, upstream's WorkingIndicator layout. */
+/* Send → first-token indicator: the main transcript's own `.sending-placeholder`
+   layout (moon at its default size, 8px gap), not upstream's larger working
+   indicator, so the two read the same. */
 .working-indicator {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   align-self: flex-start;
+  padding: 10px 0;
   font: var(--text-sm)/var(--leading-normal) var(--font-ui);
   color: var(--color-text-muted);
-}
-.wi-mascot {
-  flex: none;
-  width: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 .wi-label { animation: wi-breathe 1.6s var(--ease-in-out) infinite; }
 

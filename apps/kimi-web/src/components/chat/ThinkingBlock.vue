@@ -3,10 +3,14 @@
      optional duration + a chevron) that expands the reasoning text in place.
      The fork used to show a streaming five-line window folded into a teaser and
      sent the full text to the right panel; upstream has no thinking tab, so the
-     panel that click targeted is gone and the block carries its own expansion. -->
+     panel that click targeted is gone and the block carries its own expansion.
+     Once its thinking ends the card folds back up and the head reads how long
+     that thinking took ("Thought for 3s") — the span it timed itself, since no
+     transcript field carries a per-block time (see `headTitle`). -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { bareDuration } from '../../lib/bareDuration';
 import Icon from '../ui/Icon.vue';
 
 const props = withDefaults(
@@ -17,7 +21,8 @@ const props = withDefaults(
     /** When the block started thinking — while streaming, the head shows the
      *  elapsed time ticking once a second. */
     startedAt?: string;
-    /** A finished block's thinking time, shown as "· 12m34s". */
+    /** A finished block's thinking time, overriding the span the block timed
+     *  itself; the head reads "Thought for 3s". */
     durationMs?: number;
     /** Skip the expansion transition (a block taller than the viewport snaps
      *  open instead of animating, which would jank the scroll). */
@@ -74,11 +79,41 @@ const timeLabel = computed<string>(() => {
     const started = Date.parse(props.startedAt);
     return Number.isFinite(started) ? formatDuration(now.value - started) : '';
   }
-  if (props.durationMs !== undefined) {
-    const label = formatDuration(props.durationMs);
-    return label ? `· ${label}` : '';
-  }
   return '';
+});
+
+// How long the thinking took. Nothing in the transcript carries a per-block
+// time — a thinking frame is `{frameId, text}` and the step that holds it spans
+// the whole model round, tools included — so the card times the thinking it
+// watched: `streaming` is true exactly while this block is the one being
+// written, so the span between the flag rising and falling is that thinking.
+// A block that was already finished when the transcript arrived (a reload) has
+// nothing to measure and keeps the plain head.
+const thinkingStartedAt = ref<number | null>(null);
+const measuredMs = ref<number | null>(null);
+
+watch(
+  () => props.streaming,
+  (streaming) => {
+    if (streaming) {
+      thinkingStartedAt.value = Date.now();
+      measuredMs.value = null;
+      return;
+    }
+    if (thinkingStartedAt.value !== null) {
+      measuredMs.value = Date.now() - thinkingStartedAt.value;
+      thinkingStartedAt.value = null;
+    }
+  },
+  { immediate: true },
+);
+
+const headTitle = computed<string>(() => {
+  if (props.streaming) return t('conversation.thinkingStreaming');
+  const ms = props.durationMs ?? measuredMs.value;
+  if (ms === null || ms === undefined) return t('conversation.thinkingTitle');
+  const duration = bareDuration(ms / 1000);
+  return duration ? t('conversation.thoughtFor', { duration }) : t('conversation.thinkingTitle');
 });
 
 /** A tall block snaps open instead of animating (upstream's `instant`).
@@ -106,7 +141,7 @@ function toggle(): void {
       @click="toggle"
     >
       <Icon class="think-bulb" name="thinking" size="sm" />
-      <span class="think-title">{{ t(streaming ? 'conversation.thinkingStreaming' : 'conversation.thinkingTitle') }}</span>
+      <span class="think-title">{{ headTitle }}</span>
       <span v-if="timeLabel" class="think-time">{{ timeLabel }}</span>
       <Icon class="think-car" name="chevron-right" size="sm" />
     </button>

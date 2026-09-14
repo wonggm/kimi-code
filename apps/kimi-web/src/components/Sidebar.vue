@@ -68,6 +68,8 @@ import {
   STORAGE_KEYS,
 } from '../lib/storage';
 import { moveInOrder, type DropPosition, type WorkspaceSortMode } from '../lib/workspaceOrder';
+import { availableLocales, type LocaleCode } from '../i18n';
+import type { ColorScheme } from '../composables/client/useAppearance';
 import { splitByArchived } from '../composables/client/useWorkspaceState';
 import type { Session, WorkspaceGroup as WorkspaceGroupType, WorkspaceView } from '../types';
 import SearchSessionsDialog from './dialogs/SearchSessionsDialog.vue';
@@ -148,9 +150,13 @@ const props = withDefaults(
     /** Experimental Lab `labSidebarTabs` flag — renders the Open / Done /
      *  Workspaces tab strip above the session list. */
     labSidebarTabs?: boolean;
-    /** True when a Kimi Code credential is connected — the footer's account row
-     *  then reads "Signed in" instead of "Not signed in". */
-    authReady?: boolean;
+    /** A managed Kimi Code account is connected — the footer then names the
+     *  account instead of reading "Not signed in". */
+    signedIn?: boolean;
+    /** Current appearance, shown as the value on the footer menu's first row. */
+    colorScheme?: ColorScheme;
+    /** Current UI language, shown as the value on the footer menu's second row. */
+    locale?: LocaleCode;
   }>(),
   {
     activeWorkspace: null,
@@ -164,7 +170,9 @@ const props = withDefaults(
     dragging: false,
     autoSessionTitle: false,
     labSidebarTabs: false,
-    authReady: false,
+    signedIn: false,
+    colorScheme: 'system',
+    locale: 'en',
   },
 );
 
@@ -200,6 +208,11 @@ const emit = defineEmits<{
   expandSidebar: [];
   openSettings: [];
   collapse: [];
+  /** Footer account menu: appearance + language pickers, and the sign-in row. */
+  setColorScheme: [colorScheme: ColorScheme];
+  setLocale: [locale: LocaleCode];
+  login: [];
+  logout: [];
   /** A folder was dropped on the sidebar. The path comes from the desktop
    *  shell's bridge when one is present; see onFolderDrop. */
   addWorkspacePath: [path: string];
@@ -264,9 +277,146 @@ function onFolderDrop(event: DragEvent): void {
 
 const { sidebarViewMode, loadSidebarViewMode, setSidebarViewMode } = useSidebarLayout();
 
-/** Footer account row: the connected credential name, or the "not signed in"
- *  state the settings surface uses (no auth flow is started from here). */
-const accountName = computed(() => (props.authReady ? t('sidebar.signedIn') : t('sidebar.notSignedIn')));
+/** Footer account row: the connected account's name, or the "not signed in"
+ *  state — the same pair the settings surface shows. */
+const accountName = computed(() => (props.signedIn ? t('sidebar.defaultUserName') : t('sidebar.notSignedIn')));
+
+// Footer account menu (upstream's user menu). Anchored to the trigger, opening
+// upward; the appearance / language rows open a second panel beside it.
+type UserSubmenu = 'appearance' | 'language';
+const userMenuOpen = ref(false);
+const userMenuRef = ref<InstanceType<typeof Menu> | null>(null);
+const userTriggerRef = ref<HTMLElement | null>(null);
+const userMenuStyle = ref<Record<string, string>>({});
+const userSubmenu = ref<UserSubmenu | null>(null);
+const userSubmenuRef = ref<InstanceType<typeof Menu> | null>(null);
+const userSubmenuStyle = ref<Record<string, string>>({});
+let userSubmenuAnchor: HTMLElement | null = null;
+
+const colorSchemeLabel = computed(
+  () =>
+    ({
+      light: t('theme.light'),
+      dark: t('theme.dark'),
+      system: t('theme.system'),
+    })[props.colorScheme],
+);
+const localeLabel = computed(
+  () => availableLocales.find((l) => l.code === props.locale)?.label ?? props.locale,
+);
+const submenuOptions = computed<{ value: string; label: string; active: boolean }[]>(() =>
+  userSubmenu.value === 'appearance'
+    ? [
+        { value: 'light', label: t('theme.light'), active: props.colorScheme === 'light' },
+        { value: 'dark', label: t('theme.dark'), active: props.colorScheme === 'dark' },
+        { value: 'system', label: t('theme.system'), active: props.colorScheme === 'system' },
+      ]
+    : availableLocales.map((l) => ({ value: l.code, label: l.label, active: props.locale === l.code })),
+);
+
+function onUserMenuDocClick(e: MouseEvent): void {
+  const target = e.target as Node;
+  if (userMenuRef.value?.el?.contains(target) || userTriggerRef.value?.contains(target)) return;
+  if (userSubmenuRef.value?.el?.contains(target)) return;
+  closeUserMenu();
+}
+
+function onUserMenuKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') closeUserMenu();
+}
+
+function positionUserMenu(): void {
+  const trigger = userTriggerRef.value;
+  const menu = userMenuRef.value?.el;
+  if (!trigger || !menu) return;
+  const r = trigger.getBoundingClientRect();
+  const gap = 4;
+  const margin = 8;
+  const menuH = menu.offsetHeight;
+  const menuW = menu.offsetWidth;
+  const left = Math.min(Math.max(r.left, margin), Math.max(margin, window.innerWidth - margin - menuW));
+  const above = r.top - gap - menuH;
+  const top = above >= margin ? above : Math.min(r.bottom + gap, window.innerHeight - margin - menuH);
+  userMenuStyle.value = {
+    left: `${Math.round(left)}px`,
+    width: `${Math.round(r.width)}px`,
+    top: `${Math.round(top)}px`,
+  };
+}
+
+function positionUserSubmenu(): void {
+  const anchor = userSubmenuAnchor;
+  const menu = userSubmenuRef.value?.el;
+  if (!anchor || !menu) return;
+  const r = anchor.getBoundingClientRect();
+  const gap = 4;
+  const margin = 8;
+  const menuW = menu.offsetWidth;
+  const menuH = menu.offsetHeight;
+  const left =
+    r.right + gap + menuW <= window.innerWidth - margin
+      ? r.right + gap
+      : Math.max(margin, r.left - gap - menuW);
+  const top = Math.min(Math.max(r.top, margin), Math.max(margin, window.innerHeight - margin - menuH));
+  userSubmenuStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` };
+}
+
+async function toggleUserMenu(): Promise<void> {
+  if (userMenuOpen.value) {
+    closeUserMenu();
+    return;
+  }
+  userMenuOpen.value = true;
+  setTimeout(() => {
+    document.addEventListener('mousedown', onUserMenuDocClick);
+    document.addEventListener('keydown', onUserMenuKeydown, true);
+  }, 0);
+  window.addEventListener('resize', closeUserMenu);
+  await nextTick();
+  positionUserMenu();
+}
+
+async function openUserSubmenu(which: UserSubmenu, event: MouseEvent): Promise<void> {
+  const row = event.currentTarget as HTMLElement | null;
+  if (userSubmenu.value === which) {
+    userSubmenu.value = null;
+    return;
+  }
+  userSubmenuAnchor = row;
+  userSubmenu.value = which;
+  await nextTick();
+  positionUserSubmenu();
+}
+
+function chooseUserOption(value: string): void {
+  if (userSubmenu.value === 'appearance') emit('setColorScheme', value as ColorScheme);
+  else emit('setLocale', value as LocaleCode);
+  closeUserMenu();
+}
+
+function openSettingsFromUserMenu(): void {
+  closeUserMenu();
+  emit('openSettings');
+}
+
+function signInFromUserMenu(): void {
+  closeUserMenu();
+  emit('login');
+}
+
+function signOutFromUserMenu(): void {
+  closeUserMenu();
+  emit('logout');
+}
+
+function closeUserMenu(): void {
+  userMenuOpen.value = false;
+  userSubmenu.value = null;
+  userSubmenuAnchor = null;
+  document.removeEventListener('mousedown', onUserMenuDocClick);
+  document.removeEventListener('keydown', onUserMenuKeydown, true);
+  window.removeEventListener('resize', closeUserMenu);
+}
 
 const colRef = ref<HTMLElement | null>(null);
 useGlassRefraction(colRef, { transient: false });
@@ -1078,7 +1228,7 @@ onBeforeUnmount(() => {
               :label="t('sidebar.collapseSidebar')"
               @click.stop="emit('collapse')"
             >
-              <Icon name="panel-collapse" />
+              <Icon name="left-panel" />
             </IconButton>
           </Tooltip>
         </div>
@@ -1458,12 +1608,17 @@ onBeforeUnmount(() => {
       <!-- Footer: account row + settings entry pinned under the session list -->
       <div class="side-footer">
         <div class="side-footer-account">
-          <Tooltip :text="t('settings.tabs.account')">
-            <button class="user-menu-trigger" type="button" @click.stop="emit('openSettings')">
-              <Icon name="user" />
-              <span class="user-menu-name">{{ accountName }}</span>
-            </button>
-          </Tooltip>
+          <button
+            ref="userTriggerRef"
+            class="user-menu-trigger"
+            type="button"
+            aria-haspopup="menu"
+            :aria-expanded="userMenuOpen"
+            @click.stop="toggleUserMenu"
+          >
+            <Icon name="user" />
+            <span class="user-menu-name">{{ accountName }}</span>
+          </button>
           <Tooltip :text="t('settings.title')">
             <IconButton
               size="sm"
@@ -1477,6 +1632,60 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <!-- Footer account menu (upstream's user menu): appearance, language,
+         settings, then the sign-in row. Opens upward from the trigger; the
+         appearance / language rows open a second panel beside it. -->
+    <Menu
+      v-if="userMenuOpen"
+      ref="userMenuRef"
+      class="user-menu"
+      :style="userMenuStyle"
+      @click.stop
+    >
+      <MenuItem
+        aria-haspopup="menu"
+        :aria-expanded="userSubmenu === 'appearance'"
+        @click="openUserSubmenu('appearance', $event)"
+      >
+        <span class="user-menu-item-label">{{ t('theme.colorSchemeLabel') }}</span>
+        <span class="user-menu-row-value">{{ colorSchemeLabel }}</span>
+        <Icon name="chevron-right" size="sm" />
+      </MenuItem>
+      <MenuItem
+        aria-haspopup="menu"
+        :aria-expanded="userSubmenu === 'language'"
+        @click="openUserSubmenu('language', $event)"
+      >
+        <span class="user-menu-item-label">{{ t('sidebar.language') }}</span>
+        <span class="user-menu-row-value">{{ localeLabel }}</span>
+        <Icon name="chevron-right" size="sm" />
+      </MenuItem>
+      <MenuItem @click="openSettingsFromUserMenu">
+        <span class="user-menu-item-label">{{ t('settings.title') }}</span>
+      </MenuItem>
+      <MenuItem separator />
+      <MenuItem v-if="signedIn" @click="signOutFromUserMenu">
+        <span class="user-menu-item-label">{{ t('sidebar.signOut') }}</span>
+      </MenuItem>
+      <MenuItem v-else class="user-menu-login" @click="signInFromUserMenu">
+        <span class="user-menu-item-label">{{ t('sidebar.signIn') }}</span>
+      </MenuItem>
+    </Menu>
+    <Menu
+      v-if="userSubmenu !== null"
+      ref="userSubmenuRef"
+      class="user-submenu"
+      :style="userSubmenuStyle"
+      @click.stop
+    >
+      <MenuItem v-for="option in submenuOptions" :key="option.value" @click="chooseUserOption(option.value)">
+        <span class="user-menu-item-label">{{ option.label }}</span>
+        <span class="view-menu-check">
+          <Icon v-if="option.active" name="check" size="sm" />
+        </span>
+      </MenuItem>
+    </Menu>
 
     <!-- Workspace right-click menu (position:fixed) -->
     <Menu
@@ -2045,7 +2254,7 @@ onBeforeUnmount(() => {
 .user-menu-trigger {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sb-gap, 8px);
   flex: 1;
   min-width: 0;
   padding: 8px calc(var(--sb-pad-x) - var(--sb-inset));
@@ -2055,11 +2264,13 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   font-family: var(--font-ui);
   font-size: var(--ui-font-size-sm);
+  font-weight: var(--weight-medium);
   line-height: var(--leading-tight);
   cursor: pointer;
   text-align: left;
 }
-.user-menu-trigger:hover { background: var(--sb-hover); }
+.user-menu-trigger:hover,
+.user-menu-trigger[aria-expanded='true'] { background: var(--sb-hover); }
 .user-menu-trigger:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 .user-menu-trigger svg { flex: none; color: var(--color-text-muted); }
 .user-menu-trigger span {
@@ -2068,6 +2279,28 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Footer account menu rows: the label takes the slack, the current value and
+   the chevron stay flush right. */
+.user-menu-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-menu-row-value {
+  flex: none;
+  color: var(--color-text-faint);
+  font-size: var(--text-sm);
+}
+/* The sign-in entry is the panel's accent action (upstream tints its label). */
+.user-menu-login {
+  color: var(--color-accent);
+}
+.user-menu-login:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
 }
 
 /* Section label — heads a list. Aligns with the rows' leading inset
@@ -2195,11 +2428,22 @@ onBeforeUnmount(() => {
 .ws-menu,
 .gh-menu,
 .section-menu,
+.user-menu,
+.user-submenu,
 .backend-menu {
   position: fixed;
   top: 0;
   left: 0;
   z-index: var(--z-dropdown);
+}
+.user-menu,
+.user-submenu {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  /* Never narrower than the widest row: the panel starts at the trigger's
+     width, and the value + chevron on the appearance / language rows would
+     otherwise clip their labels. */
+  min-width: fit-content;
 }
 
 /* Check slot for the section overflow menu — fixed width so unchecked items

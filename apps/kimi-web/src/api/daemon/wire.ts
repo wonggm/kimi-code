@@ -432,7 +432,13 @@ export interface WireTranscriptTurn {
   turnId: string;
   ordinal: number;
   state: string;
+  /** The prompt that opened this turn. A turn in state `queued` has one of
+   *  these but no steps yet — it is a prompt the daemon has accepted and not
+   *  started. */
+  triggerPromptId?: string;
+  origin?: unknown;
   prompt?: string;
+  attachmentIds?: string[];
   steps: WireTranscriptStep[];
   startedAt?: string;
   endedAt?: string;
@@ -450,12 +456,28 @@ export interface WireTranscriptMarker {
 
 export type WireTranscriptItem = WireTranscriptTurn | WireTranscriptMarker;
 
+/** One prompt of an agent (`transcriptPromptSchema`, camelCase like the rest of
+ *  the transcript contract). A prompt still in the daemon's queue has no turn of
+ *  its own yet; one steered into a turn already running ends with
+ *  `finishedAt === steeredAt`. */
+export interface WireTranscriptPrompt {
+  promptId: string;
+  status: 'running' | 'queued' | 'blocked' | 'completed' | 'failed' | 'aborted';
+  userMessageId?: string;
+  content?: unknown;
+  createdAt: string;
+  finishedAt?: string;
+  steeredAt?: string;
+}
+
 /** `GET /sessions/{id}/transcript` response — turn-granular, per-agent. */
 export interface WireTranscriptPage {
   agent_id: string;
   items: WireTranscriptItem[];
   has_more: boolean;
   seq?: number;
+  /** The agent's prompts, whatever page of turns was asked for. */
+  prompts?: WireTranscriptPrompt[];
 }
 
 // ---------------------------------------------------------------------------

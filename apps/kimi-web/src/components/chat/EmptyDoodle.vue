@@ -90,9 +90,13 @@ onUnmounted(() => stop?.());
   min-height: 96px;
   width: 100%;
 }
+/* Upstream's landing doodle box: `min(340px, 62vw)` wide at its own 338/152
+   ratio (measured 340x152.9), against the fork's earlier 280x110. Rive lays the
+   art out with `Fit.Contain`, so a different box cannot distort it. */
 .doodle-canvas {
-  width: min(280px, 60vw);
-  height: 110px;
+  width: min(340px, 62vw);
+  height: auto;
+  aspect-ratio: 338 / 152;
 }
 .doodle-fallback {
   font-family: var(--font-ui);
