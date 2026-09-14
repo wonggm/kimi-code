@@ -187,6 +187,14 @@ const STATE_WORD: Record<TaskItem['state'], string> = {
   font-size: var(--text-base);
   font-variant-numeric: tabular-nums;
 }
+/* The row's full-width `.tp-open` overlay is absolutely positioned, so it paints
+   above every static sibling — the stop control included. Upstream's icon button
+   carries `position: relative`, which is what keeps stop above the overlay;
+   without it a click on stop hit the overlay and opened the task in the side
+   panel instead (measured: the stop button's centre hit-tested to `.tp-open`). */
+.tp-stop {
+  position: relative;
+}
 .tp-chevron {
   flex: none;
   color: var(--color-text-faint);
