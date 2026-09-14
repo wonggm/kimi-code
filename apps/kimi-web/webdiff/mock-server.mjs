@@ -39,12 +39,13 @@
 // ("Code block header probe") plus two rows that exist so either app can show a
 // pending card — "Pending question (mock)" and "Pending approval (mock)". Each of
 // the two serves every per-session route with the rich transcript and one pending
-// card at the bottom of it.
-//   MOCK_EXTRA_SESSIONS=0  list the original session alone. webdiff sets this for
-//                      its own mocks: the walk treats every sidebar row as a
-//                      control, and the two extra rows move its coordinate
-//                      targets, so one app ends up walking a pending-card
-//                      session while the other walks the original.
+// card at the bottom of it, so a manual pass sees a card by opening its row.
+// The comparison walk lists them too; it never enters a session by accident,
+// because discovery ignores everything inside a session row (`DISCOVER_EXPR` in
+// surfaces.mjs), and the two rows are opened on purpose by the pending-card
+// behaviour scenes in that file.
+//   MOCK_EXTRA_SESSIONS=0  list the original session alone — a manual pass that
+//                      wants the composer-bearing session as the only row.
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -645,13 +646,11 @@ function createHandler({ root, token, env, fixtures }) {
   // interaction shape (upstream); the original keeps the snapshot built above,
   // whose cards stay behind MOCK_PENDING. The original row also carries the
   // state the profile route writes, the two extra rows do not.
-  // The two pending-card rows are for a manual pass. The comparison walk is
-  // told to list only the original session (webdiff starts its own mocks with
-  // MOCK_EXTRA_SESSIONS=0): it discovers every sidebar row as a control, and a
-  // third and fourth row shift what its coordinate clicks land on, so one app
-  // ends up walking a pending-card session while the other walks the original —
-  // seven blockers of noise, and no comparison of the surfaces they meant to
-  // capture.
+  // Both rows are listed by default, for a manual pass and for the comparison
+  // walk: the pending-card behaviour scenes (surfaces.mjs) open them by title,
+  // and the walk's discovery ignores everything inside a session row, so the
+  // walk cannot enter one by accident. `MOCK_EXTRA_SESSIONS=0` lists the
+  // original row alone.
   const sessions = [
     { id: SESSION_ID, session, snapshot, transcriptInteractions: [], transcriptPendingIds: [] },
     ...(env.MOCK_EXTRA_SESSIONS === '0'

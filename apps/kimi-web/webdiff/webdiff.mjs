@@ -8,6 +8,12 @@
 // The two apps must be served from the SAME mock state, so the mock runs twice
 // with a different static root. `--real` captures an extra tree from a live
 // server (a reference for visual review); the blocker diff stays mock-vs-mock.
+//
+// Both mocks run with the fixture's defaults, so the two pending-card sessions
+// are listed and the sessions' behaviour scenes can open them (see
+// surfaces.mjs). A manual pass sees the same list; `MOCK_EXTRA_SESSIONS=0` (see
+// mock-server.mjs) lists the original session alone for a pass that wants only
+// the composer-bearing session.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -139,12 +145,6 @@ for (const app of appFilter) {
     root: app === 'upstream' ? upstreamDist : forkDist,
     port: basePort + MOCK_PORT_OFFSET[app],
     token,
-    // The mock's two pending-card sessions exist for a manual pass; the walk
-    // lists the original session alone. A sidebar row is a control the walk
-    // clicks, and the extra rows move its coordinate targets, which cost a run
-    // seven blockers that were one app walking a different session than the
-    // other (see the fixture's session list).
-    env: { ...process.env, MOCK_EXTRA_SESSIONS: '0' },
   });
 }
 let chrome;
