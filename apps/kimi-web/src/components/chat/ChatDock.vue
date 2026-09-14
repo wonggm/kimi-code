@@ -526,6 +526,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
     <QuestionCard
       v-if="pendingQuestion"
       :key="pendingQuestion.questionId"
+      class="dock-question"
       :question="pendingQuestion"
       :busy-kind="questionBusyKind"
       @answer="(qid, resp) => emit('answer', qid, resp)"
@@ -539,6 +540,7 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
       :block="pendingApproval.block"
       :agent-name="pendingApproval.agentName"
       :busy="approvalBusy"
+      :open-file="openFile"
       @decide="emit('approval', pendingApproval.approvalId, $event)"
     />
     <Composer
