@@ -11,6 +11,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { PHASE_ENTER_CLASS, PHASE_LEAVE_CLASS } from './compare.mjs';
 
 const SETTLE_GAP_MS = 120;
 // Two consecutive identical reads, not three: the gap below already covers a
@@ -348,7 +349,12 @@ export async function waitForSettled(cdp, { timeoutMs = SETTLE_TIMEOUT_MS } = {}
 async function findClickableByText(cdp, text) {
   return cdp.evaluate(`(() => {
     const wanted = ${JSON.stringify(text.toLowerCase())};
-    const nodes = document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="tab"], summary, select, a[href], [aria-haspopup]');
+    // The last entry is the sidebar session row: both apps render it as a plain
+    // \`div.se\` with a click handler, not a button, so it is the one interactive
+    // element a text step could not otherwise reach — and opening a session is
+    // how a scene poses a state the app does not boot into (the fixture's
+    // pending-card sessions).
+    const nodes = document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="tab"], summary, select, a[href], [aria-haspopup], .se');
     for (const el of nodes) {
       const label = (el.getAttribute('aria-label') || el.textContent || '').trim().toLowerCase();
       if (!label.includes(wanted)) continue;
@@ -644,6 +650,21 @@ async function waitForCodeBlocksSettled(cdp, { timeoutMs = 2_000 } = {}) {
  */
 const REQUIRE_EXPR = (serialized) => `(() => {
   const reqs = ${JSON.stringify(serialized)};
+  // The transition phase classes compare.mjs drops from element signatures (it
+  // exports the patterns). A panel Vue animates in can be checked while it still
+  // carries \`dock-panel-enter-from dock-panel-enter-active\` and reads opacity 0 —
+  // the first frame of a transition whose emulated-reduced-motion duration is
+  // ~1e-06s, after which the transition's end event can never arrive — so the
+  // panel read as absent on the app that animates it and the requirement failed
+  // for a reason the user never sees. An element still in its enter phase is
+  // therefore rendered. A leave phase wins over a stale enter phase: a dismissed
+  // panel lingers in the DOM carrying both (measured on the fork's dock panel,
+  // \`dock-panel-enter-from dock-panel-leave-from dock-panel-leave-active\`), and the
+  // app has already decided to drop it — reading it as rendered would invert every
+  // absence assertion a \`then\` stage makes.
+  const phaseEnter = new RegExp('^' + ${JSON.stringify(PHASE_ENTER_CLASS)} + '$');
+  const phaseLeave = new RegExp('^' + ${JSON.stringify(PHASE_LEAVE_CLASS)} + '$');
+  const hasPhase = (el, pattern) => [...el.classList].some((name) => pattern.test(name));
   // "Visible" = rendered and not parked off the side of the viewport. Both apps
   // keep a closed right panel in the DOM parked at x = innerWidth with a real
   // layout box, so a selector-only test would read the parked panel as open.
@@ -652,7 +673,9 @@ const REQUIRE_EXPR = (serialized) => `(() => {
   const visible = (el) => {
     if (!el.isConnected) return false;
     const cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return false;
+    if (cs.display === 'none') return false;
+    if (hasPhase(el, phaseLeave)) return false;
+    if (!hasPhase(el, phaseEnter) && (cs.visibility === 'hidden' || Number(cs.opacity) === 0)) return false;
     const r = el.getBoundingClientRect();
     if (r.width < 4 || r.height < 4) return false;
     return r.left < innerWidth && r.right > 0;
