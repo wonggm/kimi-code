@@ -244,9 +244,19 @@ const transcriptTurns = computed<ChatTurn[]>(() => {
   const turns: ChatTurn[] = [];
   for (const item of transcriptItems.value ?? []) {
     if (item.kind !== 'turn') {
-      // Marker items (compaction/undo checkpoints) ride the transcript stream
-      // with no steps: render one as the conversation's compaction divider.
-      turns.push({ id: item.markerId, role: 'compaction', no: 0, text: '' });
+      // The transcript stream carries a marker for every non-turn event the
+      // daemon records: `hook`, `skill`, `cron.fired`, `compaction`, `undo`,
+      // `interruption`, `notice`, `goal`, `plan.revision`. Only a compaction
+      // marker is the conversation's divider — every other kind has no row of
+      // its own (upstream draws none), and drawing one for all of them printed
+      // a "Context compacted" line for markers that were nothing of the sort.
+      // A compaction is recorded twice (a `started` phase and a `completed`
+      // one), and upstream draws its divider only for the completed phase, so
+      // the start marker must not add a second one.
+      const phase = (item.payload as { phase?: string } | undefined)?.phase;
+      if (item.marker === 'compaction' && phase !== 'started') {
+        turns.push({ id: item.markerId, role: 'compaction', no: 0, text: '' });
+      }
       continue;
     }
     const blocks: TurnBlock[] = [];
