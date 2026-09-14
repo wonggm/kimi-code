@@ -1,11 +1,10 @@
 export default {
-  title: 'Question',
-  step: 'Q{current}/{total}',
-  back: '‹ Back',
+  back: '‹ Previous question',
   nextQuestion: 'Next question ›',
   otherDefault: 'Other…',
   submit: 'Submit',
   dismiss: 'Dismiss',
   minimize: 'Minimize',
   expand: 'Expand',
+  hint: '↑↓ to choose · Enter to confirm',
 } as const;

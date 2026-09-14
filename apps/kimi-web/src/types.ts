@@ -400,6 +400,7 @@ export interface UIQuestion {
     multiSelect?: boolean;
     allowOther?: boolean;
     otherLabel?: string;
+    otherDescription?: string;
   }[];
 }
 

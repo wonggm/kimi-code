@@ -28,6 +28,7 @@ import type { Component } from 'vue';
 // Components (Kimi collection) ----------------------------------------------
 import KimiAddConversation from '~icons/kimi/add-conversation';
 import KimiArrowLeft from '~icons/kimi/arrow-left';
+import KimiArrowRight from '~icons/kimi/arrow-right';
 import KimiLink from '~icons/kimi/link';
 import KimiFolder from '~icons/kimi/folder';
 import KimiFolderOpen from '~icons/kimi/folder-open';
@@ -72,7 +73,6 @@ import RiArchiveLine from '~icons/ri/archive-line';
 import RiArrowDownLine from '~icons/ri/arrow-down-line';
 import RiArrowGoBackLine from '~icons/ri/arrow-go-back-line';
 import RiArrowLeftSLine from '~icons/ri/arrow-left-s-line';
-import RiArrowRightLine from '~icons/ri/arrow-right-line';
 import RiArrowRightSLine from '~icons/ri/arrow-right-s-line';
 import RiArrowUpLine from '~icons/ri/arrow-up-line';
 import RiArrowUpSLine from '~icons/ri/arrow-up-s-line';
@@ -126,6 +126,7 @@ import RiUserLine from '~icons/ri/user-line';
 // Raw SVG strings (Kimi collection) -----------------------------------------
 import RawKimiAddConversation from '~icons/kimi/add-conversation?raw';
 import RawKimiArrowLeft from '~icons/kimi/arrow-left?raw';
+import RawKimiArrowRight from '~icons/kimi/arrow-right?raw';
 import RawKimiChevronDown from '~icons/kimi/chevron-down?raw';
 import RawKimiCircleCheck from '~icons/kimi/circle-check?raw';
 import RawKimiPanelCollapseRight from '~icons/kimi/panel-collapse-right?raw';
@@ -170,7 +171,6 @@ import RawArchiveLine from '~icons/ri/archive-line?raw';
 import RawArrowDownLine from '~icons/ri/arrow-down-line?raw';
 import RawArrowGoBackLine from '~icons/ri/arrow-go-back-line?raw';
 import RawArrowLeftSLine from '~icons/ri/arrow-left-s-line?raw';
-import RawArrowRightLine from '~icons/ri/arrow-right-line?raw';
 import RawArrowRightSLine from '~icons/ri/arrow-right-s-line?raw';
 import RawArrowUpLine from '~icons/ri/arrow-up-line?raw';
 import RawArrowUpSLine from '~icons/ri/arrow-up-s-line?raw';
@@ -363,7 +363,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'chevron-up': entry(RiArrowUpSLine, RawArrowUpSLine),
   'arrow-up': entry(RiArrowUpLine, RawArrowUpLine),
   'arrow-down': entry(RiArrowDownLine, RawArrowDownLine),
-  'arrow-right': entry(RiArrowRightLine, RawArrowRightLine),
+  'arrow-right': entry(KimiArrowRight, RawKimiArrowRight),
   'arrow-left': entry(KimiArrowLeft, RawKimiArrowLeft),
   refresh: entry(TablerRefresh, RawTablerRefresh),
   minus: entry(RiSubtractLine, RawSubtractLine),
