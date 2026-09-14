@@ -71,6 +71,12 @@ export default {
   },
   requesting: 'Requesting…',
   working: 'Working…',
+  // The working indicator's running elapsed time, beside the moon.
+  workingElapsed: 'Working · {duration}',
+  // A thinking card whose thinking has ended: how long that thinking took.
+  thoughtFor: 'Thought for {duration}',
+  // The foot of a completed exchange: how long the whole exchange took.
+  workedFor: 'Worked for {duration}',
   goal: {
     continuation: 'Goal continuation',
   },

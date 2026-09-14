@@ -34,6 +34,15 @@
 //                      the Plan and Progress pills.
 //   MOCK_SEED=0        don't inject the boot seed into index.html
 //   MOCK_SEED=force    re-write the seeded keys on every page load
+//   MOCK_QUEUED=1      pose a running turn with two prompts behind it: one still
+//                      in the daemon's queue, one that was steered into the
+//                      running turn. Also makes the session busy (a prompt typed
+//                      in either app's composer then queues instead of sending).
+//                      The queue is served the way the daemon serves it: the
+//                      transcript page carries both prompts (a `prompts` entry
+//                      each, plus a queued `turn` item for the parked one). Off
+//                      by default, because a queued prompt changes what the
+//                      transcript tail renders.
 //
 // The session list carries three rows in one workspace: the rich fixture session
 // ("Code block header probe") plus two rows that exist so either app can show a
@@ -46,6 +55,20 @@
 // behaviour scenes in that file.
 //   MOCK_EXTRA_SESSIONS=0  list the original session alone — a manual pass that
 //                      wants the composer-bearing session as the only row.
+//   MOCK_LIVE_EXCHANGE=1
+//                      pose a live exchange so the fork's own timing displays
+//                      can be seen. An exchange that just finished would carry
+//                      its elapsed time in the snapshot if the server had it —
+//                      it doesn't (a message row has no duration and the
+//                      snapshot has no timing at all), and neither a thinking
+//                      card's span nor an exchange's is a field anywhere on the
+//                      wire. The fork therefore times what it watches, so
+//                      seeing it needs an exchange to watch: the snapshot serves
+//                      a running turn whose thinking is still streaming, and the
+//                      socket ends that turn with the duration the daemon would
+//                      have reported. Off by default, because a turn that is
+//                      live when the page loads and ends a few seconds later
+//                      moves every capture taken after it.
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -137,6 +160,22 @@ const MOCK_THINKING = [
   'The timeout is the part that matters: the file sets 10 seconds and the',
   'check needs 30. I will raise it and re-run the check to confirm.',
 ].join('\n');
+
+/** The thinking the in-flight turn of a live exchange starts with
+ *  (MOCK_LIVE_EXCHANGE=1). Its own text, not the fixture's: the fork drops a
+ *  reply whose content it already folded in, and a second copy of the fixture's
+ *  reasoning reads as exactly that duplicate. */
+const LIVE_THINKING = [
+  'Now the same check on the other call sites.',
+  '',
+  'Three of them pass a raw timeout. I will fix the shared helper first and',
+  're-run the suite before touching the callers.',
+].join('\n');
+
+/** The live exchange (MOCK_LIVE_EXCHANGE=1): the turn the daemon would report as
+ *  ended, and how long it takes to do so after the page subscribes. */
+const LIVE_TURN_ID = 3;
+const LIVE_TURN_MS = 80_000;
 
 /** The session's goal, in the shape both apps read. The REST route and the
  *  `GetGoal` tool result are the same object, so the goal panel a manual pass
@@ -241,6 +280,9 @@ function approvalInteraction(card) {
 function buildFixtures(env) {
   const now = new Date().toISOString();
   const goal = goalMock(env.MOCK_GOAL_STATUS);
+  const queuedOn = env.MOCK_QUEUED === '1';
+  const liveExchange = env.MOCK_LIVE_EXCHANGE === '1';
+  const busyOn = env.MOCK_BUSY === '1' || queuedOn || liveExchange;
 
   const session = {
     id: SESSION_ID,
@@ -248,15 +290,15 @@ function buildFixtures(env) {
     title: 'Code block header probe',
     created_at: now,
     updated_at: now,
-    busy: env.MOCK_BUSY === '1',
-    main_turn_active: env.MOCK_BUSY === '1',
+    busy: busyOn,
+    main_turn_active: busyOn,
     archived: false,
     metadata: { cwd: '/tmp/mock-workspace' },
     // v2 list surface: sessions embed their workspace and a meta block; the
     // sidebar's has_prompt filter reads meta.last_prompt.
     workspace: { id: WORKSPACE_ID, cwd: '/tmp/mock-workspace', name: 'mock' },
     meta: { has_prompt: true, last_prompt: 'Show me a config example.', title: 'Code block header probe', created_at: now, updated_at: now, archived: false, archived_at: null },
-    activity: { status: env.MOCK_BUSY === '1' ? 'running' : 'idle', model: 'example/test-model' },
+    activity: { status: busyOn ? 'running' : 'idle', model: 'example/test-model' },
     agent_config: { model: 'example/test-model' },
     usage: { input_tokens: 10, output_tokens: 20, cache_read_tokens: 0, cache_creation_tokens: 0, context_tokens: 30, context_limit: 128000, turn_count: 1 },
     permission_rules: [],
@@ -346,7 +388,11 @@ function buildFixtures(env) {
           { type: 'text', text: 'Show me a config example.' },
           { type: 'image', source: { kind: 'session_media', file_id: 'mock_media_1' } },
         ], created_at: now },
-        { id: 'm2', session_id: SESSION_ID, role: 'assistant', content: [
+        // `prompt_id` is what the fork groups a reply by: without it, every
+        // assistant message belongs to one open group, and the live exchange
+        // below (MOCK_LIVE_EXCHANGE=1, its own prompt id) would be folded into
+        // this reply instead of standing as the exchange it is.
+        { id: 'm2', session_id: SESSION_ID, role: 'assistant', prompt_id: 'pr_mock_t2', content: [
           // A reasoning block: upstream renders it as its collapsible thinking
           // block (head + inline body) and so does the fork, so the two can be
           // paired. The transcript route below carries the matching frame.
@@ -411,7 +457,19 @@ function buildFixtures(env) {
       ],
       has_more: false,
     },
-    in_flight_turn: null,
+    // A turn that is live when the page loads (MOCK_LIVE_EXCHANGE=1), carrying
+    // only its thinking: the thinking card is then the transcript's last block,
+    // which is what makes it the block the fork times. It is ended a few seconds
+    // later over the socket with the duration the daemon would have reported.
+    in_flight_turn: liveExchange
+      ? {
+          turn_id: LIVE_TURN_ID,
+          assistant_text: '',
+          thinking_text: LIVE_THINKING,
+          running_tools: [],
+          current_prompt_id: 'pr_mock_live_1',
+        }
+      : null,
     // Pending cards are opt-in (MOCK_PENDING=1): the fork renders `<Composer
     // v-else>` after them, so with either card present the composer is absent
     // from the DOM. On by default they would hide the composer — the element a
@@ -564,11 +622,26 @@ function buildFixtures(env) {
   };
   rich.fsBrowse = rich.fsHome;
 
-  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich };
+  // A prompt parked behind the running turn, and one steered into it
+  // (MOCK_QUEUED=1). Neither opened a turn of its own, so the transcript page is
+  // the only record of them: a `prompts` entry each, plus the queued `turn` item
+  // (how agent-core records a prompt that is waiting). `steeredAt === finishedAt`
+  // on the steered entry is the daemon's mark for "folded into another turn's
+  // request", which is what both apps rebuild its user bubble from.
+  const queuedPromptText = 'Queued behind the running turn.';
+  const steeredPromptText = 'Steered into the running turn.';
+  const queuedPrompt = { promptId: 'pr_mock_queued_1', status: 'queued', content: [{ type: 'text', text: queuedPromptText }], createdAt: now };
+  const steeredPrompt = { promptId: 'pr_mock_steered_1', status: 'completed', content: [{ type: 'text', text: steeredPromptText }], createdAt: now, finishedAt: now, steeredAt: now };
+
+  const liveTurn = liveExchange
+    ? { turnId: LIVE_TURN_ID, durationMs: LIVE_TURN_MS, endAfterMs: 3_600, seq: 4 }
+    : null;
+
+  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt, liveTurn };
 }
 
 function createHandler({ root, token, env, fixtures }) {
-  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich } = fixtures;
+  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt } = fixtures;
   // MOCK_RICH=0 turns the extra fixtures off, leaving the fixture body the walk
   // was originally built against; the three session rows are always listed.
   const richOn = env.MOCK_RICH !== '0';
@@ -880,7 +953,16 @@ function createHandler({ root, token, env, fixtures }) {
         if (sub === 'transcript') {
           // Transcript contract page (zod-validated by upstream's bundle):
           // user turn with the prompt, assistant turn whose single step carries
-          // the markdown as a text frame.
+          // the markdown as a text frame. Neither the turn nor the step carries
+          // a timing here on purpose: upstream renders one from what they hold
+          // (a `· 1m20s` on its thinking head, a turn time on its rows) while
+          // the fork's main transcript is built from the snapshot's messages,
+          // which have no timing at all — a fixture timing would land as a
+          // surface the two apps disagree on for a reason not under test. The
+          // thinking frame is the same story from the other side:
+          // `thinkingFrameSchema` has no timing field either, only
+          // `{kind, frameId, text}` — which is why the fork's thinking card
+          // times the span it watched rather than reading one from here.
           return json(res, {
             agent_id: 'main',
             items: [
@@ -926,6 +1008,12 @@ function createHandler({ root, token, env, fixtures }) {
                   { kind: 'text', frameId: 'f1', role: 'assistant', text: CODE_MD },
                 ], startedAt: now, endedAt: now },
               ], startedAt: now, endedAt: now },
+              // The parked prompt's turn (MOCK_QUEUED=1): state `queued`, no
+              // steps, nothing started. A prompt waiting for the running turn is
+              // a turn item like any other, it just has not run yet.
+              ...(queuedOn
+                ? [{ kind: 'turn', turnId: 't3', ordinal: 2, state: 'queued', origin: { kind: 'user' }, triggerPromptId: queuedPrompt.promptId, prompt: queuedPromptText, steps: [] }]
+                : []),
               // A non-turn marker. The daemon records one for every such event
               // (`hook`, `skill`, `cron.fired`, `compaction`, `undo`,
               // `interruption`, `notice`, `goal`, `plan.revision`) and upstream
@@ -963,7 +1051,18 @@ function createHandler({ root, token, env, fixtures }) {
                   ] },
                 ]
               : [],
-            meta: { activity: 'idle', goal: {
+            // The prompts behind the active turn (MOCK_QUEUED=1): both apps
+            // rebuild a steered prompt's user bubble from this array
+            // (`finishedAt === steeredAt` marks one folded into another turn's
+            // request), and the queued `turn` item above is what gives the
+            // waiting prompt a bubble of its own.
+            prompts: queuedOn
+              ? [
+                  steeredPrompt,
+                  queuedPrompt,
+                ]
+              : [],
+            meta: { activity: busyOn ? 'turn' : 'idle', goal: {
               objective: goal.objective,
               status: goal.status,
               completionCriterion: goal.completionCriterion,
@@ -1020,12 +1119,49 @@ export function startMock({ root, port, token, env } = {}) {
 
   const wss = new WebSocketServer({ noServer: true });
   const pingTimers = new Set();
+  // The live exchange's end timer (MOCK_LIVE_EXCHANGE=1). Per connection — see
+  // maybeScheduleLiveTurnEnd — and cleared with the server.
+  const liveTurnTimers = new Set();
+
+  // MOCK_LIVE_EXCHANGE=1: the running turn the snapshot posed ends a few seconds
+  // into the subscription, exactly as the daemon would end it — a raw agent-core
+  // `turn.ended` carrying the turn's own duration. The client's turn-end path
+  // sets the moon down, stamps the exchange's duration on the reply and lets the
+  // thinking card fold up, so one frame closes all three timing displays at
+  // once. Sequenced past the snapshot's `as_of_seq` of 3, because the
+  // cursor-advancing half of that path refuses an event it has already seen.
+  //
+  // Once per subscription, not once per process: a page that reloads poses the
+  // same running turn again and must see it end again. A repeat of the frame
+  // (a socket that reconnects inside the window) carries the seq the client has
+  // already advanced past, so the turn-end path ignores it.
+  function maybeScheduleLiveTurnEnd(socket, sessionIds, state) {
+    if (fixtures.liveTurn === null || state.ended) return;
+    if (!Array.isArray(sessionIds) || !sessionIds.includes(SESSION_ID)) return;
+    const live = fixtures.liveTurn;
+    state.ended = true;
+    const endTimer = setTimeout(() => {
+      liveTurnTimers.delete(endTimer);
+      if (socket.readyState !== socket.OPEN) return;
+      socket.send(JSON.stringify({
+        type: 'turn.ended',
+        seq: live.seq,
+        session_id: SESSION_ID,
+        timestamp: new Date().toISOString(),
+        payload: { turnId: live.turnId, reason: 'completed', durationMs: live.durationMs },
+      }));
+      console.log(`WS live exchange ended after ${live.endAfterMs}ms, durationMs=${live.durationMs}`);
+    }, live.endAfterMs);
+    liveTurnTimers.add(endTimer);
+  }
 
   wss.on('connection', (socket, req) => {
     // The browser client cannot set request headers, so the bearer credential
     // rides in the Sec-WebSocket-Protocol subprotocol; ws echoes the first
     // offered protocol back, which is what makes the browser accept the socket.
     console.log('WS open', req.url);
+    // Per-connection state for the live exchange (see maybeScheduleLiveTurnEnd).
+    const liveState = { ended: false };
 
     // server_hello must arrive first: the client only marks itself connected
     // and sends its own client_hello after it sees this frame.
@@ -1051,8 +1187,16 @@ export function startMock({ root, port, token, env } = {}) {
           socket.send(JSON.stringify({ type: 'pong', payload: { nonce: frame.payload?.nonce } }));
           break;
         case 'subscribe':
+          socket.send(JSON.stringify({ type: 'ack', id: frame.id, payload: {} }));
+          maybeScheduleLiveTurnEnd(socket, frame.payload?.session_ids, liveState);
+          break;
         case 'unsubscribe':
           socket.send(JSON.stringify({ type: 'ack', id: frame.id, payload: {} }));
+          break;
+        case 'client_hello':
+          // The fork's client carries its whole subscription set in the
+          // handshake rather than sending separate `subscribe` frames.
+          maybeScheduleLiveTurnEnd(socket, frame.payload?.subscriptions, liveState);
           break;
         default:
           // pong (answer to our heartbeat), client_hello, terminal_* and
@@ -1081,6 +1225,8 @@ export function startMock({ root, port, token, env } = {}) {
   const stop = () => {
     for (const timer of pingTimers) clearInterval(timer);
     pingTimers.clear();
+    for (const timer of liveTurnTimers) clearTimeout(timer);
+    liveTurnTimers.clear();
     for (const client of wss.clients) client.terminate();
     return Promise.all([
       new Promise((resolve) => wss.close(resolve)),

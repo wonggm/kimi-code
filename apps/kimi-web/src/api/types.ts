@@ -409,7 +409,12 @@ export interface TranscriptTurn {
   turnId: string;
   ordinal: number;
   state: string;
+  /** The prompt that opened this turn. A turn in state `queued` has one but no
+   *  steps yet — a prompt the daemon accepted and has not started. */
+  triggerPromptId?: string;
+  origin?: unknown;
   prompt?: string;
+  attachmentIds?: string[];
   steps: TranscriptStep[];
   startedAt?: string;
   endedAt?: string;
@@ -426,10 +431,24 @@ export interface TranscriptMarkerItem {
 
 export type TranscriptItem = TranscriptTurn | TranscriptMarkerItem;
 
+/** One prompt of the agent (`transcriptPromptSchema`). A queued prompt has no
+ *  turn of its own yet; `finishedAt === steeredAt` marks one that was folded
+ *  into the turn already running. */
+export interface TranscriptPrompt {
+  promptId: string;
+  status: 'running' | 'queued' | 'blocked' | 'completed' | 'failed' | 'aborted';
+  userMessageId?: string;
+  content?: unknown;
+  createdAt: string;
+  finishedAt?: string;
+  steeredAt?: string;
+}
+
 export interface TranscriptPage {
   agentId: string;
   items: TranscriptItem[];
   hasMore: boolean;
+  prompts: TranscriptPrompt[];
   seq?: number;
 }
 
@@ -932,8 +951,13 @@ export interface KimiWebApi {
   getSessionPlans(sessionId: string, input?: { agentId?: string; toolCallId?: string }): Promise<{ agentId: string; plans: AppPlanEntry[] }>;
   /** Turn-granular transcript of one agent (main or subagent) in timeline order —
    *  `GET /sessions/{id}/transcript`. Used to seed a subagent detail panel whose
-   *  live progress was missed. */
-  getAgentTranscript(sessionId: string, agentId: string): Promise<TranscriptPage>;
+   *  live progress was missed, and to read a session's prompts (the array rides
+   *  on any page, so a small `pageSize` is enough for that). */
+  getAgentTranscript(
+    sessionId: string,
+    agentId: string,
+    options?: { pageSize?: number },
+  ): Promise<TranscriptPage>;
   /** Export the session archive, optionally including the bounded Web JSONL log. */
   exportSession(sessionId: string, webLog?: string): Promise<{ blob: Blob; fileName: string }>;
   submitPrompt(sessionId: string, input: PromptSubmission): Promise<PromptSubmitResult>;

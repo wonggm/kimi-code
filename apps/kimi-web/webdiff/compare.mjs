@@ -218,10 +218,13 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
       };
       // Two classes are transient *state*, not designed markup, and both are
       // dropped from each side before the diff:
-      //  - `is-following` is transcript scroll state. The two apps are captured
-      //    by independent runs, so one can land pinned and the other not, and
-      //    the class then reads as a missing element on every surface that
-      //    renders the transcript.
+      //  - `is-following` and `scrolling` are transcript scroll state: the
+      //    former says the transcript is pinned to its tail, the latter says it
+      //    is being scrolled right now (upstream paints its thin scrollbar thumb
+      //    for it; the fork leaves that to the native scrollbar). The two apps
+      //    are captured by independent runs, so one can land scrolled or pinned
+      //    while the other does not, and the class then reads as a missing
+      //    element on every surface that renders the transcript.
       //  - Vue's transition phase classes (`*-enter-active`, `*-enter-from`,
       //    `*-enter-to`, `*-leave-*`). Under emulated reduced motion the
       //    duration is ~1e-06s, so a menu can be captured still carrying
@@ -234,7 +237,7 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
       const withoutScrollState = (list) =>
         list.map((entry) =>
           String(entry)
-            .replace(/(^|\.)is-following(?=\.|$)/g, '$1')
+            .replace(/(^|\.)(is-following|scrolling)(?=\.|$)/g, '$1')
             .replace(phaseClass, '$1')
             .replace(/\.\.+/g, '.')
             .replace(/\.$/, ''),

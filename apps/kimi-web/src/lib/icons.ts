@@ -37,6 +37,8 @@ import KimiListLines from '~icons/kimi/list-lines';
 import KimiChevronDown from '~icons/kimi/chevron-down';
 import KimiCircleCheck from '~icons/kimi/circle-check';
 import KimiPanelCollapseRight from '~icons/kimi/panel-collapse-right';
+import KimiLeftPanel from '~icons/kimi/left-panel';
+import KimiLeftPanelExpand from '~icons/kimi/left-panel-expand';
 import KimiRightPanel from '~icons/kimi/right-panel';
 import KimiRightPanelExpand from '~icons/kimi/right-panel-expand';
 import KimiMore from '~icons/kimi/more';
@@ -58,7 +60,6 @@ import KimiViewFlat from '~icons/kimi/view-flat';
 import KimiViewGrouped from '~icons/kimi/view-grouped';
 
 // Components (Tabler) ---------------------------------------------------------
-import TablerSidebarLeftCollapse from '~icons/tabler/layout-sidebar-left-collapse';
 import TablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand';
 import TablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand';
 import TablerPaperclip from '~icons/tabler/paperclip';
@@ -110,6 +111,8 @@ import RiMessageLine from '~icons/ri/message-line';
 import RiPauseFill from '~icons/ri/pause-fill';
 import RiPencilLine from '~icons/ri/pencil-line';
 import RiPlayFill from '~icons/ri/play-fill';
+import RiPushpinFill from '~icons/ri/pushpin-fill';
+import RiPushpinLine from '~icons/ri/pushpin-line';
 import RiQuestionLine from '~icons/ri/question-line';
 import RiSortDesc from '~icons/ri/sort-desc';
 import RiSparklingLine from '~icons/ri/sparkling-line';
@@ -130,6 +133,8 @@ import RawKimiArrowRight from '~icons/kimi/arrow-right?raw';
 import RawKimiChevronDown from '~icons/kimi/chevron-down?raw';
 import RawKimiCircleCheck from '~icons/kimi/circle-check?raw';
 import RawKimiPanelCollapseRight from '~icons/kimi/panel-collapse-right?raw';
+import RawKimiLeftPanel from '~icons/kimi/left-panel?raw';
+import RawKimiLeftPanelExpand from '~icons/kimi/left-panel-expand?raw';
 import RawKimiRightPanel from '~icons/kimi/right-panel?raw';
 import RawKimiRightPanelExpand from '~icons/kimi/right-panel-expand?raw';
 import RawKimiLink from '~icons/kimi/link?raw';
@@ -156,7 +161,6 @@ import RawKimiViewFlat from '~icons/kimi/view-flat?raw';
 import RawKimiViewGrouped from '~icons/kimi/view-grouped?raw';
 
 // Raw SVG strings (Tabler) ----------------------------------------------------
-import RawTablerSidebarLeftCollapse from '~icons/tabler/layout-sidebar-left-collapse?raw';
 import RawTablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand?raw';
 import RawTablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand?raw';
 import RawTablerPaperclip from '~icons/tabler/paperclip?raw';
@@ -208,6 +212,8 @@ import RawMessageLine from '~icons/ri/message-line?raw';
 import RawPauseFill from '~icons/ri/pause-fill?raw';
 import RawPencilLine from '~icons/ri/pencil-line?raw';
 import RawPlayFill from '~icons/ri/play-fill?raw';
+import RawPushpinFill from '~icons/ri/pushpin-fill?raw';
+import RawPushpinLine from '~icons/ri/pushpin-line?raw';
 import RawQuestionLine from '~icons/ri/question-line?raw';
 import RawSortDesc from '~icons/ri/sort-desc?raw';
 import RawSparklingLine from '~icons/ri/sparkling-line?raw';
@@ -232,6 +238,8 @@ export type IconName =
   | 'check'
   | 'circle-check'
   | 'panel-collapse-right'
+  | 'left-panel'
+  | 'left-panel-expand'
   | 'right-panel'
   | 'right-panel-expand'
   | 'archive'
@@ -256,7 +264,8 @@ export type IconName =
   | 'arrow-left'
   | 'refresh'
   | 'minus'
-  | 'panel-collapse'
+  | 'left-panel'
+  | 'left-panel-expand'
   | 'panel-expand'
   | 'panel-right'
   | 'expand'
@@ -316,6 +325,8 @@ export type IconName =
   | 'stop'
   | 'star'
   | 'star-outline'
+  | 'pin'
+  | 'pin-outline'
   | 'dots-horizontal';
 
 export type IconSize = 'sm' | 'md' | 'lg';
@@ -343,6 +354,8 @@ export const ICONS: Record<IconName, IconEntry> = {
   check: entry(RiCheckLine, RawCheckLine),
   'circle-check': entry(KimiCircleCheck, RawKimiCircleCheck),
   'panel-collapse-right': entry(KimiPanelCollapseRight, RawKimiPanelCollapseRight),
+  'left-panel': entry(KimiLeftPanel, RawKimiLeftPanel),
+  'left-panel-expand': entry(KimiLeftPanelExpand, RawKimiLeftPanelExpand),
   'right-panel': entry(KimiRightPanel, RawKimiRightPanel),
   'right-panel-expand': entry(KimiRightPanelExpand, RawKimiRightPanelExpand),
   archive: entry(RiArchiveLine, RawArchiveLine),
@@ -367,7 +380,6 @@ export const ICONS: Record<IconName, IconEntry> = {
   'arrow-left': entry(KimiArrowLeft, RawKimiArrowLeft),
   refresh: entry(TablerRefresh, RawTablerRefresh),
   minus: entry(RiSubtractLine, RawSubtractLine),
-  'panel-collapse': entry(TablerSidebarLeftCollapse, RawTablerSidebarLeftCollapse),
   'panel-expand': entry(TablerSidebarLeftExpand, RawTablerSidebarLeftExpand),
   'panel-right': entry(TablerSidebarRightExpand, RawTablerSidebarRightExpand),
   expand: entry(RiExpandDiagonalLine, RawExpandDiagonalLine),
@@ -427,6 +439,8 @@ export const ICONS: Record<IconName, IconEntry> = {
   stop: entry(RiStopFill, RawStopFill),
   star: entry(RiStarFill, RawStarFill),
   'star-outline': entry(RiStarLine, RawStarLine),
+  pin: entry(RiPushpinFill, RawPushpinFill),
+  'pin-outline': entry(RiPushpinLine, RawPushpinLine),
   'dots-horizontal': entry(KimiMore, RawKimiMore),
 };
 
@@ -492,7 +506,8 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'arrow-down',
       'arrow-right',
       'minus',
-      'panel-collapse',
+      'left-panel',
+      'left-panel-expand',
       'panel-expand',
       'panel-right',
       'expand',
@@ -550,6 +565,8 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'stop',
       'star',
       'star-outline',
+      'pin',
+      'pin-outline',
       'dots-horizontal',
     ],
   ],

@@ -39,6 +39,7 @@ import {
 } from '../chatTurnRendering';
 import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX } from '../../lib/toolFold';
 import { activityRunFolding } from '../../lib/conversationPrefs';
+import { bareDuration } from '../../lib/bareDuration';
 
 const { t, locale } = useI18n();
 const { confirm } = useConfirmDialog();
@@ -48,6 +49,7 @@ const { confirm } = useConfirmDialog();
 void locale;
 
 onUnmounted(() => {
+  stopWorkingTimer();
   if (copiedTimer !== null) {
     clearTimeout(copiedTimer);
     copiedTimer = null;
@@ -89,6 +91,12 @@ const props = withDefaults(
     working?: boolean;
     /** Switches the CSS-only working moon to the faster visual cadence. */
     fastMoon?: boolean;
+    /**
+     * Wall-clock start (ms) of the exchange the working indicator is counting,
+     * or undefined when it isn't counting one. The indicator ticks the elapsed
+     * time beside the moon while the exchange runs.
+     */
+    exchangeStartedAt?: number;
     /**
      * True while the session turns are being fetched (e.g. after switching to
      * a historical session). Shows a lightweight loading placeholder instead of
@@ -560,6 +568,42 @@ watch(
 // the main conversation only.
 const showWorking = computed(() => props.working);
 
+// The exchange clock behind the working indicator: one tick a second, and only
+// while the moon is up, so a settled transcript re-renders no more than it did
+// before this label existed.
+const workingNow = ref(Date.now());
+let workingTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopWorkingTimer(): void {
+  if (workingTimer === null) return;
+  clearInterval(workingTimer);
+  workingTimer = null;
+}
+
+watch(
+  () => showWorking.value,
+  (working) => {
+    if (!working) {
+      stopWorkingTimer();
+      return;
+    }
+    workingNow.value = Date.now();
+    workingTimer ??= setInterval(() => {
+      workingNow.value = Date.now();
+    }, 1000);
+  },
+  { immediate: true },
+);
+
+/** "Working · 12s": the running exchange's elapsed time, beside the moon.
+ *  Empty until the exchange has run a full second, which leaves the first
+ *  second looking exactly as the plain moon did. */
+const workingElapsedLabel = computed<string>(() => {
+  if (!showWorking.value || props.exchangeStartedAt === undefined) return '';
+  const duration = bareDuration((workingNow.value - props.exchangeStartedAt) / 1000);
+  return duration ? t('conversation.workingElapsed', { duration }) : '';
+});
+
 const emit = defineEmits<{
   openFile: [target: FilePreviewRequest];
   openMedia: [media: ToolMedia];
@@ -824,6 +868,20 @@ function isAssistantRunEnd(index: number): boolean {
   if (!turn || turn.role !== 'assistant') return false;
   const next = props.turns[index + 1];
   return !next || next.role !== 'assistant';
+}
+
+/** "Worked for 1m 20s" — how long a completed exchange took. The engine reports
+ *  each turn's own duration on `turn.ended` (ms, carried on the turn that
+ *  closed the run); an exchange the current client never watched end has none,
+ *  and shows no line rather than a made-up one. */
+function workedForLabel(index: number): string {
+  let total = 0;
+  for (const turn of assistantRunEndingAt(index)) {
+    if (typeof turn.durationMs === 'number' && turn.durationMs > 0) total += turn.durationMs;
+  }
+  if (total <= 0) return '';
+  const duration = bareDuration(total / 1000);
+  return duration ? t('conversation.workedFor', { duration }) : '';
 }
 
 // One shared timer: copying B within 1.4s of copying A must not let A's stale
@@ -1167,6 +1225,10 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
             </button>
           </Tooltip>
         </div>
+        <div
+          v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && workedForLabel(ti)"
+          class="worked-for"
+        >{{ workedForLabel(ti) }}</div>
       </div>
     </template>
 
@@ -1197,6 +1259,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
     <!-- Retry progress stays inside the existing working-status rendering path. -->
     <div v-if="showWorking" class="sending-placeholder">
       <MoonSpinner :fast="fastMoon" />
+      <span v-if="workingElapsedLabel" class="working-elapsed">{{ workingElapsedLabel }}</span>
       <span v-if="retryProgress" class="retry-progress">
         {{ t('conversation.retryAttempt', { attempt: retryProgress.attempt, max: retryProgress.maxAttempts }) }}
       </span>
@@ -1770,6 +1833,17 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
   padding: 10px 0;
 }
 .retry-progress { color: var(--color-text-muted); font-size: var(--text-sm); }
+/* The exchange's elapsed time beside the moon; same weight and tone as the
+   retry line it shares the row with. */
+.working-elapsed { color: var(--color-text-muted); font-size: var(--text-sm); }
+
+/* End of an exchange: how long it took, on its own line under the reply. */
+.worked-for {
+  margin-top: var(--space-1);
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
 
 /* Plugin command card (replaces expanded body; the shared style is reused by
    the plugin-command branch of the user bubble). */

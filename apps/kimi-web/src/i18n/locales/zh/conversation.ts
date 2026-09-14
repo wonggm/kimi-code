@@ -71,6 +71,12 @@ export default {
   },
   requesting: '请求中…',
   working: '处理中…',
+  // The working indicator's running elapsed time, beside the moon.
+  workingElapsed: '处理中 · {duration}',
+  // A thinking card whose thinking has ended: how long that thinking took.
+  thoughtFor: '思考了 {duration}',
+  // The foot of a completed exchange: how long the whole exchange took.
+  workedFor: '用时 {duration}',
   goal: {
     continuation: '目标续跑',
   },

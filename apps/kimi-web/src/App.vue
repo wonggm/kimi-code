@@ -23,6 +23,7 @@ import GlobalLoading from './components/GlobalLoading.vue';
 import DebugPanel from './debug/DebugPanel.vue';
 import { isTraceEnabled } from './debug/trace';
 import { useKimiWebClient } from './composables/useKimiWebClient';
+import { setLocale, type LocaleCode } from './i18n';
 import { useConfirmDialog } from './composables/useConfirmDialog';
 import type { PromptAttachment } from './composables/useKimiWebClient';
 import type { ToolMedia, TurnAttachment } from './types';
@@ -84,7 +85,7 @@ provide(
   'resolveSwarmMembers',
   (toolCallId: string): SwarmMember[] => memoizedSwarmMembersByToolCallId.value.get(toolCallId) ?? [],
 );
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { confirm } = useConfirmDialog();
 
 // KAP/daemon debug panel — opt-in via ?debug=1 or localStorage kimi-web.debug=1.
@@ -922,7 +923,9 @@ function openPr(url: string): void {
         :backend="client.backend.value"
         :auto-session-title="autoSessionTitle"
         :lab-sidebar-tabs="client.labSidebarTabs.value"
-        :auth-ready="client.authReady.value"
+        :signed-in="client.managedProviderStatus.value === 'authenticated'"
+        :color-scheme="client.colorScheme.value"
+        :locale="locale as LocaleCode"
         @select="client.selectSession($event)"
         @create="handleCreateSession"
         @create-in-workspace="handleCreateSessionInWorkspace($event)"
@@ -946,6 +949,10 @@ function openPr(url: string): void {
         @open-session-admin="openSessionAdmin"
         @expand-sidebar="expandSidebar"
         @open-settings="showSettings = true"
+        @set-color-scheme="client.setColorScheme($event)"
+        @set-locale="setLocale($event as LocaleCode)"
+        @login="openLogin()"
+        @logout="client.logout"
         @collapse="toggleSidebarCollapse"
       />
       <ResizeHandle
@@ -1011,6 +1018,7 @@ function openPr(url: string): void {
       :search-files="client.searchFiles"
       :upload-image="client.uploadImage"
       :working="client.working.value"
+      :exchange-started-at="client.exchangeStartedAt.value ?? undefined"
       :starting="client.isStartingFirstPrompt.value"
       :fast-moon="client.fastMoon.value"
       :file-reload-key="client.activeSessionId.value"
@@ -1098,7 +1106,7 @@ function openPr(url: string): void {
       :label="sidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')"
       @click="toggleSidebarCollapse"
     >
-      <Icon :name="sidebarCollapsed ? 'panel-expand' : 'panel-collapse'" />
+      <Icon :name="sidebarCollapsed ? 'left-panel-expand' : 'left-panel'" />
     </IconButton>
 
     <!-- Internal-build tag — pinned to the app's bottom-right corner, above
