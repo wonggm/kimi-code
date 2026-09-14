@@ -38,6 +38,13 @@ const DOCK_AGENT_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:n
     closed; the panel's own close control replaces it once open. */
 const OPEN_PANEL = { action: 'click', selector: '.ch-panel', ms: 600 };
 
+/** The sidebar row that opens a session, addressed by the row's title. Both apps
+    render the row as a plain `div.se` with a click handler, so a text step
+    reaches it through the session-row class (see capture.mjs
+    `findClickableByText`). This is how a scene routes to a session the app does
+    not open by itself — the walk never enters one (see `DISCOVER_EXPR`). */
+const SESSION_ROW = (title) => ({ action: 'clickText', text: title, ms: 900 });
+
 // Behaviour scenes. The walk reaches a surface by replaying clicks and then
 // diffs markup, so it cannot see what a control DOES: whether the same control
 // flips state, which pane a pill opens, whether a panel dismisses, what a
@@ -390,6 +397,58 @@ export const BEHAVIOUR_SCENES = [
       requires: [{ name: 'composer-permission-menu-closed', absent: '.perm-dropdown' }],
     },
   },
+  {
+    name: 'behaviour-pending-question',
+    desktopOnly: true,
+    // The row is addressed by its title and the card's labels are the fixture's
+    // own English strings, so the scene holds in the English locale only.
+    enOnly: true,
+    // The pending question card: the agent asked, the turn waits on the answer,
+    // and the card takes the composer's place. No walk capture can pose it — the
+    // walk must not step into a pending session by accident (see DISCOVER_EXPR) —
+    // so the route is this scene's own: the fixture's second sidebar row, whose
+    // session waits on an `askUserQuestion`, opened deliberately. Both apps name
+    // the card's parts the same: `.qcard` carries the question, one `.qopt` per
+    // option plus the "Other" row, `.other-input` is the free-text field that
+    // `allow_other` adds, and the card's single primary control is the submit
+    // (upstream `.qmain`, the fork `.qfoot-main`).
+    expect: /Which approach should the mock take\?/,
+    steps: [PIN_TAIL, SESSION_ROW('Pending question (mock)'), { action: 'wait', ms: 800 }],
+    requires: [
+      { name: 'question-card-open', present: '.qcard' },
+      { name: 'question-card-text', within: '.qcard', text: /Which approach should the mock take/ },
+      { name: 'question-card-options', present: '.qcard .qopt', count: 3 },
+      { name: 'question-card-other', present: '.qcard .other-input' },
+      { name: 'question-card-submit', present: '.qcard .ui-button--primary', count: 1 },
+      { name: 'question-card-submit-label', within: '.qcard', text: /Submit/ },
+    ],
+  },
+  {
+    name: 'behaviour-pending-approval',
+    desktopOnly: true,
+    // Same reason as the question card: the row's title and the card's action
+    // line are English strings.
+    enOnly: true,
+    // The pending approval card: the agent asked to run a command and the turn
+    // waits on the grant. Opened the same deliberate way — the fixture's third
+    // sidebar row — because the walk never enters a session by accident. `.appr`
+    // is the card on both apps; the action line is the request's own text, the
+    // single primary control is the approve button (upstream `.amain`, the fork
+    // `.kbtn` with the primary variant), and the deny control's label is the
+    // request's "Reject".
+    expect: /Run the mock command/,
+    steps: [PIN_TAIL, SESSION_ROW('Pending approval (mock)'), { action: 'wait', ms: 800 }],
+    requires: [
+      { name: 'approval-card-open', present: '.appr' },
+      {
+        name: 'approval-card-action',
+        within: '.appr',
+        text: /Run the mock command `rm -rf build`/,
+      },
+      { name: 'approval-card-approve', present: '.appr .ui-button--primary', count: 1 },
+      { name: 'approval-card-deny', within: '.appr', text: /Reject/ },
+    ],
+  },
 ];
 
 export const BASE_SCENES = [
@@ -431,6 +490,17 @@ export const DISCOVER_EXPR = `(() => {
     const r = el.getBoundingClientRect();
     if (r.width < 4 || r.height < 4) continue;
     if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
+    // A session the app is not already in is not a walk target, and neither is
+    // anything inside its row. Clicking such a row opens that session, so the
+    // state the capture records is a different session's transcript rather than
+    // the control's own surface — and the fixture lists a session per pending
+    // card, so the walk would compare a different session than the other app's.
+    // Both apps mark the open row \`.se.on\` (\`se\` is the row class), so this keeps
+    // the walk inside the session it booted into while leaving the open row's own
+    // controls in the inventory; a scene opens another session deliberately (see
+    // BEHAVIOUR_SCENES).
+    const sessionRow = el.closest('.se');
+    if (sessionRow && !sessionRow.classList.contains('on')) continue;
     const cs = getComputedStyle(el);
     // A control hidden by opacity/visibility is usually revealed by hovering its
     // row (the fork hides section-head and row actions that way). Keep it in the

@@ -12,6 +12,21 @@ import path from 'node:path';
 
 const MAX_PER_KIND = 40;
 
+// Vue's transition phase classes: `*-enter-active`, `*-enter-from`, `*-enter-to`
+// and `*-leave-*` are transient state, not designed markup. They are dropped from
+// element signatures below, and capture.mjs's requirement check reads them — both
+// use these patterns, so the two rules stay in step.
+const PHASE_NAME = '[A-Za-z0-9_-]+';
+export const PHASE_CLASS = `${PHASE_NAME}-(?:enter|leave)-(?:active|from|to)`;
+// The rule narrowed to each direction, which is what the requirement check needs:
+// an element in an *enter* phase is the state being asserted (it is animating in,
+// and under the emulated reduced motion it can still read opacity 0 at the check),
+// while one in a *leave* phase is an element the app has already decided to drop —
+// it can linger in the DOM carrying a stale `enter-from` beside the leave classes,
+// so the leave phase has to win.
+export const PHASE_ENTER_CLASS = `${PHASE_NAME}-enter-(?:active|from|to)`;
+export const PHASE_LEAVE_CLASS = `${PHASE_NAME}-leave-(?:active|from|to)`;
+
 function hash(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
@@ -212,13 +227,15 @@ export function compareRun({ runDir, relRunDir, allowlistPath, allowlist, covera
       //    duration is ~1e-06s, so a menu can be captured still carrying
       //    `enter-active enter-from` while the other app's identical menu has
       //    already dropped them — which made upstream's view-menu, user-menu and
-      //    chat menu read as elements the fork is missing.
-      const PHASE_CLASS = /(^|\.)[A-Za-z0-9_-]+-(?:enter|leave)-(?:active|from|to)(?=\.|$)/g;
+      //    chat menu read as elements the fork is missing. `PHASE_CLASS` is the
+      //    shared pattern: capture.mjs's requirement check reads an element in an
+      //    *enter* phase as rendered for the same reason.
+      const phaseClass = new RegExp(`(^|\\.)${PHASE_CLASS}(?=\\.|$)`, 'g');
       const withoutScrollState = (list) =>
         list.map((entry) =>
           String(entry)
             .replace(/(^|\.)is-following(?=\.|$)/g, '$1')
-            .replace(PHASE_CLASS, '$1')
+            .replace(phaseClass, '$1')
             .replace(/\.\.+/g, '.')
             .replace(/\.$/, ''),
         );
