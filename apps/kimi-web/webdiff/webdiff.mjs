@@ -139,6 +139,12 @@ for (const app of appFilter) {
     root: app === 'upstream' ? upstreamDist : forkDist,
     port: basePort + MOCK_PORT_OFFSET[app],
     token,
+    // The mock's two pending-card sessions exist for a manual pass; the walk
+    // lists the original session alone. A sidebar row is a control the walk
+    // clicks, and the extra rows move its coordinate targets, which cost a run
+    // seven blockers that were one app walking a different session than the
+    // other (see the fixture's session list).
+    env: { ...process.env, MOCK_EXTRA_SESSIONS: '0' },
   });
 }
 let chrome;
