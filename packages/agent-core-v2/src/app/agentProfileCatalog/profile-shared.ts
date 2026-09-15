@@ -140,8 +140,10 @@ export function systemPromptVars(
   const shellName = context.shellName ?? '';
   const shellPath = context.shellPath ?? '';
   const skillActive = context.skillActive ?? options.skillActive;
-  const skills = skillActive ? (context.skills ?? '') : '';
-  const pluginSections = context.pluginSections ?? '';
+  const omitted = (name: string): boolean =>
+    context.omitPromptBlocks !== undefined && context.omitPromptBlocks.includes(name);
+  const skills = skillActive && !omitted('skills') ? (context.skills ?? '') : '';
+  const pluginSections = omitted('plugins') ? '' : (context.pluginSections ?? '');
   const additionalDirsInfo = context.additionalDirsInfo ?? '';
   return {
     role_additional: '',
@@ -152,8 +154,8 @@ export function systemPromptVars(
     windows_notes: context.osKind === 'Windows' ? `\n\n${WINDOWS_NOTES}\n\n` : '',
     shell: shellName.length > 0 ? `${shellName} (\`${shellPath}\`)` : '',
     cwd: context.cwd ?? '',
-    cwd_listing: context.cwdListing ?? '',
-    agents_md: context.agentsMd ?? '',
+    cwd_listing: omitted('cwd_listing') ? '' : (context.cwdListing ?? ''),
+    agents_md: omitted('agents_md') ? '' : (context.agentsMd ?? ''),
     additional_dirs_info: additionalDirsInfo,
     additional_dirs_section:
       additionalDirsInfo.length > 0

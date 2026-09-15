@@ -17,6 +17,7 @@ export interface AgentFileDefinition {
   readonly tools?: readonly string[];
   readonly disallowedTools?: readonly string[];
   readonly subagents?: readonly string[];
+  readonly omitPromptBlocks?: readonly string[];
   readonly prompt: string;
   readonly path: string;
   readonly source: AgentFileSource;
