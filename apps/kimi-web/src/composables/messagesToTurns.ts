@@ -743,7 +743,11 @@ export function messagesToTurns(
     });
   }
 
-  function absorbContent(g: Group, content: AppMessage['content']): void {
+  function absorbContent(
+    g: Group,
+    content: AppMessage['content'],
+    stepDurationMs?: number,
+  ): void {
     // Coalesce streaming deltas from the same message.  Some models
     // (e.g. Qwen3.8 Max Preview) emit 1-3 tokens per content.part and
     // interleave thinking/text at the token level, producing
@@ -801,9 +805,18 @@ export function messagesToTurns(
           g.thinkingParts.push(c.thinking);
           // Ordered block too: thinking renders WHERE it happened in the turn,
           // merging consecutive segments (same rule as text blocks above).
+          // A block's span is the span of the step it opened in — the page
+          // carries the step's own time and a thinking frame none of its own;
+          // a segment merged into a block later does not extend it.
           const last = g.blocks.at(-1);
-          if (last && last.kind === 'thinking') last.thinking += '\n' + c.thinking;
-          else g.blocks.push({ kind: 'thinking', thinking: c.thinking });
+          if (last && last.kind === 'thinking') {
+            last.thinking += '\n' + c.thinking;
+            if (last.durationMs === undefined && stepDurationMs !== undefined) {
+              last.durationMs = stepDurationMs;
+            }
+          } else {
+            g.blocks.push({ kind: 'thinking', thinking: c.thinking, durationMs: stepDurationMs });
+          }
         }
       } else if (c.type === 'toolUse') {
         // Single `Agent` subagent spawns and all other tools render as a normal
@@ -1125,9 +1138,15 @@ export function messagesToTurns(
       mergeVolatileExtras(group, msg.content);
       continue;
     }
+    // The turn's duration ("Worked for 1m20s") can land on any message of the
+    // group: the daemon stamps the reply it closed on, and a duration the client
+    // measured itself (an exchange whose end event carried none) is stamped on
+    // the group's last assistant message. The group was seeded with the first
+    // message's value, so a later one has to be able to replace it.
+    if (msg.durationMs !== undefined) group.durationMs = msg.durationMs;
     group.foldedSigs.push(sig);
 
-    absorbContent(group, msg.content);
+    absorbContent(group, msg.content, msg.stepDurationMs);
   }
 
   flushGroup(true);

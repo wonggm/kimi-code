@@ -410,11 +410,15 @@ export interface WirePlanResponse {
 }
 
 /** One step of a transcript turn — the subset of `transcriptStepSchema` the
- *  web detail panel reads to seed a subagent's accumulated output. */
+ *  web detail panel reads to seed a subagent's accumulated output, plus the
+ *  step's own span (`startedAt` / `endedAt`), which is where a thinking block's
+ *  time comes from: a thinking frame carries none. */
 export interface WireTranscriptStep {
   kind: 'step';
   stepId: string;
   frames: WireTranscriptFrame[];
+  startedAt?: string;
+  endedAt?: string;
 }
 
 /** A transcript frame — the subset of `transcriptFrameSchema` the web detail
@@ -442,6 +446,9 @@ export interface WireTranscriptTurn {
   steps: WireTranscriptStep[];
   startedAt?: string;
   endedAt?: string;
+  /** The turn's own duration (`transcriptTurnSchema.durationMs`) — the number
+   *  the engine reported on the event that closed the turn. */
+  durationMs?: number;
 }
 
 /** Non-turn transcript stream item (`transcriptItemSchema`, marker variant) —

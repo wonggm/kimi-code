@@ -187,6 +187,74 @@ describe('messagesToTurns', () => {
     expect(turns.map((turn) => turn.text)).toEqual(['one', 'two']);
   });
 
+  it('carries a step span from the page onto the thinking block that step produced', () => {
+    // The transcript page stamps the step's span on the reply it produced
+    // (lib/transcriptTiming); the thinking block this step rendered reads
+    // "Thought for 3s" from it after a reload. The turn's own duration lands on
+    // the group either way.
+    const turns = messagesToTurns(
+      [
+        message('a1', 'assistant', [
+          { type: 'thinking', thinking: 'plan' },
+          { type: 'toolUse', toolCallId: 'tool-1', toolName: 'read', input: { path: 'a.ts' } },
+        ], {
+          promptId: 'p1',
+          stepDurationMs: 3000,
+        }),
+        message('t1', 'tool', [{ type: 'toolResult', toolCallId: 'tool-1', output: 'ok' }]),
+        message('a2', 'assistant', [{ type: 'thinking', thinking: 'again' }], {
+          promptId: 'p1',
+          stepDurationMs: 7000,
+          durationMs: 80_000,
+        }),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.durationMs).toBe(80_000);
+    expect(turns[0]?.blocks).toEqual([
+      { kind: 'thinking', thinking: 'plan', durationMs: 3000 },
+      { kind: 'tool', tool: expect.objectContaining({ id: 'tool-1', status: 'ok' }) },
+      { kind: 'thinking', thinking: 'again', durationMs: 7000 },
+    ]);
+  });
+
+  it('keeps the plain block when the page carries no span for the step', () => {
+    const turns = messagesToTurns(
+      [message('a1', 'assistant', [{ type: 'thinking', thinking: 'plan' }])],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns[0]?.blocks).toEqual([{ kind: 'thinking', thinking: 'plan' }]);
+  });
+
+  it('a merged thinking block keeps the span of the step it opened in', () => {
+    // Two steps whose thinking runs together into one block: the block began in
+    // the first step, so that is the span it shows.
+    const turns = messagesToTurns(
+      [
+        message('a1', 'assistant', [{ type: 'thinking', thinking: 'plan' }], {
+          stepDurationMs: 3000,
+        }),
+        message('a2', 'assistant', [{ type: 'thinking', thinking: 'more' }], {
+          stepDurationMs: 7000,
+        }),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns[0]?.blocks).toEqual([
+      { kind: 'thinking', thinking: 'plan\nmore', durationMs: 3000 },
+    ]);
+  });
+
   it('renders compaction summaries as divider turns', () => {
     const turns = messagesToTurns(
       [

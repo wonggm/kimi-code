@@ -16,6 +16,10 @@ import {
   applyRecoveredPromptMessages,
   recoveredPromptMessages,
 } from '../src/lib/transcriptPrompts';
+import {
+  applyTranscriptTimings,
+  pageTurnTimings,
+} from '../src/lib/transcriptTiming';
 import { keepLiveSubagents, mergeSnapshotSubagents } from '../src/lib/taskMerge';
 import { normalizeToolName, toolSummary } from '../src/lib/toolMeta';
 import { collapsePrompt, humanizeCron } from '../src/lib/cronHumanize';
@@ -854,6 +858,172 @@ describe('recoveredPromptMessages', () => {
       const held = recoveredPromptMessages(page({ items: [queuedTurn('t3', 'queued text', 'pr_q1')] }), NOW);
       const messages = [userMessage('um_1', 'queued text', { promptId: 'pr_q1' })];
       expect(applyRecoveredPromptMessages(messages, held, 's1').map((m) => m.id)).toEqual(['um_1']);
+    });
+  });
+});
+
+describe('transcriptTiming', () => {
+  const NOW = Date.parse('2026-01-01T00:10:00.000Z');
+  const iso = (ms: number) => new Date(NOW + ms).toISOString();
+
+  function page(items: TranscriptItem[]): TranscriptPage {
+    return { agentId: 'main', items, hasMore: false, prompts: [] };
+  }
+
+  function turn(
+    triggerPromptId: string | undefined,
+    over: Partial<Extract<TranscriptItem, { kind: 'turn' }>> = {},
+  ): TranscriptItem {
+    return {
+      kind: 'turn',
+      turnId: 't2',
+      ordinal: 1,
+      state: 'completed',
+      steps: [],
+      triggerPromptId,
+      ...over,
+    };
+  }
+
+  function step(startedAt?: string, endedAt?: string) {
+    return { kind: 'step' as const, stepId: 's1', frames: [], startedAt, endedAt };
+  }
+
+  function message(over: Partial<AppMessage> & { id: string; role: AppMessage['role'] }): AppMessage {
+    return { sessionId: 's1', content: [], createdAt: iso(0), ...over };
+  }
+
+  describe('pageTurnTimings', () => {
+    it('reads the turn duration and the span of each of its steps', () => {
+      const timings = pageTurnTimings(
+        page([turn('pr_1', { durationMs: 80_000, steps: [step(iso(0), iso(3000))] })]),
+      );
+      expect(timings.get('pr_1')).toEqual({ durationMs: 80_000, stepDurationsMs: [3000] });
+    });
+
+    it('leaves out a turn the page carries no timing for', () => {
+      // The mock's default page: both ends of every span are the same instant,
+      // so the span is zero — a label printed from it would be invented.
+      const timings = pageTurnTimings(
+        page([
+          turn('pr_1', { steps: [step(iso(0), iso(0))] }),
+          turn('pr_2', { durationMs: 0, steps: [] }),
+        ]),
+      );
+      expect(timings.size).toBe(0);
+    });
+
+    it('keeps the steps it can time and leaves the others out', () => {
+      const timings = pageTurnTimings(
+        page([turn('pr_1', { steps: [step(iso(0), iso(3000)), step(iso(4000)), step(undefined, iso(9000))] })]),
+      );
+      expect(timings.get('pr_1')?.stepDurationsMs).toEqual([3000, undefined, undefined]);
+    });
+
+    it('ignores turns the page carries no opening prompt for, and non-turns', () => {
+      const timings = pageTurnTimings(
+        page([
+          turn(undefined, { durationMs: 5000 }),
+          { kind: 'marker', markerId: 'm1', marker: 'skill' },
+        ]),
+      );
+      expect(timings.size).toBe(0);
+    });
+  });
+
+  describe('applyTranscriptTimings', () => {
+    const timings = pageTurnTimings(
+      page([turn('pr_reply', { durationMs: 80_000, steps: [step(iso(0), iso(3000))] })]),
+    );
+
+    it('stamps the turn duration and the step span on the reply that named the prompt', () => {
+      // The shape the mock fixture serves: the snapshot stamps `prompt_id` on
+      // the assistant message.
+      const messages = [
+        message({ id: 'm1', role: 'user', content: [{ type: 'text', text: 'hi' }] }),
+        message({ id: 'm2', role: 'assistant', promptId: 'pr_reply' }),
+      ];
+      const stamped = applyTranscriptTimings(messages, timings);
+      expect(stamped[0]).toBe(messages[0]);
+      expect(stamped[1]).toMatchObject({ durationMs: 80_000, stepDurationMs: 3000 });
+    });
+
+    it('stamps replies that follow the user message whose id is the prompt id', () => {
+      // The shape the daemon serves: a prompt message carries the prompt id as
+      // its own id, and the assistant reply carries nothing to match on.
+      const messages = [
+        message({ id: 'msg_prompt_1', role: 'user' }),
+        message({ id: 'm2', role: 'assistant' }),
+      ];
+      const stamped = applyTranscriptTimings(
+        messages,
+        pageTurnTimings(page([turn('msg_prompt_1', { durationMs: 80_000, steps: [step(iso(0), iso(3000))] })])),
+      );
+      expect(stamped[1]).toMatchObject({ durationMs: 80_000, stepDurationMs: 3000 });
+    });
+
+    it('gives each reply of the turn its own step span, tool results in between', () => {
+      const multi = pageTurnTimings(
+        page([
+          turn('msg_prompt_1', {
+            durationMs: 80_000,
+            steps: [step(iso(0), iso(3000)), step(iso(3000), iso(7000))],
+          }),
+        ]),
+      );
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'msg_prompt_1', role: 'user' }),
+          message({ id: 'm2', role: 'assistant' }),
+          message({ id: 'm3', role: 'tool' }),
+          message({ id: 'm4', role: 'assistant' }),
+        ],
+        multi,
+      );
+      expect(stamped.map((m) => m.stepDurationMs)).toEqual([undefined, 3000, undefined, 4000]);
+      expect(stamped.filter((m) => m.role === 'assistant').map((m) => m.durationMs)).toEqual([
+        80_000, 80_000,
+      ]);
+    });
+
+    it('stamps nothing on a reply no page turn names', () => {
+      const messages = [
+        message({ id: 'msg_prompt_1', role: 'user' }),
+        message({ id: 'm2', role: 'assistant' }),
+      ];
+      const stamped = applyTranscriptTimings(messages, timings);
+      expect(stamped[1]?.durationMs).toBeUndefined();
+      expect(stamped[1]?.stepDurationMs).toBeUndefined();
+    });
+
+    it('prefers the page\'s own duration and keeps one already measured when the page has none', () => {
+      const measured = [
+        message({ id: 'msg_prompt_1', role: 'user' }),
+        message({ id: 'm2', role: 'assistant', durationMs: 75_000 }),
+      ];
+      // Page carries no duration for the turn: the client's own number stays.
+      expect(
+        applyTranscriptTimings(
+          measured,
+          pageTurnTimings(page([turn('msg_prompt_1', { steps: [step(iso(0), iso(3000))] })])),
+        )[1],
+      ).toMatchObject({ durationMs: 75_000, stepDurationMs: 3000 });
+      // Page carries one: it wins.
+      expect(
+        applyTranscriptTimings(
+          measured,
+          pageTurnTimings(
+            page([turn('msg_prompt_1', { durationMs: 80_000, steps: [step(iso(0), iso(3000))] })]),
+          ),
+        )[1],
+      ).toMatchObject({ durationMs: 80_000 });
+    });
+
+    it('returns the messages untouched when the page carries no timing at all', () => {
+      const messages = [message({ id: 'm1', role: 'user' }), message({ id: 'm2', role: 'assistant' })];
+      const stamped = applyTranscriptTimings(messages, new Map());
+      expect(stamped).toEqual(messages);
+      expect(stamped[1]).toBe(messages[1]);
     });
   });
 });
