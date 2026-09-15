@@ -58,6 +58,10 @@ import KimiShieldQuestion from '~icons/kimi/shield-question';
 import KimiTrash from '~icons/kimi/trash';
 import KimiViewFlat from '~icons/kimi/view-flat';
 import KimiViewGrouped from '~icons/kimi/view-grouped';
+import KimiCopy from '~icons/kimi/copy';
+import KimiPencil from '~icons/kimi/pencil';
+import KimiDownload from '~icons/kimi/download';
+import KimiArchive from '~icons/kimi/archive';
 
 // Components (Tabler) ---------------------------------------------------------
 import TablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand';
@@ -161,6 +165,10 @@ import RawKimiShieldQuestion from '~icons/kimi/shield-question?raw';
 import RawKimiTrash from '~icons/kimi/trash?raw';
 import RawKimiViewFlat from '~icons/kimi/view-flat?raw';
 import RawKimiViewGrouped from '~icons/kimi/view-grouped?raw';
+import RawKimiCopy from '~icons/kimi/copy?raw';
+import RawKimiPencil from '~icons/kimi/pencil?raw';
+import RawKimiDownload from '~icons/kimi/download?raw';
+import RawKimiArchive from '~icons/kimi/archive?raw';
 
 // Raw SVG strings (Tabler) ----------------------------------------------------
 import RawTablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand?raw';
@@ -319,6 +327,10 @@ export type IconName =
   | 'view-flat'
   | 'view-grouped'
   | 'list-lines'
+  | 'kimi-copy'
+  | 'kimi-pencil'
+  | 'kimi-download'
+  | 'kimi-archive'
   | 'clock'
   | 'sparkles'
   | 'target'
@@ -438,6 +450,10 @@ export const ICONS: Record<IconName, IconEntry> = {
   'view-flat': entry(KimiViewFlat, RawKimiViewFlat),
   'view-grouped': entry(KimiViewGrouped, RawKimiViewGrouped),
   'list-lines': entry(KimiListLines, RawKimiListLines),
+  'kimi-copy': entry(KimiCopy, RawKimiCopy),
+  'kimi-pencil': entry(KimiPencil, RawKimiPencil),
+  'kimi-download': entry(KimiDownload, RawKimiDownload),
+  'kimi-archive': entry(KimiArchive, RawKimiArchive),
   clock: entry(RiTimeLine, RawTimeLine),
   sparkles: entry(RiSparklingLine, RawSparklingLine),
   target: entry(RiTargetLine, RawTargetLine),
