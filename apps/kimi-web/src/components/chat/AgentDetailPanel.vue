@@ -506,8 +506,9 @@ watch(
                   @open-file="emit('openFile', $event)"
                   @open-agent="emit('openAgent', $event)"
                 />
-                <!-- A run of tool calls (like the thinking block that opened it)
-                     behind one head row; its rows are inert while it is closed. -->
+                <!-- A run of tool calls behind one head row; its rows are inert
+                     while it is closed. A thinking block renders on its own,
+                     outside the run. -->
                 <ActivityRun
                   v-else-if="blk.kind === 'tool-stack' || blk.kind === 'tool-fold'"
                   :items="blk.items"

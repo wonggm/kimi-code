@@ -87,6 +87,7 @@ import RiCodeLine from '~icons/ri/code-line';
 import RiCollapseDiagonalLine from '~icons/ri/collapse-diagonal-line';
 import RiDownloadLine from '~icons/ri/download-line';
 import RiDraggable from '~icons/ri/draggable';
+import RiEmotionLine from '~icons/ri/emotion-line';
 import RiEqualizerLine from '~icons/ri/equalizer-line';
 import RiExpandDiagonalLine from '~icons/ri/expand-diagonal-line';
 import RiExternalLinkLine from '~icons/ri/external-link-line';
@@ -124,6 +125,7 @@ import RiTargetLine from '~icons/ri/target-line';
 import RiTerminalBoxLine from '~icons/ri/terminal-box-line';
 import RiTimeLine from '~icons/ri/time-line';
 import RiToolsLine from '~icons/ri/tools-line';
+import RiUnpinLine from '~icons/ri/unpin-line';
 import RiUserLine from '~icons/ri/user-line';
 
 // Raw SVG strings (Kimi collection) -----------------------------------------
@@ -188,6 +190,7 @@ import RawCodeLine from '~icons/ri/code-line?raw';
 import RawCollapseDiagonalLine from '~icons/ri/collapse-diagonal-line?raw';
 import RawDownloadLine from '~icons/ri/download-line?raw';
 import RawDraggable from '~icons/ri/draggable?raw';
+import RawEmotionLine from '~icons/ri/emotion-line?raw';
 import RawEqualizerLine from '~icons/ri/equalizer-line?raw';
 import RawExpandDiagonalLine from '~icons/ri/expand-diagonal-line?raw';
 import RawExternalLinkLine from '~icons/ri/external-link-line?raw';
@@ -225,6 +228,7 @@ import RawTargetLine from '~icons/ri/target-line?raw';
 import RawTerminalBoxLine from '~icons/ri/terminal-box-line?raw';
 import RawTimeLine from '~icons/ri/time-line?raw';
 import RawToolsLine from '~icons/ri/tools-line?raw';
+import RawUnpinLine from '~icons/ri/unpin-line?raw';
 import RawUserLine from '~icons/ri/user-line?raw';
 
 // Public types -------------------------------------------------------------
@@ -251,6 +255,7 @@ export type IconName =
   | 'undo'
   | 'send'
   | 'image'
+  | 'emoji'
   | 'settings'
   | 'sliders'
   | 'log-in'
@@ -327,6 +332,7 @@ export type IconName =
   | 'star-outline'
   | 'pin'
   | 'pin-outline'
+  | 'unpin'
   | 'dots-horizontal';
 
 export type IconSize = 'sm' | 'md' | 'lg';
@@ -364,6 +370,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   link: entry(KimiLink, RawKimiLink),
   'external-link': entry(RiExternalLinkLine, RawExternalLinkLine),
   download: entry(RiDownloadLine, RawDownloadLine),
+  emoji: entry(RiEmotionLine, RawEmotionLine),
   undo: entry(RiArrowGoBackLine, RawArrowGoBackLine),
   send: entry(KimiSend, RawKimiSend),
   image: entry(RiImageLine, RawImageLine),
@@ -441,6 +448,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'star-outline': entry(RiStarLine, RawStarLine),
   pin: entry(RiPushpinFill, RawPushpinFill),
   'pin-outline': entry(RiPushpinLine, RawPushpinLine),
+  unpin: entry(RiUnpinLine, RawUnpinLine),
   'dots-horizontal': entry(KimiMore, RawKimiMore),
 };
 
@@ -481,6 +489,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'link',
       'external-link',
       'download',
+      'emoji',
       'undo',
       'send',
       'image',
@@ -567,6 +576,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'star-outline',
       'pin',
       'pin-outline',
+      'unpin',
       'dots-horizontal',
     ],
   ],
