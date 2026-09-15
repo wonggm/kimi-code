@@ -420,7 +420,7 @@ defineExpose({ closeMenu });
     <Teleport to="body">
       <Menu ref="menuRef" v-if="menuOpen" class="menu" :style="menuStyle" @click.stop>
         <MenuItem :danger="copyFailed" @click="copySessionId">
-          <Icon :name="copiedId ? 'check' : 'copy'" size="sm" />
+          <Icon name="copy" size="sm" />
           {{
             copyFailed
               ? t('sidebar.copyFailed')
@@ -435,6 +435,7 @@ defineExpose({ closeMenu });
           {{ t('sidebar.rename') }}
         </MenuItem>
         <MenuItem @click="setEmoji">
+          <Icon name="emoji" size="sm" />
           {{ t('sidebar.setEmoji') }}
         </MenuItem>
         <MenuItem @click="forkRow">
@@ -446,10 +447,10 @@ defineExpose({ closeMenu });
           {{ t('sidebar.export') }}
         </MenuItem>
         <MenuItem @click="togglePinned">
-          <Icon :name="session.pinned ? 'pin' : 'pin-outline'" size="sm" />
+          <Icon :name="session.pinned ? 'unpin' : 'pin-outline'" size="sm" />
           {{ session.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}
         </MenuItem>
-        <MenuItem :danger="!archived" @click="startArchive">
+        <MenuItem @click="startArchive">
           <Icon :name="archived ? 'undo' : 'archive'" size="sm" />
           {{ archived ? t('sidebar.reopen') : t('sidebar.archive') }}
         </MenuItem>
@@ -616,19 +617,72 @@ defineExpose({ closeMenu });
 .se:hover .ha,
 .act:has(.kebab.open) .ha { visibility: visible; }
 
-/* Fixed + anchored to the ⋯ button via inline style (see positionMenu); the menu
-   is teleported to <body> so the collapsing list's `overflow: hidden` can't clip it. */
-.menu {
+/* Fixed + anchored at the pointer / the ⋯ button via inline style (see
+   positionMenu); the menu is teleported to <body> so the collapsing list's
+   `overflow: hidden` can't clip it.
+   The box and the rows are upstream's own numbers, measured on its build: the
+   panel is `--menu-pad` (3.5px) inside a 0.5px hairline on the menu fill and
+   the menu shadow, each row is a 13px/475 label with a 16px glyph at a 7px gap
+   in a 5x9 box. The `Menu`/`MenuItem` primitives carry the design system's
+   roomier box (4px pad, 6x10 rows, 14px glyphs, `--shadow-sm`), and this menu
+   is the upstream-ported surface upstream draws tighter — so the metrics are
+   restated here rather than in the primitives, which every other menu in the
+   app shares. `.menu.menu` and the doubled `:deep()` selectors outrank the
+   primitives' own rules regardless of stylesheet order.
+   The `--lg-optic-*` slots are the shared glass rule's per-surface door: with
+   the glass toggle on they repaint this panel in upstream's material (its
+   `--color-menu-bg` fill, `--color-line` edge and `--shadow-menu`) instead of
+   the `lg-glass` tier's tint and rim, and the demotion regimes (reduced
+   transparency, the opaque regime) still retarget them from above. The blur
+   stays the fork's own menu retarget — it applies to every dropdown in the app
+   at a specificity these slots do not fight. */
+.menu.menu {
   position: fixed;
   top: 0;
   left: 0;
   z-index: var(--z-dropdown);
+  min-width: 180px;
+  padding: 3.5px;
+  border: 0.5px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-menu-bg);
+  -webkit-backdrop-filter: var(--p-menu-backdrop);
+  backdrop-filter: var(--p-menu-backdrop);
+  box-shadow: var(--shadow-menu);
+  --lg-optic-bg: var(--color-menu-bg);
+  --lg-optic-shadow: var(--shadow-menu);
+  --lg-optic-border: var(--color-line);
+}
+.menu.menu :deep(.ui-menu-item.ui-menu-item) {
+  gap: 7px;
+  padding: 5px 9px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-option-label);
+  line-height: var(--leading-tight);
+}
+.menu.menu :deep(.ui-menu-item.ui-menu-item svg) {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-faint);
+}
+.menu.menu :deep(.ui-menu-item.ui-menu-item:hover:not(:disabled):not(.is-danger)) {
+  background: var(--color-hover);
+  color: var(--color-text-strong);
+}
+.menu.menu :deep(.ui-menu-item.ui-menu-item:hover:not(:disabled):not(.is-danger) svg),
+.menu.menu :deep(.ui-menu-item.ui-menu-item.is-active svg) {
+  color: var(--color-text-strong);
+}
+.menu.menu :deep(.ui-menu-item.ui-menu-item.is-danger svg) {
+  color: var(--color-danger);
 }
 .menu-time {
-  padding: 4px 10px 5px;
+  padding: var(--space-1) var(--space-2);
   color: var(--color-text-faint);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   cursor: default;
   user-select: text;
 }
