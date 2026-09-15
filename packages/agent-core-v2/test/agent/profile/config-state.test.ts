@@ -710,14 +710,16 @@ describe('ConfigState per-profile subagent compaction overrides', () => {
   function createAgent(): void {
     ctx = createTestAgent(
       configServices(() => kimiConfig),
-      llmGenerateServices(() =>
-        Promise.resolve({
-          id: 'response-1',
-          message: { role: 'assistant', content: [], toolCalls: [] },
-          usage: emptyUsage(),
-          finishReason: 'completed',
-          rawFinishReason: 'stop',
-        }),
+      llmGenerateServices(
+        requesterFromGenerateFn(() =>
+          Promise.resolve({
+            id: 'response-1',
+            message: { role: 'assistant', content: [], toolCalls: [] },
+            usage: emptyUsage(),
+            finishReason: 'completed',
+            rawFinishReason: 'stop',
+          }),
+        ),
       ),
     );
     profile = ctx.get(IAgentProfileService);

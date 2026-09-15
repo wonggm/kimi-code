@@ -2558,12 +2558,16 @@ describe('subagent_models config section', () => {
       '[subagent_models]\nexplore = "provider/pinned"\n\n[subagent_efforts]\nexplore = "high"\n\n[secondary_model]\nmodel = "provider/secondary"\ndefault_effort = "low"\n',
     );
 
-    expect(
-      resolveSubagentBindingWithFlags(config, secondaryModelFlags(), own, undefined, 'explore'),
-    ).toEqual({ model: 'provider/pinned', thinking: 'high', modelSource: 'secondary_pool' });
-    expect(
-      resolveSubagentBindingWithFlags(config, secondaryModelFlags(), own, undefined, 'coder'),
-    ).toEqual({ model: 'provider/secondary', thinking: 'low', modelSource: 'secondary_pool' });
+    expect(resolveSubagentBinding(config, own, undefined, 'explore')).toEqual({
+      model: 'provider/pinned',
+      thinking: 'high',
+      modelSource: 'secondary_pool',
+    });
+    expect(resolveSubagentBinding(config, own, undefined, 'coder')).toEqual({
+      model: 'provider/secondary',
+      thinking: 'low',
+      modelSource: 'secondary_pool',
+    });
 
     disposables.dispose();
   });
