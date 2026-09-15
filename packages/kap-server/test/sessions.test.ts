@@ -1095,6 +1095,8 @@ describe('server-v2 /api/v1/sessions', () => {
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
     const suffix = await postJson<null>(`/api/v1/sessions/${created.body.data.id}:restart`);
     expect(suffix.body.code).toBe(40001);
+  });
+
   it('reloads an idle live session (close + resume) and keeps it functional', async () => {
     const cwd = home as string;
     const created = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });

@@ -642,7 +642,8 @@ describe('CustomEditor paste marker expansion', () => {
         };
       });
 
-    const pasteKey = process.platform === 'win32' ? '\u001Bv' : '\u0016';
+    const pasteKey =
+      process.platform === 'win32' || isWindowsTerminalHost() ? '\u001Bv' : '\u0016';
     editor.handleInput(pasteKey);
     editor.handleInput('hello');
     editor.handleInput('\r');
