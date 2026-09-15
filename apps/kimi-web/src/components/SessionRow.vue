@@ -420,7 +420,7 @@ defineExpose({ closeMenu });
     <Teleport to="body">
       <Menu ref="menuRef" v-if="menuOpen" class="menu" :style="menuStyle" @click.stop>
         <MenuItem :danger="copyFailed" @click="copySessionId">
-          <Icon name="copy" size="sm" />
+          <Icon name="kimi-copy" size="sm" />
           {{
             copyFailed
               ? t('sidebar.copyFailed')
@@ -431,7 +431,7 @@ defineExpose({ closeMenu });
         </MenuItem>
         <MenuItem separator />
         <MenuItem @click="startRename">
-          <Icon name="pencil" size="sm" />
+          <Icon name="kimi-pencil" size="sm" />
           {{ t('sidebar.rename') }}
         </MenuItem>
         <MenuItem @click="setEmoji">
@@ -443,7 +443,7 @@ defineExpose({ closeMenu });
           {{ t('sidebar.fork') }}
         </MenuItem>
         <MenuItem @click="exportRow">
-          <Icon name="download" size="sm" />
+          <Icon name="kimi-download" size="sm" />
           {{ t('sidebar.export') }}
         </MenuItem>
         <MenuItem @click="togglePinned">
@@ -451,7 +451,7 @@ defineExpose({ closeMenu });
           {{ session.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}
         </MenuItem>
         <MenuItem @click="startArchive">
-          <Icon :name="archived ? 'undo' : 'archive'" size="sm" />
+          <Icon :name="archived ? 'undo' : 'kimi-archive'" size="sm" />
           {{ archived ? t('sidebar.reopen') : t('sidebar.archive') }}
         </MenuItem>
         <MenuItem separator />
@@ -623,7 +623,12 @@ defineExpose({ closeMenu });
    The box and the rows are upstream's own numbers, measured on its build: the
    panel is `--menu-pad` (3.5px) inside a 0.5px hairline on the menu fill and
    the menu shadow, each row is a 13px/475 label with a 16px glyph at a 7px gap
-   in a 5x9 box. The `Menu`/`MenuItem` primitives carry the design system's
+   in a 5x9 box. Every row carries a leading glyph in the same 16px slot: the
+   four rows below that draw their glyph from the Kimi collection
+   (`kimi-copy`/`kimi-pencil`/`kimi-download`/`kimi-archive`) do so because
+   upstream ships those four drawings and no Remix equivalents, while the rest
+   reuse the registry's Remix icons — upstream draws those identically.
+   The `Menu`/`MenuItem` primitives carry the design system's
    roomier box (4px pad, 6x10 rows, 14px glyphs, `--shadow-sm`), and this menu
    is the upstream-ported surface upstream draws tighter — so the metrics are
    restated here rather than in the primitives, which every other menu in the
