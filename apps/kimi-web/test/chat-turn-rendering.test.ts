@@ -152,6 +152,14 @@ describe('assistantRenderBlocks', () => {
     ]);
   });
 
+  it('carries the thinking block\'s step span onto the render block', () => {
+    // The span the transcript page reported for the step this thinking came
+    // from; the head reads "Thought for 3s" off it.
+    expect(
+      assistantRenderBlocks(assistantTurn([{ kind: 'thinking', thinking: 'plan', durationMs: 3000 }])),
+    ).toEqual([{ kind: 'thinking', thinking: 'plan', durationMs: 3000, sourceIndex: 0 }]);
+  });
+
   it('renders the thinking that opens a run as its own block, outside the run', () => {
     const rendered = assistantRenderBlocks(
       assistantTurn([thinkingBlock('plan'), toolBlock('a'), toolBlock('b')]),

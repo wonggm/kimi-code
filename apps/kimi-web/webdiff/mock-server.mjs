@@ -53,6 +53,9 @@
 // because discovery ignores everything inside a session row (`DISCOVER_EXPR` in
 // surfaces.mjs), and the two rows are opened on purpose by the pending-card
 // behaviour scenes in that file.
+//   MOCK_LIVE_EXCHANGE_NODUR=1  with MOCK_LIVE_EXCHANGE=1, close the live
+//                      exchange without the daemon's own duration, so the
+//                      client-measured total is the only source.
 //   MOCK_EXTRA_SESSIONS=0  list the original session alone — a manual pass that
 //                      wants the composer-bearing session as the only row.
 //   MOCK_LIVE_EXCHANGE=1
@@ -69,6 +72,16 @@
 //                      have reported. Off by default, because a turn that is
 //                      live when the page loads and ends a few seconds later
 //                      moves every capture taken after it.
+//   MOCK_TRANSCRIPT_TIMING=1
+//                      carry real timing on the transcript page: the turn gets
+//                      the engine's own `durationMs` and a span (the same 80s
+//                      the live exchange reports), and its step a 3s span. That
+//                      is what the fork reads back after a reload — the labels
+//                      "Worked for 1m20s" and "Thought for 3s" — and what
+//                      upstream renders times from. Off by default: a page with
+//                      real timing gives the two apps a surface they disagree on
+//                      for a reason not under comparison, exactly as the queued
+//                      prompt does.
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -176,6 +189,16 @@ const LIVE_THINKING = [
  *  ended, and how long it takes to do so after the page subscribes. */
 const LIVE_TURN_ID = 3;
 const LIVE_TURN_MS = 80_000;
+
+/** The prompt that opened the fixture's one reply. The snapshot stamps it on the
+ *  assistant message and the transcript page names it on the turn
+ *  (`triggerPromptId`) — the two ends of the link the fork reads a turn's
+ *  duration off after a reload (see lib/transcriptTiming.ts). */
+const REPLY_PROMPT_ID = 'pr_mock_t2';
+
+/** The span the fixture's step took (MOCK_TRANSCRIPT_TIMING=1): the thinking
+ *  block that opened it reads "Thought for 3s". */
+const STEP_SPAN_MS = 3_000;
 
 /** The session's goal, in the shape both apps read. The REST route and the
  *  `GetGoal` tool result are the same object, so the goal panel a manual pass
@@ -392,7 +415,7 @@ function buildFixtures(env) {
         // assistant message belongs to one open group, and the live exchange
         // below (MOCK_LIVE_EXCHANGE=1, its own prompt id) would be folded into
         // this reply instead of standing as the exchange it is.
-        { id: 'm2', session_id: SESSION_ID, role: 'assistant', prompt_id: 'pr_mock_t2', content: [
+        { id: 'm2', session_id: SESSION_ID, role: 'assistant', prompt_id: REPLY_PROMPT_ID, content: [
           // A reasoning block: upstream renders it as its collapsible thinking
           // block (head + inline body) and so does the fork, so the two can be
           // paired. The transcript route below carries the matching frame.
@@ -953,22 +976,35 @@ function createHandler({ root, token, env, fixtures }) {
         if (sub === 'transcript') {
           // Transcript contract page (zod-validated by upstream's bundle):
           // user turn with the prompt, assistant turn whose single step carries
-          // the markdown as a text frame. Neither the turn nor the step carries
-          // a timing here on purpose: upstream renders one from what they hold
-          // (a `· 1m20s` on its thinking head, a turn time on its rows) while
-          // the fork's main transcript is built from the snapshot's messages,
-          // which have no timing at all — a fixture timing would land as a
-          // surface the two apps disagree on for a reason not under test. The
-          // thinking frame is the same story from the other side:
-          // `thinkingFrameSchema` has no timing field either, only
-          // `{kind, frameId, text}` — which is why the fork's thinking card
-          // times the span it watched rather than reading one from here.
+          // the markdown as a text frame. Timing here is the fork's to read back
+          // after a reload and is off by default (MOCK_TRANSCRIPT_TIMING=1):
+          // upstream renders its own turn time from `startedAt`/`endedAt`, so a
+          // page carrying real ones is a surface the two apps disagree on for a
+          // reason not under comparison. The thinking frame is the same story
+          // from the other side: `thinkingFrameSchema` has no timing field
+          // either, only `{kind, frameId, text}` — the span of a thinking block
+          // is the span of the step that holds it, which is what the fork stamps
+          // onto the block (see lib/transcriptTiming.ts).
+          const timingOn = env.MOCK_TRANSCRIPT_TIMING === '1';
+          const atOffset = (offsetMs) => new Date(Date.now() - offsetMs).toISOString();
           return json(res, {
             agent_id: 'main',
             items: [
               { kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', origin: { kind: 'user' }, prompt: 'Show me a config example.', steps: [], startedAt: now, endedAt: now },
-              { kind: 'turn', turnId: 't2', ordinal: 1, state: 'completed', origin: { kind: 'user' }, steps: [
-                { kind: 'step', stepId: 's1', turnId: 't2', ordinal: 0, state: 'completed', frames: [
+              { kind: 'turn', turnId: 't2', ordinal: 1, state: 'completed', origin: { kind: 'user' },
+                // The prompt that opened this reply: the same id the snapshot
+                // stamps on the assistant message (`prompt_id`), which is how
+                // the fork ties a page turn to the reply it produced.
+                triggerPromptId: REPLY_PROMPT_ID,
+                durationMs: timingOn ? LIVE_TURN_MS : undefined,
+                steps: [
+                { kind: 'step', stepId: 's1', turnId: 't2', ordinal: 0, state: 'completed',
+                  // The step's own span — the "Thought for 3s" the fork reads
+                  // back. Both ends are the same instant by default, so no span
+                  // (and no label) exists unless the switch is on.
+                  startedAt: timingOn ? atOffset(STEP_SPAN_MS) : now,
+                  endedAt: timingOn ? atOffset(0) : now,
+                  frames: [
                   { kind: 'thinking', frameId: 's1.th_1', text: MOCK_THINKING },
                   // A run of tool calls, matching the snapshot's tool_use parts,
                   // shaped after transcriptFrameSchema in
@@ -1006,8 +1042,8 @@ function createHandler({ root, token, env, fixtures }) {
                   { kind: 'tool', frameId: 's1.tc_goalbudget_1', toolCallId: 'tc_goalbudget_1', name: 'SetGoalBudget', state: 'done', input: { value: 500000, unit: 'tokens' }, output: 'Budget set: 500000 tokens.' },
                   { kind: 'tool', frameId: 's1.tc_goalbudget_2', toolCallId: 'tc_goalbudget_2', name: 'SetGoalBudget', state: 'done', input: { value: 30, unit: 'minutes' }, output: 'Wall-clock budget set: 30 minutes.' },
                   { kind: 'text', frameId: 'f1', role: 'assistant', text: CODE_MD },
-                ], startedAt: now, endedAt: now },
-              ], startedAt: now, endedAt: now },
+                ] },
+              ], startedAt: timingOn ? atOffset(LIVE_TURN_MS) : now, endedAt: timingOn ? atOffset(0) : now },
               // The parked prompt's turn (MOCK_QUEUED=1): state `queued`, no
               // steps, nothing started. A prompt waiting for the running turn is
               // a turn item like any other, it just has not run yet.
@@ -1148,7 +1184,14 @@ export function startMock({ root, port, token, env } = {}) {
         seq: live.seq,
         session_id: SESSION_ID,
         timestamp: new Date().toISOString(),
-        payload: { turnId: live.turnId, reason: 'completed', durationMs: live.durationMs },
+        // MOCK_LIVE_EXCHANGE_NODUR=1 drops the daemon's own duration from the
+        // event that closes the exchange, which is what exercises the client's
+        // measured fallback for the "Worked for ..." total.
+        payload: {
+          turnId: live.turnId,
+          reason: 'completed',
+          ...(env.MOCK_LIVE_EXCHANGE_NODUR === '1' ? {} : { durationMs: live.durationMs }),
+        },
       }));
       console.log(`WS live exchange ended after ${live.endAfterMs}ms, durationMs=${live.durationMs}`);
     }, live.endAfterMs);

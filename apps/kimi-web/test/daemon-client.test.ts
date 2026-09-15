@@ -240,7 +240,29 @@ describe('DaemonKimiWebApi.getAgentTranscript', () => {
     vi.mocked(fetch).mockResolvedValue(
       envelope({
         agent_id: 'agent-1',
-        items: [{ kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', steps: [] }],
+        items: [
+          {
+            kind: 'turn',
+            turnId: 't1',
+            ordinal: 0,
+            state: 'completed',
+            // The engine's own timing rides on the page: the turn's duration and
+            // the span of each step (a thinking frame carries none of its own).
+            triggerPromptId: 'pr_1',
+            durationMs: 80_000,
+            steps: [
+              {
+                kind: 'step',
+                stepId: 't1.1',
+                ordinal: 1,
+                state: 'completed',
+                frames: [],
+                startedAt: '2026-01-01T00:00:00.000Z',
+                endedAt: '2026-01-01T00:00:03.000Z',
+              },
+            ],
+          },
+        ],
         has_more: false,
         seq: 12,
         // The transcript contract is camelCase here (prompts are not part of
@@ -256,7 +278,27 @@ describe('DaemonKimiWebApi.getAgentTranscript', () => {
     );
     expect(page).toEqual({
       agentId: 'agent-1',
-      items: [{ kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', steps: [] }],
+      items: [
+        {
+          kind: 'turn',
+          turnId: 't1',
+          ordinal: 0,
+          state: 'completed',
+          triggerPromptId: 'pr_1',
+          durationMs: 80_000,
+          steps: [
+            {
+              kind: 'step',
+              stepId: 't1.1',
+              ordinal: 1,
+              state: 'completed',
+              frames: [],
+              startedAt: '2026-01-01T00:00:00.000Z',
+              endedAt: '2026-01-01T00:00:03.000Z',
+            },
+          ],
+        },
+      ],
       hasMore: false,
       prompts: [
         { promptId: 'pr_1', status: 'queued', content: [{ type: 'text', text: 'waiting' }], createdAt: '2026-01-01T00:00:00Z' },

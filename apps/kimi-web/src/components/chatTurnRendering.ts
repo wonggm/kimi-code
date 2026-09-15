@@ -33,6 +33,9 @@ export function turnBlocks(turn: ChatTurn): TurnBlock[] {
 export type ThinkingItem = {
   kind: 'thinking';
   thinking: string;
+  /** The span of the step the block came from, when the transcript page carried
+   *  one — the head reads "Thought for 3s" from it. */
+  durationMs?: number;
   sourceIndex: number;
 };
 
@@ -85,7 +88,12 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
     // nests the thinking block in the run's body.
     if (block.kind === 'thinking') {
       flushRun();
-      rendered.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
+      rendered.push({
+        kind: 'thinking',
+        thinking: block.thinking,
+        durationMs: block.durationMs,
+        sourceIndex,
+      });
       return;
     }
 

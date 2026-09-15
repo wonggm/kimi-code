@@ -182,6 +182,12 @@ export interface AppMessage {
   parentMessageId?: string;
   /** Client-side measured duration from turn.started to turn.ended (ms). */
   durationMs?: number;
+  /** The span of the step this reply came from (ms), read off the agent
+   *  transcript page. A step is one model round — the thinking that opened it,
+   *  its tool calls, its text — and the page carries the span on the step; the
+   *  thinking block that step rendered shows it. Absent when the page has no
+   *  span for the step, which is what leaves the block's plain head. */
+  stepDurationMs?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -402,6 +408,11 @@ export interface TranscriptStep {
   kind: 'step';
   stepId: string;
   frames: TranscriptFrame[];
+  /** The step's own span, set while the step was live (the page carries it for
+   *  a session the server still holds). A thinking frame has no timing of its
+   *  own, so this is the span of the thinking that opened the step. */
+  startedAt?: string;
+  endedAt?: string;
 }
 
 export interface TranscriptTurn {
@@ -418,6 +429,10 @@ export interface TranscriptTurn {
   steps: TranscriptStep[];
   startedAt?: string;
   endedAt?: string;
+  /** The turn's own wall-clock duration (ms), the engine's own number off the
+   *  event that closed it. Absent for a turn the daemon never reported an end
+   *  for. */
+  durationMs?: number;
 }
 
 /** Non-turn transcript stream item — compaction/undo markers carry no steps. */

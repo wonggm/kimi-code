@@ -20,6 +20,7 @@ import {
   applyRecoveredPromptMessages,
   recoveredPromptMessages,
 } from '../lib/transcriptPrompts';
+import { applyTranscriptTimings, pageTurnTimings } from '../lib/transcriptTiming';
 import { mergeSnapshotSubagents } from '../lib/taskMerge';
 import { bareDuration } from '../lib/bareDuration';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
@@ -1487,18 +1488,35 @@ async function pullSessionWarnings(sessionId: string): Promise<void> {
   }
 }
 
-async function rehydrateHeldPrompts(sessionId: string): Promise<void> {
-  // The snapshot carries no prompt the daemon is holding (a prompt it accepted
-  // but has not started, or one steered into the turn that was running), so the
-  // user's own message is missing from the transcript after a reload. Rebuild
-  // those bubbles from the agent's transcript page, whose prompt list rides on
-  // any page (pageSize 1 keeps the request to the prompt list itself).
+/** How many turns of the transcript page a session sync reads. The page is the
+ *  only route that carries a turn's duration and a step's span, and both labels
+ *  it feeds ("Worked for …", "Thought for …") are read off the messages the
+ *  snapshot window holds — so a page covering the same window is enough, and one
+ *  read per sync keeps the cost off the render path. */
+const TRANSCRIPT_PAGE_SIZE = 50;
+
+async function rehydrateFromTranscriptPage(sessionId: string): Promise<void> {
+  // Two things the snapshot cannot carry, read off the agent's transcript page
+  // once per sync:
+  //  - a prompt the daemon is holding (accepted but not started, or steered into
+  //    the turn that was running), whose user bubble is otherwise missing from
+  //    the transcript after a reload;
+  //  - the engine's own timing — the turn's duration and each step's span — which
+  //    is what the "Worked for …" / "Thought for …" labels read, and which a
+  //    reload or a session switch otherwise loses (the client can only time what
+  //    it watched stream).
   try {
-    const page = await getKimiWebApi().getAgentTranscript(sessionId, 'main', { pageSize: 1 });
+    const page = await getKimiWebApi().getAgentTranscript(sessionId, 'main', {
+      pageSize: TRANSCRIPT_PAGE_SIZE,
+    });
     if (!rawState.sessions.some((session) => session.id === sessionId)) return;
     const recovered = recoveredPromptMessages(page, new Date().toISOString());
+    const timings = pageTurnTimings(page);
     updateSessionMessages(sessionId, (messages) =>
-      applyRecoveredPromptMessages(messages, recovered, sessionId),
+      applyTranscriptTimings(
+        applyRecoveredPromptMessages(messages, recovered, sessionId),
+        timings,
+      ),
     );
   } catch {
     // Best-effort repair of state no other route carries: a failed read leaves
@@ -1651,7 +1669,7 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
       eventConn.subscribe(sessionId, { seq: snap.asOfSeq, epoch: snap.epoch });
       retainWsSubscription(sessionId);
     }
-    void rehydrateHeldPrompts(sessionId);
+    void rehydrateFromTranscriptPage(sessionId);
     sessionsWithStaleCursor.delete(sessionId);
     // The snapshot carries placeholder usage, so a preserved cached value may
     // itself be stale — resync / stale-socket recovery reach here without
@@ -3047,6 +3065,28 @@ function clearWorkingFlags(sid: string): void {
 }
 
 function onMainTurnEnd(sid: string, status: 'idle' | 'aborted', turnWasActive: boolean): void {
+  // The turn's total ("Worked for 1m20s") comes from the daemon's own duration
+  // on the event that closes the exchange, which the snapshot does not carry —
+  // so an exchange this page watched end but received without a duration, or
+  // one it watched across a reload, would have no total. Stamp the span this
+  // client measured from its persisted start before that start is dropped.
+  const started = exchangeStarts.value[sid];
+  if (started) {
+    const elapsed = Date.now() - started.at;
+    if (elapsed > 0) {
+      updateSessionMessages(sid, (messages) => {
+        let last = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i]?.role === 'assistant') {
+            last = i;
+            break;
+          }
+        }
+        if (last < 0 || (messages[last]?.durationMs ?? 0) > 0) return messages;
+        return messages.map((m, i) => (i === last ? { ...m, durationMs: elapsed } : m));
+      });
+    }
+  }
   // The exchange is over: the working indicator's elapsed time stops with it
   // (a later moon on this session is a new exchange and takes a new stamp).
   setExchangeStart(sid, null);
