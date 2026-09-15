@@ -83,6 +83,36 @@ describe('systemPromptVars', () => {
     expect(vars['skills_section']).toBe('');
   });
 
+  it('blanks the named prompt blocks a profile omits', () => {
+    const vars = systemPromptVars(
+      {
+        skills: 'SKILLS',
+        agentsMd: 'AGENTS',
+        cwdListing: 'LISTING',
+        pluginSections: 'PLUGIN_A',
+        omitPromptBlocks: ['agents_md', 'skills', 'plugins'],
+      },
+      { skillActive: true },
+    );
+
+    expect(vars['agents_md']).toBe('');
+    expect(vars['skills']).toBe('');
+    expect(vars['skills_section']).toBe('');
+    expect(vars['plugin_sections']).toBe('');
+    expect(vars['cwd_listing']).toBe('LISTING');
+  });
+
+  it('renders every block when a profile omits nothing', () => {
+    const vars = systemPromptVars(
+      { skills: 'SKILLS', agentsMd: 'AGENTS', pluginSections: 'PLUGIN_A' },
+      { skillActive: true },
+    );
+
+    expect(vars['agents_md']).toBe('AGENTS');
+    expect(vars['skills_section']).toContain('SKILLS');
+    expect(vars['plugin_sections']).toContain('PLUGIN_A');
+  });
+
   it('lets a context skillActive override the profile default', () => {
     const vars = systemPromptVars({ skills: 'SKILLS', skillActive: true }, { skillActive: false });
 

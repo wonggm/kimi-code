@@ -25,7 +25,14 @@ export function agentProfileFromFile(
     disallowedTools: definition.disallowedTools,
     subagents: definition.subagents,
     renderSystemPrompt: (context) =>
-      renderPromptTemplateResult(definition.prompt, context, { skillActive }, basePrompt),
+      renderPromptTemplateResult(
+        definition.prompt,
+        definition.omitPromptBlocks === undefined
+          ? context
+          : { ...context, omitPromptBlocks: definition.omitPromptBlocks },
+        { skillActive },
+        basePrompt,
+      ),
   });
 }
 
