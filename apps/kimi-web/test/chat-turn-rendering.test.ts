@@ -8,7 +8,6 @@ import {
   formatTokens,
   rendersToolCard,
   renderBlockKey,
-  runItemKey,
   toolFoldBlockKey,
   turnBlocks,
   turnFinalText,
@@ -37,7 +36,7 @@ function thinkingBlock(thinking: string): TurnBlock {
   return { kind: 'thinking', thinking };
 }
 
-/** Ids of a run's tool rows, in order (a run may open with a thinking item). */
+/** Ids of a run's tool rows, in order. */
 function toolIds(items: readonly RunItem[]): string[] {
   return items.flatMap((item) => (item.kind === 'tool' ? [item.tool.id] : []));
 }
@@ -147,28 +146,35 @@ describe('assistantRenderBlocks', () => {
     ]);
   });
 
-  it('nests the thinking that opens a run as the run\'s first item', () => {
+  it('renders a lone thinking block on its own', () => {
+    expect(assistantRenderBlocks(assistantTurn([thinkingBlock('plan')]))).toEqual([
+      { kind: 'thinking', thinking: 'plan', sourceIndex: 0 },
+    ]);
+  });
+
+  it('renders the thinking that opens a run as its own block, outside the run', () => {
     const rendered = assistantRenderBlocks(
       assistantTurn([thinkingBlock('plan'), toolBlock('a'), toolBlock('b')]),
     );
-    expect(rendered.map((b) => b.kind)).toEqual(['tool-stack']);
-    if (rendered[0]?.kind === 'tool-stack') {
-      expect(rendered[0].items).toEqual([
-        { kind: 'thinking', thinking: 'plan', sourceIndex: 0 },
-        { kind: 'tool', tool: tool('a'), sourceIndex: 1 },
-        { kind: 'tool', tool: tool('b'), sourceIndex: 2 },
-      ]);
-    }
+    expect(rendered).toEqual([
+      { kind: 'thinking', thinking: 'plan', sourceIndex: 0 },
+      {
+        kind: 'tool-stack',
+        items: [
+          { kind: 'tool', tool: tool('a'), sourceIndex: 1 },
+          { kind: 'tool', tool: tool('b'), sourceIndex: 2 },
+        ],
+      },
+    ]);
   });
 
-  it('keeps a second thinking block inside the run, in source order', () => {
+  it('breaks the run at a thinking block and keeps only tool rows in each run', () => {
     const rendered = assistantRenderBlocks(
-      assistantTurn([toolBlock('a'), thinkingBlock('plan'), toolBlock('b')]),
+      assistantTurn([toolBlock('a'), thinkingBlock('plan'), toolBlock('b'), toolBlock('c')]),
     );
-    expect(rendered.map((b) => b.kind)).toEqual(['tool-stack']);
-    if (rendered[0]?.kind === 'tool-stack') {
-      expect(rendered[0].items.map((item) => item.kind)).toEqual(['tool', 'thinking', 'tool']);
-    }
+    expect(rendered.map((b) => b.kind)).toEqual(['tool', 'thinking', 'tool-stack']);
+    const stack = rendered[2];
+    if (stack?.kind === 'tool-stack') expect(toolIds(stack.items)).toEqual(['b', 'c']);
   });
 });
 
@@ -212,7 +218,6 @@ describe('toolFoldBlockKey', () => {
     expect(
       toolFoldBlockKey({
         items: [
-          { kind: 'thinking', thinking: 'plan', sourceIndex: 1 },
           { kind: 'tool', tool: tool('first'), sourceIndex: 2 },
           { kind: 'tool', tool: tool('second'), sourceIndex: 3 },
         ],
@@ -232,21 +237,14 @@ describe('toolFoldBlockKey', () => {
 });
 
 describe('firstRunTool', () => {
-  it('skips a leading thinking item', () => {
+  it('returns the run\'s first tool row, and nothing for an empty run', () => {
     expect(
       firstRunTool([
-        { kind: 'thinking', thinking: 'plan', sourceIndex: 0 },
         { kind: 'tool', tool: tool('a'), sourceIndex: 1 },
+        { kind: 'tool', tool: tool('b'), sourceIndex: 2 },
       ])?.tool.id,
     ).toBe('a');
-    expect(firstRunTool([{ kind: 'thinking', thinking: 'plan', sourceIndex: 0 }])).toBeUndefined();
-  });
-});
-
-describe('runItemKey', () => {
-  it('keys a tool row by its id and a thinking item by its source index', () => {
-    expect(runItemKey({ kind: 'tool', tool: tool('a'), sourceIndex: 4 })).toBe('a');
-    expect(runItemKey({ kind: 'thinking', thinking: 'plan', sourceIndex: 4 })).toBe('thinking-4');
+    expect(firstRunTool([])).toBeUndefined();
   });
 });
 

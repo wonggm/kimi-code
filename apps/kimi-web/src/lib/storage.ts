@@ -37,6 +37,11 @@ export const STORAGE_KEYS = {
   workspaceSort: 'kimi-web.workspace-sort',
   // Mobile session switcher view mode: grouped workspace groups vs flat recency.
   switcherView: 'kimi-web.switcher-view',
+  // Per-session wall-clock start of the exchange the working moon counts
+  // (see lib/exchangeTiming.ts): the snapshot's in-flight turn carries no
+  // start time, so a reload can only resume the count from what the client
+  // itself stamped before it.
+  exchangeStart: 'kimi-web.exchange-start',
   // Conversation outline (TOC). The value keeps the legacy `beta-toc` name so
   // users who explicitly turned it off while it was experimental keep their
   // preference after it became on-by-default.

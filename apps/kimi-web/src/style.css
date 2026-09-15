@@ -491,10 +491,9 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-send-bg: var(--color-accent);
   --color-send-bg-hover: var(--color-accent-hover);
   --color-send-bg-disabled: rgba(0, 0, 0, 0.05);
-  /* Disabled send glyph. Light keeps the faint-text grey the fork already
-     painted here (#9aa3af through --color-text-faint); the dark blocks below
-     take upstream's measured rgba(255, 255, 255, 0.28) instead. */
-  --color-send-icon-disabled: var(--color-text-faint);
+  /* Disabled send glyph — upstream's light value. The dark blocks below carry
+     upstream's measured rgba(255, 255, 255, 0.28). */
+  --color-send-icon-disabled: rgba(0, 0, 0, 0.27);
   /* Stop disc glyph — upstream draws the interrupt as a danger-tinted glyph on
      the neutral --color-subtle disc; the dark blocks below soften it to
      upstream's 72% mix. */

@@ -17,6 +17,7 @@ export default {
   emptyWorkspaceHint: 'Send in {name}',
   switchWorkspace: 'Switch workspace',
   addWorkspace: 'New workspace',
+  pickFolder: 'Choose folder…',
   moreWorkspaces: 'More workspaces ({count})',
   compacting: 'Compacting context…',
   compactedPlain: 'Context compacted',

@@ -2,16 +2,16 @@
      Upstream's activity run: a run of consecutive tool calls behind one head
      row — a state glyph, the counted summary ("Read 1 file · Ran 1 command ·
      Searched 1 pattern · Made 1 edit") and a chevron — over a body that holds
-     the run's items. The thinking block that opened the run is the body's first
-     item, exactly as upstream nests it, followed by the run's tool rows.
+     the run's tool rows. The run wraps tool calls only, and counts them only; a
+     thinking block is a block of its own above the run, not a row inside it
+     (upstream nests the thinking block in the run's body).
      Collapsed by default; the body stays mounted and is `inert` while closed,
      exactly as upstream renders it. -->
 <script setup lang="ts">
 import { computed, type VNode } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { RunItem, ToolStackItem } from '../chatTurnRendering';
-import { runItemKey } from '../chatTurnRendering';
-import ThinkingBlock from './ThinkingBlock.vue';
+import { toolStackKey } from '../chatTurnRendering';
 import { buildActivitySummary } from '../../lib/activitySummary';
 import { foldAggregateStatus } from '../../lib/toolFold';
 import { activityRunFolding } from '../../lib/conversationPrefs';
@@ -22,7 +22,9 @@ import Icon from '../ui/Icon.vue';
 const props = withDefaults(
   defineProps<{
     items: RunItem[];
-    /** True while the turn is still streaming. */
+    /** The turn's streaming flag, passed by the caller. The run does not read
+     *  it: its only rows are tool cards, and a tool's own status carries the
+     *  live state. */
     streaming?: boolean;
     /** Run identity — the fold state is remembered per run. */
     runKey: string;
@@ -40,27 +42,21 @@ defineSlots<{ default?: (props: { item: ToolStackItem }) => VNode[] }>();
 
 const { t } = useI18n();
 
-/** The head counts tool calls; the run's thinking item is not one of them. */
-const tools = computed<ToolStackItem[]>(() => props.items.filter((item): item is ToolStackItem => item.kind === 'tool'));
-
-const status = computed(() => foldAggregateStatus(tools.value));
+/** Every row of the run is a tool call, so the head counts the rows as they are. */
+const status = computed(() => foldAggregateStatus(props.items));
 
 /** Upstream picks the glyph by state: a check when done, a close on failure,
  *  the running tool's own glyph while it works. */
 const glyph = computed<string>(() => {
   if (status.value === 'running') {
-    const running = tools.value.find((item) => item.tool.status === 'running') ?? tools.value[tools.value.length - 1];
+    const running =
+      props.items.find((item) => item.tool.status === 'running') ?? props.items[props.items.length - 1];
     if (running) return toolGlyph(running.tool.name);
   }
   return iconSvg(status.value === 'error' ? 'close' : 'check', 'sm');
 });
 
-const summary = computed(() => buildActivitySummary(tools.value, t, { durationMs: undefined }));
-
-/** Upstream streams a thinking item only while it is the run's last item. */
-function itemStreaming(item: RunItem): boolean {
-  return props.streaming && item.kind === 'thinking' && item.sourceIndex === props.items[props.items.length - 1]?.sourceIndex;
-}
+const summary = computed(() => buildActivitySummary(props.items, t, { durationMs: undefined }));
 
 // With the tool-call summary preference off, the run is always expanded —
 // upstream does the same (`open = forceOpen || !activityRunFolding || state`).
@@ -95,9 +91,8 @@ function toggle(): void {
     </button>
     <div class="ar-body" :class="{ open: expanded }" :inert="!expanded">
       <div class="ar-body-inner">
-        <template v-for="item in items" :key="runItemKey(item)">
-          <ThinkingBlock v-if="item.kind === 'thinking'" :text="item.thinking" mobile :streaming="itemStreaming(item)" />
-          <slot v-else :item="item" />
+        <template v-for="item in items" :key="toolStackKey(item)">
+          <slot :item="item" />
         </template>
       </div>
     </div>

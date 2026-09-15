@@ -51,6 +51,12 @@ import {
   traceWsIn,
 } from '../src/debug/trace';
 import { composePageTitle } from '../src/composables/usePageTitle';
+import {
+  loadExchangeStarts,
+  reconcileExchangeStart,
+  saveExchangeStart,
+} from '../src/lib/exchangeTiming';
+import { STORAGE_KEYS } from '../src/lib/storage';
 
 // The trace tests exercise its exported recording/serialization contract:
 // session exports receive only bounded, explicitly selected metadata.
@@ -1180,5 +1186,102 @@ describe('composePageTitle', () => {
     expect(composePageTitle({})).toBe('Kimi Code Web');
     expect(composePageTitle({ workspaceName: null, sessionTitle: null })).toBe('Kimi Code Web');
     expect(composePageTitle({ webTitle: null })).toBe('Kimi Code Web');
+  });
+});
+
+// The exchange clock behind the working moon: a reload and a session switch
+// must both keep counting the same exchange, and a stamp left over from an
+// exchange this page never saw end must not be applied to a later one.
+describe('exchange timing', () => {
+  function installMemoryStorage(): void {
+    const data = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        data.set(key, value);
+      },
+      removeItem: (key: string) => {
+        data.delete(key);
+      },
+      clear: () => {
+        data.clear();
+      },
+      key: (index: number) => Array.from(data.keys()).at(index) ?? null,
+      get length() {
+        return data.size;
+      },
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe('reconcileExchangeStart', () => {
+    it('has nothing to count when no turn is in flight', () => {
+      expect(reconcileExchangeStart({ at: 1000, turnId: 3 }, undefined, 5000)).toBeNull();
+      expect(reconcileExchangeStart(undefined, undefined, 5000)).toBeNull();
+    });
+
+    it('starts the count now when nothing is remembered', () => {
+      expect(reconcileExchangeStart(undefined, 7, 5000)).toEqual({ at: 5000, turnId: 7 });
+    });
+
+    it('keeps the remembered start of the same turn (reload / session switch)', () => {
+      expect(reconcileExchangeStart({ at: 1000, turnId: 7 }, 7, 5000)).toEqual({
+        at: 1000,
+        turnId: 7,
+      });
+    });
+
+    it('adopts the turn id of a start stamped before the daemon named the turn', () => {
+      expect(reconcileExchangeStart({ at: 1000 }, 7, 5000)).toEqual({ at: 1000, turnId: 7 });
+    });
+
+    it('restarts for a turn the remembered start does not belong to', () => {
+      expect(reconcileExchangeStart({ at: 1000, turnId: 3 }, 7, 5000)).toEqual({
+        at: 5000,
+        turnId: 7,
+      });
+    });
+  });
+
+  describe('persistence', () => {
+    beforeEach(() => {
+      installMemoryStorage();
+    });
+
+    it('round-trips a start per session', () => {
+      saveExchangeStart('s1', { at: 1000, turnId: 3 });
+      saveExchangeStart('s2', { at: 2000 });
+      expect(loadExchangeStarts()).toEqual({ s1: { at: 1000, turnId: 3 }, s2: { at: 2000 } });
+    });
+
+    it('clears one session without touching the others', () => {
+      saveExchangeStart('s1', { at: 1000, turnId: 3 });
+      saveExchangeStart('s2', { at: 2000, turnId: 4 });
+      saveExchangeStart('s1', null);
+      expect(loadExchangeStarts()).toEqual({ s2: { at: 2000, turnId: 4 } });
+    });
+
+    it('drops the whole key once nothing is left to remember', () => {
+      saveExchangeStart('s1', { at: 1000, turnId: 3 });
+      saveExchangeStart('s1', null);
+      expect(localStorage.getItem(STORAGE_KEYS.exchangeStart)).toBeNull();
+      expect(loadExchangeStarts()).toEqual({});
+    });
+
+    it('ignores entries that do not parse instead of guessing a time', () => {
+      localStorage.setItem(
+        STORAGE_KEYS.exchangeStart,
+        JSON.stringify({ good: { at: 10, turnId: 1 }, noTime: { turnId: 2 }, bad: 'x' }),
+      );
+      expect(loadExchangeStarts()).toEqual({ good: { at: 10, turnId: 1 } });
+    });
+
+    it('survives a corrupted value', () => {
+      localStorage.setItem(STORAGE_KEYS.exchangeStart, '{not json');
+      expect(loadExchangeStarts()).toEqual({});
+    });
   });
 });

@@ -28,6 +28,8 @@ export function turnBlocks(turn: ChatTurn): TurnBlock[] {
   return blocks;
 }
 
+/** A thinking block. It is always a render block of its own, never a row of an
+ *  activity run. */
 export type ThinkingItem = {
   kind: 'thinking';
   thinking: string;
@@ -40,17 +42,12 @@ export type ToolStackItem = {
   sourceIndex: number;
 };
 
-/** One row of an activity run. Upstream's run holds the thinking block that
- *  opened it as its first item, in source order with the tool rows. */
-export type RunItem = ThinkingItem | ToolStackItem;
+/** One row of an activity run — a run wraps tool calls only. */
+export type RunItem = ToolStackItem;
 
-/** The run's first tool row — a run may open with a thinking item. */
+/** The run's first tool row. */
 export function firstRunTool(items: readonly RunItem[]): ToolStackItem | undefined {
-  return items.find((item): item is ToolStackItem => item.kind === 'tool');
-}
-
-export function runItemKey(item: RunItem): string {
-  return item.kind === 'tool' ? toolStackKey(item) : `thinking-${item.sourceIndex}`;
+  return items[0];
 }
 
 export type AssistantRenderBlock =
@@ -69,13 +66,12 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
   const rendered: AssistantRenderBlock[] = [];
   let run: RunItem[] = [];
 
-  // A run of one item is not a run: a lone thinking block or tool card renders
-  // on its own, exactly as upstream's builder emits it.
+  // A run of one item is not a run: a lone tool card renders on its own,
+  // exactly as upstream's builder emits it.
   const flushRun = () => {
     if (run.length === 1) {
       const [item] = run;
-      if (item?.kind === 'thinking') rendered.push(item);
-      else if (item) rendered.push({ kind: 'tool', tool: item.tool, sourceIndex: item.sourceIndex });
+      if (item) rendered.push({ kind: 'tool', tool: item.tool, sourceIndex: item.sourceIndex });
     } else if (run.length > 1) {
       rendered.push({ kind: 'tool-stack', items: run });
     }
@@ -83,10 +79,13 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
   };
 
   blocks.forEach((block, sourceIndex) => {
-    // The thinking that opens a run stays inside it (upstream nests it as the
-    // run's first item), so it is collected here rather than flushed out.
+    // A thinking block is its own row, outside the run: the run wraps the tool
+    // calls only, so a thinking block both ends the run before it and keeps the
+    // one after it apart (the same break a text block makes). Upstream instead
+    // nests the thinking block in the run's body.
     if (block.kind === 'thinking') {
-      run.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
+      flushRun();
+      rendered.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
       return;
     }
 

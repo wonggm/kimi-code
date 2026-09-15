@@ -1781,6 +1781,9 @@ function selectModel(modelId: string): void {
 /* Main composer card */
 .composer-card {
   --composer-send-size: 32px;
+  /* Send glyph box. Upstream's --composer-send-icon-size: the arrow is drawn on
+     the icon's own 24px grid, so the box is what sets its drawn size. */
+  --composer-send-icon-size: 28px;
   /* Square size for the collapsed-to-icon controls (the model pill's
      icon-only state). Matches the add-button / send-button footprint. */
   --composer-control-size: 32px;
@@ -2122,10 +2125,12 @@ function selectModel(modelId: string): void {
   stroke: color-mix(in srgb, var(--color-bg) 32%, transparent);
 }
 
+/* Send glyph box — upstream's rule for rule. The control's own --p-ic-lg (20px)
+   drew the arrow noticeably smaller than upstream's 28px box. */
 .send svg {
   flex: none;
-  width: var(--p-ic-lg);
-  height: var(--p-ic-lg);
+  width: var(--composer-send-icon-size);
+  height: var(--composer-send-icon-size);
 }
 
 /* Stop button — sibling of Send, shown only while running. Upstream rule for

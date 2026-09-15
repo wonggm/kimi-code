@@ -24,6 +24,12 @@ import { mergeSnapshotSubagents } from '../lib/taskMerge';
 import { bareDuration } from '../lib/bareDuration';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
 import {
+  loadExchangeStarts,
+  reconcileExchangeStart,
+  saveExchangeStart,
+  type ExchangeStart,
+} from '../lib/exchangeTiming';
+import {
   loadUnread,
   loadWorkspaceOrder,
   loadWorkspaceSort,
@@ -1624,6 +1630,17 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
       if (mainTurnActive) next[sessionId] = true;
       else delete next[sessionId];
       rawState.turnActiveBySession = next;
+      // The exchange clock follows the same fact: no turn in flight means no
+      // exchange to count, and a stamp naming another turn belongs to an
+      // exchange this client never saw end.
+      setExchangeStart(
+        sessionId,
+        reconcileExchangeStart(
+          exchangeStarts.value[sessionId],
+          mainTurnActive ? snap.inFlightTurn?.turnId : undefined,
+          Date.now(),
+        ),
+      );
     }
 
     connectEventsIfNeeded();
@@ -2238,22 +2255,48 @@ const turnActive = computed<boolean>(() => {
  *  (`turnActive`). */
 const working = computed<boolean>(() => inFlight.value || turnActive.value);
 
-/** Wall-clock start of the exchange the working moon is counting, or null when
- *  none is running. Stamped when the working flag rises (the optimistic submit,
- *  the turn's own start, or a snapshot that arrives mid-turn) and dropped when
- *  it falls, so the indicator's elapsed time counts from the exchange's start
- *  rather than from whenever this client happened to hear about it. */
-const exchangeStartedAt = ref<number | null>(null);
+/** Wall-clock start of each session's running exchange, keyed by session id.
+ *  Stamped when the working flag rises over a session that has no remembered
+ *  start (the optimistic submit, the turn's own start) and cleared when that
+ *  exchange ends, so the indicator counts from the exchange's start rather
+ *  than from whenever this client happened to hear about it. Seeded from
+ *  storage and kept across a session switch, which is what makes the count
+ *  continuous after a reload and on returning to a session left mid-turn —
+ *  the two sources the client re-reads on boot (the snapshot's in-flight turn
+ *  and the transcript page) carry no start time (see lib/exchangeTiming.ts). */
+const exchangeStarts = ref(loadExchangeStarts());
 
-watch(working, (active, before) => {
-  if (active === before) return;
-  exchangeStartedAt.value = active ? Date.now() : null;
+/** The start the active session's moon counts from, or null when none is
+ *  running. */
+const exchangeStartedAt = computed<number | null>(() => {
+  const sid = rawState.activeSessionId;
+  return (sid ? exchangeStarts.value[sid]?.at : undefined) ?? null;
 });
 
-// A session switch mid-exchange restarts the count for the new session's
-// exchange; without this the new session would inherit the old one's start.
-watch(activeSessionId, () => {
-  exchangeStartedAt.value = working.value ? Date.now() : null;
+function setExchangeStart(sid: string, start: ExchangeStart | null): void {
+  const existing = exchangeStarts.value[sid];
+  if (start === null) {
+    if (existing === undefined) return;
+    const next = { ...exchangeStarts.value };
+    delete next[sid];
+    exchangeStarts.value = next;
+  } else {
+    if (existing !== undefined && existing.at === start.at && existing.turnId === start.turnId) {
+      return;
+    }
+    exchangeStarts.value = { ...exchangeStarts.value, [sid]: start };
+  }
+  saveExchangeStart(sid, start);
+}
+
+// Moon up over a session with no remembered start: an exchange this page is
+// watching begin. One that rises over a remembered start is the same exchange
+// coming back — after a reload, or on returning to a session switched away
+// from mid-turn — so its stamp is kept and the count stays continuous.
+watch([working, activeSessionId], ([active, sid]) => {
+  if (!sid || !active) return;
+  if (exchangeStarts.value[sid] !== undefined) return;
+  setExchangeStart(sid, { at: Date.now() });
 });
 
 const tasks = computed<TaskItem[]>(() => {
@@ -3000,9 +3043,13 @@ function clearWorkingFlags(sid: string): void {
   if (rawState.inFlightBySession[sid]) {
     rawState.inFlightBySession = { ...rawState.inFlightBySession, [sid]: false };
   }
+  setExchangeStart(sid, null);
 }
 
 function onMainTurnEnd(sid: string, status: 'idle' | 'aborted', turnWasActive: boolean): void {
+  // The exchange is over: the working indicator's elapsed time stops with it
+  // (a later moon on this session is a new exchange and takes a new stamp).
+  setExchangeStart(sid, null);
   // Capture before finishPromptLocal drops it — it keys the completion
   // notification's dedup tag so each finished turn alerts once.
   const finishedPromptId = rawState.promptIdBySession[sid];
