@@ -228,4 +228,28 @@ describe('e2e: openai-legacy adapter', () => {
       expect(harness.requests.length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  it('forwards constructor-time defaultHeaders (e.g. x-opencode-session) on the wire', async () => {
+    await withHarness(async (harness) => {
+      harness.route('POST', '/v1/chat/completions', async (_request, reply) => {
+        await reply.sseJson(200, [makeChunk({ content: 'ok' }, { finishReason: 'stop' })]);
+      });
+
+      const provider = new OpenAILegacyChatProvider({
+        model: 'gpt-4.1',
+        apiKey: 'test-key',
+        baseUrl: `${harness.baseUrl}/v1`,
+        stream: true,
+        defaultHeaders: { 'x-opencode-session': 'session-abc' },
+      });
+      const history: Message[] = [
+        { role: 'user', content: [{ type: 'text', text: 'hi' }], toolCalls: [] },
+      ];
+
+      await collectStream(provider, '', [], history);
+
+      expect(harness.requests).toHaveLength(1);
+      expect(harness.requests[0]!.headers['x-opencode-session']).toBe('session-abc');
+    });
+  });
 });
