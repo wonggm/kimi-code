@@ -2364,7 +2364,9 @@ describe('FullCompaction', () => {
 
     expect(ctx.llmCalls).toHaveLength(2);
     const [compactionCall, answerCall] = ctx.llmCalls;
-    expect(messageText(compactionCall?.history.at(-1))).toContain('first-person handoff note');
+    expect(messageText(compactionCall?.history.at(-1))).toContain(
+      'You are about to run out of context',
+    );
     expect(
       answerCall?.history.map(messageText).some((text) => text.includes('Per-profile threshold summary.')),
     ).toBe(true);

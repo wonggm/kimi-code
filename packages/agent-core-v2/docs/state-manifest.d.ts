@@ -975,6 +975,8 @@ export interface AgentStateSnapshot {
       readonly maxOutputSize: number | undefined;
       readonly alwaysThinking: boolean | undefined;
       readonly thinkingLevel: /* ThinkingEffort — packages/agent-core-v2/src/human/llm/thinking.ts */ 'off' | 'on' | (string & {});
+      readonly compactionThinkingLevel: 'off' | 'on' | (string & {}) | undefined;
+      readonly compactionMaxOutputSize: number | undefined;
       readonly reservedContextSize: number | undefined;
       readonly compactionTriggerRatio: number | undefined;
       readonly compactionMaxAttempts: number | undefined;
