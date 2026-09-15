@@ -1178,7 +1178,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         </div>
         <template v-if="isTurnHeavyContentMounted(turn)">
           <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
-            <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
+            <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :duration-ms="blk.durationMs" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
             <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
             <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
             <!-- Upstream's activity run: one head row over the run's own items

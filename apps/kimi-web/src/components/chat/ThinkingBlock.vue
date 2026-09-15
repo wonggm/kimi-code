@@ -5,8 +5,9 @@
      sent the full text to the right panel; upstream has no thinking tab, so the
      panel that click targeted is gone and the block carries its own expansion.
      Once its thinking ends the card folds back up and the head reads how long
-     that thinking took ("Thought for 3s") — the span it timed itself, since no
-     transcript field carries a per-block time (see `headTitle`). -->
+     that thinking took ("Thought for 3s"): the span of the step the block came
+     from, read off the transcript page (`durationMs`), falling back to the span
+     this block watched stream when the page has none. -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -22,7 +23,8 @@ const props = withDefaults(
      *  elapsed time ticking once a second. */
     startedAt?: string;
     /** A finished block's thinking time, overriding the span the block timed
-     *  itself; the head reads "Thought for 3s". */
+     *  itself; the head reads "Thought for 3s". Comes from the transcript page,
+     *  which carries the span on the step the block came from. */
     durationMs?: number;
     /** Skip the expansion transition (a block taller than the viewport snaps
      *  open instead of animating, which would jank the scroll). */
@@ -82,12 +84,14 @@ const timeLabel = computed<string>(() => {
   return '';
 });
 
-// How long the thinking took. Nothing in the transcript carries a per-block
-// time — a thinking frame is `{frameId, text}` and the step that holds it spans
-// the whole model round, tools included — so the card times the thinking it
-// watched: `streaming` is true exactly while this block is the one being
-// written, so the span between the flag rising and falling is that thinking.
-// A block that was already finished when the transcript arrived (a reload) has
+// How long the thinking took. A thinking frame carries no time of its own
+// (`{frameId, text}`) and the step that holds it spans the whole model round,
+// tools included, so the page's per-step span — passed in as `durationMs` — is
+// the measured fact, and `headTitle` prefers it. What the block watched itself
+// is the fallback for a block the page has no span for: `streaming` is true
+// exactly while this block is the one being written, so the span between the
+// flag rising and falling is that thinking. A block that was already finished
+// when the transcript arrived (a reload) and that the page has no span for has
 // nothing to measure and keeps the plain head.
 const thinkingStartedAt = ref<number | null>(null);
 const measuredMs = ref<number | null>(null);

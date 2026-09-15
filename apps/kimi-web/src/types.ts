@@ -250,7 +250,11 @@ export interface CronTurnData {
  * dedicated block. */
 export type TurnBlock =
   | { kind: 'text'; text: string }
-  | { kind: 'thinking'; thinking: string }
+  /** A thinking segment. `durationMs` is the span of the step it came from,
+   *  read off the agent transcript page — a thinking frame carries no timing of
+   *  its own (see `stepDurationMs` on AppMessage). Absent when the page has no
+   *  span, so the block falls back to whatever the client measured itself. */
+  | { kind: 'thinking'; thinking: string; durationMs?: number }
   | { kind: 'tool'; tool: ToolCall }
   /** Inline background-task notification, folded into the assistant run at the
       position it arrived so it renders in order instead of trailing the turn.
