@@ -80,6 +80,11 @@ export function parseAgentFileText(options: ParseAgentFileOptions): AgentFileDef
   );
   const rawSubagents = parseStringList(frontmatter['subagents'], 'subagents', options.path);
   const subagents = rawSubagents;
+  const omitPromptBlocks = parseStringList(
+    frontmatter['omitPromptBlocks'],
+    'omitPromptBlocks',
+    options.path,
+  );
 
   const prompt = parsed.body.trim();
   if (prompt.length === 0) {
@@ -94,6 +99,7 @@ export function parseAgentFileText(options: ParseAgentFileOptions): AgentFileDef
     tools,
     disallowedTools,
     subagents,
+    omitPromptBlocks,
     prompt,
     path: options.path,
     source: options.source,
