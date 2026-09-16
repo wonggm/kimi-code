@@ -18,23 +18,28 @@ export default {
   attachmentImage: 'Image',
   attachmentVideo: 'Video',
   attachmentFile: 'File',
+  attachments: 'Attachments',
+  imagesAndVideos: 'Images and videos',
   attachmentOpenUnsupported: 'Can’t open {name} — this file type isn’t supported',
   dropToAttach: 'Drop files to attach',
   remove: 'Remove',
   removeNamed: 'Remove {name}',
-  uploading: 'Uploading',
-  uploaded: 'Uploaded',
-  uploadFailed: 'Upload failed',
+  mentionNamed: 'Mention {name}',
+  /** Accessible label for the reorderable image/video rail (composer + transcript). */
+  mediaAttachments: 'Media rail',
+  uploading: 'Preparing',
+  uploaded: 'Ready to send',
+  uploadFailed: 'Failed',
   /** Compact state badge used inside an attachment chip — replaces the bare spinner. */
-  stateUploading: 'Uploading',
-  stateUploaded: 'Uploaded',
-  stateUploadFailed: 'Upload failed',
+  stateUploading: 'Preparing',
+  stateUploaded: 'Ready to send',
+  stateUploadFailed: 'Failed',
   /** Full-text label shown when an attachment chip failed to upload — explains
    *  the two recovery paths the user can take (remove or drop again). */
-  attachmentUploadFailed: 'Upload failed — remove the attachment, or drop the file in again to retry',
-  attachmentUploadInterrupted: 'Upload interrupted — remove the attachment, or drop the file in again to retry',
+  attachmentUploadFailed: 'Couldn’t add attachment. Remove it or drop the file in again to retry',
+  attachmentUploadInterrupted: 'Adding attachment was interrupted. Remove it or drop the file in again to retry',
   /** Sub-label inside a media-preview placeholder while the preview is loading. */
-  mediaPreviewUploading: 'Uploading — preview when ready',
+  mediaPreviewUploading: 'Adding attachment — preview when ready',
   mediaPreviewLoading: 'Loading preview…',
   mediaPreviewUnavailable: 'Preview unavailable',
   mediaPreviewFullscreen: 'View fullscreen',
@@ -64,6 +69,6 @@ export default {
   thinkingSuffixEffort: ' · {level}',
   noCommands: 'No matching commands',
   slashSheetTitle: 'Commands',
-  mentionSheetTitle: 'Files',
+  mentionSheetTitle: 'Mention',
 
 } as const;

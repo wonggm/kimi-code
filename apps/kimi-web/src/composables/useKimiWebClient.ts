@@ -74,6 +74,7 @@ import type {
   AppNoticeDetail,
   AppMessage,
   AppModel,
+  AppNoticeSeverity,
   AppPlanEntry,
   AppProvider,
   AppQuestionRequest,
@@ -828,10 +829,10 @@ function persistSessionProfile(patch: {
   return Promise.resolve(getKimiWebApi().updateSession(sid, patch))
     .then(() => refreshSessionStatus(sid))
     .then(() => true)
-    .catch((err) => {
+    .catch((error) => {
       // Local state already reflects the change; tell the user (and the log)
       // that the daemon did not persist it.
-      pushOperationFailure('persistSessionProfile', err, { sessionId: sid });
+      pushOperationFailure('persistSessionProfile', error, { sessionId: sid });
       return false;
     });
 }
@@ -1412,9 +1413,11 @@ function dismissWsError(): void {
 }
 
 /** Surface a plain notice (no error details, no console noise) through the
- *  toast stack — e.g. "title generation unavailable". */
-function pushNotice(title: string): void {
-  pushWarning({ severity: 'warning', title });
+ *  toast stack — e.g. "title generation unavailable". The severity selects the
+ *  toast variant; `info` is for confirmations that are neither a problem nor an
+ *  outcome to celebrate (e.g. "session deleted"). */
+function pushNotice(title: string, severity: AppNoticeSeverity = 'warning'): void {
+  pushWarning({ severity, title });
 }
 
 function pushOperationFailure(
@@ -1679,12 +1682,12 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
     if (snapUsagePlaceholder) void refreshSessionStatus(sessionId);
     void pullSessionWarnings(sessionId);
     return 'ok';
-  } catch (err) {
-    if (isSessionNotFoundError(err)) {
+  } catch (error) {
+    if (isSessionNotFoundError(error)) {
       await handleSessionNotFound(sessionId);
       return 'not-found';
     }
-    pushOperationFailure('getSessionSnapshot', err, {
+    pushOperationFailure('getSessionSnapshot', error, {
       title: i18n.global.t('warnings.sessionSnapshotTitle'),
       message: i18n.global.t('warnings.sessionSnapshotMessage'),
       sessionId,
@@ -2543,7 +2546,7 @@ const changes = computed<{ path: string; status: string }[]>(() => {
   if (!gs) return [];
   return Object.entries(gs.entries)
     .map(([path, status]) => ({ path, status }))
-    .sort((a, b) => a.path.localeCompare(b.path));
+    .toSorted((a, b) => a.path.localeCompare(b.path));
 });
 
 /** Aggregate working-tree line stats (vs HEAD) for the active session's header
@@ -3099,6 +3102,15 @@ function onMainTurnEnd(sid: string, status: 'idle' | 'aborted', turnWasActive: b
   // wolf when opening a historical session.
   workspaceState.finishPromptLocal(sid, { turnWasActive });
 
+  // Skills a turn just created (the agent writes into the skills directory)
+  // only show up in the `/` menu if the list is re-read — the sidecar loader in
+  // refreshSessionSidecars reads it once per session, so without this refresh a
+  // mid-session skill stayed missing until the app was reloaded. Turn end is the
+  // refresh point (the daemon cannot tell us a skill appeared). This only
+  // replaces the cached list: the slash menu re-filters it when the user types
+  // (see useSlashMenu), so an open menu keeps its items and its selection.
+  void modelProvider.loadSkillsForSession(sid);
+
   // For the session on screen, refresh git status (edits the agent just made)
   // and runtime status (model/context usage may have changed this turn).
   if (sid === rawState.activeSessionId) {
@@ -3119,12 +3131,10 @@ function onMainTurnEnd(sid: string, status: 'idle' | 'aborted', turnWasActive: b
     }
   }
 
-  // Experimental auto session titles: on the first completed turn(s), ask the
-  // daemon to generate a title for this session (flag-gated, throttled to 3
-  // attempts per session — see maybeGenerateSessionTitle).
-  if (rawState.config?.experimental?.auto_session_title === true) {
-    maybeGenerateSessionTitle(sid);
-  }
+  // AI session titles: on the first completed turn(s), ask the daemon to
+  // generate a title for this session (throttled to 3 attempts per session —
+  // see maybeGenerateSessionTitle).
+  maybeGenerateSessionTitle(sid);
 
   // Browser notification when the user isn't watching this session.
   // Only real completions notify; aborted turns and turns that ended up
@@ -3149,10 +3159,10 @@ function onMainTurnEnd(sid: string, status: 'idle' | 'aborted', turnWasActive: b
   }
 }
 
-// Experimental auto-title guard per session: attempt once for the first turn,
-// then stop permanently once either the daemon produced a title or 3 attempts
-// failed (generation can legitimately fail while the first turn's assistant
-// text is still settling). Mirrors the daemon-side `auto_session_title` flag.
+// Auto-title guard per session: attempt once for the first turn, then stop
+// permanently once either the daemon produced a title or 3 attempts failed
+// (generation can legitimately fail while the first turn's assistant text is
+// still settling).
 const AUTO_TITLE_MAX_ATTEMPTS = 3;
 const autoTitleAttempts = new Map<string, { attempts: number; done: boolean }>();
 function maybeGenerateSessionTitle(sid: string): void {
@@ -3227,8 +3237,8 @@ async function seedTaskBody(sessionId: string, task: AppTask): Promise<void> {
   let page: TranscriptPage;
   try {
     page = await getKimiWebApi().getAgentTranscript(sessionId, agentId);
-  } catch (err) {
-    console.warn(`[kimi-web] subagent transcript seed failed for ${agentId}`, err);
+  } catch (error) {
+    console.warn(`[kimi-web] subagent transcript seed failed for ${agentId}`, error);
     return;
   }
   const body = projectSubagentTranscript(page.items);
@@ -3428,6 +3438,7 @@ export function useKimiWebClient() {
     reorderWorkspaces,
     setWorkspaceSortMode,
     archiveSession: workspaceState.archiveSession,
+    deleteSession: workspaceState.deleteSession,
     exportSession: workspaceState.exportSession,
     exportState: workspaceState.exportState,
     resetExportState: workspaceState.resetExportState,

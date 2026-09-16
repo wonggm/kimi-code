@@ -10,12 +10,15 @@ import ToolCall from './ToolCall.vue';
 import ActivityRun from './ActivityRun.vue';
 import Markdown from './Markdown.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
+import TurnFold from './TurnFold.vue';
+import TurnNav from './TurnNav.vue';
 import ActivityNotice from './ActivityNotice.vue';
 import CronNotice from './CronNotice.vue';
 import TaskNotice from './TaskNotice.vue';
 import MessageTime from './MessageTime.vue';
-import AuthMedia from './AuthMedia.vue';
 import AttachmentChip from './AttachmentChip.vue';
+import MediaRail from './MediaRail.vue';
+import type { MediaRailItem } from './MediaRail.vue';
 import MentionText from './MentionText.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
 import Spinner from '../ui/Spinner.vue';
@@ -37,8 +40,9 @@ import {
   turnFinalText,
   turnToMarkdown,
 } from '../chatTurnRendering';
-import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX } from '../../lib/toolFold';
-import { activityRunFolding } from '../../lib/conversationPrefs';
+import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX, type FoldedRenderBlock } from '../../lib/toolFold';
+import { activityRunFolding, turnFolding } from '../../lib/conversationPrefs';
+import { splitTurnBlocks, TURN_FOLD_KEY_PREFIX, type TurnFoldSplit } from '../../lib/turnFold';
 import { bareDuration } from '../../lib/bareDuration';
 
 const { t, locale } = useI18n();
@@ -219,8 +223,9 @@ onUnmounted(() => {
 //
 // The Map is also keyed for TOOL-CALL SUMMARY FOLDS (`fold:<id>`), which the
 // render layer folds into one row when ≥ 3 tool calls land in a row inside a
-// single assistant message. That fold is distinct from TurnFold (rejected):
-// it only collapses tool cards within ONE turn and never hides message text.
+// single assistant message, and for TURN FOLDS (`turn-fold:<turn id>`, the
+// "Auto-fold messages" setting), which hide a settled turn's work behind one
+// head row. Both folds write through the single-writer helper below.
 const toolExpandState = new Map<string, boolean>();
 provide('toolExpandState', toolExpandState);
 
@@ -243,9 +248,9 @@ const expandedFolds = computed<Set<string>>(() => {
   return set;
 });
 
-/** ActivityRun owns the open state and reports the value it wants, so the write
- *  to the shared fold map stays here (a second writer would flip the key twice
- *  and the run would never open). */
+/** ActivityRun and TurnFold own their open state and report the value they
+ *  want; the write to the shared fold map stays here (a second writer would
+ *  flip the key twice and the fold would never open). */
 function onFoldToggle2(foldKey: string, open: boolean): void {
   toolExpandState.set(foldKey, open);
   foldTick.value++;
@@ -561,6 +566,112 @@ watch(
   { flush: 'post' },
 );
 
+// ---- Item navigation ("Previous item" / "Next item") ----------------------
+// Every row carries a pair of buttons (TurnNav) that moves the reader's focus
+// to the turn above or below it. The row element itself survives eviction — it
+// is the row's *content* that is replaced by a height placeholder — so a row
+// the reader has scrolled far away from holds nothing to Tab into. Jumping
+// there means scrolling it back into the mount window first (the mount
+// observer only rebuilds content near the viewport), then focusing the row,
+// which is the element the read position rides on across the re-mount.
+
+function rowElementFor(turnId: string): HTMLElement | null {
+  const root = chatRootRef.value;
+  if (!root) return null;
+  // Match on the dataset instead of interpolating the id into a selector: turn
+  // ids come from the engine and are not guaranteed to be selector-safe.
+  for (const el of root.querySelectorAll<HTMLElement>('.turn-anchor[data-turn-id]')) {
+    if (el.dataset.turnId === turnId) return el;
+  }
+  return null;
+}
+
+async function gotoAdjacentTurn(index: number): Promise<void> {
+  const turn = props.turns[index];
+  if (!turn) return;
+  const row = rowElementFor(turn.id);
+  if (!row) return;
+  // The pane runs its own turn jump off this (it also cancels the queued
+  // bottom-follow writes, which would otherwise pull the viewport back to the
+  // tail mid-jump, and updates the "new messages" pill). ChatPane scrolls too,
+  // because it is also mounted without that pane (the side chat): there the
+  // emit has no listener and the row would be focused while still off-screen.
+  emit('revealTurn', turn.id);
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  await nextTick();
+  // preventScroll: the smooth scroll is still under way, and the browser would
+  // otherwise cut it short to bring the focus target into view itself.
+  row.focus({ preventScroll: true });
+}
+
+// ---- Turn fold ("Auto-fold messages") -------------------------------------
+// A settled turn's work hides behind one head row, leaving the turn's message
+// visible. The split itself is a pure helper (lib/turnFold); what lives here is
+// the open state, which is a key in the same shared fold map as the tool-call
+// folds so it survives the row's eviction and re-mount.
+
+function turnFoldKey(turnId: string): string {
+  return TURN_FOLD_KEY_PREFIX + turnId;
+}
+
+const expandedTurnFolds = computed<Set<string>>(() => {
+  void foldTick.value;
+  const set = new Set<string>();
+  for (const [key, value] of toolExpandState) {
+    if (value === true && key.startsWith(TURN_FOLD_KEY_PREFIX)) set.add(key);
+  }
+  return set;
+});
+
+// The split is cached on the turn object, which the store rebuilds on every
+// update — so it costs one pass per turn render rather than one per template
+// call. The tool-call summary setting changes what that pass produces, so the
+// cached entry records the setting it was built with.
+const turnFoldSplitCache = new WeakMap<ChatTurn, { toolFolding: boolean; split: TurnFoldSplit }>();
+
+function turnFoldSplit(turn: ChatTurn): TurnFoldSplit {
+  const cached = turnFoldSplitCache.get(turn);
+  if (cached !== undefined && cached.toolFolding === activityRunFolding.value) return cached.split;
+  const split = splitTurnBlocks(renderBlocksFor(turn));
+  turnFoldSplitCache.set(turn, { toolFolding: activityRunFolding.value, split });
+  return split;
+}
+
+/** The blocks above the fold — empty while the preference is off, which is
+ *  what keeps a browser that never opted in on the unfolded transcript. */
+function turnFoldBlocks(turn: ChatTurn): FoldedRenderBlock[] {
+  return turnFolding.value ? turnFoldSplit(turn).folded : [];
+}
+
+/** The blocks below the fold: the turn's message, or every block of the turn
+ *  while the preference is off. */
+function turnRowBlocks(turn: ChatTurn): FoldedRenderBlock[] {
+  if (!turnFolding.value) return renderBlocksFor(turn);
+  return turnFoldSplit(turn).visible;
+}
+
+/** Open while the turn is still running (nothing folds away under the
+ *  reader's eyes mid-answer) or after the reader opened the fold. */
+function isTurnFoldOpen(turn: ChatTurn): boolean {
+  return turn.id === streamingTurnId.value || expandedTurnFolds.value.has(turnFoldKey(turn.id));
+}
+
+/** Head text: the turn's own work time, or a plain label when the turn
+ *  carried none (a reloaded transcript the page never timed). */
+function turnFoldLabel(turn: ChatTurn): string {
+  const ms = turn.durationMs;
+  const duration = typeof ms === 'number' && ms > 0 ? bareDuration(ms / 1000) : '';
+  return duration ? t('conversation.workedFor', { duration }) : t('conversation.workDetails');
+}
+
+watch(streamingTurnId, (current, previous) => {
+  // An answered turn folds back: its stored expansion is dropped the moment it
+  // leaves the live state, so the reader gets the folded view back after every
+  // prompt instead of a latch left open from the last time they looked.
+  if (previous === null || previous === current) return;
+  if (toolExpandState.delete(turnFoldKey(previous))) foldTick.value++;
+});
+
 // Trailing "working" moon: shown while the main conversation has an unfinished
 // prompt. `working` is the union of the optimistic submit window and the main
 // turn's liveness (restored from the snapshot's inFlightTurn after a refresh);
@@ -633,6 +744,9 @@ const emit = defineEmits<{
   sendQueued: [index: number];
   /** Resume the failed prompt through the parent client's normal retry path. */
   resumeFailure: [];
+  /** Scroll a turn into view for the row's item-navigation jump; the row is
+   *  focused here once it is back in the mounted window. */
+  revealTurn: [turnId: string];
 }>();
 
 // ---- Inline queue (pending messages while running) ------------------------
@@ -641,8 +755,58 @@ const emit = defineEmits<{
 const dragFrom = ref<number | null>(null);
 const dragOver = ref<{ index: number; position: 'before' | 'after' } | null>(null);
 
-function hasAttachments(item: QueuedPromptView): boolean {
-  return (item.attachments?.length ?? 0) > 0;
+/** Media (image/video) attachments of a sent turn, as media-rail items. The
+ *  rail numbers them by position — the same numbers the prompt text mentions by
+ *  name, so a mention points at the thumb the reader sees. */
+function turnMedia(turn: ChatTurn): MediaRailItem[] {
+  return (turn.attachments ?? [])
+    .filter((att) => att.kind !== 'file')
+    .map((att, index) => ({
+      id: `${turn.id}:${att.fileId ?? att.url}:${index}`,
+      kind: att.kind === 'video' ? 'video' : 'image',
+      name: att.name,
+      url: att.url,
+      fileId: att.fileId,
+    }));
+}
+
+/** File attachments of a sent turn — those keep the chip presentation. */
+function turnFiles(turn: ChatTurn): TurnAttachment[] {
+  return (turn.attachments ?? []).filter((att) => att.kind === 'file');
+}
+
+function onTurnMediaActivate(turn: ChatTurn, item: MediaRailItem): void {
+  const source = (turn.attachments ?? []).find(
+    (att, index) => `${turn.id}:${att.fileId ?? att.url}:${index}` === item.id,
+  );
+  if (source) onAttachmentClick(source);
+}
+
+/** Media / file attachments of a queued prompt, split the same way the sent
+ *  turns split them (the rail keeps the prompt's images visible while queued). */
+function queuedMedia(item: QueuedPromptView): MediaRailItem[] {
+  return (item.attachments ?? [])
+    .filter((att) => att.kind !== 'file')
+    .map((att, index) => ({
+      id: `${att.fileId ?? att.url}:${index}`,
+      kind: att.kind === 'video' ? 'video' : 'image',
+      name: att.name,
+      url: att.url,
+      fileId: att.fileId,
+    }));
+}
+
+function queuedFiles(item: QueuedPromptView): { fileId: string; name?: string }[] {
+  return (item.attachments ?? []).filter((att) => att.kind === 'file');
+}
+
+function onQueuedMediaActivate(item: MediaRailItem): void {
+  emit('openMedia', {
+    kind: item.kind,
+    url: item.url ?? '',
+    path: item.name,
+    fileId: item.fileId,
+  });
 }
 
 function onQueueEdit(index: number): void {
@@ -1045,13 +1209,18 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
          re-render of the transcript per prepend (acceptable). `foldTick` is
          REQUIRED because toolExpandState is a plain Map (non-reactive on
          purpose, so expanded state survives turn eviction) — bumping the
-         tick is the only signal that a fold chip's expanded state changed. -->
+         tick is the only signal that a fold chip's expanded state changed.
+         `turnFolding` is REQUIRED because it adds or removes the turn's whole
+         work list from the row. `turns.length` is REQUIRED because the last
+         row gains and the previous last row loses a "Next item" button
+         (TurnNav) whenever a turn is appended. -->
     <template
       v-for="(turn, ti) in turns"
       :key="turn.id"
       v-memo="[
         turn,
         ti,
+        turns.length,
         turn.id === streamingTurnId,
         evictedTurnIds.has(turn.id),
         heightLocks.has(turn.id),
@@ -1061,17 +1230,32 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         working,
         locale,
         foldTick,
+        turnFolding,
       ]"
     >
       <!-- User turn → right-aligned soft-blue bubble (undo affordance lives
            outside the bubble with an inline confirm step). -->
       <template v-if="turn.role === 'user'">
         <div class="u-turn">
-          <div class="u-bub turn-anchor" :class="{ undoing: undoingTurnId === turn.id }" :data-turn-id="turn.id">
-            <!-- Unified attachment chips: files, images and videos -->
-            <div v-if="turn.attachments && turn.attachments.length > 0" class="u-atts">
+          <div
+            class="u-bub turn-anchor"
+            :class="{ undoing: undoingTurnId === turn.id }"
+            tabindex="-1"
+            :data-turn-id="turn.id"
+          >
+            <!-- Media rail: images and videos keep their thumbnails (and the
+                 number the text can mention them by) after sending. -->
+            <MediaRail
+              v-if="turnMedia(turn).length > 0"
+              class="u-media"
+              :items="turnMedia(turn)"
+              :label="t('composer.mediaAttachments')"
+              @activate="onTurnMediaActivate(turn, $event)"
+            />
+            <!-- Unified attachment chips: files only — media is in the rail. -->
+            <div v-if="turnFiles(turn).length > 0" class="u-atts">
               <AttachmentChip
-                v-for="(att, ai) in turn.attachments"
+                v-for="(att, ai) in turnFiles(turn)"
                 :key="ai"
                 :kind="att.kind"
                 :name="att.name"
@@ -1083,7 +1267,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
               />
             </div>
             <!-- Plugin command card (replaces expanded body) -->
-            <div v-else-if="turn.pluginCommand" class="skill-act">
+            <div v-if="turn.pluginCommand" class="skill-act">
               <div class="skill-act-head">
                 <span class="skill-act-arrow">▶</span>
                 <span>/{{ turn.pluginCommand.pluginId }}:{{ turn.pluginCommand.commandName }}</span>
@@ -1106,6 +1290,14 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
                 />
               </div>
             </div>
+            <!-- Item navigation, last so it stays out of the way of every
+                 `:first-child` spacing rule in the row. -->
+            <TurnNav
+              :has-previous="ti > 0"
+              :has-next="ti < turns.length - 1"
+              @previous="gotoAdjacentTurn(ti - 1)"
+              @next="gotoAdjacentTurn(ti + 1)"
+            />
           </div>
           <div v-if="turn.createdAt || canEditTurn(turn)" class="u-meta">
             <div v-if="canEditTurn(turn)" class="u-edit-wrap" :class="{ undoing: undoingTurnId === turn.id }">
@@ -1138,7 +1330,13 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 
       <!-- Compaction divider — prior turns stay untouched; summary opens in
            the right-side panel on click. -->
-      <div v-else-if="turn.role === 'compaction'" class="compact-divider turn-anchor" :data-turn-id="turn.id" role="separator">
+      <div
+        v-else-if="turn.role === 'compaction'"
+        class="compact-divider turn-anchor"
+        tabindex="-1"
+        :data-turn-id="turn.id"
+        role="separator"
+      >
         <span class="cd-line" aria-hidden="true" />
         <button
           v-if="turn.text"
@@ -1151,15 +1349,35 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         </button>
         <span v-else class="cd-label">{{ compactionDividerLabel(turn) }}</span>
         <span class="cd-line" aria-hidden="true" />
+        <TurnNav
+          :has-previous="ti > 0"
+          :has-next="ti < turns.length - 1"
+          @previous="gotoAdjacentTurn(ti - 1)"
+          @next="gotoAdjacentTurn(ti + 1)"
+        />
       </div>
 
       <!-- Cron notice — a turn triggered by a scheduled reminder, rendered as
            a lightweight in-transcript notice rather than a user bubble. -->
-      <CronNotice v-else-if="turn.role === 'cron'" :text="turn.text" :cron="turn.cron" :turn-id="turn.id" :created-at="turn.createdAt" />
+      <CronNotice v-else-if="turn.role === 'cron'" :text="turn.text" :cron="turn.cron" :turn-id="turn.id" :created-at="turn.createdAt">
+        <TurnNav
+          :has-previous="ti > 0"
+          :has-next="ti < turns.length - 1"
+          @previous="gotoAdjacentTurn(ti - 1)"
+          @next="gotoAdjacentTurn(ti + 1)"
+        />
+      </CronNotice>
 
       <!-- Task notice — a background task completion, rendered as a light
            notice (summary + output file/preview) rather than a user bubble. -->
-      <TaskNotice v-else-if="turn.role === 'task'" :text="turn.text" :turn-id="turn.id" :created-at="turn.createdAt" />
+      <TaskNotice v-else-if="turn.role === 'task'" :text="turn.text" :turn-id="turn.id" :created-at="turn.createdAt">
+        <TurnNav
+          :has-previous="ti > 0"
+          :has-next="ti < turns.length - 1"
+          @previous="gotoAdjacentTurn(ti - 1)"
+          @next="gotoAdjacentTurn(ti + 1)"
+        />
+      </TaskNotice>
 
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div
@@ -1168,6 +1386,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
         class="a-msg turn-anchor"
         :class="{ 'is-streaming': turn.id === streamingTurnId }"
         :style="rowLockStyle(turn.id)"
+        tabindex="-1"
         :data-turn-id="turn.id"
       >
         <!-- The engine continued an active goal on its own prompt: upstream
@@ -1177,7 +1396,49 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
           <span>{{ t('conversation.goal.continuation') }}</span>
         </div>
         <template v-if="isTurnHeavyContentMounted(turn)">
-          <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
+          <!-- Auto-fold messages: the turn's work (everything above its last
+               message) sits inside this fold, its message stays below. While
+               the turn streams the head is hidden and the body is open, so the
+               fold only ever closes a finished turn. The rows inside are the
+               same tree the visible list below renders, one copy each — keep
+               the two in step. -->
+          <TurnFold
+            v-if="turnFoldBlocks(turn).length > 0"
+            :fold-key="turnFoldKey(turn.id)"
+            :label="turnFoldLabel(turn)"
+            :open="isTurnFoldOpen(turn)"
+            :streaming="turn.id === streamingTurnId"
+            @toggle-fold="onFoldToggle2"
+          >
+            <template v-for="(blk, bi) in turnFoldBlocks(turn)" :key="renderBlockKeyFor(blk, bi)">
+              <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :duration-ms="blk.durationMs" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
+              <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
+              <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
+              <ActivityRun
+                v-else-if="blk.kind === 'tool-stack' || blk.kind === 'tool-fold'"
+                :items="blk.items"
+                :streaming="turn.id === streamingTurnId"
+                :run-key="foldKeyForBlock(blk)"
+                :expanded="expandedFolds.has(foldKeyForBlock(blk))"
+                @toggle-fold="onFoldToggle2"
+              >
+                <template #default="{ item }">
+                  <ToolCall
+                    :tool="item.tool"
+                    mobile
+                    :tool-diff-panel="toolDiffPanel"
+                    @open-media="emit('openMedia', $event)"
+                    @open-file="emit('openFile', $event)"
+                    @open-tool-diff="emit('openToolDiff', $event)"
+                    @open-agent="emit('openAgent', $event)"
+                    @detach-task="emit('detachTask', $event)"
+                  />
+                </template>
+              </ActivityRun>
+              <TaskNotice v-else-if="blk.kind === 'task'" :text="blk.text" :created-at="blk.createdAt" />
+            </template>
+          </TurnFold>
+          <template v-for="(blk, bi) in turnRowBlocks(turn)" :key="renderBlockKeyFor(blk, bi)">
             <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :duration-ms="blk.durationMs" mobile :streaming="isStreamingRenderBlock(turn, blk)" />
             <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="forwardOpenFile" /></div>
             <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" @detach-task="emit('detachTask', $event)" />
@@ -1229,6 +1490,12 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
           v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && workedForLabel(ti)"
           class="worked-for"
         >{{ workedForLabel(ti) }}</div>
+        <TurnNav
+          :has-previous="ti > 0"
+          :has-next="ti < turns.length - 1"
+          @previous="gotoAdjacentTurn(ti - 1)"
+          @next="gotoAdjacentTurn(ti + 1)"
+        />
       </div>
     </template>
 
@@ -1309,22 +1576,18 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
               {{ t('composer.queuedAttachments', { n: item.attachments?.length ?? 0 }) }}
             </span>
           </button>
-          <div v-if="hasAttachments(item)" class="q-imgs">
-            <template v-for="(att, ai) in item.attachments" :key="ai">
-              <span v-if="att.kind === 'file'" class="q-file">
-                <Icon name="file" size="sm" />
-                {{ att.name ?? att.fileId }}
-              </span>
-              <AuthMedia
-                v-else
-                :url="att.url"
-                :kind="att.kind"
-                :file-id="att.fileId"
-                media-class="q-img"
-                :controls="false"
-                muted
-              />
-            </template>
+          <div v-if="queuedMedia(item).length > 0" class="q-media">
+            <MediaRail
+              :items="queuedMedia(item)"
+              :label="t('composer.mediaAttachments')"
+              @activate="onQueuedMediaActivate"
+            />
+          </div>
+          <div v-if="queuedFiles(item).length > 0" class="q-imgs">
+            <span v-for="(att, ai) in queuedFiles(item)" :key="ai" class="q-file">
+              <Icon name="file" size="sm" />
+              {{ att.name ?? att.fileId }}
+            </span>
           </div>
           <span v-if="qi === 0" class="q-tag q-tag-next">{{ t('composer.queueNext') }}</span>
           <span v-else class="q-tag q-tag-idx">#{{ qi + 1 }}</span>
@@ -1520,6 +1783,26 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
   min-height: 22px;
   box-sizing: border-box;
 }
+/* ---- Item navigation (TurnNav) -------------------------------------------
+   Every row is a focus target: the previous/next pair jumps the reader's focus
+   to the turn above/below, and the row it lands on then carries the pair's
+   reveal. The row is the positioning context for the pair and takes the focus
+   ring, since the row — not the bubble or the message body — is what holds the
+   reader's place across an eviction re-mount. Revealed for keyboard focus
+   only (`:focus-visible`, on the row or on anything inside it): a mouse click
+   focuses a row and must not uncover a pair of buttons over the text it was
+   used to select. */
+.turn-anchor {
+  position: relative;
+}
+.turn-anchor:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
+.turn-anchor:focus-visible .turn-nav,
+.turn-anchor:has(:focus-visible) .turn-nav {
+  visibility: visible;
+}
 /* User input is shown verbatim — preserve newlines, break long tokens. */
 .u-text {
   white-space: pre-wrap;
@@ -1714,7 +1997,8 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .a-msg > :deep(.agent-group),
 .a-msg > :deep(.box),
 .a-msg > :deep(.swarm-card),
-.a-msg > :deep(.media-tool) {
+.a-msg > :deep(.media-tool),
+.a-msg > :deep(.turn-fold) {
   margin-top: var(--chat-block-gap);
 }
 .a-msg > .msg:first-child,
@@ -1724,7 +2008,18 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .a-msg > :deep(.agent-group:first-child),
 .a-msg > :deep(.box:first-child),
 .a-msg > :deep(.swarm-card:first-child),
-.a-msg > :deep(.media-tool:first-child) {
+.a-msg > :deep(.media-tool:first-child),
+.a-msg > :deep(.turn-fold:first-child) {
+  margin-top: 0;
+}
+/* The blocks inside a turned fold are children of the fold body's inner
+   wrapper, not of the row, so they carry their own copy of the same rule.
+   Upstream keeps the gap under the head when the fold is open and drops it
+   while the turn streams, where the head is not rendered. */
+.a-msg :deep(.turn-fold-body-inner) > * {
+  margin-top: var(--chat-block-gap);
+}
+.a-msg :deep(.turn-fold.streaming .turn-fold-body-inner) > *:first-child {
   margin-top: 0;
 }
 /* The goal-continuation marker, ported from upstream's `.goal-prov`: a faint
@@ -1747,7 +2042,8 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .a-msg > .goal-prov:first-child + :deep(.agent-group),
 .a-msg > .goal-prov:first-child + :deep(.box),
 .a-msg > .goal-prov:first-child + :deep(.swarm-card),
-.a-msg > .goal-prov:first-child + :deep(.media-tool) {
+.a-msg > .goal-prov:first-child + :deep(.media-tool),
+.a-msg > .goal-prov:first-child + :deep(.turn-fold) {
   margin-top: 0;
 }
 .a-msg :deep(code) {
@@ -1793,6 +2089,12 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
+}
+
+/* Sent media keeps the rail; the thumbnails are the same ones the composer
+   showed, numbered the same way. */
+.u-media {
+  margin-bottom: var(--space-2);
 }
 
 /* NOTE: Chat/bubble styles live in src/style.css (global). Scoped `.u-bub`
@@ -2084,12 +2386,12 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
   gap: 4px;
   flex: none;
 }
-.q-img {
-  width: 28px;
-  height: 28px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-line);
+/* Queued media keeps the rail's thumbnails; the row caps how wide they can run
+   so a queued image prompt never stretches the bubble. */
+.q-media {
+  flex: none;
+  max-width: min(100%, 320px);
+  min-width: 0;
 }
 .q-file {
   display: inline-flex;

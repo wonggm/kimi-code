@@ -1,9 +1,11 @@
 <!-- apps/kimi-web/src/components/chat/MentionText.vue -->
 <!-- Renders raw chat text with @-mentioned files / folders / skills as icon
-     pills (class `mention-pill`, data-mention-* attributes). File and skill
-     pills are clickable (open through the app's file flow); hovering a pill
-     shows MentionTip. Missing files (probed on hover, result cached) render
-     struck-through with class `mention-missing`. -->
+     pills (class `mention-pill`, data-mention-* attributes), plus the media
+     attachments a composer rail mention refers to (kind `attachment` — a pill
+     with no path, never probed or opened). File and skill pills are clickable
+     (open through the app's file flow); hovering a pill shows MentionTip.
+     Missing files (probed on hover, result cached) render struck-through with
+     class `mention-missing`. -->
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
 import { iconSvg } from '../../lib/icons';
@@ -32,9 +34,13 @@ const segments = computed<MentionSegment[]>(() => tokenizeMentions(props.text));
 const ICON_FILE = iconSvg('file', 'sm');
 const ICON_FOLDER = iconSvg('folder', 'sm');
 const ICON_SKILL = iconSvg('sparkles', 'sm');
+const ICON_ATTACHMENT = iconSvg('attachment', 'sm');
 
 function iconFor(kind: MentionKind): string {
-  return kind === 'folder' ? ICON_FOLDER : kind === 'skill' ? ICON_SKILL : ICON_FILE;
+  if (kind === 'folder') return ICON_FOLDER;
+  if (kind === 'skill') return ICON_SKILL;
+  if (kind === 'attachment') return ICON_ATTACHMENT;
+  return ICON_FILE;
 }
 
 /** Stable no-op fallback so MentionTip never receives a fresh closure. */
@@ -68,7 +74,8 @@ function applyProbe(kind: MentionKind, path: string, found: boolean): void {
 }
 
 function probe(kind: MentionKind, path: string): void {
-  if (kind === 'skill' || path === '' || !props.probePath) return;
+  if (kind !== 'file' && kind !== 'folder') return;
+  if (path === '' || !props.probePath) return;
   const key = probeKey(kind, path);
   const cached = probeCache.get(key);
   if (cached !== undefined && Date.now() - cached.at < PROBE_TTL_MS) return;
@@ -112,7 +119,8 @@ function clearTimers(): void {
 
 function onPillEnter(pill: HTMLElement, seg: MentionSegment): void {
   clearTimers();
-  if (seg.kind === 'text') return;
+  // An attachment pill has no path to show, so it carries no hover tip.
+  if (seg.kind === 'text' || seg.kind === 'attachment') return;
   showTimer = setTimeout(() => {
     showTimer = null;
     tip.value = { kind: seg.kind, name: seg.name, path: seg.path, anchor: pill.getBoundingClientRect() };
@@ -153,7 +161,7 @@ function skillInfo(name: string): { description?: string; path?: string } | null
 }
 
 function pillIsButton(seg: MentionSegment): boolean {
-  if (seg.kind === 'text' || seg.kind === 'folder') return false;
+  if (seg.kind === 'text' || seg.kind === 'folder' || seg.kind === 'attachment') return false;
   if (seg.kind === 'file') return props.openFile !== undefined && seg.path !== '';
   return (skillInfo(seg.name)?.path ?? '') !== '';
 }

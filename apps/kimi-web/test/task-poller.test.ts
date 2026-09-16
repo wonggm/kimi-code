@@ -204,3 +204,39 @@ describe('useTaskPoller bash-command attachment', () => {
     expect(state.tasksBySession['sess_1']?.[0]?.command).toBeUndefined();
   });
 });
+
+// Scenario: a session reload must not fire one output request per finished task
+// in the same tick. Responsibilities: the terminal-output backfill runs its
+// requests through the bounded queue, so a session with many tasks never has
+// more than a handful of requests in flight — and still backfills them all.
+// Wiring: the composable is real; daemon requests are stubbed.
+describe('useTaskPoller terminal-output backfill concurrency', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('keeps the number of in-flight output requests bounded', async () => {
+    const tasks = Array.from({ length: 12 }, (_, i) => restRow({ id: `task-${i}` }));
+    const state = createState(tasks);
+    apiMock.listTasks.mockResolvedValue(tasks);
+    let inFlight = 0;
+    let peak = 0;
+    apiMock.getTask.mockImplementation(async (_sessionId: string, taskId: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      inFlight -= 1;
+      return restRow({ id: taskId, outputPreview: `out ${taskId}` });
+    });
+
+    const poller = useTaskPoller(state, computed(() => []));
+    await poller.loadTasksForSession('sess_1');
+
+    expect(apiMock.getTask).toHaveBeenCalledTimes(12);
+    expect(peak).toBeLessThanOrEqual(4);
+    // Still parallel — the queue must not serialize the backfill.
+    expect(peak).toBeGreaterThan(1);
+    const rows = state.tasksBySession['sess_1'] ?? [];
+    expect(rows.every((t) => t.outputPreview !== undefined)).toBe(true);
+  });
+});

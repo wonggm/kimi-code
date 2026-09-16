@@ -74,6 +74,7 @@ const text = computed(() => props.text ?? '');
     class="cn cron-notice"
     :class="{ 'turn-anchor': !!turnId }"
     :data-turn-id="turnId"
+    :tabindex="turnId ? -1 : undefined"
     role="status"
   >
     <div class="cn-bubble">
@@ -95,6 +96,9 @@ const text = computed(() => props.text ?? '');
       >{{ cron.jobId }}</span>
       <MessageTime v-if="createdAt" :time="createdAt" />
     </div>
+    <!-- Item navigation for the standalone notice row; empty when the notice
+         is embedded in an assistant turn's blocks. -->
+    <slot />
   </div>
 </template>
 

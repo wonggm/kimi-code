@@ -35,6 +35,8 @@ import ContextRing from '../ui/ContextRing.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import BottomSheet from '../dialogs/BottomSheet.vue';
 import AttachmentChip from './AttachmentChip.vue';
+import MediaRail from './MediaRail.vue';
+import type { MediaRailItem } from './MediaRail.vue';
 
 // ---------------------------------------------------------------------------
 // Props & emits
@@ -502,6 +504,7 @@ const {
   fileInputRef,
   isDragOver,
   removeAttachment,
+  reorderMedia,
   openAttachmentPreview,
   closeAttachmentPreview,
   openFilePicker,
@@ -570,6 +573,26 @@ function toPromptAttachment(a: Attachment): PromptAttachment {
   return { fileId: a.fileId!, kind: a.kind, name: a.name, mediaType: a.mediaType, size: a.size };
 }
 
+// Pending attachments split by presentation: images and videos fill the media
+// rail above the input, every other type stays a chip in the strip. The rail is
+// also the send order — its media positions are the ordinals the thumbs and the
+// mentions in the text are numbered by.
+const mediaAttachments = computed(() =>
+  attachments.value.filter((a): a is Attachment & { kind: 'image' | 'video' } => a.kind !== 'file'),
+);
+const fileAttachments = computed(() => attachments.value.filter((a) => a.kind === 'file'));
+const mediaRailItems = computed<MediaRailItem[]>(() =>
+  mediaAttachments.value.map((a) => ({
+    id: a.localId,
+    kind: a.kind,
+    name: a.name,
+    url: a.previewUrl,
+    fileId: a.fileId,
+    uploading: a.uploading,
+    error: a.error,
+  })),
+);
+
 // Chip primary action: media opens the lightbox preview; a generic file opens
 // in a new tab (browser-renderable types) or downloads, once its upload has
 // completed and produced a daemon file id.
@@ -579,6 +602,21 @@ function onAttachmentActivate(att: Attachment): void {
     return;
   }
   openAttachmentPreview(att);
+}
+
+function onMediaActivate(item: MediaRailItem): void {
+  const att = attachments.value.find((a) => a.localId === item.id);
+  if (att) onAttachmentActivate(att);
+}
+
+/** Rail "mention" tool: insert the thumb's label (its number) into the draft, so
+ *  the prompt can point at one image of the rail by name. */
+function onMediaMention(item: MediaRailItem, label: string): void {
+  insertMentionText({ kind: 'attachment', name: label, id: item.fileId ?? item.id });
+}
+
+function onMediaReorder(payload: { id: string; toIndex: number }): void {
+  reorderMedia(payload.id, payload.toIndex);
 }
 
 function handleSubmit(): void {
@@ -1270,10 +1308,29 @@ function selectModel(modelId: string): void {
     @dragleave="handleDragLeave"
     @drop="handleDrop"
   >
-    <!-- Attachment chips (above the input row) -->
-    <div v-if="attachments.length > 0" class="att-strip">
+    <!-- Media rail (above the input row) — images and videos as reorderable
+         thumbnails stamped with their position, which is what a mention in the
+         text refers to. -->
+    <div v-if="mediaAttachments.length > 0" class="att-rail">
+      <MediaRail
+        :items="mediaRailItems"
+        :label="t('composer.mediaAttachments')"
+        size="composer"
+        reorderable
+        mentionable
+        removable
+        @activate="onMediaActivate"
+        @mention="onMediaMention"
+        @remove="(item) => removeAttachment(item.id)"
+        @reorder="onMediaReorder"
+      />
+    </div>
+
+    <!-- Attachment chips (above the input row) — file attachments only; media
+         is in the rail above. -->
+    <div v-if="fileAttachments.length > 0" class="att-strip">
       <AttachmentChip
-        v-for="att in attachments"
+        v-for="att in fileAttachments"
         :key="att.localId"
         :kind="att.kind"
         :name="att.name"
@@ -1819,6 +1876,13 @@ function selectModel(modelId: string): void {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  padding: 4px 0 6px;
+}
+
+/* Media rail row — the thumbnails are MediaThumb; this is only the row layout
+   above the input. The rail scrolls horizontally in place, so a long attachment
+   list never grows the composer. */
+.att-rail {
   padding: 4px 0 6px;
 }
 

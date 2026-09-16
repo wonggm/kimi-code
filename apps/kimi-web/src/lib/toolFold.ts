@@ -5,9 +5,10 @@
 // mutated, so reconcileTurns / messagesToTurns / the row-level v-memo
 // machinery keep working untouched.
 //
-// Distinct from TurnFold (rejected): TurnFold hides whole turns / message
-// text; this only folds the per-turn tool cards list inside ONE assistant
-// message, and only when there are ≥ THRESHOLD consecutive tool render rows.
+// Distinct from the turn fold ("Auto-fold messages", lib/turnFold): that one
+// hides a whole turn's work above its final message behind one head row; this
+// only folds the per-turn tool cards list inside ONE assistant message, and
+// only when there are ≥ THRESHOLD consecutive tool render rows.
 //
 // Expanded folds are tracked by the caller (typically via the shared
 // `toolExpandState` injection in ChatPane) and passed back as `expandedFolds`:

@@ -49,12 +49,16 @@
       "reason": "Same notifications divergence as 'system-notifications' - the hint under upstream's master switch."
     },
     {
-      "id": "*::*::missing-text::auto-fold-messages",
-      "reason": "Turn folding is a permanently rejected fork decision (0.36.1 round, recorded in PLANS/web-port-0.39.md and in ToolFoldRow.vue): hiding a finished turn's work behind a summary is not implemented, so the 'Auto-fold messages' toggle upstream pairs with 'Tool call summary' has nothing to switch. The tool-call summary toggle itself is ported and wired."
+      "id": "*::walk-settings-click-02-button-plan-modeplan-mode::*",
+      "reason": "Stale discovery on this one mobile settings surface, not a missing UI. The phase's click-00 is Close, which shuts the sheet, but the click list was discovered while it was open: upstream keeps its closed sheet in the DOM so its later clicks still resolve sheet controls, while the fork's sheet is gone once closed and the same clicks land on whatever is underneath. Both apps clicked the same-named control at the same index. The sheet itself is verified intact in this very run - the `settings` base scene carries every one of these texts on the fork (Appearance, Language, Model, Permission, 29.3k/122k, Tool call summary, Auto-fold messages), checked string by string."
     },
     {
-      "id": "*::*::missing-text::when-a-turn-ends-the-work-folds-away-automatically-leaving-o",
-      "reason": "Same rejected turn-folding decision as 'auto-fold-messages' - the hint under upstream's Auto-fold messages toggle."
+      "id": "*::walk-settings-click-01-button-modelexample-test-model::*",
+      "reason": "Same stale-discovery family on the mobile model picker: once the sheet closes, upstream's DOM still holds its model sheet - its copy (switch model, copy diagnostics, operation failed, show details, 'the last operation did not finish, try again later') and its sheet-root / sheet-scrim / sheet-panel elements - while the fork's does not. Every id here is in the pre-port baseline run as well (checked id by id against .tmp/wd043/raw-baseline), so it predates this round."
+    },
+    {
+      "id": "*::behaviour-panel-tail-tooltip::requirement::tail-tooltip",
+      "reason": "Pre-existing, not this round: the fork renders no `.ui-tip__bubble` on this behaviour scene, and the identical finding is in the pre-port baseline (all four combos, old tooltip implementation and new one alike). The fork's tooltip is exercised elsewhere; this scene's hover does not raise a bubble."
     },
     {
       "id": "*::*::missing-text::x-582a8e42e4",
@@ -145,15 +149,7 @@
       "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
     },
     {
-      "id": "mobile-dark-zh::settings::missing-text::x-013ee9dc60",
-      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
-    },
-    {
       "id": "mobile-dark-zh::settings::missing-text::token",
-      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
-    },
-    {
-      "id": "mobile-dark-zh::settings::missing-text::x-d696e50022",
       "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
     },
     {
@@ -177,15 +173,7 @@
       "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
     },
     {
-      "id": "mobile-light-zh::settings::missing-text::x-013ee9dc60",
-      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
-    },
-    {
       "id": "mobile-light-zh::settings::missing-text::token",
-      "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
-    },
-    {
-      "id": "mobile-light-zh::settings::missing-text::x-d696e50022",
       "reason": "These strings are present in the fork's captured DOM but absent from its rendered-text inventory, so they are hidden in the captured state. The cause is NOT yet established — the sheet's step-1/step-2 classes are backdrop-filter warm-up frames (BottomSheet.vue), not progressive disclosure. Recorded from evidence only."
     },
     {
@@ -461,14 +449,6 @@
       "reason": "Chinese counterpart of the switcher's Flat view option - the same recorded option-set divergence as the allowlisted \"flat\" entry (upstream Flat / By workspace, the fork By workspace / Recent)."
     },
     {
-      "id": "*::*::missing-text::x-013ee9dc60",
-      "reason": "Chinese counterpart of the auto-fold setting's description line; the fork's mobile settings sheet carries its own row set (recorded architecture divergence)."
-    },
-    {
-      "id": "*::*::missing-text::x-d696e50022",
-      "reason": "Chinese counterpart of the auto-fold setting's row label - same mobile-sheet divergence as the line above."
-    },
-    {
       "id": "*::*::missing-text::x-a9147daaf5",
       "reason": "Chinese counterpart of the permission pill's label: the pill lives in the MobileSettingsSheet on phones (allowlisted), so upstream's pill label has no fork counterpart there."
     },
@@ -706,19 +686,8 @@
       "reason": "The Agent defaults thinking row reads differently on purpose: upstream prints a read-only value in its value cell (`Thinking by default` -> \"No default model\", the same string its Default model row shows), while the fork renders a working Switch bound to the daemon's thinking default (`ui-switch is-on`, aria-checked true in the captured state) because the fork's thinking default is a boolean, not a model-derived level. Scoped to this surface: `rvalue` is shared by every value row on every settings panel, and a global rule would retire those comparisons too."
     },
     {
-      "pattern": "SPAN.hint",
-      "scenes": ["*::walk-settings-click-05-button*"],
-      "reason": "Advanced panel: upstream's `Auto-fold messages` row is not ported (permanently rejected turn-folding decision, its label and description text already allowlisted), so its hint, its switch and the switch's thumb have no fork counterpart. An element signature carries no row identity, so the rule is scoped to this surface; the rest of the Advanced panel stays compared, and a row that later goes missing still lands as a `missing-text` blocker on its label."
-    },
-    {
-      "pattern": "BUTTON.is-on.ui-switch",
-      "scenes": ["*::walk-settings-click-05-button*"],
-      "reason": "Same unported `Auto-fold messages` row as SPAN.hint above - its toggle, captured in the on state."
-    },
-    {
-      "pattern": "SPAN.ui-switch__thumb",
-      "scenes": ["*::walk-settings-click-05-button*"],
-      "reason": "Same unported `Auto-fold messages` row as SPAN.hint above - the thumb inside its toggle."
+      "pattern": "svg.kw-icon.think-bulb",
+      "reason": "An icon the fork does not draw: upstream's thinking block carries `svg.kw-icon.think-bulb`; the 0.39 port re-expressed the thinking affordance without it. Present identically in the pre-port baseline run (44 findings before this round, 44 after), so it is not a regression - dropped from the element comparison the same way the other settled element divergences are recorded."
     }
   ]
 }

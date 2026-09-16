@@ -81,6 +81,7 @@ import RiArrowLeftSLine from '~icons/ri/arrow-left-s-line';
 import RiArrowRightSLine from '~icons/ri/arrow-right-s-line';
 import RiArrowUpLine from '~icons/ri/arrow-up-line';
 import RiArrowUpSLine from '~icons/ri/arrow-up-s-line';
+import RiAtLine from '~icons/ri/at-line';
 import RiBracesLine from '~icons/ri/braces-line';
 import RiCalendarCloseLine from '~icons/ri/calendar-close-line';
 import RiCalendarScheduleLine from '~icons/ri/calendar-schedule-line';
@@ -188,6 +189,7 @@ import RawArrowLeftSLine from '~icons/ri/arrow-left-s-line?raw';
 import RawArrowRightSLine from '~icons/ri/arrow-right-s-line?raw';
 import RawArrowUpLine from '~icons/ri/arrow-up-line?raw';
 import RawArrowUpSLine from '~icons/ri/arrow-up-s-line?raw';
+import RawAtLine from '~icons/ri/at-line?raw';
 import RawBracesLine from '~icons/ri/braces-line?raw';
 import RawCalendarCloseLine from '~icons/ri/calendar-close-line?raw';
 import RawCalendarScheduleLine from '~icons/ri/calendar-schedule-line?raw';
@@ -299,6 +301,7 @@ export type IconName =
   | 'file-plus'
   | 'file-off'
   | 'attachment'
+  | 'at'
   | 'image-off'
   | 'code'
   | 'terminal'
@@ -419,6 +422,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'file-plus': entry(RiFileAddLine, RawFileAddLine),
   'file-off': entry(RiFileLine, RawFileLine),
   attachment: entry(TablerPaperclip, RawTablerPaperclip),
+  at: entry(RiAtLine, RawAtLine),
   'image-off': entry(RiImageLine, RawImageLine),
   code: entry(RiCodeLine, RawCodeLine),
   terminal: entry(RiTerminalBoxLine, RawTerminalBoxLine),
@@ -474,7 +478,7 @@ export function getIcon(name: IconName): IconEntry {
 
 function applySize(svg: string, px: number): string {
   return svg
-    .replace(/\s(?:width|height)="[^"]*"/g, '')
+    .replaceAll(/\s(?:width|height)="[^"]*"/g, '')
     .replace(/^<svg\b/, `<svg class="kw-icon" width="${px}" height="${px}" aria-hidden="true"`);
 }
 
@@ -496,6 +500,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
     [
       'plus',
       'attachment',
+      'at',
       'chat-new',
       'close',
       'trash',

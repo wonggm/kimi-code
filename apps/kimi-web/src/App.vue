@@ -489,8 +489,8 @@ async function handleRefreshProvider(id: string): Promise<void> {
 // Destructive session/workspace/provider actions confirm through the shared
 // modal here (the menu components only emit the intent). Each passes its work
 // as the dialog `action`, so the dialog stays open with a loading state until
-// the operation settles. All three client calls toast their own errors and
-// never reject.
+// the operation settles. Every client call here toasts its own errors and never
+// rejects.
 async function confirmArchiveSession(id: string): Promise<void> {
   await confirm({
     title: t('sidebar.archive'),
@@ -498,6 +498,29 @@ async function confirmArchiveSession(id: string): Promise<void> {
     variant: 'danger',
     action: () => client.archiveSession(id),
   });
+}
+
+// Permanent delete: a danger confirm naming the session, then the success toast
+// (nothing was archived, so the archive flow's undo affordance would be a lie).
+// The action captures the client's own result — the dialog's boolean only says
+// the user confirmed — and the client call surfaces its failures itself.
+async function confirmDeleteSession(id: string): Promise<void> {
+  const title =
+    client.sessions.value.find((s) => s.id === id)?.title ??
+    client.doneSessions.value.find((s) => s.id === id)?.title ??
+    id;
+  let deleted = false;
+  const confirmed = await confirm({
+    title: t('sidebar.deleteConfirmTitle'),
+    message: t('sidebar.deleteConfirmMessage', { title }),
+    confirmLabel: t('sidebar.deleteConfirmButton'),
+    cancelLabel: t('common.cancel'),
+    variant: 'danger',
+    action: async () => {
+      deleted = await client.deleteSession(id);
+    },
+  });
+  if (confirmed && deleted) client.pushNotice(t('sidebar.deleteToast'), 'info');
 }
 
 async function confirmDeleteWorkspace(id: string): Promise<void> {
@@ -748,14 +771,6 @@ async function handleSessionUpdate(id: string, patch: { emoji?: string; pinned?:
   await client.load();
 }
 
-/** Experimental `auto_session_title` — the daemon config flag (KIMI_CODE_
-   *  EXPERIMENTAL_AUTO_SESSION_TITLE / `experimental.auto_session_title`).
-   *  Gates both the automatic first-turn title and the in-rename regenerate
-   *  button (SessionRow). */
-const autoSessionTitle = computed(
-  () => client.config.value?.experimental?.auto_session_title === true,
-);
-
 /** On-demand session title regeneration from a row's rename field. Runs the
    *  daemon call, reports the title back to the row (so its field settles),
    *  and surfaces an info toast when generation is unavailable. The server
@@ -921,7 +936,6 @@ function openPr(url: string): void {
         :unread-by-session="client.unreadBySession.value"
         :workspace-sort-mode="client.workspaceSortMode.value"
         :backend="client.backend.value"
-        :auto-session-title="autoSessionTitle"
         :lab-sidebar-tabs="client.labSidebarTabs.value"
         :signed-in="client.managedProviderStatus.value === 'authenticated'"
         :color-scheme="client.colorScheme.value"
@@ -937,6 +951,7 @@ function openPr(url: string): void {
         @toggle-pinned="(id, pinned) => handleSessionUpdate(id, { pinned })"
         @generate-title="handleGenerateSessionTitle"
         @archive="confirmArchiveSession($event)"
+        @delete="confirmDeleteSession($event)"
         @restore="client.restoreSession($event)"
         @fork="(id) => client.forkSession(id)"
         @export="(id) => client.exportSession(id)"
@@ -1264,6 +1279,7 @@ function openPr(url: string): void {
       @set-emoji="(id, emoji) => handleSessionUpdate(id, { emoji })"
       @toggle-pinned="(id, pinned) => handleSessionUpdate(id, { pinned })"
       @archive="confirmArchiveSession($event)"
+      @delete="confirmDeleteSession($event)"
       @delete-workspace="confirmDeleteWorkspace($event)"
       @load-more="(id) => void client.loadMoreSessions(id)"
     />

@@ -36,7 +36,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
   border-radius: var(--radius-full);
   background: var(--color-line-strong);
   cursor: pointer;
-  transition: background var(--duration-base) var(--ease-out);
+  transition: background var(--duration-slow) var(--ease-in-out);
 }
 .ui-switch.is-on { background: var(--color-accent); }
 .ui-switch:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -45,15 +45,22 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: var(--space-4);
+  height: var(--space-4);
   border-radius: var(--radius-full);
   background: var(--surface-light);
   box-shadow: var(--shadow-xs);
-  transition: transform var(--duration-base) var(--ease-out);
+  transition: width var(--duration-slow) var(--ease-in-out), transform var(--duration-slow) var(--ease-in-out);
 }
+/* Hover stretches the thumb by width, not by scale: scaling a pill squashes its
+   rounded ends. Off, it grows from its left edge; on, the matching translate
+   moves it the shorter distance left so the right edge stays put. */
+.ui-switch:not(:disabled):hover .ui-switch__thumb { width: calc(var(--space-4) * 1.125); }
 .ui-switch.is-on .ui-switch__thumb {
   background: var(--color-text-on-accent);
-  transform: translateX(16px);
+  transform: translateX(var(--space-4));
+}
+.ui-switch.is-on:not(:disabled):hover .ui-switch__thumb {
+  transform: translateX(calc(var(--space-4) * (2 - 1.125)));
 }
 </style>

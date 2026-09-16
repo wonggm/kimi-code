@@ -10,7 +10,7 @@
 // `/`/`\` folder dests, Windows drive letters not treated as URI schemes), so
 // messages written by the upstream web UI parse identically here.
 
-export type MentionKind = 'file' | 'folder' | 'skill';
+export type MentionKind = 'file' | 'folder' | 'skill' | 'attachment';
 
 export interface MentionTextSegment {
   kind: 'text';
@@ -35,19 +35,30 @@ export interface MentionSkillSegment {
   path: string;
 }
 
+/** An image/video attachment mentioned in the prompt text. `path` holds the
+ *  full destination (the attachment's identity, not a file path). */
+export interface MentionAttachmentSegment {
+  kind: 'attachment';
+  name: string;
+  path: string;
+}
+
 export type MentionSegment =
   | MentionTextSegment
   | MentionFileSegment
   | MentionFolderSegment
-  | MentionSkillSegment;
+  | MentionSkillSegment
+  | MentionAttachmentSegment;
 
-/** An insertable mention (menu pick or pasted folder). */
+/** An insertable mention (menu pick, pasted folder, or a media attachment). */
 export type MentionInsert =
   | { kind: 'file'; name: string; path: string }
   | { kind: 'folder'; name: string; path: string }
-  | { kind: 'skill'; name: string; path: '' };
+  | { kind: 'skill'; name: string; path: '' }
+  | { kind: 'attachment'; name: string; id: string };
 
 export const SKILL_DEST_PREFIX = 'kimi-code://skill/';
+export const ATTACHMENT_DEST_PREFIX = 'kimi-code-composer://attachments/';
 
 // ---------------------------------------------------------------------------
 // Parsing
@@ -55,25 +66,25 @@ export const SKILL_DEST_PREFIX = 'kimi-code://skill/';
 
 // Two shapes: `[label](<angle … destination allowed>)` and `[label](plain)`.
 // The plain destination cannot contain spaces, parentheses or angle brackets.
-const MENTION_LINK_RE = /\[([^\[\]]*)\]\(<([^<>]*)>\)|\[([^\[\]]*)\]\(([^()\s]*)\)/g;
+const MENTION_LINK_RE = /\[([^[\]]*)\]\(<([^<>]*)>\)|\[([^[\]]*)\]\(([^()\s]*)\)/g;
 const WINDOWS_DRIVE_DEST_RE = /^[a-zA-Z]:(?:[\\/]|%5c)/i;
 const SCHEME_DEST_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
 function decodeLinkLabel(raw: string): string {
   return raw
-    .replace(/\\([\\[\]])/g, '$1')
-    .replace(/%0A/g, ' ')
-    .replace(/%0D/g, '\r')
-    .replace(/%26/g, '&')
-    .replace(/%3C/g, '<')
-    .replace(/%3E/g, '>')
-    .replace(/%25/g, '%');
+    .replaceAll(/\\([\\[\]])/g, '$1')
+    .replaceAll(/%0A/g, ' ')
+    .replaceAll(/%0D/g, '\r')
+    .replaceAll(/%26/g, '&')
+    .replaceAll(/%3C/g, '<')
+    .replaceAll(/%3E/g, '>')
+    .replaceAll(/%25/g, '%');
 }
 
 function decodeLinkDest(raw: string, angleWrapped: boolean): string {
   const unwrapped = angleWrapped
-    ? raw.replace(/\\([\\<>])/g, '$1')
-    : raw.replace(/\\([\\()])/g, '$1');
+    ? raw.replaceAll(/\\([\\<>])/g, '$1')
+    : raw.replaceAll(/\\([\\()])/g, '$1');
   try {
     return decodeURIComponent(unwrapped);
   } catch {
@@ -92,6 +103,9 @@ export function mentionKindForDest(dest: string): MentionKind | null {
   if (dest.startsWith(SKILL_DEST_PREFIX) && dest.length > SKILL_DEST_PREFIX.length) {
     return 'skill';
   }
+  if (dest.startsWith(ATTACHMENT_DEST_PREFIX) && dest.length > ATTACHMENT_DEST_PREFIX.length) {
+    return 'attachment';
+  }
   if (dest.startsWith('#') || dest.startsWith('?') || dest.startsWith('//')) return null;
   if (SCHEME_DEST_RE.test(dest) && !WINDOWS_DRIVE_DEST_RE.test(dest)) return null;
   return /[/\\]$/.test(dest) || /%5c$/i.test(dest) ? 'folder' : 'file';
@@ -109,8 +123,8 @@ function skillNameFromDest(dest: string): string {
 /**
  * Tokenize raw message text into text runs and mention segments. A mention is
  * a markdown-style link `[label](destination)` whose destination classifies as
- * a file/folder/skill reference; anything else (including ordinary web links)
- * stays a plain text run.
+ * a file/folder/skill/attachment reference; anything else (including ordinary
+ * web links) stays a plain text run.
  */
 export function tokenizeMentions(text: string): MentionSegment[] {
   const segments: MentionSegment[] = [];
@@ -152,13 +166,13 @@ export function tokenizeMentions(text: string): MentionSegment[] {
 
 function escapeLinkLabel(name: string): string {
   return name
-    .replace(/%/g, '%25')
-    .replace(/&/g, '%26')
-    .replace(/</g, '%3C')
-    .replace(/>/g, '%3E')
-    .replace(/([[\]])/g, '\\$1')
-    .replace(/\n/g, '%0A')
-    .replace(/\r/g, '%0D');
+    .replaceAll(/%/g, '%25')
+    .replaceAll(/&/g, '%26')
+    .replaceAll(/</g, '%3C')
+    .replaceAll(/>/g, '%3E')
+    .replaceAll(/([[\]])/g, '\\$1')
+    .replaceAll(/\n/g, '%0A')
+    .replaceAll(/\r/g, '%0D');
 }
 
 /** Percent-encode each path segment so separators stay readable in the link. */
@@ -174,6 +188,9 @@ export function mentionToText(mention: MentionInsert): string {
   const label = escapeLinkLabel(mention.name);
   if (mention.kind === 'skill') {
     return `[${label}](${SKILL_DEST_PREFIX}${encodeURIComponent(mention.name)})`;
+  }
+  if (mention.kind === 'attachment') {
+    return `[${label}](${ATTACHMENT_DEST_PREFIX}${encodeURIComponent(mention.id)})`;
   }
   const path =
     mention.kind === 'folder' && !/[/\\]$/.test(mention.path)
