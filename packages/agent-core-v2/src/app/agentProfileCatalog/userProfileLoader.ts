@@ -10,13 +10,6 @@ import type { AgentProfileInput, AgentProfileContext } from './agentProfileCatal
 
 const PROFILE_EXTENSIONS = new Set(['.yaml', '.yml', '.md']);
 
-/**
- * Load user-defined agent profiles from `agent_profiles` paths in the config
- * file and register them into the module-level profile catalog.
- *
- * Safe to call multiple times — duplicate names replace earlier registrations.
- * Silently returns if the config file is missing or has no `agent_profiles`.
- */
 export function preloadAgentProfiles(configPath: string): void {
   let tomlText: string;
   try {
@@ -59,7 +52,7 @@ function enumerateProfileFiles(root: string): string[] {
   if (!st.isDirectory()) return [];
   return readdirSync(root)
     .filter((f) => PROFILE_EXTENSIONS.has(extname(f).toLowerCase()))
-    .sort()
+    .toSorted()
     .map((f) => join(root, f))
     .filter((f) => {
       try {

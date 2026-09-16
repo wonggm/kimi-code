@@ -75,13 +75,6 @@ registerConfigSection(SECONDARY_MODEL_SECTION, SecondaryModelConfigSchema);
 
 export const SUBAGENT_MODELS_SECTION = 'subagentModels';
 
-/**
- * `[subagent_models]` on disk: profile name → model alias, e.g.
- * `explore = "deepseek/deepseek-v4-flash"`. Keys are matched against agent
- * profile names verbatim; note the default TOML transform camelCases
- * single-level keys, so profile names containing `_x` sequences would not
- * round-trip (all builtin profile names are single lowercase words).
- */
 export const SubagentModelsConfigSchema = z.record(z.string(), z.string());
 
 export type SubagentModelsConfig = z.infer<typeof SubagentModelsConfigSchema>;
@@ -90,21 +83,12 @@ registerConfigSection(SUBAGENT_MODELS_SECTION, SubagentModelsConfigSchema);
 
 export const SUBAGENT_EFFORTS_SECTION = 'subagentEfforts';
 
-/**
- * `[subagent_efforts]` on disk: profile name → explicit thinking effort.
- */
 export const SubagentEffortsConfigSchema = z.record(z.string(), z.string());
 
 export type SubagentEffortsConfig = z.infer<typeof SubagentEffortsConfigSchema>;
 
 registerConfigSection(SUBAGENT_EFFORTS_SECTION, SubagentEffortsConfigSchema);
 
-/**
- * Resolve the model alias a subagent should be bound to: the
- * `[subagent_models]` entry for the profile, falling back to inheriting the
- * caller's model. Model selection is deliberately not exposed as an Agent
- * tool parameter (upstream keeps that schema surface free of `model`).
- */
 export function resolveSubagentModelAlias(
   config: IConfigService,
   profileName: string,
@@ -120,16 +104,6 @@ export interface SubagentModelTableMismatch {
   readonly bound: string;
 }
 
-/**
- * Regression tripwire for `[subagent_models]`. Independently re-reads the
- * table and compares it against the model a subagent will actually launch on.
- * Returns a mismatch descriptor when a listed profile would launch on a
- * different model — which should be impossible while `resolveSubagentBinding`
- * honors the table. A non-undefined result means the spawn binding lost the
- * `[subagent_models]` wiring (e.g. an upstream rebase displaced it with the
- * secondary-model path); callers must surface it loudly rather than let the
- * subagent silently inherit the caller model.
- */
 export function detectSubagentModelTableMismatch(
   config: IConfigService,
   profileName: string,
@@ -142,11 +116,6 @@ export function detectSubagentModelTableMismatch(
   return { profileName, configured, bound: boundModel };
 }
 
-/**
- * Resolve the effective per-run subagent timeout. Governs foreground and
- * background subagents (and AgentSwarm) through the task manager's per-task
- * timeout.
- */
 export function resolveSubagentTimeoutMs(config: IConfigService): number {
   return (
     config.get<SubagentConfig | undefined>(SUBAGENT_SECTION)?.timeoutMs ??
