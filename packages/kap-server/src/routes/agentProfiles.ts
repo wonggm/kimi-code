@@ -48,12 +48,6 @@ export function registerAgentProfilesRoutes(app: AgentProfilesRouteHost, core: S
   );
 }
 
-/**
- * Merge the builtin loader's profiles with the workspace-discovered
- * registrations, using the session catalog's precedence: discovered entries
- * win by priority, and a same-name builtin (or earlier candidate) is only
- * replaced when the profile declares `override: true`.
- */
 export function listVisibleProfiles(
   builtin: readonly AgentProfile[],
   registrations: readonly {

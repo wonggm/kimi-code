@@ -1124,14 +1124,13 @@ describe('SessionEventBroadcaster', () => {
     expect(next.subagents).toEqual([]);
   });
 
-  it('streams a late-spawned subagent live transcript frames to the subscribed client', async () => {
+  it('streams a late-spawned subagent live transcript frames to the subscribed client, the subagent being created after the subscription so its onDidCreate wires the new bus', async () => {
     const lc = new FakeLifecycle();
     const main = lc.addAgent('main');
     sessions.set('s1', lc);
     const { target, envelopes } = collectingTarget();
     await bc.subscribe('s1', target);
 
-    // Parent spawns a subagent: the lifecycle frame rides the main bus.
     main.bus.emit(
       agentEvent('subagent.spawned', {
         subagentId: 'agent-1',
@@ -1142,8 +1141,6 @@ describe('SessionEventBroadcaster', () => {
       }),
     );
 
-    // The subagent is created after the connection/subscription (fires
-    // onDidCreate → attachAgent) and streams on its own bus.
     const sub = lc.addAgent('agent-1');
     sub.bus.emit(agentEvent('assistant.delta', { turnId: 1, delta: 'Hello' }));
     sub.bus.emit(agentEvent('tool.use', { turnId: 1, name: 'read', args: { path: 'a.ts' } }));

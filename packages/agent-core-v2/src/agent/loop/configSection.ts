@@ -63,13 +63,6 @@ registerConfigSection(LOOP_CONTROL_SECTION, LoopControlSchema, {
 
 export const SUBAGENT_COMPACTION_SECTION = 'subagentCompaction';
 
-/**
- * `[subagent_compaction]` on disk: agent profile name → per-profile compaction
- * overrides, e.g. `[subagent_compaction.explore]` with `trigger_ratio` and
- * `reserved_context_size` fields. Profile-name keys are matched verbatim, so
- * the custom fromToml/toToml hooks below keep them intact while the entry
- * fields camelCase/snakeCase one level down.
- */
 export const SubagentCompactionEntrySchema = z.object({
   triggerRatio: z.number().min(0.5).max(0.99).optional(),
   reservedContextSize: z.number().int().min(0).optional(),

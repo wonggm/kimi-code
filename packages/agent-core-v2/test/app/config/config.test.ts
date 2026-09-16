@@ -2514,19 +2514,16 @@ describe('subagent_models config section', () => {
       '[subagent_models]\nexplore = "deepseek/deepseek-v4-flash"\n',
     );
 
-    // A listed profile binds to its pinned model...
     expect(resolveSubagentBinding(config, own, undefined, 'explore')).toEqual({
       model: 'deepseek/deepseek-v4-flash',
       thinking: 'medium',
       modelSource: 'secondary_pool',
     });
-    // ...absolutely: even an explicit 'primary' does not override the table.
     expect(resolveSubagentBinding(config, own, 'primary', 'explore')).toEqual({
       model: 'deepseek/deepseek-v4-flash',
       thinking: 'medium',
       modelSource: 'secondary_pool',
     });
-    // An unlisted profile inherits the caller model.
     expect(resolveSubagentBinding(config, own, undefined, 'coder')).toEqual({
       model: 'provider/main',
       thinking: 'medium',
