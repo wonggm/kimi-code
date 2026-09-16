@@ -797,11 +797,12 @@ function scrollToBottom(smooth = false): void {
 type ScrollAnchor = { kind: 'turn' | 'tool'; id: string; top: number };
 
 function scrollAnchorTop(container: HTMLElement, node: HTMLElement): number {
-  // Tool calls inside a collapsed run still exist under an inert, clipped
-  // body. Anchor them to the visible run row so hidden content cannot create
-  // a fake layout delta while the stable tool id remains usable.
+  // Tool calls inside a collapsed run — or inside a turn fold while it folds
+  // away — still exist under an inert, clipped body. Anchor them to the
+  // visible row that opened the fold so hidden content cannot create a fake
+  // layout delta while the stable tool id remains usable.
   const inert = node.closest<HTMLElement>('[inert]');
-  const positionNode = inert?.closest<HTMLElement>('.activity-run') ?? node;
+  const positionNode = inert?.closest<HTMLElement>('.activity-run, .turn-fold') ?? node;
   return (
     positionNode.getBoundingClientRect().top -
     container.getBoundingClientRect().top +
@@ -1974,6 +1975,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
               @edit-message="handleEditMessage"
               @resume-failure="emit('resumeFailure')"
               @load-older-messages="handleLoadOlderMessages"
+              @reveal-turn="scrollToTurn"
               @unqueue="emit('unqueue', $event)"
               @edit-queued="handleEditQueued"
               @reorder-queue="handleReorderQueue"

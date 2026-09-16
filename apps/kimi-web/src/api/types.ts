@@ -916,27 +916,31 @@ export interface AppSessionWarning {
   severity: 'info' | 'warning' | 'error';
 }
 
-export interface UsageRow {
-  name?: string;
-  window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
-  used: number;
-  limit: number;
-  reset_at?: string;
+export interface UsageQuotaEntry {
+  usedRatio: number;
+  resetAt?: string;
+}
+
+export interface UsageQuota {
+  limit5h?: UsageQuotaEntry;
+  limit7d?: UsageQuotaEntry;
+  monthTotal?: UsageQuotaEntry;
+  monthCode?: UsageQuotaEntry;
+}
+
+export interface BoosterWallet {
+  balanceCents: number;
+  totalCents: number;
+  monthlyChargeLimitEnabled: boolean;
+  monthlyChargeLimitCents: number;
+  monthlyUsedCents: number;
+  currency: string;
 }
 
 export type ManagedUsageResult =
   | {
       kind: 'ok';
-      summary: UsageRow | null;
-      limits: UsageRow[];
-      extra_usage: {
-        balance_cents: number;
-        total_cents: number;
-        monthly_charge_limit_enabled: boolean;
-        monthly_charge_limit_cents: number;
-        monthly_used_cents: number;
-        currency: string;
-      } | null;
+      quota: { usages: UsageQuota; extraUsage: BoosterWallet | null };
     }
   | { kind: 'error'; message: string; status?: number };
 
@@ -954,6 +958,7 @@ export interface KimiWebApi {
   getSessionGoal(sessionId: string): Promise<AppGoal | null>;
   getSessionWarnings(sessionId: string): Promise<AppSessionWarning[]>;
   archiveSession(sessionId: string): Promise<{ archived: true }>;
+  deleteSession(sessionId: string): Promise<{ deleted: true }>;
   restoreSession(sessionId: string): Promise<AppSession>;
   /** Batch archive/restore via the per-id endpoints; resolves when every id
    *  settles, reporting per-id success/failure counts for result toasts. */

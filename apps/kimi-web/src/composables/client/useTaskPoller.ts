@@ -12,6 +12,33 @@ import type { ExtendedState } from '../useKimiWebClient';
 const TASK_OUTPUT_POLL_INTERVAL_MS = 1000;
 const TASK_OUTPUT_POLL_BYTES = 4096;
 const TASK_OUTPUT_FINAL_BYTES = 32 * 1024;
+const TASK_OUTPUT_FETCH_CONCURRENCY = 4;
+
+/**
+ * Run `run` for every item with at most TASK_OUTPUT_FETCH_CONCURRENCY requests in
+ * flight. A session reloaded with hundreds of finished background tasks would
+ * otherwise fire one output request per task in the same tick, which is what
+ * stalled the page while such a session loaded. `run` handles its own failures,
+ * so a worker never rejects and the queue always drains.
+ */
+async function forEachTaskBounded<T>(
+  items: readonly T[],
+  run: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const item = items[next];
+      next += 1;
+      if (item !== undefined) await run(item);
+    }
+  };
+  const workers: Promise<void>[] = [];
+  for (let i = 0; i < Math.min(TASK_OUTPUT_FETCH_CONCURRENCY, items.length); i++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+}
 
 export interface UseTaskPoller {
   /** 1-second clock that ticks while an active app task is running. */
@@ -116,33 +143,31 @@ export function useTaskPoller(
     const api = getKimiWebApi();
     const outputByTaskId = new Map<string, { preview: string; bytes?: number }>();
 
-    await Promise.all(
-      tasks.map(async (task) => {
-        const isTerminal =
-          task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled';
-        if (!isTerminal) return;
-        if (fetchedTerminalTaskOutputIds.has(task.id)) return;
-        if ((task.outputLines?.length ?? 0) > 0) return;
+    await forEachTaskBounded(tasks, async (task) => {
+      const isTerminal =
+        task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled';
+      if (!isTerminal) return;
+      if (fetchedTerminalTaskOutputIds.has(task.id)) return;
+      if ((task.outputLines?.length ?? 0) > 0) return;
 
-        try {
-          const withOutput = await api.getTask(sessionId, task.id, {
-            withOutput: true,
-            outputBytes: TASK_OUTPUT_FINAL_BYTES,
+      try {
+        const withOutput = await api.getTask(sessionId, task.id, {
+          withOutput: true,
+          outputBytes: TASK_OUTPUT_FINAL_BYTES,
+        });
+        if (withOutput.outputPreview !== undefined) {
+          outputByTaskId.set(task.id, {
+            preview: withOutput.outputPreview,
+            bytes: withOutput.outputBytes,
           });
-          if (withOutput.outputPreview !== undefined) {
-            outputByTaskId.set(task.id, {
-              preview: withOutput.outputPreview,
-              bytes: withOutput.outputBytes,
-            });
-          }
-          // Only a definitive response marks the task as fetched — a transient
-          // failure must leave it eligible for a later backfill.
-          fetchedTerminalTaskOutputIds.add(task.id);
-        } catch {
-          // Task may have finished between listTasks and getTask; ignore.
         }
-      }),
-    );
+        // Only a definitive response marks the task as fetched — a transient
+        // failure must leave it eligible for a later backfill.
+        fetchedTerminalTaskOutputIds.add(task.id);
+      } catch {
+        // Task may have finished between listTasks and getTask; ignore.
+      }
+    });
 
     if (outputByTaskId.size === 0) return;
 
@@ -183,44 +208,42 @@ export function useTaskPoller(
 
     const outputByTaskId = new Map<string, { preview: string; bytes?: number }>();
 
-    await Promise.all(
-      taskList.map(async (task) => {
-        const isRunning = task.status === 'running';
-        const isTerminal =
-          task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled';
-        if (!isRunning && !isTerminal) return;
+    await forEachTaskBounded(taskList, async (task) => {
+      const isRunning = task.status === 'running';
+      const isTerminal =
+        task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled';
+      if (!isRunning && !isTerminal) return;
 
-        // Running tasks: poll tail continuously. Terminal tasks: fetch a final
-        // snapshot once if we have not already received real streamed output.
-        // outputPreview may be a placeholder (`$ <command>`) or a partial tail,
-        // so we intentionally do not skip terminal tasks just because outputPreview
-        // is present.
-        if (isTerminal) {
-          if (fetchedTerminalTaskOutputIds.has(task.id)) return;
-          if ((task.outputLines?.length ?? 0) > 0) return;
-        }
+      // Running tasks: poll tail continuously. Terminal tasks: fetch a final
+      // snapshot once if we have not already received real streamed output.
+      // outputPreview may be a placeholder (`$ <command>`) or a partial tail,
+      // so we intentionally do not skip terminal tasks just because outputPreview
+      // is present.
+      if (isTerminal) {
+        if (fetchedTerminalTaskOutputIds.has(task.id)) return;
+        if ((task.outputLines?.length ?? 0) > 0) return;
+      }
 
-        try {
-          const withOutput = await api.getTask(sessionId, task.id, {
-            withOutput: true,
-            outputBytes: isRunning ? TASK_OUTPUT_POLL_BYTES : TASK_OUTPUT_FINAL_BYTES,
+      try {
+        const withOutput = await api.getTask(sessionId, task.id, {
+          withOutput: true,
+          outputBytes: isRunning ? TASK_OUTPUT_POLL_BYTES : TASK_OUTPUT_FINAL_BYTES,
+        });
+        if (withOutput.outputPreview !== undefined) {
+          outputByTaskId.set(task.id, {
+            preview: withOutput.outputPreview,
+            bytes: withOutput.outputBytes,
           });
-          if (withOutput.outputPreview !== undefined) {
-            outputByTaskId.set(task.id, {
-              preview: withOutput.outputPreview,
-              bytes: withOutput.outputBytes,
-            });
-          }
-          // Mark as fetched only on a definitive response; a transient failure
-          // stays eligible for the next poll.
-          if (isTerminal) {
-            fetchedTerminalTaskOutputIds.add(task.id);
-          }
-        } catch {
-          // Task may have finished between listTasks and getTask; ignore.
         }
-      }),
-    );
+        // Mark as fetched only on a definitive response; a transient failure
+        // stays eligible for the next poll.
+        if (isTerminal) {
+          fetchedTerminalTaskOutputIds.add(task.id);
+        }
+      } catch {
+        // Task may have finished between listTasks and getTask; ignore.
+      }
+    });
 
     const existing = rawState.tasksBySession[sessionId] ?? [];
     const existingById = new Map(existing.map((t) => [t.id, t] as const));

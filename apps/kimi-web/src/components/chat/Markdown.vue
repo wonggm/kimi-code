@@ -27,6 +27,7 @@ import * as mermaidWorkerModule from 'markstream-vue/workers/mermaidParser.worke
 import Tooltip from '../ui/Tooltip.vue';
 import Icon from '../ui/Icon.vue';
 import MarkdownCodeBlock from './MarkdownCodeBlock.vue';
+import MarkdownFrontmatter from './MarkdownFrontmatter.vue';
 import { useCodeBlockPrefs } from '../../lib/codeBlockPrefs';
 // px-based CSS build (our app is px, not rem). Imported here so the styles
 // load wherever Markdown is used; scoped overrides below re-skin it to
@@ -417,13 +418,13 @@ const DIFF_FENCE_RE = /(^|\n)(?:```|~~~)diff\b[^\n]*\n([\s\S]*?)(?:\n)?(?:```|~~
 const segments = computed<Segment[]>(() => {
   const text = rewriteImageSrcs(props.text ?? '');
   // A leading YAML frontmatter block (`---\nkey: value\n---`) is split off the
-  // source BEFORE the diff-fence pass so it renders as a small meta block
-  // instead of a giant heading. Only a COMPLETE block matches (opening `---`
-  // on line 1 plus a closing fence), so an in-progress stream renders normally
-  // until the block finishes. The split runs on the image-rewritten text so a
-  // `path:` line can't be misread as an image source, and the frontmatter
-  // itself is never run through protectInlineCodeDollars — its raw YAML is
-  // displayed as-is and the `$` sentinel restore pass only looks in <code>.
+  // source BEFORE the diff-fence pass so it renders as a metadata card instead
+  // of a giant heading. Only a COMPLETE block matches (opening `---` on line 1
+  // plus a closing fence), so an in-progress stream renders normally until the
+  // block finishes. The split runs on the image-rewritten text so a `path:` line
+  // can't be misread as an image source, and the frontmatter is never run
+  // through protectInlineCodeDollars — it goes to the metadata card as text and
+  // the `$` sentinel restore pass only looks in <code>.
   const { frontmatter, body } = extractFrontmatter(text);
   // Protect `$` inside inline code spans of the BODY from the parser's
   // inline-math rule (see inlineCodeMath.ts). Only applied to SETTLED turns:
@@ -507,9 +508,9 @@ function copyDiff(code: string, idx: number) {
         @copy="copyCodeBlockFallback"
       />
 
-      <!-- YAML frontmatter → raw meta block (kept out of the parser, which
+      <!-- YAML frontmatter → metadata card (kept out of the parser, which
            would render the `key: value` lines as a giant heading) -->
-      <pre v-else-if="seg.kind === 'frontmatter'" class="md-frontmatter">{{ seg.text }}</pre>
+      <MarkdownFrontmatter v-else-if="seg.kind === 'frontmatter'" :source="seg.text" />
 
       <!-- ```diff fence → local renderer (preserves +/- markers + colours) -->
       <div v-else class="diff-wrap">
@@ -898,23 +899,6 @@ function copyDiff(code: string, idx: number) {
    the scoped component style is injected. */
 .md :deep(.table-node) tbody tr:hover {
   background-color: transparent !important;
-}
-
-/* ---------------------------------------------------------------------------
-   YAML frontmatter meta block — a small sunken mono box, so a message that
-   starts with `---\nkey: value\n---` reads as metadata instead of a giant
-   heading. Mirrors the code-block chrome below it.
---------------------------------------------------------------------------- */
-.md-frontmatter {
-  margin: 0 0 var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-sunken);
-  box-shadow: var(--shadow-xs);
-  overflow-x: auto;
-  color: var(--color-text-muted);
-  font: var(--text-sm)/1.65 var(--font-mono);
 }
 
 /* ---------------------------------------------------------------------------

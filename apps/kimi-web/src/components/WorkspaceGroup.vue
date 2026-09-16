@@ -31,9 +31,6 @@ const props = defineProps<{
   /** When true, render all loaded sessions; otherwise only the first page
    *  (`group.initialCount`). Drives the in-group show-more / show-less toggle. */
   isExpanded: (id: string) => boolean;
-  /** Experimental `auto_session_title` flag — row rename shows the gen-title
-   *  button. */
-  autoSessionTitle?: boolean;
   /** Pinned rows belonging to this workspace; when every session of the group
    *  is pinned the group renders upstream's summary instead of the empty state. */
   pinnedCount?: number;
@@ -47,6 +44,7 @@ const emit = defineEmits<{
   selectSession: [sessionId: string];
   renameSession: [id: string, title: string];
   archiveSession: [id: string];
+  deleteSession: [id: string];
   forkSession: [id: string];
   exportSession: [id: string];
   setEmojiSession: [id: string, emoji: string | undefined];
@@ -198,10 +196,10 @@ function onHeaderDragStart(event: DragEvent): void {
         :approval-count="pendingBySession[s.id]?.approvals ?? 0"
         :question-count="pendingBySession[s.id]?.questions ?? 0"
         :unread="unreadBySession[s.id] ?? false"
-        :auto-session-title="autoSessionTitle"
         @select="emit('selectSession', $event)"
         @rename="(id, title) => emit('renameSession', id, title)"
         @archive="emit('archiveSession', $event)"
+        @delete="emit('deleteSession', $event)"
         @fork="emit('forkSession', $event)"
         @export="emit('exportSession', $event)"
         @set-emoji="(id, emoji) => emit('setEmojiSession', id, emoji)"

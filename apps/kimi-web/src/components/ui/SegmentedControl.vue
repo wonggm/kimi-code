@@ -1,74 +1,27 @@
 <!-- apps/kimi-web/src/components/ui/SegmentedControl.vue -->
-<!-- Design-system §03 SegmentedControl: 2-4 mutually exclusive options.
-     A single sliding indicator (ui-seg__indicator) carries the selected state
-     instead of a background per item; it is measured from the active item's box
-     on mount, on selection change, and on resize, and stays hidden until that
-     first measurement lands (is-ready). Options may carry an icon and/or a
-     colour swatch ahead of the label. -->
+<!-- Design-system §03 SegmentedControl: 2-4 mutually exclusive options. The
+     selected item paints its own raised surface + shadow, so the selection is
+     correct on the first paint: nothing is measured or moved at runtime, and
+     the control has no load-in state left to flash through. Options may carry
+     an icon and/or a colour swatch ahead of the label. -->
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { IconName } from '../../lib/icons';
 import Icon from './Icon.vue';
 
-const props = defineProps<{
+defineProps<{
   modelValue: string;
   options: { value: string; label: string; icon?: IconName; swatch?: string }[];
   size?: 'sm' | 'md';
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
-
-const root = ref<HTMLElement | null>(null);
-const itemEls = ref<(HTMLElement | null)[]>([]);
-const indicatorReady = ref(false);
-const indicatorStyle = ref<Record<string, string>>({});
-let observer: ResizeObserver | null = null;
-
-function setItemRef(el: unknown, index: number): void {
-  itemEls.value[index] = el instanceof HTMLElement ? el : null;
-}
-
-async function measure(): Promise<void> {
-  await nextTick();
-  const index = props.options.findIndex((option) => option.value === props.modelValue);
-  const active = itemEls.value[index];
-  if (!active) return;
-  indicatorStyle.value = {
-    width: `${active.offsetWidth}px`,
-    height: `${active.offsetHeight}px`,
-    transform: `translate(${active.offsetLeft}px, ${active.offsetTop}px)`,
-  };
-  indicatorReady.value = true;
-}
-
-watch(() => [props.modelValue, props.options.length], measure, { immediate: true });
-
-onMounted(() => {
-  observer = new ResizeObserver(() => {
-    void measure();
-  });
-  if (root.value) observer.observe(root.value);
-  for (const el of itemEls.value) if (el) observer.observe(el);
-  void measure();
-});
-
-onUnmounted(() => {
-  observer?.disconnect();
-});
 </script>
 
 <template>
-  <div ref="root" class="ui-seg" :class="`ui-seg--${size ?? 'md'}`" role="tablist">
-    <span
-      class="ui-seg__indicator"
-      :class="{ 'is-ready': indicatorReady }"
-      :style="indicatorStyle"
-      aria-hidden="true"
-    />
+  <div class="ui-seg" :class="`ui-seg--${size ?? 'md'}`" role="tablist">
     <button
-      v-for="(opt, index) in options"
+      v-for="opt in options"
       :key="opt.value"
-      :ref="(el) => setItemRef(el, index)"
       class="ui-seg__item"
       :class="{ 'is-on': opt.value === modelValue }"
       :data-icon="opt.icon"
@@ -94,20 +47,6 @@ onUnmounted(() => {
   border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
 }
-.ui-seg__indicator {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 0;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
-  box-shadow: var(--shadow-sm);
-  opacity: 0;
-  pointer-events: none;
-  transition: transform var(--duration-base) var(--ease-out), width var(--duration-base) var(--ease-out),
-    height var(--duration-base) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
-}
-.ui-seg__indicator.is-ready { opacity: 1; }
 .ui-seg__item {
   position: relative;
   z-index: 1;
@@ -137,7 +76,11 @@ onUnmounted(() => {
 .ui-seg--md .ui-seg__item { padding: 5px var(--space-3); font-size: var(--text-sm); }
 .ui-seg--sm .ui-seg__item { height: 24px; padding: 0 var(--space-2); font-size: var(--text-sm); }
 .ui-seg__item:hover:not(.is-on) { color: var(--color-text); }
-.ui-seg__item.is-on { color: var(--color-text); }
+.ui-seg__item.is-on {
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
 .ui-seg__item:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 
 /* Phone widths: both sizes land at 23-24px tall, under the touch target floor

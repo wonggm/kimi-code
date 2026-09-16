@@ -57,7 +57,7 @@ const COMMON_FILENAMES = new Set([
 ]);
 
 const EXT_PATTERN = [...COMMON_FILE_EXTENSIONS]
-  .sort((a, b) => b.length - a.length)
+  .toSorted((a, b) => b.length - a.length)
   .join('|');
 const PATH_RE = new RegExp(
   [
@@ -70,10 +70,18 @@ const PATH_RE = new RegExp(
     String.raw`(?:#L?(\d+)|:(\d+))?`,
     String.raw`(?=$|[\s)"'\]}>.,;!?，。；！？）])`,
   ].join(''),
-  'gi',
+  'iy',
 );
 
 const TRAILING_PUNCTUATION_RE = /[),.;!?，。；！？）]+$/;
+
+/** A path-shaped token with no extension requirement and no ambiguity. The
+ *  main pattern is sticky, so it can only run where one of these tokens starts —
+ *  scanning the whole text with it is quadratic on bracket-heavy input. */
+const PATH_TOKEN_RE = /~?\/?[A-Za-z0-9_.@+()[\]-]+(?:\/[A-Za-z0-9_.@+()[\]-]+)*/g;
+
+/** The character the main pattern allows before a path. */
+const PATH_PREFIX_RE = /[\s([{"'`]/;
 
 function hasCommonFileExtension(path: string): boolean {
   const lower = path.toLowerCase();
@@ -132,33 +140,42 @@ export function findFilePathLinks(
   options: FindFilePathLinksOptions = {},
 ): FilePathLinkMatch[] {
   const out: FilePathLinkMatch[] = [];
-  PATH_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = PATH_RE.exec(text)) !== null) {
+  let consumed = 0;
+  for (const token of text.matchAll(PATH_TOKEN_RE)) {
+    const tokenStart = token.index ?? 0;
+    const from = Math.max(tokenStart, consumed);
+    if (from >= tokenStart + token[0].length) continue;
+    if (from === 0 || PATH_PREFIX_RE.test(text[from - 1] ?? '')) {
+      PATH_RE.lastIndex = Math.max(0, from - 1);
+    } else {
+      const offset = token[0].slice(from - tokenStart).search(/[([]/);
+      if (offset === -1) continue;
+      PATH_RE.lastIndex = from + offset;
+    }
+    const match = PATH_RE.exec(text);
+    if (match === null) continue;
+    consumed = PATH_RE.lastIndex;
+
     const full = match[0] ?? '';
     const rawPath = match[1] ?? '';
     const prefixLength = full.indexOf(rawPath);
     if (prefixLength < 0) continue;
 
     const lineSuffix = match[2] ?? match[3];
-    let linkText = rawPath + (lineSuffix ? full.slice(prefixLength + rawPath.length) : '');
-    const stripped = linkText.replace(TRAILING_PUNCTUATION_RE, '');
-    const trailing = linkText.length - stripped.length;
-    linkText = stripped;
+    const linkText = (
+      rawPath + (lineSuffix ? full.slice(prefixLength + rawPath.length) : '')
+    ).replace(TRAILING_PUNCTUATION_RE, '');
 
     const parsed = parseFilePathLinkCandidate(linkText, options);
     if (!parsed) continue;
 
     const start = match.index + prefixLength;
-    const end = start + linkText.length;
     out.push({
       ...parsed,
       start,
-      end,
+      end: start + linkText.length,
       text: linkText,
     });
-
-    if (trailing > 0) PATH_RE.lastIndex -= trailing;
   }
   return out;
 }

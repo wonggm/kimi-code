@@ -6,11 +6,11 @@
      persisted in `toolExpandState` so a re-mounted row after viewport
      eviction remembers the user's choice.
 
-     IMPORTANT: this is the tool-CALL summary fold, NOT TurnFold
-     ("Auto-fold messages"). TurnFold hides whole turns / message text and
-     is permanently rejected (0.36.1 decision); this component only folds
-     the per-turn tool cards inside ONE assistant message, and only at the
-     render layer (turn-store objects are untouched). -->
+     IMPORTANT: this is the tool-CALL summary fold, not the turn fold
+     ("Auto-fold messages", components/chat/TurnFold.vue): that one hides a
+     whole turn's work behind its own head row; this component only folds the
+     per-turn tool cards inside ONE assistant message, and only at the render
+     layer (turn-store objects are untouched). -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';

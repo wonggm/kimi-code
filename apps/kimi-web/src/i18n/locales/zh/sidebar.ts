@@ -28,7 +28,7 @@ export default {
   copySessionId: '复制 Session ID',
   copied: '已复制 ✓',
   copyFailed: '复制失败',
-  /** Experimental `auto_session_title` — regenerate button in the rename field. */
+  /** 重命名输入框里的重新生成按钮。 */
   genTitle: '生成标题',
   genTitleUnavailable: '无法生成标题：需要先登录 Kimi Code',
   pullRequest: '拉取请求',
@@ -36,6 +36,10 @@ export default {
   fork: '分叉会话',
   export: '导出会话',
   delete: '删除',
+  deleteConfirmTitle: '删除会话',
+  deleteConfirmMessage: '将永久删除「{title}」的全部对话记录，无法恢复。工作区里的文件和代码改动不受影响。',
+  deleteConfirmButton: '永久删除',
+  deleteToast: '会话已删除',
   removeWorkspace: '移除工作区',
   brand: 'Kimi Code',
   signedIn: '已登录',

@@ -1,6 +1,6 @@
 <!-- apps/kimi-web/src/components/SessionRow.vue -->
-<!-- A single session row: status dot + title + time + attention pill + kebab. -->
-<!-- Inline rename (dblclick) and delete-confirm live here. -->
+<!-- A single session row: status dot + title + time + attention pill, plus the
+     kebab and right-click menus. Inline rename (dblclick) lives here. -->
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -31,20 +31,18 @@ const props = withDefaults(
     questionCount?: number;
     /** A background turn finished here that the user hasn't opened — blue dot. */
     unread?: boolean;
-    /** Experimental `auto_session_title` flag — shows the in-rename "generate
-     *  title" button and emits `generateTitle` on click. */
-    autoSessionTitle?: boolean;
     /** Archived session (Done tab): the kebab item reads as its reopen action.
      *  The row still emits `archive` — the parent routes Done rows to restore. */
     archived?: boolean;
   }>(),
-  { approvalCount: 0, questionCount: 0, unread: false, autoSessionTitle: false, archived: false },
+  { approvalCount: 0, questionCount: 0, unread: false, archived: false },
 );
 
 const emit = defineEmits<{
   select: [id: string];
   rename: [id: string, title: string];
   archive: [id: string];
+  delete: [id: string];
   fork: [id: string];
   export: [id: string];
   setEmoji: [id: string, emoji: string | undefined];
@@ -190,8 +188,8 @@ function cancelRename(): void {
   if (generating.value) return;
   renaming.value = false;
 }
-// On-demand regeneration (experimental auto_session_title): clear the field,
-// ask the parent for a fresh title, then restore focus once it reports back.
+// On-demand regeneration: clear the field, ask the parent for a fresh title,
+// then restore focus once it reports back.
 function onGenerateTitle(): void {
   if (generating.value) return;
   generating.value = true;
@@ -264,6 +262,13 @@ function startArchive(): void {
   emit('archive', props.session.id);
 }
 
+// Delete — permanently removes the session; the modal confirm and the async
+// work live in App.vue (confirmDeleteSession), like archive.
+function startDelete(): void {
+  closeMenu();
+  emit('delete', props.session.id);
+}
+
 // Expose closeMenu so the parent can close on outside-click.
 defineExpose({ closeMenu });
 </script>
@@ -300,7 +305,7 @@ defineExpose({ closeMenu });
             @keydown.esc.stop="!renameComposing && !$event.isComposing && !generating && cancelRename()"
             @blur="commitRename"
           />
-          <Tooltip v-if="autoSessionTitle" :text="t('sidebar.genTitle')">
+          <Tooltip :text="t('sidebar.genTitle')">
             <IconButton
               class="gen-title-btn"
               size="sm"
@@ -453,6 +458,11 @@ defineExpose({ closeMenu });
         <MenuItem @click="startArchive">
           <Icon :name="archived ? 'undo' : 'kimi-archive'" size="sm" />
           {{ archived ? t('sidebar.reopen') : t('sidebar.archive') }}
+        </MenuItem>
+        <MenuItem separator />
+        <MenuItem danger @click="startDelete">
+          <Icon name="trash" size="sm" />
+          {{ t('sidebar.delete') }}
         </MenuItem>
         <MenuItem separator />
         <div class="menu-time">{{ t('sidebar.lastActive', { time: fullTime }) }}</div>

@@ -27,7 +27,7 @@ import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 import type { IconName } from '../../lib/icons';
 import { copyTextToClipboard } from '../../lib/clipboard';
-import { activityRunFolding, setActivityRunFolding } from '../../lib/conversationPrefs';
+import { activityRunFolding, setActivityRunFolding, setTurnFolding, turnFolding } from '../../lib/conversationPrefs';
 import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from './AccountPlanUsage.vue';
 
 const { t } = useI18n();
@@ -99,11 +99,11 @@ const activeTab = ref<SettingsTab>('general');
 
 const tabs: { id: SettingsTab; labelKey: string; icon: IconName }[] = [
   { id: 'general', labelKey: 'settings.tabs.general', icon: 'sliders' },
-  { id: 'agent', labelKey: 'settings.tabs.agent', icon: 'robot' },
   { id: 'account', labelKey: 'settings.tabs.account', icon: 'user' },
+  { id: 'agent', labelKey: 'settings.tabs.agent', icon: 'robot' },
   { id: 'providers', labelKey: 'settings.tabs.providers', icon: 'bolt' },
   { id: 'plugins', labelKey: 'settings.tabs.plugins', icon: 'sparkles' },
-  { id: 'advanced', labelKey: 'settings.tabs.advanced', icon: 'microscope' },
+  { id: 'advanced', labelKey: 'settings.tabs.advanced', icon: 'info' },
   { id: 'lab', labelKey: 'settings.tabs.lab', icon: 'flask' },
   { id: 'archived', labelKey: 'settings.tabs.archived', icon: 'archive' },
 ];
@@ -178,6 +178,14 @@ onUnmounted(() => {
 
 function exportLog(): void {
   downloadTraceLog();
+}
+
+// The two documents linked from the About tab's Agreements section.
+const USER_AGREEMENT_URL = 'https://www.kimi.com/user/agreement/modelUse?version=v2';
+const PRIVACY_POLICY_URL = 'https://www.kimi.com/user/agreement/userPrivacy?version=v2';
+
+function openExternal(url: string): void {
+  window.open(url, '_blank', 'noopener');
 }
 
 // Per-row copy feedback: clicking a copy control flips its icon to a check for
@@ -506,6 +514,25 @@ function archiveTime(iso: string): string {
             </div>
             </div>
           </section>
+
+          <section v-if="config" class="sec">
+            <h3 class="sec-title">{{ t('settings.privacy') }}</h3>
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.telemetry') }}
+                  <span class="hint">{{ t('settings.telemetryHint') }}</span>
+                  <span class="hint">{{ t('settings.telemetryRestartHint') }}</span>
+                </span>
+                <Switch
+                  :model-value="config.telemetry !== false"
+                  :disabled="configSaving"
+                  :label="t('settings.telemetry')"
+                  @update:model-value="toggleTelemetry()"
+                />
+              </div>
+            </div>
+          </section>
         </section>
 
         <!-- Account -->
@@ -744,9 +771,37 @@ function archiveTime(iso: string): string {
               </div>
             </div>
           </section>
+
+          <section class="sec">
+            <h3 class="sec-title">{{ t('settings.messageFolding') }}</h3>
+            <div class="settings-group">
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.turnFolding') }}
+                  <span class="hint">{{ t('settings.turnFoldingHint') }}</span>
+                </span>
+                <Switch
+                  :model-value="turnFolding"
+                  :label="t('settings.turnFolding')"
+                  @update:model-value="setTurnFolding($event)"
+                />
+              </div>
+              <div class="row">
+                <span class="rlabel">
+                  {{ t('settings.toolCallSummary') }}
+                  <span class="hint">{{ t('settings.toolCallSummaryHint') }}</span>
+                </span>
+                <Switch
+                  :model-value="activityRunFolding"
+                  :label="t('settings.toolCallSummary')"
+                  @update:model-value="setActivityRunFolding($event)"
+                />
+              </div>
+            </div>
+          </section>
         </section>
 
-        <!-- Advanced: version/connection, data & privacy, diagnostics -->
+        <!-- About: version/connection, diagnostics, agreements -->
         <section v-show="activeTab === 'advanced'" class="panel">
           <section class="sec">
             <h3 class="sec-title">{{ t('settings.versionAndUpdates') }}</h3>
@@ -797,25 +852,6 @@ function archiveTime(iso: string): string {
             </div>
           </section>
 
-          <section v-if="config" class="sec">
-            <h3 class="sec-title">{{ t('settings.privacy') }}</h3>
-            <div class="settings-group">
-              <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.telemetry') }}
-                  <span class="hint">{{ t('settings.telemetryHint') }}</span>
-                  <span class="hint">{{ t('settings.telemetryRestartHint') }}</span>
-                </span>
-                <Switch
-                  :model-value="config.telemetry !== false"
-                  :disabled="configSaving"
-                  :label="t('settings.telemetry')"
-                  @update:model-value="toggleTelemetry()"
-                />
-              </div>
-            </div>
-          </section>
-
           <section class="sec">
             <h3 class="sec-title">{{ t('settings.diagnostics') }}</h3>
             <div class="settings-group">
@@ -831,18 +867,23 @@ function archiveTime(iso: string): string {
           </section>
 
           <section class="sec">
-            <h3 class="sec-title">{{ t('settings.messageFolding') }}</h3>
+            <h3 class="sec-title">{{ t('settings.agreements') }}</h3>
             <div class="settings-group">
               <div class="row">
-                <span class="rlabel">
-                  {{ t('settings.toolCallSummary') }}
-                  <span class="hint">{{ t('settings.toolCallSummaryHint') }}</span>
-                </span>
-                <Switch
-                  :model-value="activityRunFolding"
-                  :label="t('settings.toolCallSummary')"
-                  @update:model-value="setActivityRunFolding($event)"
-                />
+                <span class="rlabel">{{ t('settings.userAgreement') }}</span>
+                <Tooltip :text="t('settings.userAgreement')" placement="top">
+                  <IconButton size="sm" :label="t('settings.userAgreement')" @click="openExternal(USER_AGREEMENT_URL)">
+                    <Icon name="external-link" size="md" />
+                  </IconButton>
+                </Tooltip>
+              </div>
+              <div class="row">
+                <span class="rlabel">{{ t('settings.privacyPolicy') }}</span>
+                <Tooltip :text="t('settings.privacyPolicy')" placement="top">
+                  <IconButton size="sm" :label="t('settings.privacyPolicy')" @click="openExternal(PRIVACY_POLICY_URL)">
+                    <Icon name="external-link" size="md" />
+                  </IconButton>
+                </Tooltip>
               </div>
             </div>
           </section>

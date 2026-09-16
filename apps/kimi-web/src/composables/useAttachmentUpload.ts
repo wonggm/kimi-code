@@ -1,8 +1,8 @@
 // apps/kimi-web/src/composables/useAttachmentUpload.ts
 // Attachment handling for the composer: file picker, paste, drag & drop, the
-// upload machinery, the chip strip, and the preview lightbox. Images and
-// videos get media chips with thumbnails; any other file type attaches as a
-// generic file chip (an icon + name, no thumbnail) and is sent as a file part.
+// upload machinery, the attachment order, and the preview lightbox. Images and
+// videos get media rail thumbnails; any other file type attaches as a generic
+// file chip (an icon + name, no thumbnail) and is sent as a file part.
 //
 // Pending attachments are scoped per session (keyed by session id) so switching
 // sessions can't leak one session's unsent attachments into another session's
@@ -267,6 +267,26 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
     if (previewAttachment.value?.localId === localId) previewAttachment.value = null;
     if (att) revokeAttachment(att);
     setForSession(sid, current.filter((a) => a.localId !== localId));
+  }
+
+  /** Move a media attachment to `toIndex` among this session's media
+   *  attachments (rail positions, 0-based — file attachments keep their slots,
+   *  so the array is rebuilt by refilling the media ones in the new order). */
+  function reorderMedia(localId: string, toIndex: number): void {
+    const sid = sessionId() ?? '';
+    const current = attachmentsBySession.value[sid] ?? [];
+    const media = current.filter((a) => a.kind !== 'file');
+    const from = media.findIndex((a) => a.localId === localId);
+    if (from === -1) return;
+    const to = Math.max(0, Math.min(media.length - 1, toIndex));
+    if (to === from) return;
+    const reordered = [...media];
+    reordered.splice(to, 0, ...reordered.splice(from, 1));
+    const queue = [...reordered];
+    setForSession(
+      sid,
+      current.map((a) => (a.kind === 'file' ? a : (queue.shift() ?? a))),
+    );
   }
 
   function openAttachmentPreview(att: Attachment): void {
@@ -539,6 +559,7 @@ export function useAttachmentUpload(deps: AttachmentUploadDeps) {
     fileInputRef,
     isDragOver,
     removeAttachment,
+    reorderMedia,
     openAttachmentPreview,
     closeAttachmentPreview,
     openFilePicker,

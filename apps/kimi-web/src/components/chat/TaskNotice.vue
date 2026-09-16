@@ -122,6 +122,7 @@ const previewText = computed(() => outputPreview.value?.text ?? '');
     class="tn"
     :class="{ 'turn-anchor': !!turnId }"
     :data-turn-id="turnId"
+    :tabindex="turnId ? -1 : undefined"
     role="status"
   >
     <div class="tn-card" :class="`tone-${tone}`">
@@ -162,6 +163,9 @@ const previewText = computed(() => outputPreview.value?.text ?? '');
     <div v-if="createdAt" class="tn-meta">
       <MessageTime :time="createdAt" />
     </div>
+    <!-- Item navigation for the standalone notice row; empty when the notice
+         is embedded in an assistant turn's blocks. -->
+    <slot />
   </div>
 </template>
 

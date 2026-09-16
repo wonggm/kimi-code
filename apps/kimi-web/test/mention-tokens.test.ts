@@ -163,4 +163,14 @@ describe('mentionToText', () => {
     const text = mentionToText({ kind: 'folder', name: 'dir', path: 'C:\\dir' });
     expect(tokenizeMentions(text)).toEqual([{ kind: 'folder', name: 'dir', path: 'C:\\dir/' }]);
   });
+
+  it('round-trips an attachment mention', () => {
+    const text = mentionToText({ kind: 'attachment', name: 'Image 1', id: 'att_1' });
+    expect(text).toBe('[Image 1](kimi-code-composer://attachments/att_1)');
+    expect(tokenizeMentions(`use ${text} here`)).toEqual([
+      { kind: 'text', value: 'use ' },
+      { kind: 'attachment', name: 'Image 1', path: 'kimi-code-composer://attachments/att_1' },
+      { kind: 'text', value: ' here' },
+    ]);
+  });
 });

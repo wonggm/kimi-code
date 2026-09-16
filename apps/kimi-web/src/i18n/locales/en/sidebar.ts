@@ -28,7 +28,7 @@ export default {
   copySessionId: 'Copy session ID',
   copied: 'Copied ✓',
   copyFailed: 'Copy failed',
-  /** Experimental `auto_session_title` — regenerate button in the rename field. */
+  /** Regenerate button in the rename field. */
   genTitle: 'Gen Title',
   genTitleUnavailable: 'Title generation unavailable — sign in to Kimi Code first',
   pullRequest: 'Pull request',
@@ -36,6 +36,11 @@ export default {
   fork: 'Fork session',
   export: 'Export session',
   delete: 'Delete',
+  deleteConfirmTitle: 'Delete session',
+  deleteConfirmMessage:
+    'Permanently delete all conversation history of "{title}". This cannot be undone. Files and code changes in the workspace are not affected.',
+  deleteConfirmButton: 'Permanently delete',
+  deleteToast: 'Session deleted',
   removeWorkspace: 'Remove workspace',
   brand: 'Kimi Code',
   signedIn: 'Signed in',

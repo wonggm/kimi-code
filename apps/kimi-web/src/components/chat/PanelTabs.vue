@@ -57,6 +57,11 @@ const { t } = useI18n();
 
 const tabsEl = ref<HTMLElement | null>(null);
 const pfcHostEl = ref<HTMLElement | null>(null);
+
+/** Upstream drops the Changes entry from the add menu once a diff tab exists:
+ *  the diff tab is a singleton, so the entry could only re-focus what is
+ *  already open. */
+const hasDiffTab = computed(() => props.tabs.some((tab) => tab.kind === 'diff'));
 const addOpen = ref(false);
 const addBtnRef = ref<InstanceType<typeof IconButton> | null>(null);
 
@@ -309,7 +314,7 @@ function onResizeKey(event: KeyboardEvent): void {
           <MenuItem :size="mobile ? 'lg' : 'md'" :disabled="!canOpenSideChat" @click="pick('btw')">
             <Icon name="message" /> {{ t('sideChat.title') }}
           </MenuItem>
-          <MenuItem :size="mobile ? 'lg' : 'md'" :disabled="!canOpenDiff" @click="pick('diff')">
+          <MenuItem v-if="!hasDiffTab" :size="mobile ? 'lg' : 'md'" :disabled="!canOpenDiff" @click="pick('diff')">
             <Icon name="git-fork" /> {{ t('panel.tabs.diff') }}
           </MenuItem>
         </Menu>

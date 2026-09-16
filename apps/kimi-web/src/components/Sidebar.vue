@@ -144,9 +144,6 @@ const props = withDefaults(
     /** True while the resize handle is dragged — disables the width transition
      *  so the sidebar follows the pointer 1:1. */
     dragging?: boolean;
-    /** Experimental `auto_session_title` flag — enables the in-rename title
-     *  generation button on session rows. */
-    autoSessionTitle?: boolean;
     /** Experimental Lab `labSidebarTabs` flag — renders the Open / Done /
      *  Workspaces tab strip above the session list. */
     labSidebarTabs?: boolean;
@@ -168,7 +165,6 @@ const props = withDefaults(
     colWidth: 220,
     collapsed: false,
     dragging: false,
-    autoSessionTitle: false,
     labSidebarTabs: false,
     signedIn: false,
     colorScheme: 'system',
@@ -184,12 +180,13 @@ const emit = defineEmits<{
   addWorkspace: [];
   rename: [id: string, title: string];
   archive: [id: string];
+  delete: [id: string];
   fork: [id: string];
   export: [id: string];
   setEmoji: [id: string, emoji: string | undefined];
   togglePinned: [id: string, pinned: boolean];
-  /** Title regeneration request (experimental auto_session_title) — passed
-   *  through from a row's rename field; the App handler reports back. */
+  /** Title regeneration request — passed through from a row's rename field;
+   *  the App handler reports back. */
   generateTitle: [id: string, done: (title: string | null) => void];
   renameWorkspace: [id: string, name: string];
   deleteWorkspace: [id: string];
@@ -1337,10 +1334,10 @@ onBeforeUnmount(() => {
               :approval-count="pendingBySession[session.id]?.approvals ?? 0"
               :question-count="pendingBySession[session.id]?.questions ?? 0"
               :unread="unreadBySession[session.id] ?? false"
-              :auto-session-title="autoSessionTitle"
               @select="onSelectSession"
               @rename="(id, title) => emit('rename', id, title)"
               @archive="(id) => emit('archive', id)"
+              @delete="(id) => emit('delete', id)"
               @fork="(id) => emit('fork', id)"
               @export="(id) => emit('export', id)"
               @set-emoji="onSetEmoji"
@@ -1389,10 +1386,10 @@ onBeforeUnmount(() => {
                   :approval-count="pendingBySession[session.id]?.approvals ?? 0"
                   :question-count="pendingBySession[session.id]?.questions ?? 0"
                   :unread="unreadBySession[session.id] ?? false"
-                  :auto-session-title="autoSessionTitle"
                   @select="onSelectSession"
                   @rename="(id, title) => emit('rename', id, title)"
                   @archive="(id) => emit('archive', id)"
+                  @delete="(id) => emit('delete', id)"
                   @fork="(id) => emit('fork', id)"
                   @export="(id) => emit('export', id)"
                   @set-emoji="onSetEmoji"
@@ -1433,10 +1430,10 @@ onBeforeUnmount(() => {
                       :session="session"
                       :active="session.id === activeId"
                       :archived="true"
-                      :auto-session-title="autoSessionTitle"
                       @select="onSelectSession"
                       @rename="(id, title) => emit('rename', id, title)"
                       @archive="(id) => emit('restore', id)"
+                      @delete="(id) => emit('delete', id)"
                       @fork="(id) => emit('fork', id)"
                       @export="(id) => emit('export', id)"
                       @set-emoji="onSetEmoji"
@@ -1453,10 +1450,10 @@ onBeforeUnmount(() => {
                     :session="session"
                     :active="session.id === activeId"
                     :archived="true"
-                    :auto-session-title="autoSessionTitle"
                     @select="onSelectSession"
                     @rename="(id, title) => emit('rename', id, title)"
                     @archive="(id) => emit('restore', id)"
+                    @delete="(id) => emit('delete', id)"
                     @fork="(id) => emit('fork', id)"
                     @export="(id) => emit('export', id)"
                     @set-emoji="onSetEmoji"
@@ -1502,7 +1499,6 @@ onBeforeUnmount(() => {
               :dragging="draggingWsId === g.workspace.id"
               :is-collapsed="isCollapsed"
               :is-expanded="isExpanded"
-              :auto-session-title="autoSessionTitle"
               @group-click="handleGhClick"
               @group-contextmenu="openGhMenu"
               @toggle-ws-menu="toggleWsMenu"
@@ -1510,6 +1506,7 @@ onBeforeUnmount(() => {
               @select-session="onSelectSession"
               @rename-session="(id, title) => emit('rename', id, title)"
               @archive-session="(id) => emit('archive', id)"
+              @delete-session="(id) => emit('delete', id)"
               @fork-session="(id) => emit('fork', id)"
               @export-session="(id) => emit('export', id)"
               @set-emoji-session="onSetEmoji"
@@ -1539,10 +1536,10 @@ onBeforeUnmount(() => {
               :approval-count="pendingBySession[session.id]?.approvals ?? 0"
               :question-count="pendingBySession[session.id]?.questions ?? 0"
               :unread="unreadBySession[session.id] ?? false"
-              :auto-session-title="autoSessionTitle"
               @select="onSelectSession"
               @rename="(id, title) => emit('rename', id, title)"
               @archive="(id) => emit('archive', id)"
+              @delete="(id) => emit('delete', id)"
               @fork="(id) => emit('fork', id)"
               @export="(id) => emit('export', id)"
               @set-emoji="onSetEmoji"
@@ -1577,7 +1574,6 @@ onBeforeUnmount(() => {
               :dragging="draggingWsId === g.workspace.id"
               :is-collapsed="isCollapsed"
               :is-expanded="isExpanded"
-              :auto-session-title="autoSessionTitle"
               @group-click="handleGhClick"
               @group-contextmenu="openGhMenu"
               @toggle-ws-menu="toggleWsMenu"
@@ -1585,6 +1581,7 @@ onBeforeUnmount(() => {
               @select-session="onSelectSession"
               @rename-session="(id, title) => emit('rename', id, title)"
               @archive-session="(id) => emit('archive', id)"
+              @delete-session="(id) => emit('delete', id)"
               @fork-session="(id) => emit('fork', id)"
               @export-session="(id) => emit('export', id)"
               @set-emoji-session="onSetEmoji"

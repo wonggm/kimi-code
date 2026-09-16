@@ -209,6 +209,10 @@ interface WireArchiveResult {
   archived: true;
 }
 
+interface WireDeleteResult {
+  deleted: true;
+}
+
 interface WireListDirectoryResult {
   items: WireFsEntry[];
   children_by_path?: Record<string, WireFsEntry[]>;
@@ -511,6 +515,16 @@ export class DaemonKimiWebApi implements KimiWebApi {
   async archiveSession(sessionId: string): Promise<{ archived: true }> {
     const data = await this.http.post<WireArchiveResult>(
       `/sessions/${encodeURIComponent(sessionId)}:archive`,
+      {},
+    );
+    return data;
+  }
+
+  // POST /sessions/{id}:delete — permanently remove the session and its
+  // conversation history on the daemon. The workspace is untouched.
+  async deleteSession(sessionId: string): Promise<{ deleted: true }> {
+    const data = await this.http.post<WireDeleteResult>(
+      `/sessions/${encodeURIComponent(sessionId)}:delete`,
       {},
     );
     return data;

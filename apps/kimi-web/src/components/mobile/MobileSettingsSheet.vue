@@ -32,7 +32,7 @@ import Input from '../ui/Input.vue';
 import MenuSelect from '../ui/MenuSelect.vue';
 import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
-import { activityRunFolding, setActivityRunFolding } from '../../lib/conversationPrefs';
+import { activityRunFolding, setActivityRunFolding, setTurnFolding, turnFolding } from '../../lib/conversationPrefs';
 import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from '../settings/AccountPlanUsage.vue';
 
 const { t } = useI18n();
@@ -487,9 +487,17 @@ function openProviders(): void {
       </label>
     </div>
 
-    <!-- Message folding: upstream's tool-call summary toggle. The companion
-         "Auto-fold messages" preference is not implemented — the fork rejected
-         turn folding in the 0.36.1 round (see lib/conversationPrefs.ts). -->
+    <!-- Message folding: upstream's two preferences — a finished turn folds
+         away behind its own head, and consecutive tool calls collapse into one
+         summary row. -->
+    <button type="button" class="srow" @click="setTurnFolding(!turnFolding)">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('settings.turnFolding') }}</span>
+        <span class="srow-sub">{{ t('settings.turnFoldingHint') }}</span>
+      </span>
+      <span class="toggle" :class="{ on: turnFolding }" role="switch" :aria-checked="turnFolding" />
+    </button>
+
     <button type="button" class="srow" @click="setActivityRunFolding(!activityRunFolding)">
       <span class="srow-main">
         <span class="srow-label">{{ t('settings.toolCallSummary') }}</span>

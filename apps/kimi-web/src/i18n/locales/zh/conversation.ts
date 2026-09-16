@@ -78,6 +78,11 @@ export default {
   thoughtFor: '思考了 {duration}',
   // The foot of a completed exchange: how long the whole exchange took.
   workedFor: '用时 {duration}',
+  // The fold head of a turn that carried no timing of its own.
+  workDetails: '工作过程',
+  // A transcript row's item navigation (focus the message above / below it).
+  historyPrevious: '上一项',
+  historyNext: '下一项',
   goal: {
     continuation: '目标续跑',
   },

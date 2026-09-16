@@ -1479,7 +1479,7 @@ onUnmounted(() => {
                 <tr><td>Time</td><td>mono xs, <code>fg-faint</code>; yields to the kebab on hover</td></tr>
                 <tr><td>Attention Badge</td><td><code>Badge</code> sm: info (needs answer) / warning (needs approval) / danger (aborted)</td></tr>
                 <tr><td>Inline actions</td><td>pin + archive <code>IconButton</code> sm, absolutely positioned immediately left of the kebab and revealed with it (Done rows read as reopen). The layer backs itself with the row's own background — the sidebar surface plus the row wash, or the neutral selected fill — so the overlapped title tail and badges don't bleed through. Hovering the row changes neither its height nor the title's available width</td></tr>
-                <tr><td>kebab</td><td><code>IconButton</code> sm, shown on hover; keeps the full menu (copy id, rename, emoji, pin, fork, export, archive / reopen, last-active); dropdown uses <code>Menu/MenuItem</code></td></tr>
+                <tr><td>kebab</td><td><code>IconButton</code> sm, shown on hover; keeps the full menu (copy id, rename, emoji, pin, fork, export, archive / reopen, delete, last-active); dropdown uses <code>Menu/MenuItem</code></td></tr>
                 <tr><td>Archive confirmation</td><td>replaces the title area, <code>Button</code> sm (danger confirm / secondary cancel)</td></tr>
               </tbody>
             </table>

@@ -78,6 +78,11 @@ export default {
   thoughtFor: 'Thought for {duration}',
   // The foot of a completed exchange: how long the whole exchange took.
   workedFor: 'Worked for {duration}',
+  // The fold head of a turn that carried no timing of its own.
+  workDetails: 'Work details',
+  // A transcript row's item navigation (focus the message above / below it).
+  historyPrevious: 'Previous item',
+  historyNext: 'Next item',
   goal: {
     continuation: 'Goal continuation',
   },
