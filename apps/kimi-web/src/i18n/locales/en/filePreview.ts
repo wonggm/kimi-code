@@ -14,6 +14,7 @@ export default {
   prevMatch: 'Previous match',
   nextMatch: 'Next match',
   htmlMode: 'HTML preview mode',
+  metadata: 'Metadata',
   markdownMode: 'Markdown preview mode',
   preview: 'Preview',
   source: 'Source',

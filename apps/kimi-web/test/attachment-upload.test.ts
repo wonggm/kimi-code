@@ -313,4 +313,49 @@ describe('useAttachmentUpload', () => {
     expect(fetchSpy.mock.calls.every((call) => call[0] !== '')).toBe(true);
     fetchSpy.mockRestore();
   });
+
+  it('reorderMedia moves a media attachment between rail positions', () => {
+    const att = setup(undefined);
+    att.loadAttachments([
+      { fileId: 'f1', kind: 'image', url: 'https://example.test/f1' },
+      { fileId: 'f2', kind: 'video', url: 'https://example.test/f2' },
+      { fileId: 'f3', kind: 'image', url: 'https://example.test/f3' },
+    ]);
+    const [first, , third] = att.attachments.value;
+
+    att.reorderMedia(third!.localId, 0);
+
+    expect(att.attachments.value.map((a) => a.fileId)).toEqual(['f3', 'f1', 'f2']);
+    att.reorderMedia(first!.localId, 2);
+    expect(att.attachments.value.map((a) => a.fileId)).toEqual(['f3', 'f2', 'f1']);
+  });
+
+  it('reorderMedia leaves file attachments in their slots', () => {
+    const att = setup(undefined);
+    att.loadAttachments([
+      { fileId: 'f1', kind: 'image', url: 'https://example.test/f1' },
+      { fileId: 'pdf', kind: 'file', url: 'https://example.test/pdf' },
+      { fileId: 'f3', kind: 'image', url: 'https://example.test/f3' },
+    ]);
+    const third = att.attachments.value[2];
+
+    // Position 0 among the media, i.e. the array slot the first image holds.
+    att.reorderMedia(third!.localId, 0);
+
+    expect(att.attachments.value.map((a) => a.fileId)).toEqual(['f3', 'pdf', 'f1']);
+  });
+
+  it('reorderMedia clamps an out-of-range index and ignores unknown / file ids', () => {
+    const att = setup(undefined);
+    att.loadAttachments([
+      { fileId: 'f1', kind: 'image', url: 'https://example.test/f1' },
+      { fileId: 'f2', kind: 'image', url: 'https://example.test/f2' },
+    ]);
+
+    att.reorderMedia(att.attachments.value[0]!.localId, 99);
+    expect(att.attachments.value.map((a) => a.fileId)).toEqual(['f2', 'f1']);
+
+    att.reorderMedia('att_unknown', 0);
+    expect(att.attachments.value.map((a) => a.fileId)).toEqual(['f2', 'f1']);
+  });
 });

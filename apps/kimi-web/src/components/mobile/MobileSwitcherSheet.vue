@@ -57,6 +57,8 @@ const emit = defineEmits<{
   addWorkspace: [];
   rename: [id: string, title: string];
   archive: [id: string];
+  /** Permanently delete a session; App.vue wires this to confirmDeleteSession. */
+  delete: [id: string];
   /** NOTE: App.vue wires this to confirmDeleteWorkspace (modal confirm + async delete). */
   deleteWorkspace: [workspaceId: string];
   loadMore: [workspaceId: string];
@@ -238,6 +240,11 @@ function onArchive(id: string): void {
   // The modal confirm + async archive live in App.vue (confirmArchiveSession).
   emit('archive', id);
 }
+function onDelete(id: string): void {
+  menuFor.value = null;
+  // Same split as archive: App.vue confirms and runs the delete.
+  emit('delete', id);
+}
 
 // ---------------------------------------------------------------------------
 // Per-workspace "…" menu: copy path + delete workspace. Copy path is handled
@@ -405,6 +412,8 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
             <MenuItem size="lg" @click="setEmoji(entry.session)">{{ t('sidebar.setEmoji') }}</MenuItem>
             <MenuItem size="lg" @click="togglePinned(entry.session)">{{ entry.session.pinned ? t('sidebar.unpin') : t('sidebar.pin') }}</MenuItem>
             <MenuItem size="lg" danger @click="onArchive(entry.session.id)">{{ t('sidebar.archive') }}</MenuItem>
+            <MenuItem separator />
+            <MenuItem size="lg" danger @click="onDelete(entry.session.id)">{{ t('sidebar.delete') }}</MenuItem>
           </Menu>
         </div>
 

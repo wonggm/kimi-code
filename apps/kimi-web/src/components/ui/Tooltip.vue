@@ -4,10 +4,61 @@
      trigger's layout (safe for truncated/flex triggers); listeners are attached to
      the real trigger element, which also anchors the bubble, and re-attached if that
      element is removed or replaced (so an open tooltip can never strand on screen).
-     The bubble is rendered through a body teleport so it escapes ancestor overflow
-     clipping, and positioned with flip + viewport clamping. Short text stays on one
-     line; long text wraps within `maxWidth` and is clamped to `maxLines` lines with
-     an ellipsis so the bubble never grows too tall. -->
+     Opening is driven by `pointermove` rather than by entering the element: the
+     bubble appears only once the pointer has really moved, and keyboard focus opens
+     it only for `:focus-visible`. The bubble is rendered through a body teleport so
+     it escapes ancestor overflow clipping, and positioned with flip + viewport
+     clamping. Short text stays on one line; long text wraps within `maxWidth` and is
+     clamped to `maxLines` lines with an ellipsis so the bubble never grows too tall. -->
+<script lang="ts">
+/**
+ * Pointer tracking, shared by every tooltip on the page. A trigger that a
+ * re-render swaps in under a stationary cursor receives a synthesized
+ * `pointermove` carrying the coordinates of the last real move, so a fresh
+ * element that has never seen the pointer is told apart from one the pointer
+ * actually travelled to by comparing the event against the previous sample —
+ * which means the memory has to live here, not per tooltip.
+ */
+let prevX = -1;
+let prevY = -1;
+let lastX = -1;
+let lastY = -1;
+let moved = false;
+let tracking = false;
+
+function resetPointerTracking(): void {
+  prevX = -1;
+  prevY = -1;
+  lastX = -1;
+  lastY = -1;
+  moved = false;
+}
+
+function onDocumentPointerMove(event: PointerEvent): void {
+  const hadSample = lastX >= 0;
+  prevX = lastX;
+  prevY = lastY;
+  lastX = event.clientX;
+  lastY = event.clientY;
+  if (hadSample && (lastX !== prevX || lastY !== prevY)) moved = true;
+}
+
+function trackPointer(): void {
+  if (tracking || typeof document === 'undefined') return;
+  tracking = true;
+  document.addEventListener('pointermove', onDocumentPointerMove, { capture: true, passive: true });
+  window.addEventListener('blur', resetPointerTracking);
+  document.documentElement.addEventListener('pointerleave', resetPointerTracking);
+}
+
+/** The pointer has not moved since it was last seen: either nothing has moved it
+ *  yet (focus lost, pointer left the document), or this event repeats the position
+ *  of the previous sample. */
+function pointerIsStationary(event: PointerEvent): boolean {
+  return moved ? event.clientX === prevX && event.clientY === prevY : true;
+}
+</script>
+
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { isAnyMenuOpen, menuOpenCount } from '../../composables/useMenuOpen';
@@ -49,6 +100,10 @@ const bubbleStyle = ref<Record<string, string>>({ maxWidth: `${props.maxWidth}px
 let showTimer: ReturnType<typeof setTimeout> | undefined;
 let target: HTMLElement | null = null;
 let observer: MutationObserver | undefined;
+// Set once the pointer has moved over the trigger; cleared by hide(). Without it
+// every move would re-arm the delay, so the bubble would wait for the pointer to
+// stop instead of opening on the move that entered.
+let showScheduled = false;
 
 function position(): void {
   const bub = bubble.value;
@@ -110,6 +165,7 @@ function show(): void {
 
 function hide(): void {
   window.clearTimeout(showTimer);
+  showScheduled = false;
   open.value = false;
   mounted.value = false;
   positioned.value = false;
@@ -119,24 +175,38 @@ function onScrollOrResize(): void {
   if (open.value) hide();
 }
 
+function onPointerMove(event: PointerEvent): void {
+  if (showScheduled || pointerIsStationary(event)) return;
+  showScheduled = true;
+  show();
+}
+
+// Clicking a trigger focuses it without the pointer having moved; only keyboard
+// focus (`:focus-visible`) is an intent to read the bubble.
+function onFocusIn(event: FocusEvent): void {
+  if (!(event.target instanceof Element) || !event.target.matches(':focus-visible')) return;
+  show();
+}
+
 function setTarget(el: HTMLElement | null): void {
   if (el === target) return;
   if (target) {
-    target.removeEventListener('mouseenter', show);
+    target.removeEventListener('pointermove', onPointerMove);
     target.removeEventListener('mouseleave', hide);
-    target.removeEventListener('focusin', show);
+    target.removeEventListener('focusin', onFocusIn);
     target.removeEventListener('focusout', hide);
   }
   target = el;
   if (target) {
-    target.addEventListener('mouseenter', show);
+    target.addEventListener('pointermove', onPointerMove, { passive: true });
     target.addEventListener('mouseleave', hide);
-    target.addEventListener('focusin', show);
+    target.addEventListener('focusin', onFocusIn);
     target.addEventListener('focusout', hide);
   }
 }
 
 onMounted(() => {
+  trackPointer();
   // A menu opening while a bubble is showing hides it immediately (the menu
   // panel sits above the bubble layer); the next hover decides afresh.
   watch(menuOpenCount, () => {

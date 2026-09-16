@@ -608,31 +608,36 @@ export interface WireAuthResult {
   managed_provider: WireManagedProvider | null;
 }
 
+export interface WireUsageQuotaEntry {
+  usedRatio: number;
+  resetAt?: string;
+}
+
+export interface WireUsageQuota {
+  limit5h?: WireUsageQuotaEntry;
+  limit7d?: WireUsageQuotaEntry;
+  monthTotal?: WireUsageQuotaEntry;
+  monthCode?: WireUsageQuotaEntry;
+}
+
+export interface WireBoosterWallet {
+  balanceCents: number;
+  totalCents: number;
+  monthlyChargeLimitEnabled: boolean;
+  monthlyChargeLimitCents: number;
+  monthlyUsedCents: number;
+  currency: string;
+}
+
+/** GET /oauth/usage answers in kap-server's camelCase quota shape — the
+ *  `usages` quota counters plus the optional booster wallet. */
 export type WireManagedUsageResult =
   | {
       kind: 'ok';
-      summary: {
-        name?: string;
-        window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
-        used: number;
-        limit: number;
-        reset_at?: string;
-      } | null;
-      limits: Array<{
-        name?: string;
-        window?: { duration: number; unit: 'minute' | 'hour' | 'day' | 'week' };
-        used: number;
-        limit: number;
-        reset_at?: string;
-      }>;
-      extra_usage: {
-        balance_cents: number;
-        total_cents: number;
-        monthly_charge_limit_enabled: boolean;
-        monthly_charge_limit_cents: number;
-        monthly_used_cents: number;
-        currency: string;
-      } | null;
+      quota: {
+        usages: WireUsageQuota;
+        extraUsage: WireBoosterWallet | null;
+      };
     }
   | { kind: 'error'; message: string; status?: number };
 
