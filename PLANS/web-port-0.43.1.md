@@ -198,6 +198,45 @@ port. The protocol actions behind them are posed in the mock so the reachable fo
 - **Design-system view**: §03 does not yet list `CardButton` (or the new `enter` icon) among the
   primitives.
 
+## Follow-up: dock pills and code blocks, aligned against the bundle (2026-09-18)
+
+Reported by the user after living with the round: the composer's dock pills and the transcript's
+code blocks still looked different from the upstream bundle served on the mock port. Both were
+measured the same way the round measures everything — the same mock scene captured in both apps,
+comparing each element's box and its computed-style fingerprint (border radius, background,
+shadow, font size, colour, borders).
+
+| Element | Property | Upstream | Fork before | Fork now |
+|---|---|---|---|---|
+| dock pill | height / radius / fill | 31px / 10px / rgba(255,255,255,.05) | 40px / 12px / .08 | matched |
+| dock pill | glyph | 18px | 24px (1.5em) | matched |
+| running chip | colour / gap | text colour / 6px | muted / 4px | matched |
+| count chip | figures | proportional | tabular | matched |
+| code block | radius / surface / shadow | 16px / #292929 / none | 8px / #121212 / 0 1px 3px | matched |
+| code header | surface / font / corners | 41 41 41 @90% / 16px / 16px | matched / 16px / 8px | matched |
+| code action button | radius | 8px | 4px | matched |
+| scrollbar thumb | height / radius / fill | 4px / 10px / 40% white | 4px / 10px / 40% | matched |
+| edge fade | corners | bottom 16px | bottom 8px | matched |
+
+The code block's tokens had to be bound **on the container**, not at `:root` or on the renderer:
+the markstream package defines the same token names itself, on that element, and its stylesheet
+lands after the app's — so the app's bindings were ignored and the block rendered at the package's
+own defaults (14px header, 4px action radius). The container also carries an inline
+`background-color: var(--markstream-code-fallback-bg, var(--code-bg))`, so its surface had to be
+changed through `--code-bg` rather than by a `background` rule.
+
+Still open, and named in the commit:
+
+- **The code body renders at 13px where upstream renders 12px**, and the block is 61px shorter.
+  The package sets that size inside its own tree; a light-DOM rule at higher specificity and an
+  injected shadow rule both left the measured value at 13px, so the next step is to find which
+  rule inside the package's tree wins and to compare the code area's padding line by line
+  (`--markdown-code-padding-inline/-bottom` upstream against the fork's `--code-pad-block`).
+- A cross-midnight capture makes a relative timestamp ("Yesterday 23:56") differ between the two
+  apps and lands as a `missing-text` blocker on every settings scene. The run that produced the
+  numbers above was captured on both sides of midnight and shows 24 blockers of which 22 are that
+  timestamp; the same run before midnight shows 2.
+
 ## Gate
 
 The matrix is sixteen single-app walks (breakpoint × theme × locale × app) through
