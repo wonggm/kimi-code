@@ -24,6 +24,7 @@ withDefaults(
     /** Edit stats: the +A / −A pair and their proportion bar. */
     diff?: { add: number; del: number };
     arg?: string;
+    faint?: string;
     time?: string;
     open?: boolean;
     expandable?: boolean;
@@ -34,6 +35,7 @@ withDefaults(
     dir: '',
     mono: '',
     arg: '',
+    faint: '',
     time: '',
     open: false,
     expandable: false,
@@ -59,23 +61,26 @@ function onHeadClick(): void {
     <div class="tl-head" :class="{ clickable: expandable }" @click="onHeadClick">
       <span v-if="icon" class="tl-ic" aria-hidden="true" v-html="icon" />
       <span class="tl-main">
-        <span class="tl-name">{{ name }}</span>
-        <button v-if="file" type="button" class="tl-file">{{ file }}</button>
-        <span v-if="dir" class="tl-faint">{{ dir }}</span>
-        <span v-if="mono" class="tl-mono">{{ mono }}</span>
-        <Tooltip v-if="!file && !mono" :text="arg">
-          <span v-if="arg" class="tl-dim">{{ arg }}</span>
-        </Tooltip>
-        <span v-if="expandable" class="ui-tip">
-          <button
-            type="button"
-            class="tl-car"
-            :aria-expanded="open"
-            :aria-label="t('tools.disclosure.expand')"
-            @click.stop="onHeadClick"
-          >
-            <Icon class="tl-car-ic" name="chevron-right" size="sm" />
-          </button>
+        <span class="tl-lead">
+          <span class="tl-name">{{ name }}</span>
+          <button v-if="file" type="button" class="tl-file">{{ file }}</button>
+          <span v-if="dir" class="tl-faint">{{ dir }}</span>
+          <span v-if="mono" class="tl-mono">{{ mono }}</span>
+          <Tooltip v-if="!file && !mono" :text="arg">
+            <span v-if="arg" class="tl-dim">{{ arg }}</span>
+          </Tooltip>
+          <span v-if="faint" class="tl-faint">{{ faint }}</span>
+          <span v-if="expandable" class="ui-tip">
+            <button
+              type="button"
+              class="tl-car"
+              :aria-expanded="open"
+              :aria-label="t('tools.disclosure.expand')"
+              @click.stop="onHeadClick"
+            >
+              <Icon class="tl-car-ic" name="chevron-right" size="sm" />
+            </button>
+          </span>
         </span>
       </span>
       <span class="tl-tail">
@@ -99,7 +104,9 @@ function onHeadClick(): void {
     </div>
     <div ref="bodyEl" class="tl-body" :class="{ open }" :inert="!open">
       <div class="tl-body-inner">
-        <slot />
+        <div class="tl-body-content">
+          <slot />
+        </div>
       </div>
     </div>
   </div>
@@ -132,6 +139,7 @@ function onHeadClick(): void {
   color: var(--color-text-faint);
 }
 .tl-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-1); }
+.tl-lead { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
 .tl-name { font-weight: var(--weight-regular); color: var(--color-text-muted); flex: none; }
 .tl-dim {
   color: var(--color-text-muted);
@@ -149,7 +157,7 @@ function onHeadClick(): void {
 .tl-status.run { color: var(--color-text-muted); }
 /* The chevron's wrapper is a plain span, whose line box added a pixel over the
    16px button and made every tool row 25px where upstream's is 24px. */
-.tl-main > .ui-tip {
+.tl-lead > .ui-tip {
   display: inline-flex;
   align-items: center;
 }
@@ -191,6 +199,12 @@ function onHeadClick(): void {
   color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.tl-body-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 /* Chip slot (line counts, result counts): upstream's tl-chip. */

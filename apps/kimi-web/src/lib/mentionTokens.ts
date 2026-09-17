@@ -10,7 +10,7 @@
 // `/`/`\` folder dests, Windows drive letters not treated as URI schemes), so
 // messages written by the upstream web UI parse identically here.
 
-export type MentionKind = 'file' | 'folder' | 'skill' | 'attachment';
+export type MentionKind = 'file' | 'folder' | 'skill' | 'attachment' | 'browser';
 
 export interface MentionTextSegment {
   kind: 'text';
@@ -43,22 +43,33 @@ export interface MentionAttachmentSegment {
   path: string;
 }
 
+/** An element or region captured from a page, mentioned in the prompt text.
+ *  `path` holds the reference id the capture is looked up by. */
+export interface MentionBrowserSegment {
+  kind: 'browser';
+  name: string;
+  path: string;
+}
+
 export type MentionSegment =
   | MentionTextSegment
   | MentionFileSegment
   | MentionFolderSegment
   | MentionSkillSegment
-  | MentionAttachmentSegment;
+  | MentionAttachmentSegment
+  | MentionBrowserSegment;
 
 /** An insertable mention (menu pick, pasted folder, or a media attachment). */
 export type MentionInsert =
   | { kind: 'file'; name: string; path: string }
   | { kind: 'folder'; name: string; path: string }
   | { kind: 'skill'; name: string; path: '' }
-  | { kind: 'attachment'; name: string; id: string };
+  | { kind: 'attachment'; name: string; id: string }
+  | { kind: 'browser'; name: string; id: string };
 
 export const SKILL_DEST_PREFIX = 'kimi-code://skill/';
 export const ATTACHMENT_DEST_PREFIX = 'kimi-code-composer://attachments/';
+export const BROWSER_REFERENCE_DEST_PREFIX = 'kimi-code-composer://browser-references/';
 
 // ---------------------------------------------------------------------------
 // Parsing
@@ -73,12 +84,12 @@ const SCHEME_DEST_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 function decodeLinkLabel(raw: string): string {
   return raw
     .replaceAll(/\\([\\[\]])/g, '$1')
-    .replaceAll(/%0A/g, ' ')
-    .replaceAll(/%0D/g, '\r')
-    .replaceAll(/%26/g, '&')
-    .replaceAll(/%3C/g, '<')
-    .replaceAll(/%3E/g, '>')
-    .replaceAll(/%25/g, '%');
+    .replaceAll('%0A', ' ')
+    .replaceAll('%0D', '\r')
+    .replaceAll('%26', '&')
+    .replaceAll('%3C', '<')
+    .replaceAll('%3E', '>')
+    .replaceAll('%25', '%');
 }
 
 function decodeLinkDest(raw: string, angleWrapped: boolean): string {
@@ -105,6 +116,9 @@ export function mentionKindForDest(dest: string): MentionKind | null {
   }
   if (dest.startsWith(ATTACHMENT_DEST_PREFIX) && dest.length > ATTACHMENT_DEST_PREFIX.length) {
     return 'attachment';
+  }
+  if (dest.startsWith(BROWSER_REFERENCE_DEST_PREFIX) && dest.length > BROWSER_REFERENCE_DEST_PREFIX.length) {
+    return 'browser';
   }
   if (dest.startsWith('#') || dest.startsWith('?') || dest.startsWith('//')) return null;
   if (SCHEME_DEST_RE.test(dest) && !WINDOWS_DRIVE_DEST_RE.test(dest)) return null;
@@ -166,13 +180,13 @@ export function tokenizeMentions(text: string): MentionSegment[] {
 
 function escapeLinkLabel(name: string): string {
   return name
-    .replaceAll(/%/g, '%25')
-    .replaceAll(/&/g, '%26')
-    .replaceAll(/</g, '%3C')
-    .replaceAll(/>/g, '%3E')
+    .replaceAll('%', '%25')
+    .replaceAll('&', '%26')
+    .replaceAll('<', '%3C')
+    .replaceAll('>', '%3E')
     .replaceAll(/([[\]])/g, '\\$1')
-    .replaceAll(/\n/g, '%0A')
-    .replaceAll(/\r/g, '%0D');
+    .replaceAll('\n', '%0A')
+    .replaceAll('\r', '%0D');
 }
 
 /** Percent-encode each path segment so separators stay readable in the link. */
@@ -191,6 +205,9 @@ export function mentionToText(mention: MentionInsert): string {
   }
   if (mention.kind === 'attachment') {
     return `[${label}](${ATTACHMENT_DEST_PREFIX}${encodeURIComponent(mention.id)})`;
+  }
+  if (mention.kind === 'browser') {
+    return `[${label}](${BROWSER_REFERENCE_DEST_PREFIX}${encodeURIComponent(mention.id)})`;
   }
   const path =
     mention.kind === 'folder' && !/[/\\]$/.test(mention.path)

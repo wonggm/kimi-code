@@ -9,6 +9,7 @@ export default {
     compaction: 'Compaction summary',
     agent: 'Subagent',
     term: 'Terminal',
+    browser: 'Browser',
     // Fork keys still referenced by the pre-merge shell and its panes.
     changes: 'Changes',
     sideChat: 'Side chat',
@@ -19,6 +20,9 @@ export default {
   },
   newTab: 'New tab',
   closeTab: 'Close tab',
+  closeOthers: 'Close Other Tabs',
+  closeToRight: 'Close Tabs to the Right',
+  closeAll: 'Close All Tabs',
   expand: 'Expand panel',
   collapse: 'Restore panel',
   hide: 'Close right panel',

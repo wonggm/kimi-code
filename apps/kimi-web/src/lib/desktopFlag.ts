@@ -55,9 +55,6 @@ function detect(): DesktopEnv {
 
 const env = detect();
 
-/** True when running inside the Kimi Desktop app (any platform). */
-export const isDesktop = env.isDesktop;
-
 /** True only on macOS desktop — used to reserve space for the floating traffic
  *  lights when the window uses `titleBarStyle: 'hiddenInset'`. */
 export const isMacosDesktop = env.isDesktop && env.platform === 'darwin';

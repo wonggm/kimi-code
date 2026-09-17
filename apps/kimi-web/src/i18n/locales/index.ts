@@ -61,6 +61,10 @@ import en_admin from './en/admin';
 import zh_admin from './zh/admin';
 import en_panel from './en/panel';
 import zh_panel from './zh/panel';
+import en_browser from './en/browser';
+import zh_browser from './zh/browser';
+import en_browserReference from './en/browserReference';
+import zh_browserReference from './zh/browserReference';
 
 export const messages = {
   en: {
@@ -95,6 +99,8 @@ export const messages = {
     sideChat: en_sideChat,
     admin: en_admin,
     panel: en_panel,
+    browser: en_browser,
+    browserReference: en_browserReference,
   },
   zh: {
     common: zh_common,
@@ -128,6 +134,8 @@ export const messages = {
     sideChat: zh_sideChat,
     admin: zh_admin,
     panel: zh_panel,
+    browser: zh_browser,
+    browserReference: zh_browserReference,
   },
 } as const;
 

@@ -2,6 +2,7 @@
 // Helpers for tool display. Labels/chips are localized via the shared i18n instance.
 
 import { i18n } from '../i18n';
+import { browserToolView, isBrowserToolName } from './browserTool';
 import { iconSvg, type IconName } from './icons';
 
 const t = i18n.global.t;
@@ -30,6 +31,10 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   setgoalbudget: 'tools.label.goal_budget',
   updategoal: 'tools.label.goal_update',
   waitfor: 'tools.label.waitfor',
+  tasklist: 'tools.label.task_list',
+  taskoutput: 'tools.label.task_output',
+  taskstop: 'tools.label.task_stop',
+  mcp__desktop_browser__run: 'tools.label.browser',
 };
 
 // ---------------------------------------------------------------------------
@@ -69,10 +74,13 @@ const NAME_ALIASES: Record<string, string> = {
   get_goal: 'getgoal',
   set_goal_budget: 'setgoalbudget',
   update_goal: 'updategoal',
+  task_list: 'tasklist',
+  task_output: 'taskoutput',
+  task_stop: 'taskstop',
 };
 
 export function normalizeToolName(name: string): string {
-  const lower = (name ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const lower = (name ?? '').trim().toLowerCase().replaceAll(/[\s-]+/g, '_');
   return NAME_ALIASES[lower] ?? lower;
 }
 
@@ -111,9 +119,13 @@ const TOOL_GLYPH: Record<string, IconName> = {
   cronlist: 'calendar-todo',
   crondelete: 'calendar-close',
   waitfor: 'clock',
+  tasklist: 'list',
+  taskoutput: 'file-text',
+  taskstop: 'stop',
 };
 
 export function toolGlyph(name: string): string {
+  if (isBrowserToolName(name)) return iconSvg('browser', 'sm');
   const key = normalizeToolName(name);
   let icon = TOOL_GLYPH[key];
   if (!icon && (name ?? '').trim().toLowerCase().includes('skill')) icon = 'bolt';
@@ -239,6 +251,12 @@ const BASH_MAX = 64;
  *   collapsed header passes the default (clipped) form.
  */
 export function toolSummary(name: string, arg: string, full = false): string {
+  // The browser's own labels come from the protocol action, not from the raw
+  // MCP name and its JSON argument.
+  if (isBrowserToolName(name)) {
+    const view = browserToolView({ arg, status: 'ok' });
+    return view.detail || view.label;
+  }
   // Local clip that becomes a no-op (trim only) in `full` mode.
   const c = (s: string, max = SUMMARY_MAX): string => (full ? s.trim() : clip(s, max));
   try {

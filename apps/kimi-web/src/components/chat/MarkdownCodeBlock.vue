@@ -241,6 +241,8 @@ const SHADOW_CSS = `
   :host(.mdcb-wrap) [data-code], :host(.mdcb-wrap) [data-content], :host(.mdcb-wrap) [data-content] span { white-space: pre-wrap !important; overflow-wrap: anywhere; }
   :host(.mdcb-nowrap) [data-code], :host(.mdcb-nowrap) [data-content] { white-space: pre !important; }
   :host(.mdcb-nowrap) [data-content] span, :host(.mdcb-nowrap) [data-content] div { white-space: pre !important; }
+  :where(.md-code-scroll-viewport) { scrollbar-width: none; }
+  :where(.md-code-scroll-viewport)::-webkit-scrollbar { display: none; }
 `;
 
 function applyShadowOverrides(): void {

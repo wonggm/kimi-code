@@ -1,19 +1,20 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/AgentTool.vue -->
-<!-- The single-subagent `Agent` tool, rendered as upstream's card: the agent
-     glyph, the description as the title, the muted `Foreground · coder` mode
-     line, the `saved-result` control, the result body behind it or the head's
-     disclosure, and upstream's right-hand go-slot: an arrow into the
-     subagent's live progress in the detail panel when the card links to a
-     task, the disclosure chevron otherwise. -->
+<!-- The single-subagent `Agent` tool: a tool line labelled by the agent's mode
+     ("Agent" / "Background Agent") over a card with the robot avatar, the
+     description as the title and the muted `coder · model` line, plus the
+     result behind the disclosure. The card is the detail panel's entry point
+     whenever a live task matches this tool call. -->
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
-import { toolLabel } from '../../../lib/toolMeta';
+import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
 import type { DetachTaskTarget } from '../../../lib/detachTarget';
 import Icon from '../../ui/Icon.vue';
-import StatusDot from '../../ui/StatusDot.vue';
+import Spinner from '../../ui/Spinner.vue';
+import ToolRow from '../ToolRow.vue';
 import ToolOutputBlock from './ToolOutputBlock.vue';
+import ToolPanel from './ToolPanel.vue';
 
 const { t } = useI18n();
 
@@ -58,36 +59,31 @@ function parseAgentInput(arg: string): AgentInput {
 
 const input = computed(() => parseAgentInput(props.tool.arg));
 const hasOutput = computed(() => !!props.tool.output && props.tool.output.length > 0);
-const canExpand = computed(() => hasOutput.value);
 // Persist the user's manual open/closed choice across row eviction (see
 // ChatPane's toolExpandState); the persisted value overrides the default on
-// re-mount, while the auto-expand watch below keeps its existing behavior for
-// running tools.
+// re-mount.
 const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
 const expandKey = props.tool.id;
 const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
-const open = ref(persisted ?? (props.tool.defaultExpanded === true && canExpand.value));
+const open = ref(persisted ?? props.tool.defaultExpanded === true);
 
-const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
-const statusLabel = computed(() => t(`tools.agent.status.${status.value}`));
+const toolStatus = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const title = computed(() => input.value.description || input.value.subagentType || toolLabel(props.tool.name));
+const glyph = computed(() => toolGlyph(props.tool.name));
 
-// Show the go-slot's arrow only when a live/background subagent task matches
-// this tool call (e.g. a completed foreground subagent after a page refresh has
-// none) — otherwise the arrow would emit into a panel that silently no-ops, so
-// the slot falls back to the disclosure chevron.
+// The card is the detail panel's entry point only when a live/background
+// subagent task matches this tool call (e.g. a completed foreground subagent
+// after a page refresh has none); otherwise the card is inert text.
 const resolveAgentTaskId = inject<(toolCallId: string) => string | undefined>('resolveAgentTaskId');
-const canOpenAgent = computed(() => {
-  if (!resolveAgentTaskId) return true;
-  return resolveAgentTaskId(props.tool.id) !== undefined;
-});
+const agentTaskId = computed(() => resolveAgentTaskId?.(props.tool.id));
+const canOpenAgent = computed(() => (resolveAgentTaskId ? agentTaskId.value !== undefined : true));
 
 // The subagent's task, when a live/background one matches this tool call.
 const resolveAgentTask = inject<(toolCallId: string) => unknown | undefined>('resolveAgentTask');
 const agentTask = computed(() => {
   if (!resolveAgentTask) return undefined;
   const task = resolveAgentTask(props.tool.id) as
-    | { runInBackground?: boolean; agentId?: string }
+    | { runInBackground?: boolean; state?: string; model?: string; agentId?: string }
     | undefined;
   return task ?? undefined;
 });
@@ -97,56 +93,70 @@ const agentTask = computed(() => {
 const runInBackground = computed(
   () => agentTask.value?.runInBackground ?? (input.value.runInBackground === true),
 );
-const subtitle = computed(() =>
-  [
-    runInBackground.value ? t('tools.agent.background') : t('tools.agent.foreground'),
-    input.value.description ? input.value.subagentType : '',
-  ]
-    .filter(Boolean)
-    .join(' · '),
+
+const status = computed<'running' | 'ok' | 'error'>(() => {
+  if (input.value.runInBackground !== true) return toolStatus.value;
+  switch (agentTask.value?.state) {
+    case 'run':
+      return 'running';
+    case 'done':
+      return 'ok';
+    case 'fail':
+    case 'cancel':
+      return 'error';
+    default:
+      return toolStatus.value;
+  }
+});
+
+const modeLabel = computed(() =>
+  runInBackground.value ? t('tools.agent.backgroundAgent') : t('tools.agent.foregroundAgent'),
 );
+const doneCount = computed(() => (status.value === 'ok' ? 1 : 0));
+
+const modelLine = computed(() => {
+  const model = agentTask.value?.model;
+  const alias =
+    typeof model === 'string' && model.length > 0
+      ? model.slice(model.lastIndexOf('/') + 1)
+      : '';
+  return [input.value.description ? input.value.subagentType : '', alias].filter(Boolean).join(' · ');
+});
+
 // Detach is only meaningful while the subagent still runs in the foreground.
 const canDetach = computed(
-  () => status.value === 'running' && agentTask.value?.runInBackground === false,
+  () => toolStatus.value === 'running' && agentTask.value?.runInBackground === false,
 );
 
 function toggle(): void {
-  if (!canExpand.value) return;
   open.value = !open.value;
   if (expandKey && toolExpandState) toolExpandState.set(expandKey, open.value);
 }
 
+function onCardClick(): void {
+  if (agentTaskId.value === undefined) return;
+  emit('openAgent', agentTaskId.value);
+}
+
 watch(
-  () => [props.tool.defaultExpanded, props.tool.output?.length, props.tool.status] as const,
+  () => [props.tool.defaultExpanded, props.tool.status] as const,
   () => {
-    if (props.tool.defaultExpanded === true && canExpand.value) open.value = true;
+    if (props.tool.defaultExpanded === true) open.value = true;
   },
 );
 </script>
 
 <template>
-  <div class="agent-card" :class="{ err: status === 'error' }">
-    <div class="head-row">
-      <button
-        class="head"
-        type="button"
-        :disabled="!canExpand"
-        :aria-expanded="open"
-        @click="toggle"
-      >
-        <span class="lead" aria-hidden="true"><Icon name="robot" size="sm" /></span>
-        <span class="main">
-          <span class="task">{{ title }}</span>
-          <span v-if="subtitle" class="type">{{ subtitle }}</span>
-        </span>
-        <span class="tail">
-          <span class="st" :class="status" role="status" :aria-label="statusLabel">
-            <Icon v-if="status === 'ok'" name="check" size="sm" />
-            <Icon v-else-if="status === 'error'" name="close" size="sm" />
-            <StatusDot v-else status="running" />
-          </span>
-        </span>
-      </button>
+  <ToolRow
+    :status="status"
+    :icon="glyph"
+    :name="modeLabel"
+    :faint="`${doneCount} / 1`"
+    :open="open"
+    expandable
+    @toggle="toggle"
+  >
+    <template #trailing>
       <button
         v-if="canDetach"
         type="button"
@@ -155,130 +165,81 @@ watch(
       >
         {{ t('tasks.sendToBackground') }}
       </button>
-      <!-- Upstream's go-slot: one right-hand control, an arrow into the agent's
-           pane when the card links to one and the disclosure chevron otherwise.
-           The arrow carries the Open label as its accessible name. -->
-      <button
-        v-if="canOpenAgent"
-        type="button"
-        class="go-slot"
-        :aria-label="t('tasks.openDetail')"
-        @click.stop="emit('openAgent', tool.id)"
+    </template>
+    <ToolPanel>
+      <component
+        :is="canOpenAgent ? 'button' : 'div'"
+        class="ag-card"
+        :class="{ clickable: canOpenAgent }"
+        :type="canOpenAgent ? 'button' : undefined"
+        :aria-label="canOpenAgent ? t('tasks.openDetail') : undefined"
+        @click="onCardClick"
       >
-        <Icon class="go" name="arrow-right" size="sm" />
-      </button>
-      <span v-else class="go-slot" aria-hidden="true" @click="toggle">
-        <Icon v-if="canExpand" class="go car" :class="{ open }" name="chevron-right" size="sm" />
-      </span>
-    </div>
-    <!-- Upstream's `saved-result` control. Upstream gates it on the card having
-         a linked agent (`tool.agentId`, which it reads from the transcript
-         frame's `agentRefs`); the fork never sees that field, so it shows the
-         control wherever there is a result body to reveal. -->
-    <button
-      v-if="hasOutput"
-      type="button"
-      class="saved-result"
-      :aria-expanded="open"
-      @click="toggle"
-    >
-      <Icon class="saved-result__chevron" :class="{ open }" name="chevron-right" size="sm" />
-      <span>{{ t('tools.output.saved') }}</span>
-    </button>
-    <div v-if="open && hasOutput" class="result">
-      <ToolOutputBlock :lines="tool.output" />
-    </div>
-  </div>
+        <span class="ag-avatar" aria-hidden="true"><Icon name="robot" size="lg" /></span>
+        <span class="ag-text">
+          <span class="ag-title">{{ title }}</span>
+          <span v-if="modelLine" class="ag-model">{{ modelLine }}</span>
+        </span>
+        <Spinner v-if="status === 'running'" size="xs" class="ag-spin" />
+      </component>
+      <ToolOutputBlock v-if="hasOutput" :lines="tool.output" />
+    </ToolPanel>
+  </ToolRow>
 </template>
 
 <style scoped>
-.agent-card {
-  margin: var(--space-1) 0;
-  background: var(--color-surface-raised);
-  border: 0.5px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  transition: border-color var(--duration-base) var(--ease-out);
-}
-.agent-card:hover { border-color: var(--color-line-strong); }
-.agent-card.err { border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-bg)); }
-.head-row { display: flex; align-items: center; }
-.head {
+.ag-card {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  flex: 1;
+  gap: var(--space-3);
+  width: 100%;
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: 0;
   border: none;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--color-text);
-  font-family: var(--font-ui);
   text-align: left;
-  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
 }
-.head:disabled { cursor: default; }
-.head:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
-.lead {
+.ag-card.clickable { cursor: pointer; }
+.ag-card:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.ag-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-sunken);
-  color: var(--color-text-muted);
   flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+  color: var(--color-text);
 }
-.main {
-  flex: 1;
-  min-width: 0;
+.ag-text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
 }
-.task {
-  font-size: var(--ui-font-size);
-  /* Upstream's `--leading-caption`. */
-  line-height: 1.4;
+.ag-title {
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.type {
-  font-size: var(--text-xs);
-  line-height: 1.4;
-  color: var(--color-text-faint);
+.ag-model {
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tail { display: flex; align-items: center; gap: var(--space-2); flex: none; }
-.st { display: inline-flex; align-items: center; }
-.st.ok { color: var(--color-success); }
-.st.error { color: var(--color-danger); }
-.go-slot {
-  display: inline-flex;
-  align-items: center;
-  /* Upstream's span box: the resets below only neutralise the button element
-     the arrow branch needs for its accessible name and keyboard access. */
-  padding: 0 var(--space-3) 0 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  flex: none;
-}
-.go-slot:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
-.go { color: var(--color-text-faint); transition: color var(--duration-base) var(--ease-out); }
-.car { transition: transform var(--duration-base) var(--ease-out); }
-.car.open { transform: rotate(90deg); }
-.agent-card:hover .head:not(:disabled) .go { color: var(--color-text); }
+.ag-spin { color: var(--color-text); flex: none; }
 .at-action {
   flex: none;
-  margin-right: var(--space-1);
   padding: 1px 7px;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-xs);
@@ -291,24 +252,4 @@ watch(
   color: var(--color-text);
   background: var(--color-surface-sunken);
 }
-.result { padding: var(--space-2) var(--space-3); }
-.saved-result {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  border-top: 0.5px solid var(--color-line);
-  background: transparent;
-  color: var(--color-text-faint);
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  text-align: left;
-  cursor: pointer;
-}
-.saved-result:hover { color: var(--color-text-muted); }
-.saved-result:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
-.saved-result__chevron { transition: transform var(--duration-base) var(--ease-out); }
-.saved-result__chevron.open { transform: rotate(90deg); }
 </style>

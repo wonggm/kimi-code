@@ -8,6 +8,7 @@ withDefaults(defineProps<{
   disabled?: boolean;
   label?: string;
   type?: 'button' | 'submit' | 'reset';
+  pressed?: boolean;
 }>(), {
   size: 'md',
   type: 'button',
@@ -25,10 +26,11 @@ defineExpose({ el });
   <button
     ref="el"
     class="ui-icon-button"
-    :class="`ui-icon-button--${size}`"
+    :class="[`ui-icon-button--${size}`, { 'is-pressed': pressed }]"
     :type="type"
     :disabled="disabled"
     :aria-label="label"
+    :aria-pressed="pressed"
   >
     <slot />
   </button>
@@ -54,6 +56,8 @@ defineExpose({ el });
    hover feedback vanish for icon buttons sitting directly on --color-bg
    (chat header, flat sidebar). */
 .ui-icon-button:hover:not(:disabled) { background: color-mix(in srgb, var(--color-text) 8%, transparent); color: var(--color-text); }
+.ui-icon-button.is-pressed { background: var(--color-selected); color: var(--color-text); }
+.ui-icon-button.is-pressed:hover:not(:disabled) { background: var(--color-selected-hover); }
 .ui-icon-button:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 .ui-icon-button:disabled { opacity: 0.5; cursor: not-allowed; }
 

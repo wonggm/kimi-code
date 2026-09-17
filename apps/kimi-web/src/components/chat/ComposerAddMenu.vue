@@ -4,8 +4,21 @@
      mobile bottom sheet; the rows and their actions are identical in both,
      so the content lives here once and the composer picks the wrapper. -->
 <script setup lang="ts">
+import { defineComponent, h, useSlots } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Icon from '../ui/Icon.vue';
+
+// Upstream's mobile sheet puts each row inside a `.am-entry` box (its desktop
+// popover renders them bare), so the row box is decided by the call site rather
+// than by two copies of the row markup.
+const Entry = defineComponent({
+  name: 'ComposerAddMenuEntry',
+  props: { wrap: { type: Boolean, default: false } },
+  setup(props) {
+    const slots = useSlots();
+    return () => (props.wrap ? h('div', { class: 'am-entry' }, slots.default?.()) : slots.default?.());
+  },
+});
 
 withDefaults(
   defineProps<{
@@ -14,6 +27,8 @@ withDefaults(
     /** Upstream's mobile sheet carries the Commands and Mention rows; its
         desktop popover does not, so the composer decides per surface. */
     showTriggerRows?: boolean;
+    /** Mobile sheet only: box every row in upstream's `.am-entry`. */
+    wrapRows?: boolean;
     goalActive: boolean;
     goalMode: boolean;
     goalCanPause: boolean;
@@ -25,6 +40,7 @@ withDefaults(
   {
     hasUpload: false,
     showTriggerRows: false,
+    wrapRows: false,
     goalActive: false,
     goalMode: false,
     goalCanPause: false,
@@ -75,94 +91,107 @@ const SWARM_ICON =
 </script>
 
 <template>
-  <!-- Rows only: upstream puts `am-scroll` inside its desktop `.add-menu` and
-       renders these rows bare inside the mobile sheet's `.msheet-add`, so each
-       call site supplies its own wrapper (see Composer.vue). -->
+  <!-- Rows only: upstream puts `am-scroll` inside its desktop `.add-menu`, and
+       wraps each row in an `.am-entry` inside the mobile sheet's `.msheet-add`
+       (`wrapRows`, set by the sheet). Each call site supplies its own outer
+       wrapper (see Composer.vue). -->
     <!-- Files — opens the attachment picker -->
-    <button
-      v-if="hasUpload"
-      type="button"
-      class="am-row"
-      role="menuitem"
-      @mousedown.prevent
-      @click="emit('files')"
-    >
-      <span class="am-icon"><Icon name="attachment" size="sm" /></span>
-      <span class="am-name">{{ t('composer.addFiles') }}</span>
-      <span class="am-desc">{{ t('composer.addFilesDesc') }}</span>
-    </button>
+    <Entry :wrap="wrapRows">
+      <button
+        v-if="hasUpload"
+        type="button"
+        class="am-row"
+        role="menuitem"
+        @mousedown.prevent
+        @click="emit('files')"
+      >
+        <span class="am-icon"><Icon name="attachment" size="sm" /></span>
+        <span class="am-name">{{ t('composer.addFiles') }}</span>
+        <span class="am-desc">{{ t('composer.addFilesDesc') }}</span>
+      </button>
+    </Entry>
 
     <!-- Commands / Mention — upstream's mobile sheet carries these two rows and
          its desktop popover does not; each seeds the composer with the trigger
          that opens the slash / mention menu. -->
-    <button
-      v-if="showTriggerRows"
-      type="button"
-      class="am-row"
-      role="menuitem"
-      @mousedown.prevent
-      @click="emit('commands')"
-    >
-      <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
-      <span class="am-icon" v-html="COMMANDS_ICON" />
-      <span class="am-name">{{ t('composer.addCommands') }}</span>
-      <span class="am-desc">{{ t('composer.addCommandsDesc') }}</span>
-    </button>
-    <button
-      v-if="showTriggerRows"
-      type="button"
-      class="am-row"
-      role="menuitem"
-      @mousedown.prevent
-      @click="emit('mention')"
-    >
-      <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
-      <span class="am-icon" v-html="MENTION_ICON" />
-      <span class="am-name">{{ t('composer.addMention') }}</span>
-      <span class="am-desc">{{ t('composer.addMentionDesc') }}</span>
-    </button>
+    <Entry :wrap="wrapRows">
+      <button
+        v-if="showTriggerRows"
+        type="button"
+        class="am-row"
+        role="menuitem"
+        @mousedown.prevent
+        @click="emit('commands')"
+      >
+        <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
+        <span class="am-icon" v-html="COMMANDS_ICON" />
+        <span class="am-name">{{ t('composer.addCommands') }}</span>
+        <span class="am-desc">{{ t('composer.addCommandsDesc') }}</span>
+      </button>
+    </Entry>
+    <Entry :wrap="wrapRows">
+      <button
+        v-if="showTriggerRows"
+        type="button"
+        class="am-row"
+        role="menuitem"
+        @mousedown.prevent
+        @click="emit('mention')"
+      >
+        <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
+        <span class="am-icon" v-html="MENTION_ICON" />
+        <span class="am-name">{{ t('composer.addMention') }}</span>
+        <span class="am-desc">{{ t('composer.addMentionDesc') }}</span>
+      </button>
+    </Entry>
 
     <!-- Goal — arm for the next send; a running goal drops focus into the goal bar -->
-    <button
-      type="button"
-      class="am-row"
-      role="menuitem"
-      @mousedown.prevent
-      @click="emit('goalMain')"
-    >
-      <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
-      <span class="am-icon" v-html="GOAL_ICON" />
-      <span class="am-name">{{ t('status.goalLabel') }}</span>
-      <span class="am-desc">{{ t('composer.addGoalDesc') }}</span>
-    </button>
+    <Entry :wrap="wrapRows">
+      <button
+        type="button"
+        class="am-row"
+        role="menuitem"
+        @mousedown.prevent
+        @click="emit('goalMain')"
+      >
+        <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
+        <span class="am-icon" v-html="GOAL_ICON" />
+        <span class="am-name">{{ t('status.goalLabel') }}</span>
+        <span class="am-desc">{{ t('composer.addGoalDesc') }}</span>
+      </button>
+    </Entry>
 
     <!-- Plan — arm for the next send (deferred); toggles an active plan off -->
-    <button
-      type="button"
-      class="am-row"
-      role="menuitem"
-      @mousedown.prevent
-      @click="emit('plan')"
-    >
-      <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
-      <span class="am-icon" v-html="PLAN_ICON" />
-      <span class="am-name">{{ t('status.planLabel') }}</span>
-      <span class="am-desc">{{ t('composer.addPlanDesc') }}</span>
-    </button>
+    <Entry :wrap="wrapRows">
+      <button
+        type="button"
+        class="am-row"
+        role="menuitem"
+        @mousedown.prevent
+        @click="emit('plan')"
+      >
+        <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
+        <span class="am-icon" v-html="PLAN_ICON" />
+        <span class="am-name">{{ t('status.planLabel') }}</span>
+        <span class="am-desc">{{ t('composer.addPlanDesc') }}</span>
+      </button>
+    </Entry>
 
     <!-- Swarm — immediate client toggle -->
-    <button
-      type="button"
-      class="am-row"
-      role="menuitem"
-      @mousedown.prevent
-      @click="emit('swarm')"
-    >
-      <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
-      <span class="am-icon" v-html="SWARM_ICON" />
-      <span class="am-name">{{ t('status.swarmLabel') }}</span>
-      <span class="am-desc">{{ t('composer.addSwarmDesc') }}</span>
-    </button>
+    <Entry :wrap="wrapRows">
+      <button
+        type="button"
+        class="am-row"
+        role="menuitem"
+        @mousedown.prevent
+        @click="emit('swarm')"
+      >
+        <!-- eslint-disable-next-line vue/no-v-html -- static upstream icon mark -->
+        <span class="am-icon" v-html="SWARM_ICON" />
+        <span class="am-name">{{ t('status.swarmLabel') }}</span>
+        <span class="am-desc">{{ t('composer.addSwarmDesc') }}</span>
+      </button>
+    </Entry>
 </template>
 
 <style scoped>

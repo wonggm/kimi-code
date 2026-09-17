@@ -13,10 +13,11 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ApprovalBlock, FilePreviewRequest } from '../../types';
 import type { ApprovalDecision } from '../../api/types';
+import { browserToolView } from '../../lib/browserTool';
 import Markdown from './Markdown.vue';
 import DiffLines from './DiffLines.vue';
 import Badge from '../ui/Badge.vue';
-import Button from '../ui/Button.vue';
+import CardButton from '../ui/CardButton.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
@@ -72,12 +73,22 @@ const expanded = ref(false);
 // Title by kind
 // ---------------------------------------------------------------------------
 
-const titleKinds = ['shell', 'diff', 'file', 'fileop', 'url', 'search', 'invocation', 'todo', 'plan_review', 'generic'];
+const titleKinds = ['shell', 'diff', 'file', 'fileop', 'url', 'search', 'invocation', 'todo', 'plan_review', 'browser', 'generic'];
 
 function title(): string {
   const kind = titleKinds.includes(props.block.kind) ? props.block.kind : 'generic';
   return t(`approval.title.${kind}`);
 }
+
+// The browser action behind a `browser` block: the same label/detail resolver
+// the transcript's browser card uses, read in its approval phase.
+const browser = computed(() => {
+  const block = props.block;
+  if (block.kind !== 'browser') return null;
+  return browserToolView({ arg: JSON.stringify(block.input), status: 'running' }, undefined, 'approval');
+});
+
+const browserDetailsOpen = ref(false);
 
 /** The one-line subject, shown in the header while minimized so the thin bar
  *  still says what it is about. */
@@ -96,6 +107,8 @@ const peek = computed<string>(() => {
       return b.query;
     case 'invocation':
       return b.name;
+    case 'browser':
+      return browser.value?.label ?? '';
     case 'generic':
       return b.summary;
     default:
@@ -271,6 +284,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
     <!-- Header: title + sub-agent badge, the peek line while minimized, and
          the expand / minimize controls. -->
     <div class="ah" :class="{ clickable: minimized }" @click="expandIfMinimized">
+      <span class="adot" aria-hidden="true" />
       <span class="akind">{{ title() }}</span>
       <Badge v-if="agentName && !minimized" variant="neutral" size="sm">{{ t('approval.subagentBadge', { name: agentName }) }}</Badge>
       <span v-if="minimized && peek" class="apeek">{{ peek }}</span>
@@ -295,183 +309,202 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
     </div>
 
     <!-- Body + actions collapse when minimized -->
-    <template v-if="!minimized">
-      <div class="ab">
-        <!-- plan_review: plan file path on the body's first line -->
-        <button
-          v-if="block.kind === 'plan_review' && block.path"
-          type="button"
-          class="plan-path"
-          :title="block.path"
-          @click="openPlanPath"
-        >{{ block.path }}</button>
+    <div v-if="!minimized" class="apane">
+        <div class="ab">
+          <!-- plan_review: plan file path on the body's first line -->
+          <button
+            v-if="block.kind === 'plan_review' && block.path"
+            type="button"
+            class="plan-path"
+            :title="block.path"
+            @click="openPlanPath"
+          >{{ block.path }}</button>
 
-        <!-- Body by kind -->
+          <!-- Body by kind -->
 
-        <!-- diff — the fork's own DiffLine shape ({kind, gutter, text}) is the
-             daemon's packed gutter columns, which upstream's line shape
-             ({type, oldNo, newNo}) cannot carry, so the rows keep the fork's
-             renderer; the frame and the path line are upstream's. -->
-        <div v-if="block.kind === 'diff'" class="body-code" :class="{ expanded }">
-          <div class="code-path">{{ block.path }}</div>
-          <div class="diff">
-            <div v-for="(line, i) in block.diff" :key="i" class="dl" :class="line.kind === 'add' ? 'add' : line.kind === 'rem' ? 'del' : ''">
-              <span class="dg">{{ line.gutter }}</span><span class="dc">{{ line.text }}</span>
+          <!-- diff — the fork's own DiffLine shape ({kind, gutter, text}) is the
+               daemon's packed gutter columns, which upstream's line shape
+               ({type, oldNo, newNo}) cannot carry, so the rows keep the fork's
+               renderer; the frame and the path line are upstream's. -->
+          <div v-if="block.kind === 'diff'" class="body-code" :class="{ expanded }">
+            <div class="code-path">{{ block.path }}</div>
+            <div class="diff">
+              <div v-for="(line, i) in block.diff" :key="i" class="dl" :class="line.kind === 'add' ? 'add' : line.kind === 'rem' ? 'del' : ''">
+                <span class="dg">{{ line.gutter }}</span><span class="dc">{{ line.text }}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- shell -->
-        <div v-else-if="block.kind === 'shell'" class="body-shell">
-          <div class="shell-cmd"><span class="shell-dollar">$</span> {{ block.command }}</div>
-          <div v-if="block.cwd" class="shell-cwd">cwd: {{ block.cwd }}</div>
-          <div v-if="block.danger" class="shell-danger">
-            <Icon class="shell-danger-ic" name="alert-triangle" size="sm" />
-            <span>{{ t('approval.danger', { detail: block.danger }) }}</span>
+          <!-- shell -->
+          <div v-else-if="block.kind === 'shell'" class="body-shell">
+            <div class="shell-cmd"><span class="shell-dollar">$</span> {{ block.command }}</div>
+            <div v-if="block.cwd" class="shell-cwd">cwd: {{ block.cwd }}</div>
+            <div v-if="block.danger" class="shell-danger">
+              <Icon class="shell-danger-ic" name="alert-triangle" size="sm" />
+              <span>{{ t('approval.danger', { detail: block.danger }) }}</span>
+            </div>
           </div>
-        </div>
 
-        <!-- file -->
-        <div v-else-if="block.kind === 'file'" class="body-code" :class="{ expanded }">
-          <div class="code-path">{{ block.path }}</div>
-          <DiffLines :code="block.content" />
-        </div>
-
-        <!-- fileop -->
-        <div v-else-if="block.kind === 'fileop'" class="body-chip">
-          <span class="chip-label">{{ block.op }}</span>
-          <span class="chip-value">{{ block.path }}</span>
-          <span v-if="block.detail" class="chip-detail">{{ block.detail }}</span>
-        </div>
-
-        <!-- url -->
-        <div v-else-if="block.kind === 'url'" class="body-chip">
-          <span v-if="block.method" class="chip-label">{{ block.method }}</span>
-          <span class="chip-value">{{ block.url }}</span>
-        </div>
-
-        <!-- search -->
-        <div v-else-if="block.kind === 'search'" class="body-chip">
-          <span class="chip-label">{{ t('approval.searchQueryLabel') }}</span>
-          <span class="chip-value">{{ block.query }}</span>
-          <span v-if="block.scope" class="chip-detail">{{ t('approval.searchScope', { scope: block.scope }) }}</span>
-        </div>
-
-        <!-- invocation -->
-        <div v-else-if="block.kind === 'invocation'" class="body-chip">
-          <span class="chip-label">{{ block.kind2 }}</span>
-          <span class="chip-value">{{ block.name }}</span>
-          <span v-if="block.description" class="chip-detail">{{ block.description }}</span>
-        </div>
-
-        <!-- todo -->
-        <div v-else-if="block.kind === 'todo'" class="body-todo">
-          <div v-for="(item, i) in block.items" :key="i" class="todo-item">
-            <span class="todo-glyph">{{ item.status === 'done' || item.status === 'completed' ? '✓' : '○' }}</span>
-            <span class="todo-title" :class="{ 'todo-done': item.status === 'done' || item.status === 'completed' }">{{ item.title }}</span>
+          <!-- file -->
+          <div v-else-if="block.kind === 'file'" class="body-code" :class="{ expanded }">
+            <div class="code-path">{{ block.path }}</div>
+            <DiffLines :code="block.content" />
           </div>
-        </div>
 
-        <!-- plan_review -->
-        <div
-          v-else-if="block.kind === 'plan_review'"
-          class="body-plan-wrap"
-          :class="{ scrolled: planScrolled }"
-          @scroll="onPlanScroll"
-        >
-          <div class="body-plan" :class="{ expanded }" @scroll="onPlanScroll">
-            <Markdown :text="block.plan" :open-file="openFile" />
+          <!-- fileop -->
+          <div v-else-if="block.kind === 'fileop'" class="body-chip">
+            <span class="chip-label">{{ block.op }}</span>
+            <span class="chip-value">{{ block.path }}</span>
+            <span v-if="block.detail" class="chip-detail">{{ block.detail }}</span>
           </div>
-          <div v-if="planReview && planReview.options.length > 0" class="plan-opts">
+
+          <!-- url -->
+          <div v-else-if="block.kind === 'url'" class="body-chip">
+            <span v-if="block.method" class="chip-label">{{ block.method }}</span>
+            <span class="chip-value">{{ block.url }}</span>
+          </div>
+
+          <!-- search -->
+          <div v-else-if="block.kind === 'search'" class="body-chip">
+            <span class="chip-label">{{ t('approval.searchQueryLabel') }}</span>
+            <span class="chip-value">{{ block.query }}</span>
+            <span v-if="block.scope" class="chip-detail">{{ t('approval.searchScope', { scope: block.scope }) }}</span>
+          </div>
+
+          <!-- invocation -->
+          <div v-else-if="block.kind === 'invocation'" class="body-chip">
+            <span class="chip-label">{{ block.kind2 }}</span>
+            <span class="chip-value">{{ block.name }}</span>
+            <span v-if="block.description" class="chip-detail">{{ block.description }}</span>
+          </div>
+
+          <!-- todo -->
+          <div v-else-if="block.kind === 'todo'" class="body-todo">
+            <div v-for="(item, i) in block.items" :key="i" class="todo-item">
+              <span class="todo-glyph">{{ item.status === 'done' || item.status === 'completed' ? '✓' : '○' }}</span>
+              <span class="todo-title" :class="{ 'todo-done': item.status === 'done' || item.status === 'completed' }">{{ item.title }}</span>
+            </div>
+          </div>
+
+          <!-- plan_review -->
+          <div
+            v-else-if="block.kind === 'plan_review'"
+            class="body-plan-wrap"
+            :class="{ scrolled: planScrolled }"
+            @scroll="onPlanScroll"
+          >
+            <div class="body-plan" :class="{ expanded }" @scroll="onPlanScroll">
+              <Markdown :text="block.plan" :open-file="openFile" />
+            </div>
+            <div v-if="planReview && planReview.options.length > 0" class="plan-opts">
+              <button
+                v-for="(opt, i) in planReview.options"
+                :key="i"
+                type="button"
+                class="popt"
+                :disabled="busy"
+                @click="approveOption(opt.label)"
+              >
+                <span class="popt-key">{{ i + 1 }}</span>
+                <span class="popt-text">
+                  <span class="popt-label">{{ opt.label }}</span>
+                  <span v-if="opt.description" class="popt-desc">{{ opt.description }}</span>
+                </span>
+                <Spinner v-if="pendingAction === `option:${opt.label}`" size="sm" class="popt-spin" />
+              </button>
+            </div>
+          </div>
+
+          <!-- browser -->
+          <div v-else-if="block.kind === 'browser'" class="body-generic browser-approval">
+            <div class="browser-approval-action">
+              <Icon name="browser" size="sm" />
+              <span>{{ browser?.label }}</span>
+            </div>
+            <div v-if="browser?.detail" class="chip-detail">{{ browser.detail }}</div>
             <button
-              v-for="(opt, i) in planReview.options"
-              :key="i"
               type="button"
-              class="popt"
-              :disabled="busy"
-              @click="approveOption(opt.label)"
+              class="browser-approval-toggle"
+              :aria-expanded="browserDetailsOpen"
+              @click="browserDetailsOpen = !browserDetailsOpen"
             >
-              <span class="popt-key">{{ i + 1 }}</span>
-              <span class="popt-text">
-                <span class="popt-label">{{ opt.label }}</span>
-                <span v-if="opt.description" class="popt-desc">{{ opt.description }}</span>
-              </span>
-              <Spinner v-if="pendingAction === `option:${opt.label}`" size="sm" class="popt-spin" />
+              {{ t('approval.browserDetails') }}
             </button>
+            <div v-if="browserDetailsOpen" class="body-code">
+              <div class="code-path">browser-action.json</div>
+              <DiffLines :code="JSON.stringify(block.input, null, 2)" wrap />
+            </div>
+          </div>
+
+          <!-- generic -->
+          <div v-else class="body-generic">
+            <span class="gen-text">{{ block.summary }}</span>
+          </div>
+
+          <!-- Inline feedback textarea -->
+          <div v-if="feedbackOpen" class="feedback-wrap">
+            <Textarea
+              ref="feedbackRef"
+              v-model="feedbackText"
+              :placeholder="t('approval.feedbackPlaceholder')"
+              :rows="3"
+              :resize="false"
+              @input="autosizeFeedback"
+              @keydown="onFeedbackKeydown"
+            />
+            <div class="feedback-hint">{{ t('approval.feedbackHint') }}</div>
           </div>
         </div>
 
-        <!-- generic -->
-        <div v-else class="body-generic">
-          <span class="gen-text">{{ block.summary }}</span>
-        </div>
+        <!-- Actions -->
+        <div class="af">
+          <div class="abtns">
+            <!-- Feedback open: submit / cancel replace the decision buttons -->
+            <template v-if="feedbackOpen">
+              <CardButton
+                variant="primary"
+                :loading="pendingAction === 'feedback'"
+                :disabled="busy"
+                @click="submitFeedback"
+              >{{ t('approval.feedbackSubmit') }}</CardButton>
+              <CardButton :disabled="busy" @click="cancelFeedback">{{ t('approval.feedbackCancel') }}</CardButton>
+            </template>
 
-        <!-- Inline feedback textarea -->
-        <div v-if="feedbackOpen" class="feedback-wrap">
-          <Textarea
-            ref="feedbackRef"
-            v-model="feedbackText"
-            :placeholder="t('approval.feedbackPlaceholder')"
-            :rows="3"
-            :resize="false"
-            @input="autosizeFeedback"
-            @keydown="onFeedbackKeydown"
-          />
-          <div class="feedback-hint">{{ t('approval.feedbackHint') }}</div>
-        </div>
-      </div>
+            <!-- plan_review: the offered approaches are body rows, so the footer
+                 keeps approve / revise / reject-and-exit -->
+            <template v-else-if="planReview">
+              <CardButton
+                v-if="planReview.options.length === 0"
+                class="amain"
+                variant="primary"
+                hint="1"
+                :loading="pendingAction === 'approvePlan'"
+                :disabled="busy"
+                @click="approvePlan"
+              >{{ t('approval.approvePlan') }}</CardButton>
+              <CardButton
+                :hint="planReview.options.length === 0 ? '2' : ''"
+                :disabled="busy"
+                @click="revisePlan"
+              >{{ t('approval.revise') }}</CardButton>
+              <CardButton
+                :hint="planReview.options.length === 0 ? '3' : ''"
+                :loading="pendingAction === 'rejectAndExit'"
+                :disabled="busy"
+                @click="rejectAndExitPlan"
+              >{{ t('approval.rejectAndExit') }}</CardButton>
+            </template>
 
-      <!-- Actions -->
-      <div class="af">
-        <div class="abtns">
-          <!-- Feedback open: submit / cancel replace the decision buttons -->
-          <template v-if="feedbackOpen">
-            <Button
-              size="md"
-              variant="danger-soft"
-              :loading="pendingAction === 'feedback'"
-              :disabled="busy"
-              @click="submitFeedback"
-            >{{ t('approval.feedbackSubmit') }}</Button>
-            <Button size="md" variant="ghost" :disabled="busy" @click="cancelFeedback">{{ t('approval.feedbackCancel') }}</Button>
-          </template>
-
-          <!-- plan_review: the offered approaches are body rows, so the footer
-               keeps approve / revise / reject-and-exit -->
-          <template v-else-if="planReview">
-            <Button
-              v-if="planReview.options.length === 0"
-              class="amain"
-              size="md"
-              variant="primary"
-              :loading="pendingAction === 'approvePlan'"
-              :disabled="busy"
-              @click="approvePlan"
-            ><span class="knum">1</span>{{ t('approval.approvePlan') }}</Button>
-            <Button size="md" variant="ghost" :disabled="busy" @click="revisePlan">
-              <span v-if="planReview.options.length === 0" class="knum">2</span>{{ t('approval.revise') }}
-            </Button>
-            <Button
-              size="md"
-              variant="ghost"
-              :loading="pendingAction === 'rejectAndExit'"
-              :disabled="busy"
-              @click="rejectAndExitPlan"
-            >
-              <span v-if="planReview.options.length === 0" class="knum">3</span>{{ t('approval.rejectAndExit') }}
-            </Button>
-          </template>
-
-          <!-- default actions row -->
-          <template v-else>
-            <Button class="amain" size="md" variant="primary" :loading="pendingAction === 'approve'" :disabled="busy" @click="approve"><span class="knum">1</span>{{ t('approval.approve') }}</Button>
-            <Button size="md" variant="ghost" :loading="pendingAction === 'approveSession'" :disabled="busy" @click="approveSession"><span class="knum">2</span>{{ t('approval.approveSession') }}</Button>
-            <Button size="md" variant="ghost" :loading="pendingAction === 'reject'" :disabled="busy" @click="reject"><span class="knum">3</span>{{ t('approval.reject') }}</Button>
-            <Button size="md" variant="ghost" :disabled="busy" @click="openFeedback"><span class="knum">4</span>{{ t('approval.feedback') }}</Button>
-          </template>
+            <!-- default actions row -->
+            <template v-else>
+              <CardButton class="amain" variant="primary" hint="1" :loading="pendingAction === 'approve'" :disabled="busy" @click="approve">{{ t('approval.approve') }}</CardButton>
+              <CardButton class="asession" hint="2" :loading="pendingAction === 'approveSession'" :disabled="busy" @click="approveSession">{{ t('approval.approveSession') }}</CardButton>
+              <CardButton hint="3" :loading="pendingAction === 'reject'" :disabled="busy" @click="reject">{{ t('approval.reject') }}</CardButton>
+              <CardButton hint="4" :disabled="busy" @click="openFeedback">{{ t('approval.feedback') }}</CardButton>
+            </template>
+          </div>
         </div>
       </div>
-    </template>
   </div>
 </template>
 
@@ -491,8 +524,15 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   overflow: hidden auto;
   animation: kimi-card-in var(--duration-base) var(--ease-out);
 }
-.appr > .ah,
-.appr > .af { flex: none; }
+.appr > .ah { flex: none; }
+.apane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.apane > .af { flex: none; }
 .appr.minimized { transition: background var(--duration-fast) var(--ease-out); }
 .appr.minimized:hover { background: var(--color-hover); }
 .appr.scrolled { mask-image: var(--menu-scroll-fade-mask-top); }
@@ -513,6 +553,22 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   font-weight: var(--weight-semibold);
   white-space: nowrap;
   flex: none;
+}
+/* The attention dot ahead of the title: a 6px filled circle in a 14px box. */
+.adot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--p-ic-sm);
+  height: var(--p-ic-sm);
+}
+.adot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-warning);
 }
 /* While minimized, the header carries the one-line subject instead of the
    body; the title keeps its place and this truncates. */
@@ -687,6 +743,39 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   overflow-y: auto;
 }
 
+/* browser — the action line, its parameters, and the JSON behind them. */
+.browser-approval {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.browser-approval-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.browser-approval .chip-detail {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.browser-approval-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font: var(--text-sm) var(--font-ui);
+  cursor: pointer;
+}
+.browser-approval-toggle:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.browser-approval-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
+
 /* plan_review — the plan body scrolls; its option rows sit under it inside the
    same scroll region, separated by a rule. */
 .body-plan-wrap {
@@ -754,7 +843,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
 .feedback-wrap :deep(.ui-textarea) { max-height: 11rem; }
 .feedback-hint { font: var(--text-xs) var(--font-ui); color: var(--color-text-muted); margin-top: var(--space-1); }
 
-/* Footer — buttons left, each carrying its number key. */
+/* Footer — buttons left, each carrying its number key as the hint cap. */
 .af {
   display: flex;
   align-items: center;
@@ -764,22 +853,6 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   border-top: var(--p-hairline) solid var(--color-line);
 }
 .abtns { display: flex; align-items: center; gap: var(--space-1); }
-/* The number-key chip inside each button; on the primary fill it takes the
-   inverse tint so it stays readable. */
-.knum {
-  min-width: 16px;
-  height: 16px;
-  padding: 0 3px;
-  border-radius: var(--radius-xs);
-  background: var(--color-inline-code-bg);
-  color: var(--color-text);
-  font: var(--weight-medium) var(--text-xs)/16px var(--font-ui);
-  text-align: center;
-}
-.abtns :deep(.ui-button--primary) .knum {
-  background: color-mix(in srgb, var(--color-text-on-accent) 28%, transparent);
-  color: var(--color-text-on-accent);
-}
 
 /* =========================================================================
    MOBILE (≤640px): plan options and the action buttons become full-width
@@ -799,7 +872,8 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
     margin-left: 0;
     gap: var(--space-2);
   }
-  .abtns :deep(.ui-button) {
+  .abtns > .cbtn {
+    justify-content: center;
     width: 100%;
     min-height: 46px;
   }

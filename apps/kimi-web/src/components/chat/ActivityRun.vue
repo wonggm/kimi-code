@@ -76,7 +76,8 @@ function toggle(): void {
       @click="toggle"
     >
       <!-- eslint-disable-next-line vue/no-v-html -- iconSvg() returns a registry SVG string, never user input. -->
-      <span class="ar-glyph" :class="{ run: status === 'running', err: status === 'error', ok: status === 'done' }" role="status" :aria-label="status" v-html="glyph" />
+      <span class="ar-sr-only" role="status">{{ status }}</span>
+      <span class="ar-glyph" :class="{ run: status === 'running', err: status === 'error', ok: status === 'done' }" aria-hidden="true" v-html="glyph" />
       <span class="ar-sum" :title="summary.plain">
         <template v-for="(clause, i) in summary.clauses" :key="i">
           <span v-if="i > 0" class="ar-sep"> · </span>
@@ -124,6 +125,17 @@ function toggle(): void {
 }
 .ar-head:hover { color: var(--color-text); }
 .ar-head:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-accent-soft); }
+.ar-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 .ar-glyph {
   display: inline-flex;
   align-items: center;

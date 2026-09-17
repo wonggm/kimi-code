@@ -1,11 +1,11 @@
 <!-- apps/kimi-web/src/components/ui/EmptyState.vue -->
 <!-- Design-system §03 EmptyState: centered placeholder for empty lists/panels. -->
 <script setup lang="ts">
-defineProps<{ title?: string; hint?: string }>();
+defineProps<{ title?: string; hint?: string; size?: 'md' | 'lg' }>();
 </script>
 
 <template>
-  <div class="ui-empty">
+  <div class="ui-empty" :class="`ui-empty--${size ?? 'md'}`">
     <span v-if="$slots.icon" class="ui-empty__icon" aria-hidden="true"><slot name="icon" /></span>
     <div v-if="title" class="ui-empty__title">{{ title }}</div>
     <div v-if="hint" class="ui-empty__hint">{{ hint }}</div>
@@ -28,4 +28,5 @@ defineProps<{ title?: string; hint?: string }>();
 .ui-empty__icon :deep(svg) { width: 48px; height: 48px; }
 .ui-empty__title { font-size: var(--text-base); font-weight: var(--weight-medium); color: var(--color-text-muted); }
 .ui-empty__hint { font-size: var(--text-sm); color: var(--color-text-muted); }
+.ui-empty--lg .ui-empty__title { font-size: var(--text-xl); line-height: var(--leading-tight); color: var(--color-text); }
 </style>

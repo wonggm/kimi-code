@@ -1,4 +1,5 @@
 export default {
+  browserDetails: 'Action parameters',
   title: {
     shell: 'Run command?',
     diff: 'Apply changes?',
@@ -9,6 +10,7 @@ export default {
     invocation: 'Invoke?',
     todo: 'Update todo?',
     plan_review: 'Ready to build with this plan?',
+    browser: 'Browser action',
     generic: 'Approve action?',
   },
   subagentBadge: 'sub agent · {name}',

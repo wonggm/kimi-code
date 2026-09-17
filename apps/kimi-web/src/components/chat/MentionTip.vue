@@ -8,6 +8,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { formatCapturedAt, browserCaptureTargetLine, type BrowserCapture, type BrowserReference } from '../../lib/browserReference';
 import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import Icon from '../ui/Icon.vue';
 import type { MentionKind } from '../../lib/mentionTokens';
@@ -26,6 +27,8 @@ const props = withDefaults(
     description?: string;
     /** Resolved skill file path — enables the "open skill file" button. */
     skillPath?: string;
+    /** A browser reference's capture, when the pill resolved one. */
+    browser?: BrowserTipData | null;
     /** Open a file/skill path through the app's file-preview flow. */
     openFile: (target: { path: string }) => void;
     /** Hide the tip (the mouse left the pill/tip). */
@@ -37,8 +40,17 @@ const props = withDefaults(
     missing: false,
     description: '',
     skillPath: '',
+    browser: null,
   },
 );
+
+/** What the browser-reference tip shows: the page the capture came from, when
+ *  it was taken, the element it points at and the user's comment. */
+export interface BrowserTipData {
+  reference?: BrowserReference;
+  capture?: BrowserCapture;
+  thumbnail?: string;
+}
 
 const { t } = useI18n();
 
@@ -116,6 +128,19 @@ function onOpen(): void {
 }
 
 const tipStyle = computed(() => ({ top: `${pos.value.top}px`, left: `${pos.value.left}px` }));
+
+/** The page a browser reference was captured from, when the lookup resolved
+ *  one — the tip's source lines. */
+const browserSource = computed(() => {
+  const capture = props.browser?.capture;
+  if (!capture) return null;
+  return {
+    title: capture.page.title,
+    url: capture.page.url,
+    capturedAt: formatCapturedAt(capture.capturedAt),
+    target: browserCaptureTargetLine(capture),
+  };
+});
 </script>
 
 <template>
@@ -128,7 +153,7 @@ const tipStyle = computed(() => ({ top: `${pos.value.top}px`, left: `${pos.value
     @mouseleave="onHide"
   >
     <!-- File / folder: ellipsized path + copy-path + deleted label -->
-    <template v-if="kind !== 'skill'">
+    <template v-if="kind !== 'skill' && kind !== 'browser'">
       <div class="mention-tip-path">
         <div class="mention-tip-path-text">
           <span v-if="pathParts.head" class="mention-tip-path-head">{{ pathParts.head }}</span>
@@ -146,6 +171,19 @@ const tipStyle = computed(() => ({ top: `${pos.value.top}px`, left: `${pos.value
       </div>
       <div v-if="missing" class="mention-tip-missing">{{ t('mention.deleted') }}</div>
     </template>
+
+    <!-- Browser reference: the page, when it was captured, the element -->
+    <div v-else-if="kind === 'browser'" class="mention-tip-browser">
+      <div class="mention-tip-name">{{ name }}</div>
+      <template v-if="browserSource">
+        <div class="mention-tip-browser-source">{{ browserSource.title }}</div>
+        <div class="mention-tip-browser-source">{{ browserSource.url }}</div>
+        <div class="mention-tip-browser-source">{{ browserSource.capturedAt }}</div>
+        <div v-if="browserSource.target" class="mention-tip-browser-target">{{ browserSource.target }}</div>
+      </template>
+      <img v-if="browser?.thumbnail" class="mention-tip-browser-preview" :src="browser.thumbnail" :alt="name" />
+      <div v-if="browser?.reference?.comment" class="mention-tip-browser-comment">{{ browser.reference.comment }}</div>
+    </div>
 
     <!-- Skill: name + description + open-skill-file -->
     <div v-else class="mention-tip-skill">
@@ -244,6 +282,45 @@ const tipStyle = computed(() => ({ top: `${pos.value.top}px`, left: `${pos.value
   font-size: var(--text-xs);
   color: var(--color-danger);
   line-height: var(--leading-normal);
+}
+
+/* Browser reference: the page, when it was captured, and the thumbnail. */
+.mention-tip-browser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(320px, calc(100vw - var(--space-8)));
+}
+.mention-tip-browser .mention-tip-name {
+  font-size: var(--ui-font-size);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+  line-height: var(--leading-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mention-tip-browser-source,
+.mention-tip-browser-target {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+.mention-tip-browser-target {
+  font-family: var(--font-mono);
+}
+.mention-tip-browser-preview {
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: var(--radius-xs);
+}
+.mention-tip-browser-comment {
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Skill card */

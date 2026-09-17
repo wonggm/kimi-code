@@ -198,6 +198,10 @@ export type ApprovalBlock =
   | { kind: 'search'; query: string; scope?: string }
   | { kind: 'invocation'; kind2: string; name: string; description?: string }
   | { kind: 'todo'; items: { title: string; status: string }[] }
+  /** An in-app browser action: the raw `kimi.browser/1.0.0` input, labelled and
+   *  detailed by lib/browserTool (and offered as JSON under `browser-action.json`,
+   *  the filename upstream shows for it). */
+  | { kind: 'browser'; input: Record<string, unknown> }
   | {
       kind: 'plan_review';
       plan: string;

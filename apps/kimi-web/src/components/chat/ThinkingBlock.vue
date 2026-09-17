@@ -144,7 +144,7 @@ function toggle(): void {
       :aria-expanded="open"
       @click="toggle"
     >
-      <Icon class="think-bulb" name="thinking" size="sm" />
+      <span class="think-ic"><Icon name="thinking" size="sm" /></span>
       <span class="think-title">{{ headTitle }}</span>
       <span v-if="timeLabel" class="think-time">{{ timeLabel }}</span>
       <Icon class="think-car" name="chevron-right" size="sm" />
@@ -186,7 +186,10 @@ function toggle(): void {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--color-accent-soft);
 }
-.think-bulb {
+.think-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
 }
 .think-title {

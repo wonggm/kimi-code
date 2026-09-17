@@ -34,6 +34,7 @@ import KimiFolder from '~icons/kimi/folder';
 import KimiFolderOpen from '~icons/kimi/folder-open';
 import KimiHand from '~icons/kimi/hand';
 import KimiListLines from '~icons/kimi/list-lines';
+import KimiEnter from '~icons/kimi/enter';
 import KimiChevronDown from '~icons/kimi/chevron-down';
 import KimiCircleCheck from '~icons/kimi/circle-check';
 import KimiPanelCollapseRight from '~icons/kimi/panel-collapse-right';
@@ -41,11 +42,15 @@ import KimiLeftPanel from '~icons/kimi/left-panel';
 import KimiLeftPanelExpand from '~icons/kimi/left-panel-expand';
 import KimiRightPanel from '~icons/kimi/right-panel';
 import KimiRightPanelExpand from '~icons/kimi/right-panel-expand';
+import KimiTabCloseOthers from '~icons/kimi/tab-close-others';
+import KimiTabCloseRight from '~icons/kimi/tab-close-right';
+import KimiTabsCloseAll from '~icons/kimi/tabs-close-all';
 import KimiMore from '~icons/kimi/more';
 import KimiPlus from '~icons/kimi/plus';
 import KimiFlask from '~icons/kimi/flask';
 import KimiMicroscope from '~icons/kimi/microscope';
 import KimiRobot from '~icons/kimi/robot';
+import KimiBrowser from '~icons/kimi/browser';
 import KimiSearch from '~icons/kimi/search';
 import KimiThinking from '~icons/kimi/thinking';
 import KimiSend from '~icons/kimi/send';
@@ -144,16 +149,21 @@ import RawKimiLeftPanel from '~icons/kimi/left-panel?raw';
 import RawKimiLeftPanelExpand from '~icons/kimi/left-panel-expand?raw';
 import RawKimiRightPanel from '~icons/kimi/right-panel?raw';
 import RawKimiRightPanelExpand from '~icons/kimi/right-panel-expand?raw';
+import RawKimiTabCloseOthers from '~icons/kimi/tab-close-others?raw';
+import RawKimiTabCloseRight from '~icons/kimi/tab-close-right?raw';
+import RawKimiTabsCloseAll from '~icons/kimi/tabs-close-all?raw';
 import RawKimiLink from '~icons/kimi/link?raw';
 import RawKimiFolder from '~icons/kimi/folder?raw';
 import RawKimiFolderOpen from '~icons/kimi/folder-open?raw';
 import RawKimiHand from '~icons/kimi/hand?raw';
 import RawKimiListLines from '~icons/kimi/list-lines?raw';
+import RawKimiEnter from '~icons/kimi/enter?raw';
 import RawKimiMore from '~icons/kimi/more?raw';
 import RawKimiPlus from '~icons/kimi/plus?raw';
 import RawKimiFlask from '~icons/kimi/flask?raw';
 import RawKimiMicroscope from '~icons/kimi/microscope?raw';
 import RawKimiRobot from '~icons/kimi/robot?raw';
+import RawKimiBrowser from '~icons/kimi/browser?raw';
 import RawKimiSearch from '~icons/kimi/search?raw';
 import RawKimiThinking from '~icons/kimi/thinking?raw';
 import RawKimiSend from '~icons/kimi/send?raw';
@@ -252,6 +262,9 @@ export type IconName =
   | 'check'
   | 'circle-check'
   | 'panel-collapse-right'
+  | 'tab-close-others'
+  | 'tab-close-right'
+  | 'tabs-close-all'
   | 'left-panel'
   | 'left-panel-expand'
   | 'right-panel'
@@ -309,6 +322,7 @@ export type IconName =
   | 'tool'
   | 'glob'
   | 'globe'
+  | 'browser'
   | 'check-list'
   | 'bolt'
   | 'git-fork'
@@ -330,6 +344,7 @@ export type IconName =
   | 'view-flat'
   | 'view-grouped'
   | 'list-lines'
+  | 'enter'
   | 'kimi-copy'
   | 'kimi-pencil'
   | 'kimi-download'
@@ -375,6 +390,9 @@ export const ICONS: Record<IconName, IconEntry> = {
   check: entry(RiCheckLine, RawCheckLine),
   'circle-check': entry(KimiCircleCheck, RawKimiCircleCheck),
   'panel-collapse-right': entry(KimiPanelCollapseRight, RawKimiPanelCollapseRight),
+  'tab-close-others': entry(KimiTabCloseOthers, RawKimiTabCloseOthers),
+  'tab-close-right': entry(KimiTabCloseRight, RawKimiTabCloseRight),
+  'tabs-close-all': entry(KimiTabsCloseAll, RawKimiTabsCloseAll),
   'left-panel': entry(KimiLeftPanel, RawKimiLeftPanel),
   'left-panel-expand': entry(KimiLeftPanelExpand, RawKimiLeftPanelExpand),
   'right-panel': entry(KimiRightPanel, RawKimiRightPanel),
@@ -430,6 +448,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   tool: entry(RiToolsLine, RawToolsLine),
   glob: entry(RiBracesLine, RawBracesLine),
   globe: entry(RiGlobalLine, RawGlobalLine),
+  browser: entry(KimiBrowser, RawKimiBrowser),
   'check-list': entry(RiListCheck, RawListCheck),
   bolt: entry(RiFlashlightLine, RawFlashlightLine),
   'git-fork': entry(RiGitForkLine, RawGitForkLine),
@@ -454,6 +473,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'view-flat': entry(KimiViewFlat, RawKimiViewFlat),
   'view-grouped': entry(KimiViewGrouped, RawKimiViewGrouped),
   'list-lines': entry(KimiListLines, RawKimiListLines),
+  enter: entry(KimiEnter, RawKimiEnter),
   'kimi-copy': entry(KimiCopy, RawKimiCopy),
   'kimi-pencil': entry(KimiPencil, RawKimiPencil),
   'kimi-download': entry(KimiDownload, RawKimiDownload),
@@ -567,6 +587,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'tool',
       'glob',
       'globe',
+      'browser',
       'check-list',
       'bolt',
       'git-fork',

@@ -9,6 +9,7 @@ import type { ToolCall } from '../../../types';
 import { goalBudgetSummary, goalStatusLabel, normalizeToolName, toolGlyph, toolLabel } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
 import ToolOutputBlock from './ToolOutputBlock.vue';
+import ToolPanel from './ToolPanel.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -106,11 +107,13 @@ watch(
     <template #trailing>
       <span v-if="pill" class="tl-pill" :class="pill.tone">{{ pill.word }}</span>
     </template>
-    <div v-if="objective" class="goal-block">
-      <div class="goal-text">{{ objective }}</div>
-      <div v-if="criterion" class="goal-criterion">{{ criterion }}</div>
-    </div>
-    <ToolOutputBlock v-if="hasOutput" :lines="tool.output" />
+    <ToolPanel scroll>
+      <div v-if="objective" class="goal-block">
+        <div class="goal-text">{{ objective }}</div>
+        <div v-if="criterion" class="goal-criterion">{{ criterion }}</div>
+      </div>
+      <ToolOutputBlock v-if="hasOutput" :lines="tool.output" />
+    </ToolPanel>
   </ToolRow>
 </template>
 

@@ -1,10 +1,12 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/SwarmTool.vue -->
-<!-- A single AgentSwarm tool call, rendered as one inline "operation card".
-     Expanded by default while the swarm runs, collapsed once settled; when
-     opened the body shows a phase overview and a phase overview and a
-     per-member accordion — each subagent is a collapsible row (state dot +
-     name + one-line activity + phase) that expands on its own to reveal the
-     full output. While the swarm runs the rows come from the AppTask store
+<!-- A single AgentSwarm tool call: a tool line counting the finished members
+     over a card whose head is the swarm itself (avatar, description, the shared
+     model line, the done/total count in accent) and whose body lists one row
+     per member — avatar, name, the activity line, the phase tail (close + word
+     when a member failed, a progress meter otherwise, and the member's ordinal)
+     and, for a settled member with a result, the accordion's saved-result
+     toggle over the member's own text.
+     While the swarm runs the rows come from the AppTask store
      (`resolveSwarmMembers`); after the tool result lands — and after a refresh
      drops the live tasks — the same rows come from the parsed
      `<agent_swarm_result>` payload. See §04 tool-calls. -->
@@ -14,12 +16,14 @@ import { useI18n } from 'vue-i18n';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import type { AppSubagentPhase } from '../../../api/types';
 import type { SwarmMember } from '../../../composables/swarmGroups';
-import { toolLabel } from '../../../lib/toolMeta';
+import { effortLabel } from '../../../lib/modelThinking';
+import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
 import { parseSwarmResult } from '../../../lib/parseSwarmResult';
 import { buildSwarmCardRows, type SwarmCardRow } from '../../../lib/swarmCardRows';
 import Icon from '../../ui/Icon.vue';
-import StatusDot from '../../ui/StatusDot.vue';
 import Tooltip from '../../ui/Tooltip.vue';
+import ToolRow from '../ToolRow.vue';
+import ToolPanel from './ToolPanel.vue';
 
 const { t } = useI18n();
 
@@ -32,11 +36,11 @@ const props = withDefaults(
   { mobile: false, toolDiffPanel: false },
 );
 
-defineEmits<{
+const emit = defineEmits<{
   openMedia: [media: ToolMedia];
   openFile: [target: FilePreviewRequest];
   openToolDiff: [id: string];
-  openAgent: [toolCallId: string];
+  openAgent: [agentId: string];
 }>();
 
 interface SwarmInput {
@@ -63,25 +67,12 @@ const resolveSwarmMembers =
 
 const input = computed(() => parseInput(props.tool.arg));
 const label = computed(() => toolLabel(props.tool.name));
+const glyph = computed(() => toolGlyph(props.tool.name));
 const description = computed(() => input.value.description ?? '');
 const members = computed(() => resolveSwarmMembers?.(props.tool.id) ?? []);
 const result = computed(() => parseSwarmResult(props.tool.output));
 
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
-const aggregateStatus = computed<'running' | 'ok' | 'error'>(() => {
-  if (status.value === 'running') return 'running';
-  if (status.value === 'error' || (result.value?.failed ?? 0) > 0 || (result.value?.aborted ?? 0) > 0)
-    return 'error';
-  return 'ok';
-});
-
-interface PhaseCounts {
-  completed: number;
-  working: number;
-  suspended: number;
-  queued: number;
-  failed: number;
-}
 
 // Rows are the single source of truth: phase counts and totals derive from the
 // live members and any not-yet-spawned result entries merged together (see
@@ -90,8 +81,14 @@ interface PhaseCounts {
 // AppTask still exists.
 const rows = computed<SwarmCardRow[]>(() => buildSwarmCardRows(members.value, result.value));
 
-const counts = computed<PhaseCounts>(() => {
-  const c: PhaseCounts = { completed: 0, working: 0, suspended: 0, queued: 0, failed: 0 };
+const counts = computed<Record<AppSubagentPhase, number>>(() => {
+  const c: Record<AppSubagentPhase, number> = {
+    queued: 0,
+    working: 0,
+    suspended: 0,
+    completed: 0,
+    failed: 0,
+  };
   for (const r of rows.value) c[r.phase]++;
   return c;
 });
@@ -99,26 +96,31 @@ const counts = computed<PhaseCounts>(() => {
 const total = computed(() => rows.value.length || input.value.itemCount || 0);
 const done = computed(() => counts.value.completed + counts.value.failed);
 const inProgress = computed(() => counts.value.working + counts.value.suspended + counts.value.queued);
+const countText = computed(() => `${done.value} / ${total.value}`);
 
-const PHASE_ORDER: readonly { phase: AppSubagentPhase; cls: string }[] = [
-  { phase: 'completed', cls: 's-ok' },
-  { phase: 'working', cls: 's-run' },
-  { phase: 'suspended', cls: 's-warn' },
-  { phase: 'failed', cls: 's-fail' },
-  { phase: 'queued', cls: 's-queue' },
-];
+const aggregateStatus = computed<'running' | 'ok' | 'error'>(() => {
+  if (status.value === 'running') return 'running';
+  if (status.value === 'error' || counts.value.failed > 0) return 'error';
+  return 'ok';
+});
 
-interface Segment {
-  phase: AppSubagentPhase;
-  count: number;
-  cls: string;
-}
-
-const segments = computed<Segment[]>(() =>
-  PHASE_ORDER.map(({ phase, cls }) => ({ phase, count: counts.value[phase], cls })).filter(
-    (s) => s.count > 0,
-  ),
-);
+const modelLine = computed(() => {
+  let agreed: string | undefined;
+  for (const member of members.value) {
+    const alias = member.model ?? '';
+    const display = alias.length > 0 ? alias.slice(alias.lastIndexOf('/') + 1) : '';
+    const effort =
+      member.thinkingEffort && member.thinkingEffort !== 'off' && member.thinkingEffort !== 'on'
+        ? effortLabel(member.thinkingEffort)
+        : '';
+    const parts = [display, effort].filter(Boolean);
+    if (parts.length === 0) continue;
+    const text = parts.join(' · ');
+    if (agreed === undefined) agreed = text;
+    else if (agreed !== text) return '';
+  }
+  return agreed ?? '';
+});
 
 // Running swarms start expanded; the persisted user choice overrides that on
 // re-mount after a row eviction (see ChatPane's toolExpandState). Only manual
@@ -157,331 +159,325 @@ function isRowOpen(id: string): boolean {
 function phaseLabel(phase: AppSubagentPhase): string {
   return t(`tools.swarm.phase${phase[0]!.toUpperCase()}${phase.slice(1)}`);
 }
+
+function canSave(row: SwarmCardRow): boolean {
+  const settled = row.phase === 'completed' || row.phase === 'failed';
+  return row.agentId !== undefined && settled && row.body.length > 0;
+}
+
+function onRowClick(row: SwarmCardRow): void {
+  if (row.agentId !== undefined) {
+    emit('openAgent', row.agentId);
+    return;
+  }
+  if (row.body.length > 0) toggleRow(row.id);
+}
+
+const PHASE_VALUE: Partial<Record<AppSubagentPhase, number>> = {
+  queued: 0,
+  working: 0.25,
+  suspended: 0.25,
+  completed: 1,
+};
+const DOT_COLUMNS = 14;
+
+function filledColumns(phase: AppSubagentPhase): number {
+  const value = Math.min(1, Math.max(0, PHASE_VALUE[phase] ?? 0));
+  return Math.round(value * DOT_COLUMNS);
+}
+
+const columns = Array.from({ length: DOT_COLUMNS }, (_, i) => i);
+
+function ordinal(index: number): string {
+  return String(index + 1).padStart(2, '0');
+}
 </script>
 
 <template>
-  <div class="swarm-card" :class="{ open, err: aggregateStatus === 'error' }">
-    <button class="head" type="button" :aria-expanded="open" @click="toggle">
-      <Icon class="ic" name="git-pull-request" size="sm" />
-      <span class="title">{{ label }}</span>
-      <span v-if="description" class="meta">·</span>
-      <span v-if="description" class="sum-txt">{{ description }}</span>
-      <span class="rt">
-        <span class="status">
-          <Icon v-if="aggregateStatus === 'ok'" name="check" size="sm" />
-          <Icon v-else-if="aggregateStatus === 'error'" name="close" size="sm" />
-          <StatusDot v-else status="running" />
-        </span>
-        <span v-if="done > 0 || total > 0" class="chip">{{ done }} / {{ total }}</span>
-        <span v-if="tool.timing" class="tm">{{ tool.timing }}</span>
-      </span>
-      <Icon class="car" :name="open ? 'chevron-down' : 'chevron-right'" size="sm" />
-    </button>
+  <ToolRow
+    :status="aggregateStatus"
+    :icon="glyph"
+    :name="description || label"
+    :faint="total > 0 ? countText : ''"
+    :open="open"
+    expandable
+    @toggle="toggle"
+  >
+    <div class="sw-content">
+      <ToolPanel>
+        <div class="sw-head">
+          <span class="sw-avatar" aria-hidden="true"><Icon name="robot" size="lg" /></span>
+          <span class="sw-text">
+            <span class="sw-title">{{ description || label }}</span>
+            <span v-if="modelLine" class="sw-model">{{ modelLine }}</span>
+          </span>
+          <span v-if="total > 0" class="sw-count">{{ countText }}</span>
+        </div>
+      </ToolPanel>
 
-    <div v-show="open" class="body">
-      <div class="overview">
-        <div class="overview-line">
-          <span class="big">{{ t('tools.swarm.progress', { done, total }) }}</span>
-          <span v-if="aggregateStatus === 'running' && total > 0" class="lbl">
-            {{ t('tools.swarm.runningSub', { count: inProgress }) }}
-          </span>
-          <span v-else-if="result" class="lbl">
-            {{ t('tools.swarm.doneSub', { completed: result.completed, failed: result.failed + result.aborted }) }}
-          </span>
-          <span v-else class="lbl">{{ t('tools.swarm.waiting') }}</span>
-        </div>
-        <div v-if="total > 0 && segments.length > 0" class="seg" aria-hidden="true">
-          <span v-for="s in segments" :key="s.phase" :class="s.cls" :style="{ flex: s.count }" />
-        </div>
-        <div v-if="segments.length > 1" class="legend">
-          <span v-for="s in segments" :key="s.phase">
-            <i class="lg-dot" :class="s.cls" />{{ phaseLabel(s.phase) }} {{ s.count }}
-          </span>
-        </div>
-      </div>
-
-      <template v-if="rows.length > 0">
-        <div
-          v-for="row in rows"
-          :key="row.id"
-          class="member"
-          :class="[`phase-${row.phase}`, { open: isRowOpen(row.id) }]"
-        >
+      <div v-if="rows.length > 0" class="sw-members">
+        <div v-for="(row, i) in rows" :key="row.id" class="sw-member">
           <button
-            class="member-head"
             type="button"
+            class="sw-row"
+            :disabled="row.agentId === undefined && row.body.length === 0"
+            :aria-label="row.agentId !== undefined ? t('tasks.openDetail') : undefined"
+            :aria-expanded="row.agentId === undefined && row.body.length > 0 ? isRowOpen(row.id) : undefined"
+            :title="phaseLabel(row.phase)"
+            @click="onRowClick(row)"
+          >
+            <span class="sw-ic" aria-hidden="true"><Icon name="robot" size="md" /></span>
+            <Tooltip :text="row.name">
+              <span class="sw-name">{{ row.name }}</span>
+            </Tooltip>
+            <Tooltip v-if="row.activity" :text="row.activity">
+              <span class="sw-act">{{ row.activity }}</span>
+            </Tooltip>
+            <span class="sw-tail">
+              <span v-if="row.phase === 'failed'" class="sw-state" :class="row.phase">
+                <Icon name="close" size="sm" aria-hidden="true" />
+                <span>{{ phaseLabel(row.phase) }}</span>
+              </span>
+              <span v-else class="sw-dots" aria-hidden="true">
+                <span
+                  v-for="column in columns"
+                  :key="column"
+                  class="sw-dot-col"
+                  :class="{ on: column < filledColumns(row.phase) }"
+                >
+                  <span class="sw-dot" />
+                  <span class="sw-dot" />
+                  <span class="sw-dot" />
+                </span>
+              </span>
+              <span class="sw-idx">{{ ordinal(i) }}</span>
+            </span>
+          </button>
+
+          <button
+            v-if="canSave(row)"
+            type="button"
+            class="sw-saved"
             :aria-expanded="isRowOpen(row.id)"
             @click="toggleRow(row.id)"
           >
-            <StatusDot class="row-dot" :status="row.phase" />
-            <Tooltip :text="row.name">
-              <span class="mname">{{ row.name }}</span>
-            </Tooltip>
-            <Tooltip v-if="row.activity" :text="row.activity">
-              <span class="mact">{{ row.activity }}</span>
-            </Tooltip>
-            <span class="mphase">{{ phaseLabel(row.phase) }}</span>
-            <Icon class="mcar" :name="isRowOpen(row.id) ? 'chevron-down' : 'chevron-right'" size="sm" />
+            <Icon
+              class="sw-saved-car"
+              :class="{ open: isRowOpen(row.id) }"
+              name="chevron-right"
+              size="sm"
+              aria-hidden="true"
+            />
+            <span>{{ t('tools.output.saved') }}</span>
           </button>
-          <div v-show="isRowOpen(row.id)" class="member-body">{{ row.body }}</div>
+
+          <div
+            v-if="row.body.length > 0 && (row.agentId === undefined || canSave(row))"
+            v-show="isRowOpen(row.id)"
+            class="sw-body"
+          >{{ row.body }}</div>
         </div>
-      </template>
+      </div>
 
-      <div v-else-if="fallbackOutput" class="fallback-output">{{ fallbackOutput }}</div>
+      <div v-else-if="fallbackOutput" class="sw-fallback">{{ fallbackOutput }}</div>
 
-      <div v-else class="waiting">{{ t('tools.swarm.waiting') }}</div>
+      <div v-else class="sw-waiting">{{ t('tools.swarm.waiting') }}</div>
     </div>
-  </div>
+  </ToolRow>
 </template>
 
 <style scoped>
-.swarm-card {
-  margin: 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  transition: border-color var(--duration-base) var(--ease-out);
+.sw-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
-.swarm-card.err {
-  border-color: color-mix(in srgb, var(--color-danger) 25%, var(--bg));
-}
-
-.head {
+.sw-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   width: 100%;
-  min-height: 32px;
-  padding: 0 11px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
+  min-width: 0;
+}
+.sw-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+  color: var(--color-text);
+}
+.sw-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
 }
-.head:hover,
-.swarm-card.open > .head {
-  background: var(--color-surface-sunken);
+.sw-title {
   color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.swarm-card.err > .head {
-  background: color-mix(in srgb, var(--color-danger) 4%, var(--bg));
-}
-.swarm-card.err > .head:hover {
-  background: color-mix(in srgb, var(--color-danger) 7%, var(--bg));
-}
-.head:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--color-accent-soft);
-}
-.ic {
-  color: var(--color-text-faint);
-  flex: none;
-}
-.title {
-  font-weight: var(--weight-medium);
-  color: var(--color-text);
-  flex: none;
-}
-.meta {
-  color: var(--color-text-faint);
-  flex: none;
-}
-.sum-txt {
+.sw-model {
   color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+}
+.sw-count {
+  flex: none;
+  color: var(--color-accent);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}
+
+.sw-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-subtle);
+  border-radius: var(--radius-lg);
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sw-member {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
-.rt {
-  margin-left: auto;
+.sw-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: none;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-}
-.status {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-}
-.status:has(> svg) {
-  color: var(--color-success);
-}
-.err .status:has(> svg) {
-  color: var(--color-danger);
-}
-.chip {
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-}
-.tm {
-  color: var(--color-text-faint);
-  font-family: var(--font-mono);
-}
-.car {
-  margin-left: 2px;
-  color: var(--color-text-faint);
-  flex: none;
-}
-
-.body {
-  border-top: 1px solid var(--color-line);
-  background: var(--color-surface-sunken);
-}
-
-/* Overview strip: count + segmented phase bar + legend. */
-.overview {
-  padding: 9px 11px 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-line) 70%, transparent);
-}
-.overview-line {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.big {
-  font-family: var(--font-mono);
-  font-weight: var(--weight-medium);
-  color: var(--color-text);
-  font-size: 15px;
-}
-.lbl {
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-}
-.seg {
-  display: flex;
-  height: 5px;
-  border-radius: var(--radius-full);
-  overflow: hidden;
-  margin: 8px 0 4px;
-  gap: 2px;
-}
-.seg > span {
-  height: 100%;
-  border-radius: var(--radius-full);
-  min-width: 3px;
-}
-.s-ok { background: var(--color-success); }
-.s-run { background: var(--color-accent); }
-.s-warn { background: var(--color-warning); }
-.s-fail { background: var(--color-danger); }
-.s-queue { background: var(--color-line); }
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font: var(--text-xs) var(--font-mono);
-  color: var(--color-text-muted);
-}
-.lg-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-}
-
-/* Per-member accordion. */
-.member {
-  border-bottom: 1px solid color-mix(in srgb, var(--color-line) 70%, transparent);
-}
-.member:last-child {
-  border-bottom: none;
-}
-.member-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  min-height: 32px;
-  padding: 0 11px;
+  min-width: 0;
+  padding: 0;
   border: none;
   background: transparent;
-  color: var(--color-text);
-  font-family: var(--font-ui);
-  font-size: var(--text-sm);
   text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: inherit;
   cursor: pointer;
-  user-select: none;
 }
-.member-head:hover,
-.member.open .member-head {
-  background: color-mix(in srgb, var(--color-surface) 55%, var(--bg));
-}
-.member-head:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--color-accent-soft);
-}
-.row-dot {
+.sw-row:disabled { cursor: default; }
+.sw-row:focus-visible { outline: none; border-radius: var(--radius-xs); box-shadow: var(--p-focus-ring); }
+.sw-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--color-text);
 }
-.mname {
-  flex: none;
+.sw-name {
+  display: block;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 46%;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: var(--weight-medium);
   color: var(--color-text);
+  white-space: nowrap;
 }
-.mact {
-  flex: 1;
+.sw-act {
   min-width: 0;
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
 }
-.mphase {
-  flex: none;
+.sw-tail {
   margin-left: auto;
-  font: var(--text-xs) var(--font-mono);
-  color: var(--color-text-faint);
-}
-.phase-completed .mphase { color: var(--color-success); }
-.phase-failed .mphase { color: var(--color-danger); }
-.phase-working .mphase { color: var(--color-accent); }
-.phase-suspended .mphase { color: var(--color-warning); }
-.mcar {
-  margin-left: 4px;
-  color: var(--color-text-faint);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   flex: none;
 }
-.member-body {
-  padding: 4px 11px 10px 31px;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
+.sw-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-faint);
 }
-
-.waiting {
-  padding: 6px 11px 10px;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-}
-
-.fallback-output {
-  padding: 9px 11px 10px;
+.sw-state.failed { color: var(--color-danger); }
+.sw-idx {
+  width: 30px;
+  text-align: right;
   color: var(--color-text);
-  font: var(--text-xs)/1.6 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.sw-dots {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  flex: none;
+}
+.sw-dot-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+}
+.sw-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 0;
+  background: var(--color-line);
+}
+.sw-dot-col.on .sw-dot { background: var(--color-accent); }
+
+.sw-saved {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.sw-saved:focus-visible { outline: none; border-radius: var(--radius-xs); box-shadow: var(--p-focus-ring); }
+.sw-saved-car { transition: transform var(--duration-base) var(--ease-out); }
+.sw-saved-car.open { transform: rotate(90deg); }
+.sw-body {
+  margin-top: var(--space-1);
+  padding-left: calc(20px + var(--space-2));
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--content-font-size);
+  line-height: 1.571;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.sw-fallback {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--content-font-size);
+  line-height: 1.571;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sw-waiting {
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
 }
 </style>

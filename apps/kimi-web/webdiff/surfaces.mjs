@@ -34,9 +34,13 @@ const PIN_TAIL = { action: 'scrollBottom', selector: '.chat-scroll', ms: 200 };
 const DOCK_GOAL_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(1)', ms: 500 };
 const DOCK_BASH_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(3)', ms: 400 };
 const DOCK_AGENT_PILL = { action: 'click', selector: '.dock-workbar > .ui-pill:nth-of-type(4)', ms: 400 };
-/** The conversation header's control that opens the right panel while it is
-    closed; the panel's own close control replaces it once open. */
-const OPEN_PANEL = { action: 'click', selector: '.ch-panel', ms: 600 };
+/** The right panel's single desktop control: it floats over the top-right corner,
+    opens the panel while it is closed and closes it again while it is open (its
+    label flips between the two). The header's `.ch-panel` and the panel's own
+    `.ptb-hide` stay in the DOM for the mobile shell, but both apps set them to
+    `display: none` on desktop — a click addressed to either resolves to a 0×0
+    box, lands at (0, 0) and opens nothing. */
+const OPEN_PANEL = { action: 'click', selector: '.right-panel-toggle', ms: 600 };
 
 /** The sidebar row that opens a session, addressed by the row's title. Both apps
     render the row as a plain `div.se` with a click handler, so a text step
@@ -134,18 +138,19 @@ export const BEHAVIOUR_SCENES = [
     // Its requirements name UI label text (the panel control's aria-label, the card
     // subtitle, "Done when"), which only exists in the English locale.
     enOnly: true,
-    // Upstream's right pane is one control whose label flips open → close (its
-    // header button is replaced by the panel's close control at the same point);
-    // the fork keeps the header button labelled "Open right panel" AND shows the
-    // panel's own close button, so two controls are on screen while it is open.
-    steps: [PIN_TAIL, { action: 'click', selector: '.ch-panel', ms: 600 }],
+    // Both apps now drive the right pane from the one control OPEN_PANEL names:
+    // it opens the panel while closed and closes it while open, so the same step
+    // is both halves of the transition and exactly one control is on screen in
+    // either state (the header's opener and the panel's own close button are
+    // desktop-hidden in both apps).
+    steps: [PIN_TAIL, OPEN_PANEL],
     requires: [
       { name: 'right-pane-open', present: '.pt-shell' },
       { name: 'right-pane-one-control', present: '[aria-label*="right panel" i]', count: 1 },
     ],
     then: {
       name: 'closed',
-      steps: [{ action: 'click', selector: '.ptb-hide', ms: 600 }],
+      steps: [OPEN_PANEL],
       requires: [
         { name: 'right-pane-closed', absent: '.pt-shell' },
         { name: 'right-pane-control-restored', present: '[aria-label="Open right panel"]', count: 1 },
@@ -224,34 +229,26 @@ export const BEHAVIOUR_SCENES = [
     // subtitle, "Done when"), which only exists in the English locale.
     enOnly: true,
     // Item 4. The card lives inside the tool run fold, which both apps render
-    // collapsed, so the run is scrolled to and expanded first; the card itself
-    // then has to be expanded for its result body. The two apps reveal the result
-    // from different controls: the fork's head is the disclosure, while upstream's
-    // head opens the right-hand detail panel and a second control on the card
-    // (`.saved-result`) is what mounts `div.result`. So the second variant adds
-    // that click, and `expect` decides which variant the capture keeps — without
-    // it the first variant would be recorded and upstream's result read as missing.
+    // collapsed, so the run is scrolled to and expanded first; the card's own row
+    // is then expanded from its disclosure chevron, which is where the result
+    // body lives. The row is addressed by the scroll anchor both apps stamp on
+    // the tool line (`tc_agent_1` is the fixture's id) so the click lands on the
+    // subagent's row and not on the first tool row of the run. Upstream mounts the
+    // output block only while its row is open (`lines: open ? lines : []` in its
+    // bundle), the fork renders it whenever the tool has output, so the same two
+    // clicks reveal it in both apps and one variant is enough — the old second
+    // variant clicked `.saved-result`, a control the renamed markup no longer has.
     expect: /Fit converged/,
-    attempts: [
-      [
-        PIN_TAIL,
-        { action: 'scrollTo', selector: '.ar-head', ms: 300 },
-        { action: 'click', selector: '.ar-head', ms: 500 },
-        { action: 'scrollTo', selector: '.agent-card .head', ms: 300 },
-        { action: 'click', selector: '.agent-card .head', ms: 500 },
-      ],
-      [
-        PIN_TAIL,
-        { action: 'scrollTo', selector: '.ar-head', ms: 300 },
-        { action: 'click', selector: '.ar-head', ms: 500 },
-        { action: 'scrollTo', selector: '.agent-card .head', ms: 300 },
-        { action: 'click', selector: '.agent-card .head', ms: 500 },
-        { action: 'click', selector: '.agent-card .saved-result', ms: 500 },
-      ],
+    steps: [
+      PIN_TAIL,
+      { action: 'scrollTo', selector: '.ar-head', ms: 300 },
+      { action: 'click', selector: '.ar-head', ms: 500 },
+      { action: 'scrollTo', selector: '[data-scroll-anchor-id="tc_agent_1"] .tl-car', ms: 300 },
+      { action: 'click', selector: '[data-scroll-anchor-id="tc_agent_1"] .tl-car', ms: 500 },
     ],
     requires: [
-      { name: 'subagent-card-shape', present: '.agent-card' },
-      { name: 'subagent-card-subtitle', text: /Foreground · coder/ },
+      { name: 'subagent-card-shape', present: '.ag-card' },
+      { name: 'subagent-card-subtitle', within: '.ag-card .ag-model', text: /coder/ },
       { name: 'subagent-card-description', text: /Refit the hadronic interaction model/ },
       { name: 'subagent-card-result', text: /Fit converged: chi2\/ndf = 1\.24/ },
     ],
@@ -410,8 +407,10 @@ export const BEHAVIOUR_SCENES = [
     // session waits on an `askUserQuestion`, opened deliberately. Both apps name
     // the card's parts the same: `.qcard` carries the question, one `.qopt` per
     // option plus the "Other" row, `.other-input` is the free-text field that
-    // `allow_other` adds, and the card's single primary control is the submit
-    // (upstream `.qmain`, the fork `.qfoot-main`).
+    // `allow_other` adds, and the card's single primary control is the submit —
+    // `qmain` in both apps, and the cards' own button family (`cbtn--primary`),
+    // which is what the card's buttons carry now that `ui-button` is not used
+    // inside a card.
     expect: /Which approach should the mock take\?/,
     steps: [PIN_TAIL, SESSION_ROW('Pending question (mock)'), { action: 'wait', ms: 800 }],
     requires: [
@@ -419,7 +418,7 @@ export const BEHAVIOUR_SCENES = [
       { name: 'question-card-text', within: '.qcard', text: /Which approach should the mock take/ },
       { name: 'question-card-options', present: '.qcard .qopt', count: 3 },
       { name: 'question-card-other', present: '.qcard .other-input' },
-      { name: 'question-card-submit', present: '.qcard .ui-button--primary', count: 1 },
+      { name: 'question-card-submit', present: '.qcard .cbtn--primary', count: 1 },
       { name: 'question-card-submit-label', within: '.qcard', text: /Submit/ },
     ],
   },
@@ -433,9 +432,9 @@ export const BEHAVIOUR_SCENES = [
     // waits on the grant. Opened the same deliberate way — the fixture's third
     // sidebar row — because the walk never enters a session by accident. `.appr`
     // is the card on both apps; the action line is the request's own text, the
-    // single primary control is the approve button (upstream `.amain`, the fork
-    // `.kbtn` with the primary variant), and the deny control's label is the
-    // request's "Reject".
+    // single primary control is the approve button (`amain` in both apps, in the
+    // cards' own `cbtn` family — see the question card), and the deny control's
+    // label is the request's "Reject".
     expect: /Run the mock command/,
     steps: [PIN_TAIL, SESSION_ROW('Pending approval (mock)'), { action: 'wait', ms: 800 }],
     requires: [
@@ -445,7 +444,7 @@ export const BEHAVIOUR_SCENES = [
         within: '.appr',
         text: /Run the mock command `rm -rf build`/,
       },
-      { name: 'approval-card-approve', present: '.appr .ui-button--primary', count: 1 },
+      { name: 'approval-card-approve', present: '.appr .cbtn--primary', count: 1 },
       { name: 'approval-card-deny', within: '.appr', text: /Reject/ },
     ],
   },
@@ -538,9 +537,9 @@ export const DISCOVER_EXPR = `(() => {
 export function slug(label, tag, index) {
   const base = `${tag ?? 'el'}-${label ?? ''}`
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+    .replaceAll(/[^a-z0-9]+/g, '-')
+    .replaceAll(/-+/g, '-')
+    .replaceAll(/^-|-$/g, '')
     .slice(0, 34);
   // A surface is paired with its counterpart on the other app by name, so a
   // control the two apps share has to name itself the same way on both. The

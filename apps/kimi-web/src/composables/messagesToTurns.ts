@@ -13,6 +13,7 @@ import type { AppMessage, AppMessageContent, AppApprovalRequest, AppTask, Compac
 import { COMPACTION_MARKER_METADATA_KEY } from '../api/types';
 import type { AgentMember, ApprovalBlock, ChatTurn, CronTurnData, DiffLine, ToolCall, ToolMedia, TurnAttachment, TurnBlock } from '../types';
 import { toolLabel, toolSummary } from '../lib/toolMeta';
+import { BROWSER_TOOL_NAME } from '../lib/browserTool';
 
 const READ_MEDIA_TOOL_RE = /^read[_-]?media(?:file)?$/i;
 const DATA_URL_RE = /^data:([^;]+);base64,(.*)$/s;
@@ -337,6 +338,16 @@ function buildDiffLines(oldText: string, newText: string): DiffLine[] {
 function buildApprovalBlock(a: AppApprovalRequest): ApprovalBlock {
   const d = (a.display ?? {}) as Record<string, unknown>;
   const kind = typeof d['kind'] === 'string' ? d['kind'] : '';
+
+  // The in-app browser: upstream keys the block off the tool name and reads the
+  // action itself from `display.detail`.
+  if (a.toolName === BROWSER_TOOL_NAME) {
+    const detail = d['detail'];
+    return {
+      kind: 'browser',
+      input: detail !== null && typeof detail === 'object' && !Array.isArray(detail) ? (detail as Record<string, unknown>) : {},
+    };
+  }
 
   if (kind === 'diff') {
     const path = typeof d['path'] === 'string' ? d['path'] : '';

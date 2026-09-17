@@ -15,12 +15,16 @@
 import { computed, ref, watch } from 'vue';
 import { clampPanelWidth, panelMaxWidth, useViewportWidth } from './useViewportWidth';
 import {
+  closeOtherPanelTabs,
   closePanelTab,
+  closePanelTabsToRight,
   deserializeRestorableTabs,
   nextSideChatSeq,
   openPanelTab,
+  reorderPanelTabs,
   serializeRestorableTabs,
   type PanelTab,
+  type PanelTabPresentation,
 } from '../lib/panelTabs';
 import { STORAGE_KEYS, safeGetString, safeSetString } from '../lib/storage';
 
@@ -138,6 +142,18 @@ export function useRightPanel() {
     openSideChat: (agentId?: string): void =>
       open({ id: nextId(), kind: 'btw', agentId, seq: nextSideChatSeq(tabs.value) }),
     openTerminal: (title?: string): void => open({ id: nextId(), kind: 'term', title }),
+    /** Upstream's `openTab('browser', ...)`: one tab per browser id. Only a
+     *  desktop host can supply a live browser, so the pane it opens reports
+     *  that the in-app browser is unavailable. */
+    openBrowser: (browserId: string, title?: string): void =>
+      open({ id: nextId(), kind: 'browser', browserId, title }),
+    /** Upstream's `updateTabPresentation` — the page's own title, favicon and
+     *  status glyph, supplied by whatever drives the tab. */
+    updateTabPresentation: (id: string, presentation: PanelTabPresentation): void => {
+      tabs.value = tabs.value.map((tab) =>
+        tab.id === id && tab.kind === 'browser' ? { ...tab, presentation } : tab,
+      );
+    },
 
     activateTab: (id: string): void => {
       if (!tabs.value.some((tab) => tab.id === id)) return;
@@ -149,6 +165,31 @@ export function useRightPanel() {
       tabs.value = remaining;
       activeTabId.value = activeId;
       if (remaining.length === 0) visible.value = false;
+      persistTabs();
+    },
+    /** Upstream's `move`: the strip's drag handle and Alt+ArrowLeft/Right. */
+    moveTab: (id: string, toIndex: number): void => {
+      tabs.value = reorderPanelTabs(tabs.value, id, toIndex);
+      persistTabs();
+    },
+    closeOtherTabs: (id: string): void => {
+      const next = closeOtherPanelTabs(tabs.value, id);
+      if (!next) return;
+      tabs.value = next.tabs;
+      activeTabId.value = next.activeId;
+      persistTabs();
+    },
+    closeTabsToRight: (id: string): void => {
+      const next = closePanelTabsToRight(tabs.value, id);
+      if (!next) return;
+      tabs.value = next.tabs;
+      activeTabId.value = next.activeId;
+      persistTabs();
+    },
+    closeAllTabs: (): void => {
+      tabs.value = [];
+      activeTabId.value = null;
+      visible.value = false;
       persistTabs();
     },
     toggleExpanded: (): void => {

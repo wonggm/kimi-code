@@ -1,14 +1,16 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/TodoTool.vue -->
-<!-- Upstream renderers a TodoWrite call as a progress summary in the tool line
-     (a done/total chip plus a thin bar) and a status-glyph list in the body.
-     Rendering it as a generic tool echoed the raw JSON input instead. -->
+<!-- Upstream renders a TodoWrite call as a tool line — the current item's title
+     and the done/total count beside the label, both gone once the card opens —
+     over a body headed by the same pair and holding the status-glyph list. -->
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue';
 import type { ToolCall } from '../../../types';
-import { toolGlyph, toolHeadParts, toolLabel } from '../../../lib/toolMeta';
+import { toolGlyph, toolLabel } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
 import Icon from '../../ui/Icon.vue';
+import Spinner from '../../ui/Spinner.vue';
 import StatusDot from '../../ui/StatusDot.vue';
+import ToolPanel from './ToolPanel.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -48,18 +50,12 @@ const todos = computed<TodoItem[]>(() => {
 });
 
 const doneCount = computed(() => todos.value.filter((todo) => todo.status === 'completed').length);
-/** Upstream puts the in-progress item's title next to the label (`tl-dim`) and
- *  nothing when every item is settled; the fork showed the item COUNT there
- *  ("3 items"), which is not what upstream's row reads. */
 const currentTitle = computed(() => todos.value.find((todo) => todo.status === 'in_progress')?.title ?? '');
-const fillPct = computed(() =>
-  todos.value.length === 0 ? 0 : (doneCount.value / todos.value.length) * 100,
-);
+const countText = computed(() => `${doneCount.value} / ${todos.value.length}`);
 
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
-const head = computed(() => toolHeadParts(props.tool.name, props.tool.arg));
 
 const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
 const expandKey = props.tool.id;
@@ -91,48 +87,54 @@ function glyphClass(todoStatus: string): string {
     :status="status"
     :icon="glyph"
     :name="label"
-    :file="head.file"
-    :dir="head.dir"
-    :mono="head.mono"
-    :arg="!open ? currentTitle : ''"
+    :arg="todos.length > 0 && !open ? currentTitle : ''"
+    :faint="todos.length > 0 && !open ? countText : ''"
     :time="tool.timing"
     :open="open"
     :expandable="todos.length > 0"
     @toggle="toggle"
   >
-    <template #trailing>
-      <span class="tl-chip">{{ doneCount }}/{{ todos.length }}</span>
-      <span class="todo-bar" aria-hidden="true">
-        <span class="todo-fill" :style="{ width: `${fillPct}%` }" />
-      </span>
+    <template v-if="todos.length > 0">
+      <ToolPanel scroll>
+        <template #head>
+          <span class="todo-head">
+            <span class="todo-current">{{ currentTitle }}</span>
+            <span class="todo-count">{{ countText }}</span>
+          </span>
+        </template>
+        <div class="todo-list">
+          <div v-for="(todo, i) in todos" :key="i" class="todo-row" :class="rowClass(todo.status)">
+            <span class="status-glyph" :class="glyphClass(todo.status)" aria-hidden="true">
+              <Icon v-if="todo.status === 'completed'" name="check" size="sm" />
+              <Spinner v-else-if="todo.status === 'in_progress'" size="md" />
+              <StatusDot v-else status="pending" />
+            </span>
+            <span class="todo-title">{{ todo.title }}</span>
+          </div>
+        </div>
+      </ToolPanel>
     </template>
-    <div class="todo-list">
-      <div v-for="(todo, i) in todos" :key="i" class="todo-row" :class="rowClass(todo.status)">
-        <span class="status-glyph" :class="glyphClass(todo.status)" aria-hidden="true">
-          <Icon v-if="todo.status === 'completed'" name="check" size="sm" />
-          <StatusDot v-else-if="todo.status === 'in_progress'" status="running" />
-          <StatusDot v-else status="pending" />
-        </span>
-        <span class="todo-title">{{ todo.title }}</span>
-      </div>
-    </div>
   </ToolRow>
 </template>
 
 <style scoped>
-.todo-bar {
-  display: inline-flex;
-  width: 36px;
-  height: 3px;
-  border-radius: var(--radius-full);
-  background: var(--color-line);
-  overflow: hidden;
-  flex: none;
+.todo-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-.todo-fill {
-  background: var(--color-success);
-  border-radius: var(--radius-full);
-  transition: width var(--duration-slow) var(--ease-out);
+.todo-current {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+.todo-count {
+  flex: none;
+  color: var(--color-text-faint);
 }
 .todo-list {
   display: flex;
@@ -159,7 +161,7 @@ function glyphClass(todoStatus: string): string {
 }
 .status-glyph {
   flex: none;
-  width: 16px;
+  width: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

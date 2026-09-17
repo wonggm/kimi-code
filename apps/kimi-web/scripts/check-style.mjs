@@ -28,12 +28,13 @@ const DOMAIN_HEX_EXEMPT = new Set([
 ]);
 
 // Files that legitimately render their own <svg>: bespoke data-viz / colored
-// illustrations, the spinner, the liquid-glass SVG filter defs (GlassDefs),
-// and brand marks (the Kimi wordmark on the loading
-// screen). Everything else should use lib/icons.ts via <Icon>/iconSvg(). The
-// 32x22 Kimi eye logo is also exempted inline (matched by viewBox). The icon
-// primitive (components/ui/Icon.vue) itself renders no hand-written <svg>, so it
-// is not exempted here.
+// illustrations, the spinner, the liquid-glass SVG filter defs (GlassDefs), and
+// the Kimi brand marks (the wordmark on the loading screen and on the
+// new-session landing, plus the landing's peeking-face mascot). Everything else
+// should use lib/icons.ts via <Icon>/iconSvg(). The 32x22 Kimi eye logo is also
+// exempted inline (matched by viewBox). The icon primitive
+// (components/ui/Icon.vue) itself renders no hand-written <svg>, so it is not
+// exempted here.
 const ICON_EXEMPT = new Set([
   'components/ui/Spinner.vue',
   'components/ui/MoonSpinner.vue',
@@ -41,6 +42,8 @@ const ICON_EXEMPT = new Set([
   'components/ui/AuthStateIcon.vue',
   'components/ui/GlassDefs.vue',
   'components/GlobalLoading.vue',
+  'components/chat/Wordmark.vue',
+  'components/chat/MascotPeek.vue',
 ]);
 
 // Files entirely exempt from the §06 scan. The design-system showcase view is

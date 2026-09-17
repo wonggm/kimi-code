@@ -64,7 +64,16 @@ describe('buildSwarmCardRows', () => {
       [member('a', '子任务 A', { text: 'streaming' })],
       null,
     );
-    expect(rows).toEqual([{ id: 'a', name: '子任务 A', activity: 'streaming', phase: 'working', body: 'streaming' }]);
+    expect(rows).toEqual([
+      {
+        id: 'a',
+        agentId: 'a',
+        name: '子任务 A',
+        activity: 'streaming',
+        phase: 'working',
+        body: 'streaming',
+      },
+    ]);
   });
 
   it('builds rows from result subagents when no members are present', () => {

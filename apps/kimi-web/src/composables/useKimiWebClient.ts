@@ -23,6 +23,8 @@ import {
 import { applyTranscriptTimings, pageTurnTimings } from '../lib/transcriptTiming';
 import { mergeSnapshotSubagents } from '../lib/taskMerge';
 import { bareDuration } from '../lib/bareDuration';
+import { collectBrowserReferences, type BrowserReferenceEntry } from '../lib/browserReference';
+import { BROWSER_TOOL_NAME } from '../lib/browserTool';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
 import {
   loadExchangeStarts,
@@ -1862,6 +1864,13 @@ function buildApprovalBlock(a: AppApprovalRequest): ApprovalBlock {
   const d = (a.display ?? {}) as Record<string, unknown>;
   const kind = typeof d.kind === 'string' ? d.kind : '';
 
+  // The in-app browser: upstream keys the whole block off the tool name and
+  // reads the action itself from `display.detail`.
+  if (a.toolName === BROWSER_TOOL_NAME) {
+    const detail = d.detail;
+    return { kind: 'browser', input: detail !== null && typeof detail === 'object' && !Array.isArray(detail) ? (detail as Record<string, unknown>) : {} };
+  }
+
   // diff
   if (kind === 'diff') {
     const path = typeof d.path === 'string' ? d.path : '';
@@ -2181,6 +2190,17 @@ const sessionPlans = useSessionPlans();
 const EMPTY_MESSAGES: AppMessage[] = [];
 const EMPTY_APPROVALS: AppApprovalRequest[] = [];
 const EMPTY_HIDDEN_IDS: string[] = [];
+const EMPTY_BROWSER_REFERENCES = new Map<string, BrowserReferenceEntry>();
+
+/** The browser references the active session carries, keyed by reference id.
+ *  Each user message stores its composer snapshot on `metadata` (the key
+ *  upstream reads too), and that snapshot is where a reference and its capture
+ *  live — see `collectBrowserReferences`. */
+const browserReferences = computed<Map<string, BrowserReferenceEntry>>(() => {
+  const sid = rawState.activeSessionId;
+  if (!sid) return EMPTY_BROWSER_REFERENCES;
+  return collectBrowserReferences(rawState.messagesBySession[sid] ?? EMPTY_MESSAGES);
+});
 
 let prevTurns: ChatTurn[] = [];
 let turnsLastSessionId: string | undefined;
@@ -2190,8 +2210,7 @@ let prevTurnActiveValue: boolean | undefined;
 let prevApprovalsRef: AppApprovalRequest[] | undefined;
 let prevPlanReviewRef: Record<string, { plan: string; path?: string }> | undefined;
 
-const turns = computed<ChatTurn[]>(() => {
-  const sid = rawState.activeSessionId;
+const turns = computed<ChatTurn[]>(() => {  const sid = rawState.activeSessionId;
   if (sid !== turnsLastSessionId) {
     turnsLastSessionId = sid;
     prevTurns = [];
@@ -3277,6 +3296,8 @@ export function useKimiWebClient() {
     recentRoots,
 
     turns,
+    /** Browser references of the active session, keyed by reference id. */
+    browserReferences,
     tasks,
     /** Live ExitPlanMode plan history of the active session (timeline order). */
     activePlans,

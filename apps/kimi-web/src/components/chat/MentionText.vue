@@ -10,6 +10,8 @@
 import { computed, onUnmounted, ref } from 'vue';
 import { iconSvg } from '../../lib/icons';
 import { tokenizeMentions, type MentionKind, type MentionSegment } from '../../lib/mentionTokens';
+import { browserReferenceIdFromDest, type BrowserReferenceEntry } from '../../lib/browserReference';
+import { useBrowserReferences } from '../../composables/useBrowserReferences';
 import MentionTip from './MentionTip.vue';
 
 const props = withDefaults(
@@ -29,17 +31,24 @@ const props = withDefaults(
   },
 );
 
+// Browser references come from the session's own message metadata (see
+// useBrowserReferences): a pill resolves its capture there for the hover tip,
+// and opens the reference dialog through the same composable.
+const browserReferences = useBrowserReferences();
+
 const segments = computed<MentionSegment[]>(() => tokenizeMentions(props.text));
 
 const ICON_FILE = iconSvg('file', 'sm');
 const ICON_FOLDER = iconSvg('folder', 'sm');
 const ICON_SKILL = iconSvg('sparkles', 'sm');
 const ICON_ATTACHMENT = iconSvg('attachment', 'sm');
+const ICON_BROWSER = iconSvg('browser', 'sm');
 
 function iconFor(kind: MentionKind): string {
   if (kind === 'folder') return ICON_FOLDER;
   if (kind === 'skill') return ICON_SKILL;
   if (kind === 'attachment') return ICON_ATTACHMENT;
+  if (kind === 'browser') return ICON_BROWSER;
   return ICON_FILE;
 }
 
@@ -101,6 +110,7 @@ interface TipState {
   name: string;
   path: string;
   anchor: DOMRect;
+  browser?: BrowserReferenceEntry | null;
 }
 
 const tip = ref<TipState | null>(null);
@@ -123,7 +133,13 @@ function onPillEnter(pill: HTMLElement, seg: MentionSegment): void {
   if (seg.kind === 'text' || seg.kind === 'attachment') return;
   showTimer = setTimeout(() => {
     showTimer = null;
-    tip.value = { kind: seg.kind, name: seg.name, path: seg.path, anchor: pill.getBoundingClientRect() };
+    tip.value = {
+      kind: seg.kind,
+      name: seg.name,
+      path: seg.path,
+      anchor: pill.getBoundingClientRect(),
+      browser: seg.kind === 'browser' ? browserReferences.resolve(browserRefId(seg)) : null,
+    };
     probe(seg.kind, seg.path);
   }, SHOW_DELAY_MS);
 }
@@ -160,13 +176,29 @@ function skillInfo(name: string): { description?: string; path?: string } | null
   return props.resolveSkill ? props.resolveSkill(name) ?? null : null;
 }
 
+// A browser reference is the one mention upstream renders with its own class
+// family (`quote-pill`, `data-browser-ref-*`) rather than `mention-pill`, and
+// its resolvers key on the bare refId instead of the whole destination.
+function browserRefId(seg: MentionSegment): string {
+  return seg.kind === 'browser' ? browserReferenceIdFromDest(seg.path) : '';
+}
+
 function pillIsButton(seg: MentionSegment): boolean {
   if (seg.kind === 'text' || seg.kind === 'folder' || seg.kind === 'attachment') return false;
+  if (seg.kind === 'browser') return browserRefId(seg) !== '';
   if (seg.kind === 'file') return props.openFile !== undefined && seg.path !== '';
   return (skillInfo(seg.name)?.path ?? '') !== '';
 }
 
 function onPillActivate(seg: MentionSegment): void {
+  if (seg.kind === 'browser') {
+    const refId = browserRefId(seg);
+    if (refId !== '') {
+      hideTip();
+      browserReferences.open(refId);
+    }
+    return;
+  }
   if (seg.kind !== 'file' && seg.kind !== 'skill') return;
   if (seg.kind === 'file') {
     if (props.openFile && seg.path !== '') {
@@ -217,11 +249,16 @@ onUnmounted(() => {
     <template v-if="seg.kind === 'text'">{{ seg.value }}</template>
     <span
       v-else
-      class="mention-pill"
-      :class="[`mention-${seg.kind}`, { 'mention-missing': isMissing(seg) }]"
+      :class="
+        seg.kind === 'browser'
+          ? ['quote-pill', 'browser-reference-pill']
+          : ['mention-pill', `mention-${seg.kind}`, { 'mention-missing': isMissing(seg) }]
+      "
       :data-mention-kind="seg.kind"
       :data-mention-name="seg.name"
       :data-mention-path="seg.path || undefined"
+      :data-browser-ref-id="seg.kind === 'browser' ? browserRefId(seg) || undefined : undefined"
+      :data-browser-ref-label="seg.kind === 'browser' ? seg.name : undefined"
       :role="pillIsButton(seg) ? 'button' : undefined"
       :tabindex="pillIsButton(seg) ? 0 : undefined"
       @mouseenter="onPillEnter($event.currentTarget as HTMLElement, seg)"
@@ -232,8 +269,12 @@ onUnmounted(() => {
       @keydown="onPillKeydown($event, seg)"
     >
       <!-- eslint-disable-next-line vue/no-v-html -->
-      <span class="mention-pill-icon" v-html="iconFor(seg.kind)" aria-hidden="true" />
-      <span class="mention-pill-name">{{ seg.name }}</span>
+      <span
+        :class="seg.kind === 'browser' ? 'quote-pill-icon' : 'mention-pill-icon'"
+        v-html="iconFor(seg.kind)"
+        aria-hidden="true"
+      />
+      <span :class="seg.kind === 'browser' ? 'quote-pill-name' : 'mention-pill-name'">{{ seg.name }}</span>
     </span>
   </template>
 
@@ -247,6 +288,7 @@ onUnmounted(() => {
       :missing="tipMissing()"
       :description="tip.kind === 'skill' ? skillInfo(tip.name)?.description ?? '' : ''"
       :skill-path="tip.kind === 'skill' ? skillInfo(tip.name)?.path ?? '' : ''"
+      :browser="tip.browser ?? null"
       :open-file="props.openFile ?? noopOpen"
       :on-hide="hideTip"
       :on-stay="onTipEnter"
@@ -255,7 +297,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.mention-pill {
+.mention-pill,
+.quote-pill {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -275,15 +318,19 @@ onUnmounted(() => {
 }
 /* No glassmorphism, no gradients — flat sunken pill per the design system. */
 
-.mention-pill[role='button'] {
+.mention-pill[role='button'],
+.quote-pill[role='button'] {
   cursor: pointer;
 }
 .mention-pill[role='button']:hover,
-.mention-pill[role='button']:focus-visible {
+.mention-pill[role='button']:focus-visible,
+.quote-pill[role='button']:hover,
+.quote-pill[role='button']:focus-visible {
   background: var(--color-surface-raised);
   border-color: var(--color-accent);
 }
-.mention-pill[role='button']:focus-visible {
+.mention-pill[role='button']:focus-visible,
+.quote-pill[role='button']:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
@@ -295,22 +342,27 @@ onUnmounted(() => {
   opacity: 0.78;
 }
 
-.mention-pill-icon {
+.mention-pill-icon,
+.quote-pill-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
   color: var(--color-text-muted);
 }
-.mention-pill-icon :deep(svg) {
+.mention-pill-icon :deep(svg),
+.quote-pill-icon :deep(svg) {
   width: 13px;
   height: 13px;
   display: block;
 }
 
-.mention-pill-name {
+.mention-pill-name,
+.quote-pill-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Upstream caps a reference's label at this width and lets it ellipsise. */
+.quote-pill-name { max-width: var(--p-quote-pill-excerpt-max); }
 </style>

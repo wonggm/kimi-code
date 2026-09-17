@@ -5,11 +5,12 @@
 <script setup lang="ts">
 defineProps<{
   keys: string[];
+  variant?: 'button';
 }>();
 </script>
 
 <template>
-  <span class="ui-kbd">
+  <span class="ui-kbd" :class="{ 'ui-kbd--button': variant === 'button' }">
     <kbd v-for="key in keys" :key="key" class="ui-kbd__key">{{ key }}</kbd>
   </span>
 </template>
@@ -36,5 +37,10 @@ defineProps<{
   font-family: var(--font-ui);
   font-size: 11px;
   line-height: 1;
+}
+.ui-kbd--button .ui-kbd__key {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+  box-shadow: 0 1px color-mix(in srgb, currentColor 12%, transparent);
 }
 </style>

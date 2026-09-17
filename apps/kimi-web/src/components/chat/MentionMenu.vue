@@ -49,6 +49,7 @@ const { maskStyle, thumbStyle, onScroll, onThumbPointerDown } = useMenuScrollbar
 
 const ICON_FOLDER = iconSvg('folder', 'sm');
 const ICON_SKILL = iconSvg('sparkles', 'sm');
+const ICON_BROWSER = iconSvg('browser', 'sm');
 const ICON_CODE = iconSvg('code', 'sm');
 const ICON_DOC = iconSvg('file-text', 'sm');
 const ICON_IMAGE = iconSvg('image', 'sm');
@@ -78,13 +79,17 @@ function fileIcon(path: string): string {
 
 function rowIcon(item: MentionItem): string {
   if (item.kind === 'skill') return ICON_SKILL;
+  if (item.kind === 'browser') return ICON_BROWSER;
   return fileIcon(item.path);
 }
 
 const firstSkillIndex = computed(() => props.items.findIndex((item) => item.kind === 'skill'));
+const firstBrowserIndex = computed(() => props.items.findIndex((item) => item.kind === 'browser'));
 
 function itemKey(item: MentionItem): string {
-  return item.kind === 'skill' ? `skill:${item.name}` : item.path;
+  if (item.kind === 'skill') return `skill:${item.name}`;
+  if (item.kind === 'browser') return `browser:${item.refId}`;
+  return item.path;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +157,10 @@ function namePieces(item: MentionItem): Piece[] {
 }
 
 function pathPieces(item: MentionItem): Piece[] {
+  if (item.kind === 'browser') {
+    const meta = [item.title, item.url].filter(Boolean).join(' · ');
+    return [{ text: meta, hit: false }];
+  }
   if (item.kind !== 'file' && item.kind !== 'folder') return [{ text: item.path, hit: false }];
   const positions = item.matchPositions ?? [];
   if (positions.length === 0) return [{ text: item.path, hit: false }];
@@ -175,6 +184,9 @@ function pathPieces(item: MentionItem): Piece[] {
     <!-- Items: searched files, then a skill section -->
     <div v-else ref="scrollEl" class="menu-scroll" :style="maskStyle" @scroll="onScroll">
       <template v-for="(item, i) in props.items" :key="itemKey(item)">
+        <div v-if="i === firstBrowserIndex" class="mention-section">
+          {{ t('browserReference.group') }}
+        </div>
         <div v-if="i === firstSkillIndex" class="mention-section">
           {{ t('mention.skills') }}
         </div>

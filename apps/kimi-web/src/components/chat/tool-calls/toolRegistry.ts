@@ -2,8 +2,11 @@
 import type { Component } from 'vue';
 import type { ToolCall } from '../../../types';
 import { normalizeToolName } from '../../../lib/toolMeta';
+import { isBrowserToolName } from '../../../lib/browserTool';
 import AgentTool from './AgentTool.vue';
 import AskUserTool from './AskUserTool.vue';
+import BackgroundTaskTool from './BackgroundTaskTool.vue';
+import BrowserTool from './BrowserTool.vue';
 import EditTool from './EditTool.vue';
 import GenericTool from './GenericTool.vue';
 import GoalTool from './GoalTool.vue';
@@ -16,6 +19,9 @@ type ToolRenderer = Component;
 
 /** Pick the renderer for a tool call. */
 export function resolveToolRenderer(tool: ToolCall): ToolRenderer {
+  // The browser tool is matched on its raw MCP name, as upstream does: its
+  // `display.kind` is `browser` but the name is what identifies it.
+  if (isBrowserToolName(tool.name)) return BrowserTool;
   if (tool.media && tool.status === 'ok') return MediaTool;
   const name = normalizeToolName(tool.name);
   if (name === 'edit' || name === 'write' || name === 'multi_edit') return EditTool;
@@ -28,6 +34,7 @@ export function resolveToolRenderer(tool: ToolCall): ToolRenderer {
   if (name === 'askuserquestion') return AskUserTool;
   if (name === 'todo') return TodoTool;
   if (name === 'waitfor') return WaitForTool;
+  if (name === 'tasklist' || name === 'taskoutput' || name === 'taskstop') return BackgroundTaskTool;
   if (name === 'creategoal' || name === 'getgoal' || name === 'setgoalbudget' || name === 'updategoal') return GoalTool;
   return GenericTool;
 }

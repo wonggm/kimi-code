@@ -17,7 +17,8 @@ import { normalizePanelPreviewPath } from '../../lib/rightPanelTabs';
 import { agentTabTitle } from '../../lib/panelTabs';
 import { PANEL_PREVIEW_MIN, useRightPanel } from '../../composables/useRightPanel';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
-import EmptyDoodle from './EmptyDoodle.vue';
+import MascotPeek from './MascotPeek.vue';
+import Wordmark from './Wordmark.vue';
 import SelectionQuoteBubble from './SelectionQuoteBubble.vue';
 import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
@@ -1811,20 +1812,81 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
             <!-- Empty session: Composer rendered in the centre of the pane -->
             <div class="empty-spacer" />
             <div class="empty-hint">
-              <span class="empty-hint-title" :class="{ 'is-starting': starting }">
-                <Spinner v-if="starting" size="sm" />
-                <EmptyDoodle v-else />
+              <span v-if="starting" class="empty-hint-title is-starting">
+                <Spinner size="sm" />
               </span>
-              <span v-if="!starting" class="empty-hint-text">{{ t('composer.emptyConversation') }}</span>
-              <button
-                v-else-if="!starting"
-                type="button"
-                class="empty-add-workspace"
-                @click="emit('addWorkspace')"
-              >
-                <Icon name="folder-plus" size="sm" />
-                <span>{{ t('conversation.addWorkspace') }}</span>
-              </button>
+              <Wordmark v-else class="empty-logo" />
+            </div>
+            <div v-if="hasWorkspaces && !starting" class="ws-pill-row">
+              <div class="ws-anchor">
+                <Tooltip :text="t('conversation.switchWorkspace')">
+                  <button
+                    type="button"
+                    class="ws-chip"
+                    :class="{ open: wsPickOpen }"
+                    :aria-expanded="wsPickOpen"
+                    @click.stop="toggleWsPick"
+                  >
+                    <Icon name="folder" size="md" />
+                    <span class="ws-chip-name">{{ activeWorkspaceLabel }}</span>
+                    <Icon class="ws-chip-chev" :class="{ open: wsPickOpen }" name="chevron-down" size="sm" />
+                  </button>
+                </Tooltip>
+                <div v-if="wsPickOpen" class="ws-backdrop" @click="wsPickOpen = false" />
+                <!-- Upstream's panel markup: a "recent folders" caption, one
+                     row per workspace (folder icon, name + path stack, a
+                     check on the current one), a divider, then the action. -->
+                <div
+                  v-if="wsPickOpen"
+                  class="ws-panel"
+                  :class="{ up: wsPickUp }"
+                  :style="wsPanelStyle"
+                  role="menu"
+                >
+                  <div class="ws-caption">{{ t('workspace.recentLabel') }}</div>
+                  <button
+                    v-for="w in visibleWorkspaces"
+                    :key="w.id"
+                    type="button"
+                    class="ws-row"
+                    :class="{ on: w.id === activeWorkspaceId }"
+                    role="menuitem"
+                    @click.stop="pickWorkspace(w.id)"
+                  >
+                    <Icon name="folder" size="md" />
+                    <span class="ws-info">
+                      <span class="ws-name">{{ w.name }}</span>
+                      <span class="ws-path">{{ w.shortPath }}</span>
+                    </span>
+                    <Icon
+                      v-if="w.id === activeWorkspaceId"
+                      class="ws-check"
+                      name="check"
+                      size="sm"
+                    />
+                  </button>
+                  <button
+                    v-if="hiddenWorkspaceCount > 0"
+                    type="button"
+                    class="ws-action"
+                    role="menuitem"
+                    @click.stop="wsPickExpanded = !wsPickExpanded"
+                  >
+                    <span>{{ t('conversation.moreWorkspaces', { count: hiddenWorkspaceCount }) }}</span>
+                  </button>
+                  <div class="ws-divider" />
+                  <button
+                    type="button"
+                    class="ws-action"
+                    role="menuitem"
+                    @click.stop="wsPickOpen = false; emit('addWorkspace')"
+                  >
+                    <Icon name="folder-plus" size="md" />
+                    <span>{{ t('conversation.pickFolder') }}</span>
+                  </button>
+                </div>
+              </div>
+              <MascotPeek class="ws-mascot" />
             </div>
             <Composer
               ref="emptyComposerRef"
@@ -1865,80 +1927,7 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
               @compact="emit('compact')"
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
-            >
-              <template #footer>
-                <div v-if="hasWorkspaces && !starting" class="ws-bar">
-                  <div class="ws-anchor">
-                    <Tooltip :text="t('conversation.switchWorkspace')">
-                      <button
-                        type="button"
-                        class="ws-chip"
-                        :class="{ open: wsPickOpen }"
-                        :aria-expanded="wsPickOpen"
-                        @click.stop="toggleWsPick"
-                      >
-                        <Icon name="folder" size="md" />
-                        <span class="ws-chip-name">{{ activeWorkspaceLabel }}</span>
-                        <Icon class="ws-chip-chev" :class="{ open: wsPickOpen }" name="chevron-down" size="sm" />
-                      </button>
-                    </Tooltip>
-                    <div v-if="wsPickOpen" class="ws-backdrop" @click="wsPickOpen = false" />
-                    <!-- Upstream's panel markup: a "recent folders" caption, one
-                         row per workspace (folder icon, name + path stack, a
-                         check on the current one), a divider, then the action. -->
-                    <div
-                      v-if="wsPickOpen"
-                      class="ws-panel"
-                      :class="{ up: wsPickUp }"
-                      :style="wsPanelStyle"
-                      role="menu"
-                    >
-                      <div class="ws-caption">{{ t('workspace.recentLabel') }}</div>
-                      <button
-                        v-for="w in visibleWorkspaces"
-                        :key="w.id"
-                        type="button"
-                        class="ws-row"
-                        :class="{ on: w.id === activeWorkspaceId }"
-                        role="menuitem"
-                        @click.stop="pickWorkspace(w.id)"
-                      >
-                        <Icon name="folder" size="md" />
-                        <span class="ws-info">
-                          <span class="ws-name">{{ w.name }}</span>
-                          <span class="ws-path">{{ w.shortPath }}</span>
-                        </span>
-                        <Icon
-                          v-if="w.id === activeWorkspaceId"
-                          class="ws-check"
-                          name="check"
-                          size="sm"
-                        />
-                      </button>
-                      <button
-                        v-if="hiddenWorkspaceCount > 0"
-                        type="button"
-                        class="ws-action"
-                        role="menuitem"
-                        @click.stop="wsPickExpanded = !wsPickExpanded"
-                      >
-                        <span>{{ t('conversation.moreWorkspaces', { count: hiddenWorkspaceCount }) }}</span>
-                      </button>
-                      <div class="ws-divider" />
-                      <button
-                        type="button"
-                        class="ws-action"
-                        role="menuitem"
-                        @click.stop="wsPickOpen = false; emit('addWorkspace')"
-                      >
-                        <Icon name="folder-plus" size="md" />
-                        <span>{{ t('conversation.pickFolder') }}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </Composer>
+            />
             <!-- Trailing spacer: upstream marks the tail one with `empty-tail`
                  (the head spacer stays plain); the fork had the element but not the
                  class, so the walk read it as an extra upstream element. -->
@@ -2098,6 +2087,10 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
           :agent-title="panelAgentTitle"
           @activate="panel.activateTab($event)"
           @close="panel.closeTab($event)"
+          @move="panel.moveTab"
+          @close-others="panel.closeOtherTabs($event)"
+          @close-to-right="panel.closeTabsToRight($event)"
+          @close-all="panel.closeAllTabs()"
           @add="addPanelTab($event)"
           @update:preview-width="panel.setPreviewWidth($event)"
           @dragging="panelDragging = $event"
@@ -2405,54 +2398,36 @@ html[data-liquid-glass="on"] .panes.has-header {
   color: var(--dim);
   font-weight: 400;
 }
-.empty-hint-text {
-  display: inline-block;
-  font-size: var(--text-base);
-  color: var(--dim);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.empty-hint .empty-logo {
+  width: min(304px, 62vw);
 }
-.empty-add-workspace {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--dim);
-  font-family: var(--mono);
-  font-size: var(--ui-font-size-sm);
-  cursor: pointer;
+
+/* Empty-session workspace chip row. Upstream renders it as the composer's
+   sibling above the card — the chip on the left, the mascot after it — and this
+   is upstream's own rule set for the row; the chip, its panel and the dropdown
+   below keep the fork's tokens (see the chip rules further down). */
+.ws-pill-row {
+  display: flex;
+  align-items: flex-end;
+  height: 36px;
+  padding: 0 var(--space-2) 0 var(--space-8);
+  font-family: var(--font-ui);
 }
-.empty-add-workspace:hover {
-  border-color: var(--color-accent-bd);
-  color: var(--color-text);
-}
-.empty-add-workspace:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-.empty-add-workspace svg {
+.ws-pill-row .ws-mascot {
   flex: none;
+  width: 65px;
+  height: 36px;
+  margin-left: var(--space-4);
 }
 
 /* Empty-composer workspace picker */
-/* Workspace chip — upstream's rules verbatim (ws-bar / ws-anchor / ws-chip and
-   its name and chevron). The dropdown below it is upstream's too (ws-panel and
-   friends). */
-.ws-bar {
-  margin-top: calc(-1 * var(--space-4));
-  padding: calc(var(--space-4) + var(--space-2)) var(--space-2) var(--space-2);
-  background: color-mix(in srgb, var(--color-hover) 60%, transparent);
-  border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
-  font-family: var(--font-ui);
+/* Workspace chip — upstream's rules verbatim (ws-anchor / ws-chip and its name
+   and chevron; the row those sit in is above, and the dropdown below it is
+   upstream's too — ws-panel and friends). */
+.ws-anchor {
+  position: relative;
+  flex: 1;
 }
-.ws-anchor { position: relative; }
 .ws-chip {
   display: inline-flex;
   align-items: center;

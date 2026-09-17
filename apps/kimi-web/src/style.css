@@ -491,6 +491,12 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-send-bg: var(--color-accent);
   --color-send-bg-hover: var(--color-accent-hover);
   --color-send-bg-disabled: rgba(0, 0, 0, 0.05);
+  /* Glyph on the accent disc (upstream's --color-send-icon), and the two fill
+     washes upstream's card buttons and card avatars paint themselves with. */
+  --color-send-icon: #ffffff;
+  --color-fill-1: rgba(0, 0, 0, 0.03);
+  --color-fill-2: rgba(0, 0, 0, 0.05);
+  --color-fill-on-inverted: rgba(255, 255, 255, 0.05);
   /* Disabled send glyph — upstream's light value. The dark blocks below carry
      upstream's measured rgba(255, 255, 255, 0.28). */
   --color-send-icon-disabled: rgba(0, 0, 0, 0.27);
@@ -653,6 +659,10 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --p-table-cell-max: 700px;
   --p-bp-sm: 640px;
   --p-bp-md: 980px;
+
+  /* -- browser reference pills (design-system §02) -------------------------- */
+  /* Upstream's cap on a reference's label before it ellipsises. */
+  --p-quote-pill-excerpt-max: 12em;
 }
 
 /* Spring presets, upgraded. `linear()` easing is a sampled curve, so it can
@@ -725,6 +735,9 @@ html[data-color-scheme="dark"] {
   --color-send-bg-hover: rgba(255, 255, 255, 0.848);
   --color-send-bg-disabled: rgba(255, 255, 255, 0.1);
   --color-send-icon-disabled: rgba(255, 255, 255, 0.28);
+  --color-send-icon: #1f1f1f;
+  --color-fill-1: rgba(255, 255, 255, 0.05);
+  --color-fill-2: rgba(255, 255, 255, 0.1);
   --color-stop-glyph: color-mix(in srgb, var(--color-danger) 72%, transparent);
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
@@ -792,6 +805,9 @@ html[data-color-scheme="dark"] {
     --color-send-bg-hover: rgba(255, 255, 255, 0.848);
     --color-send-bg-disabled: rgba(255, 255, 255, 0.1);
     --color-send-icon-disabled: rgba(255, 255, 255, 0.28);
+    --color-send-icon: #1f1f1f;
+    --color-fill-1: rgba(255, 255, 255, 0.05);
+    --color-fill-2: rgba(255, 255, 255, 0.1);
     --color-stop-glyph: color-mix(in srgb, var(--color-danger) 72%, transparent);
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
@@ -1988,6 +2004,24 @@ html[data-liquid-glass="on"] .sheet-root:not(.step-2) .sheet-panel.sheet-panel {
   --menu-scrollbar-edge: 2px;
   --menu-scrollbar-color: var(--color-text-faint);
   --menu-scrollbar-color-hover: var(--color-text-muted);
+  /* Code blocks: upstream's floating scrollbar and edge fade, at its metric
+     (10px bar, 4px gap, 13px fade). Thumb tone is derived from the text colour
+     so it tracks the theme without a light/dark pair. */
+  --code-scrollbar-width: 10px;
+  --code-scrollbar-edge: 4px;
+  --code-scrollbar-color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  --code-scrollbar-color-hover: color-mix(in srgb, var(--color-text) 55%, transparent);
+  --code-edge-size: 13px;
+  --markdown-table-fade-size: 36px;
+  /* The mask recipes the code-scroll decor switches on are token-defined for
+     the same reason the menu fades are: gradients live here so components can
+     reference them without tripping the no-gradient rule. An edge fades in only
+     while that side still has something to scroll to; a wide table fades its
+     trailing edge instead of drawing a bar. Each value stays on its own line so
+     the guard sees one token definition rather than a stack of raw gradients. */
+  --markdown-code-edges-mask: linear-gradient(to bottom, rgb(0 0 0 / var(--markdown-edge-top, 0)), transparent var(--code-edge-size)), linear-gradient(to top, rgb(0 0 0 / var(--markdown-edge-bottom, 0)), transparent var(--code-edge-size)), linear-gradient(to right, rgb(0 0 0 / var(--markdown-edge-left, 0)), transparent var(--code-edge-size)), linear-gradient(to left, rgb(0 0 0 / var(--markdown-edge-right, 0)), transparent var(--code-edge-size));
+  --markdown-code-edge-ring-mask: linear-gradient(to bottom, rgb(0 0 0 / var(--markdown-edge-top, 0)), black var(--code-edge-size)), linear-gradient(to top, rgb(0 0 0 / var(--markdown-edge-bottom, 0)), black var(--code-edge-size)), linear-gradient(to right, rgb(0 0 0 / var(--markdown-edge-left, 0)), black var(--code-edge-size)), linear-gradient(to left, rgb(0 0 0 / var(--markdown-edge-right, 0)), black var(--code-edge-size));
+  --markdown-table-scroll-mask: linear-gradient(to right, black calc(var(--md-table-visible-end, 100%) - var(--md-table-fade-width, 0px)), transparent var(--md-table-visible-end, 100%));
   --menu-scroll-fade-mask-top: linear-gradient(
     to bottom,
     transparent 0,

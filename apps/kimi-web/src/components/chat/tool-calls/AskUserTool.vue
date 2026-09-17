@@ -23,6 +23,7 @@ import {
   resolveAnswer,
 } from './askUserToolParse';
 import ToolRow from '../ToolRow.vue';
+import ToolPanel from './ToolPanel.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -136,42 +137,44 @@ watch(
       <span v-if="chip" class="chip">{{ chip }}</span>
     </template>
 
-    <div v-if="isDismissed" class="au-dismissed">{{ output.note }}</div>
+    <ToolPanel scroll>
+      <div v-if="isDismissed" class="au-dismissed">{{ output.note }}</div>
 
-    <div v-else-if="recognized" class="au-list">
-      <div v-for="(q, qi) in questions" :key="qi" class="au-block">
-        <div class="au-q">
-          <span v-if="q.header" class="au-hdr">{{ q.header }}</span>
-          <span class="au-qtext">{{ q.question }}</span>
-        </div>
-        <div class="au-opts">
-          <div
-            v-for="(opt, oi) in q.options"
-            :key="oi"
-            class="au-opt"
-            :class="{ sel: isSelected(qi, oi) }"
-          >
-            <span class="au-glyph">{{ glyphFor(q.multiSelect, isSelected(qi, oi)) }}</span>
-            <span class="au-label">{{ opt.label }}</span>
-            <span v-if="opt.description" class="au-desc">{{ opt.description }}</span>
+      <div v-else-if="recognized" class="au-list">
+        <div v-for="(q, qi) in questions" :key="qi" class="au-block">
+          <div class="au-q">
+            <span v-if="q.header" class="au-hdr">{{ q.header }}</span>
+            <span class="au-qtext">{{ q.question }}</span>
           </div>
-          <div v-if="otherText(qi)" class="au-opt sel">
-            <span class="au-glyph">{{ glyphFor(q.multiSelect, true) }}</span>
-            <span class="au-label">{{ otherText(qi) }}</span>
-          </div>
-          <div v-if="isIndeterminate(qi)" class="au-opt sel">
-            <span class="au-glyph">●</span>
-            <span class="au-label">{{ t('tools.ask.answered') }}</span>
+          <div class="au-opts">
+            <div
+              v-for="(opt, oi) in q.options"
+              :key="oi"
+              class="au-opt"
+              :class="{ sel: isSelected(qi, oi) }"
+            >
+              <span class="au-glyph">{{ glyphFor(q.multiSelect, isSelected(qi, oi)) }}</span>
+              <span class="au-label">{{ opt.label }}</span>
+              <span v-if="opt.description" class="au-desc">{{ opt.description }}</span>
+            </div>
+            <div v-if="otherText(qi)" class="au-opt sel">
+              <span class="au-glyph">{{ glyphFor(q.multiSelect, true) }}</span>
+              <span class="au-label">{{ otherText(qi) }}</span>
+            </div>
+            <div v-if="isIndeterminate(qi)" class="au-opt sel">
+              <span class="au-glyph">●</span>
+              <span class="au-label">{{ t('tools.ask.answered') }}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Not the answer payload (background launch / error): show the raw tool
-         output instead of an empty option list. -->
-    <div v-else class="au-raw">
-      <div v-for="(line, i) in tool.output ?? []" :key="i">{{ line }}</div>
-    </div>
+      <!-- Not the answer payload (background launch / error): show the raw tool
+           output instead of an empty option list. -->
+      <div v-else class="au-raw">
+        <div v-for="(line, i) in tool.output ?? []" :key="i">{{ line }}</div>
+      </div>
+    </ToolPanel>
   </ToolRow>
 </template>
 

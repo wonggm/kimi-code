@@ -2,11 +2,12 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue';
 import type { FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
-import { toolChip, toolGlyph, toolHeadParts, toolLabel, toolSummary } from '../../../lib/toolMeta';
+import { normalizeToolName, toolChip, toolGlyph, toolHeadParts, toolLabel, toolSummary } from '../../../lib/toolMeta';
 import type { DetachTaskTarget } from '../../../lib/detachTarget';
 import { useI18n } from 'vue-i18n';
 import ToolRow from '../ToolRow.vue';
 import ToolOutputBlock from './ToolOutputBlock.vue';
+import ToolPanel from './ToolPanel.vue';
 
 const { t } = useI18n();
 
@@ -73,6 +74,12 @@ const head = computed(() => toolHeadParts(props.tool.name, props.tool.arg));
 const fullPath = computed(() => toolSummary(props.tool.name, props.tool.arg, true));
 const isRead = computed(() => /^read$/i.test(props.tool.name));
 const isSearch = computed(() => /^(grep|search)$/i.test(props.tool.name));
+const isBash = computed(() => /^bash$/i.test(props.tool.name));
+const panelTitle = computed(() => {
+  if (isRead.value) return head.value.file || fullPath.value;
+  if (isBash.value) return props.tool.name;
+  return '';
+});
 const command = computed(() => {
   try {
     const raw = JSON.parse(props.tool.arg) as Record<string, unknown>;
@@ -91,6 +98,12 @@ const chip = computed(() =>
     status: props.tool.status,
   }),
 );
+// Upstream prints the read/search count in the row's head, beside the path,
+// and leaves the tail chip to the running bash command's timing.
+const leadFaint = computed(() => {
+  const name = normalizeToolName(props.tool.name);
+  return name === 'read' || name === 'grep' || name === 'search' ? chip.value : '';
+});
 
 function toggle(): void {
   if (!canExpand.value) return;
@@ -114,6 +127,7 @@ watch(
     :file="head.file"
     :dir="head.dir"
     :mono="head.mono"
+    :faint="leadFaint"
     :arg="!open ? summary : ''"
     :time="tool.name !== 'bash' ? tool.timing : ''"
     :open="open"
@@ -121,20 +135,22 @@ watch(
     @toggle="toggle"
   >
     <template #trailing>
-      <span v-if="chip" class="chip tl-chip">{{ chip }}</span>
+      <span v-if="chip && !leadFaint" class="chip tl-chip">{{ chip }}</span>
       <button v-if="canDetach" type="button" class="gt-detach" @click.stop="emit('detachTask', { toolCallId: tool.id, command: bashInput.command })">
         {{ t('tasks.sendToBackground') }}
       </button>
     </template>
-    <button v-if="isRead && fullPath" type="button" class="path-link" @click="emit('openFile', { path: fullPath })">{{ fullPath }}</button>
-    <div v-if="!isRead && !isSearch && command" class="cmd-echo">{{ command }}</div>
-    <div v-if="isSearch" class="match-list">
-      <button v-for="(line, i) in tool.output ?? []" :key="i" type="button" class="match-row">
-        <span class="mtext">{{ line }}</span>
-      </button>
-      <div v-if="!(tool.output ?? []).length" class="match-empty">{{ t('tools.output.waiting') }}</div>
-    </div>
-    <ToolOutputBlock v-else :lines="tool.output" empty-text="Waiting for output…" />
+    <ToolPanel :title="panelTitle" :scroll="!isBash">
+      <button v-if="isRead && fullPath" type="button" class="path-link" @click="emit('openFile', { path: fullPath })">{{ fullPath }}</button>
+      <div v-if="!isRead && !isSearch && command" class="cmd-echo">{{ command }}</div>
+      <div v-if="isSearch" class="match-list">
+        <button v-for="(line, i) in tool.output ?? []" :key="i" type="button" class="match-row">
+          <span class="mtext">{{ line }}</span>
+        </button>
+        <div v-if="!(tool.output ?? []).length" class="match-empty">{{ t('tools.output.waiting') }}</div>
+      </div>
+      <ToolOutputBlock v-else :lines="tool.output" empty-text="Waiting for output…" />
+    </ToolPanel>
   </ToolRow>
 </template>
 

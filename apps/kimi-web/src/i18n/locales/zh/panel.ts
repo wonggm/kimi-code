@@ -9,6 +9,7 @@ export default {
     compaction: '压缩摘要',
     agent: '子 Agent',
     term: '终端',
+    browser: '浏览器',
     // Fork keys still referenced by the pre-merge shell and its panes.
     changes: '改动',
     sideChat: '侧栏会话',
@@ -19,6 +20,9 @@ export default {
   },
   newTab: '新建标签页',
   closeTab: '关闭标签页',
+  closeOthers: '关闭其他标签页',
+  closeToRight: '关闭右侧标签页',
+  closeAll: '关闭所有标签页',
   expand: '展开面板',
   collapse: '恢复面板',
   hide: '关闭右侧面板',

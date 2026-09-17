@@ -17,6 +17,20 @@
 //   MOCK_GOAL_STATUS=active|paused|blocked|complete
 //                      the goal's state; the apps draw a different panel per
 //                      state, so each is a separate pass (default active)
+//   MOCK_BROWSER=0     drop the in-app browser fixtures. On by default: a
+//                      browser tool call in the transcript (the agent opening a
+//                      page, clicking a control, then reading the downloads and
+//                      the history), a browser reference attached to the
+//                      original session's prompt alongside the composer
+//                      snapshot it resolves through, and a fourth session row
+//                      whose pending approval is a browser action. Together
+//                      these are the whole browser surface either app can
+//                      render: the tool card, the reference pill with its
+//                      details dialog, and the approval card. Upstream's
+//                      browser *panel* (tab strip, address bar, downloads and
+//                      history views) is not in its web bundle at all — only
+//                      the tab kind and its labels are — so no fixture can pose
+//                      it.
 //   MOCK_PENDING=1     add the pending question + approval cards to the original
 //                      session. Off by default: the fork's ChatDock renders
 //                      `<Composer v-else>`, so a pending card replaces the
@@ -44,14 +58,16 @@
 //                      by default, because a queued prompt changes what the
 //                      transcript tail renders.
 //
-// The session list carries three rows in one workspace: the rich fixture session
-// ("Code block header probe") plus two rows that exist so either app can show a
-// pending card — "Pending question (mock)" and "Pending approval (mock)". Each of
-// the two serves every per-session route with the rich transcript and one pending
-// card at the bottom of it, so a manual pass sees a card by opening its row.
+// The session list carries four rows in one workspace: the rich fixture session
+// ("Code block header probe") plus three rows that exist so either app can show a
+// pending card — "Pending question (mock)", "Pending approval (mock)" and
+// "Pending browser approval (mock)", whose card is an in-app browser action
+// (MOCK_BROWSER=0 drops that row). Each of the three serves every per-session
+// route with the rich transcript and one pending card at the bottom of it, so a
+// manual pass sees a card by opening its row.
 // The comparison walk lists them too; it never enters a session by accident,
 // because discovery ignores everything inside a session row (`DISCOVER_EXPR` in
-// surfaces.mjs), and the two rows are opened on purpose by the pending-card
+// surfaces.mjs), and the rows are opened on purpose by the pending-card
 // behaviour scenes in that file.
 //   MOCK_LIVE_EXCHANGE_NODUR=1  with MOCK_LIVE_EXCHANGE=1, close the live
 //                      exchange without the daemon's own duration, so the
@@ -86,7 +102,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm', '.riv': 'application/octet-stream', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.map': 'application/json' };
@@ -136,6 +151,176 @@ const QUESTION_SESSION_ID = 'session_mock_question0000000000';
 const APPROVAL_SESSION_ID = 'session_mock_approval0000000000';
 const QUESTION_SESSION_TITLE = 'Pending question (mock)';
 const APPROVAL_SESSION_TITLE = 'Pending approval (mock)';
+// The browser row (MOCK_BROWSER=0 drops it): its pending approval is an in-app
+// browser action, which is the only browser card either app can be posed with
+// that is not a transcript tool call.
+const BROWSER_SESSION_ID = 'session_mock_browser0000000000';
+const BROWSER_SESSION_TITLE = 'Pending browser approval (mock)';
+
+// ---------------------------------------------------------------------------
+// In-app browser fixtures (MOCK_BROWSER=0 drops them)
+//
+// The browser reaches the transcript as one MCP tool call whose input is a
+// `kimi.browser/1.0.0` action and whose output is a JSON envelope. The mock
+// serves both ends the way the engine would, so the card both apps draw (and
+// the approval card) renders from real labels and real detail lines.
+// ---------------------------------------------------------------------------
+
+const BROWSER_PROTOCOL = 'kimi.browser/1.0.0';
+const BROWSER_TAB = { tabId: 'tab_mock_1', url: 'https://example.test/pricing', title: 'Example pricing' };
+
+/** One browser tool call: the action the agent ran and the envelope it got
+ *  back. `input` is the protocol action, `output` the result JSON. */
+function browserCall(operation, input, output) {
+  return {
+    input: { protocol: BROWSER_PROTOCOL, operation, tabId: BROWSER_TAB.tabId, ...input },
+    output: JSON.stringify(output),
+  };
+}
+
+const BROWSER_CALLS = [
+  browserCall(
+    'tab.navigate',
+    { url: BROWSER_TAB.url },
+    { ok: true, tab: BROWSER_TAB, browser: { tabs: [BROWSER_TAB] } },
+  ),
+  browserCall(
+    'page.visual.click_if_interactive',
+    { snapshotId: 'snap_mock_1', ref: 'e3', x: 412, y: 268 },
+    {
+      ok: true,
+      tab: BROWSER_TAB,
+      click: {
+        outcome: 'clicked',
+        elementsSnapshotId: 'snap_mock_1',
+        target: { ref: 'e3', name: 'Start free trial', tagName: 'button' },
+        nearby: [],
+      },
+    },
+  ),
+  browserCall(
+    'browser.get_downloads',
+    {},
+    {
+      ok: true,
+      tab: BROWSER_TAB,
+      downloads: [
+        { id: 'dl_mock_1', filename: 'pricing.pdf', url: 'https://example.test/pricing.pdf', state: 'completed', receivedBytes: 48213, totalBytes: 48213 },
+        { id: 'dl_mock_2', filename: 'datasheet.pdf', url: 'https://example.test/datasheet.pdf', state: 'progressing', receivedBytes: 12000, totalBytes: 64000 },
+      ],
+    },
+  ),
+  browserCall(
+    'browser.get_history',
+    {},
+    {
+      ok: true,
+      tab: BROWSER_TAB,
+      history: [
+        { url: BROWSER_TAB.url, title: BROWSER_TAB.title, visitedAt: new Date().toISOString() },
+        { url: 'https://example.test/', title: 'Example', visitedAt: new Date().toISOString() },
+      ],
+    },
+  ),
+];
+
+/** The pending browser approval: the same shape the mock's other approvals use,
+ *  with upstream's browser branch — `toolName` names the browser tool and the
+ *  action itself rides in `display.detail`. */
+function browserApprovalMock(sessionId, now) {
+  const call = browserCall('browser.get_device_profiles', {}, {
+    ok: true,
+    devices: [
+      { id: 'iphone-16-pro', label: 'iPhone 16 Pro / 17 / 17 Pro', width: 393, height: 852, deviceScaleFactor: 3 },
+      { id: 'desktop-1440', label: 'Desktop 1440 × 900', width: 1440, height: 900, deviceScaleFactor: 1 },
+    ],
+  });
+  return {
+    approval_id: 'appr_mock_browser_1',
+    session_id: sessionId,
+    turn_id: 2,
+    tool_call_id: 'tc_browser_approval_1',
+    tool_name: 'mcp__desktop_browser__run',
+    action: 'List the device presets the browser can emulate',
+    tool_input_display: { kind: 'browser', detail: call.input },
+    expires_at: now,
+    created_at: now,
+  };
+}
+
+/** The browser reference on the original session's prompt: one element captured
+ *  on a page, attached to the message. `reference` and `capture` ride in the
+ *  message's composer snapshot (the key upstream reads), and the same reference
+ *  is written into the prompt text as the inline link both apps render as a
+ *  pill. */
+const BROWSER_REFERENCE_ID = 'br_mock_1';
+const BROWSER_CAPTURE_ID = 'bc_mock_1';
+const BROWSER_REFERENCE_LABEL = 'Start free trial';
+const BROWSER_REFERENCE_COMMENT = 'Use this button as the primary action.';
+const BROWSER_SCREENSHOT_ATT_ID = 'att_mock_browser_shot';
+
+function browserComposerSnapshot(capturedAt) {
+  const reference = { id: BROWSER_REFERENCE_ID, captureId: BROWSER_CAPTURE_ID, comment: BROWSER_REFERENCE_COMMENT, includeScreenshot: true };
+  const capture = {
+    version: 1,
+    id: BROWSER_CAPTURE_ID,
+    ordinal: 1,
+    label: BROWSER_REFERENCE_LABEL,
+    capturedAt,
+    page: { url: BROWSER_TAB.url, title: BROWSER_TAB.title },
+    target: {
+      kind: 'element',
+      tagName: 'button',
+      role: 'button',
+      accessibleName: BROWSER_REFERENCE_LABEL,
+      text: BROWSER_REFERENCE_LABEL,
+      locator: { selector: 'main > section.hero > button.cta', xpath: '/html/body/main/section[1]/button[1]' },
+      bounds: { x: 380, y: 240, width: 168, height: 44 },
+    },
+    viewport: { width: 1280, height: 800, scrollX: 0, scrollY: 0, zoomFactor: 1, devicePixelRatio: 1 },
+    screenshot: { attachmentId: BROWSER_SCREENSHOT_ATT_ID, pixelWidth: 168, pixelHeight: 44 },
+  };
+  return {
+    version: 1,
+    doc: {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: BROWSER_PROMPT_TEXT }] },
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'browser_reference', attrs: { refId: BROWSER_REFERENCE_ID, label: BROWSER_REFERENCE_LABEL } },
+            { type: 'text', text: ' ' },
+          ],
+        },
+      ],
+    },
+    attachments: [
+      {
+        attId: BROWSER_SCREENSHOT_ATT_ID,
+        key: 'file:mock:browser-shot',
+        kind: 'image',
+        name: 'browser-bc_mock_1.png',
+        purpose: 'browser-screenshot',
+        fileId: 'mock_media_1',
+        sessionId: SESSION_ID,
+        mediaType: 'image/png',
+        size: 2048,
+        refCount: 0,
+        uploading: false,
+      },
+    ],
+    attachmentOrder: [BROWSER_SCREENSHOT_ATT_ID],
+    browserReferences: [reference],
+    browserCaptures: [capture],
+  };
+}
+
+/** The prompt both apps render the reference pill in. The link is the inline
+ *  form the composer writes and the message text carries; the snapshot above
+ *  spells the same reference out for the app that renders from it. */
+const BROWSER_PROMPT_TEXT = 'Show me a config example.';
+const BROWSER_REFERENCE_LINK = `[${BROWSER_REFERENCE_LABEL}](kimi-code-composer://browser-references/${BROWSER_REFERENCE_ID})`;
 
 const HEARTBEAT_MS = 30000;
 const PING_INTERVAL_MS = 15000;
@@ -209,14 +394,14 @@ const STEP_SPAN_MS = 3_000;
  *  `status` is the part the apps render differently per state (active / paused /
  *  blocked / complete), so MOCK_GOAL_STATUS selects it — a manual pass or a scene
  *  run with `MOCK_GOAL_STATUS=paused` sees that state's panel. */
-const GOAL_STATUSES = ['active', 'paused', 'blocked', 'complete'];
+const GOAL_STATUSES = new Set(['active', 'paused', 'blocked', 'complete']);
 
 function goalMock(status = 'active') {
   return {
     goalId: 'goal_mock_1',
     objective: 'Reduce the pion-production systematic uncertainty below 3% for the CDR — refit the hadronic interaction model against the thin-target data and propagate through the full simulation chain.',
     completionCriterion: 'Fit converges with chi2/ndf < 1.5 and the propagated uncertainty band on the yield is under 3%.',
-    status: GOAL_STATUSES.includes(status) ? status : 'active',
+    status: GOAL_STATUSES.has(status) ? status : 'active',
     turnsUsed: 7,
     turns_used: 7,
     tokensUsed: 182340,
@@ -306,6 +491,7 @@ function buildFixtures(env) {
   const queuedOn = env.MOCK_QUEUED === '1';
   const liveExchange = env.MOCK_LIVE_EXCHANGE === '1';
   const busyOn = env.MOCK_BUSY === '1' || queuedOn || liveExchange;
+  const browserOn = env.MOCK_BROWSER !== '0';
 
   const session = {
     id: SESSION_ID,
@@ -408,9 +594,15 @@ function buildFixtures(env) {
     messages: {
       items: env.MOCK_EMPTY === '1' ? [] : [
         { id: 'm1', session_id: SESSION_ID, role: 'user', content: [
-          { type: 'text', text: 'Show me a config example.' },
+          // The browser reference (MOCK_BROWSER=0 drops it) is written into the
+          // prompt text as the inline link both apps render as a pill, and
+          // spelled out in the message's composer snapshot for the app that
+          // resolves the pill's capture from there.
+          { type: 'text', text: browserOn ? `${BROWSER_PROMPT_TEXT}\n\n${BROWSER_REFERENCE_LINK}` : BROWSER_PROMPT_TEXT },
           { type: 'image', source: { kind: 'session_media', file_id: 'mock_media_1' } },
-        ], created_at: now },
+        ],
+        metadata: browserOn ? { 'kimiWeb.composerSnapshot': JSON.stringify(browserComposerSnapshot(now)) } : undefined,
+        created_at: now },
         // `prompt_id` is what the fork groups a reply by: without it, every
         // assistant message belongs to one open group, and the live exchange
         // below (MOCK_LIVE_EXCHANGE=1, its own prompt id) would be folded into
@@ -469,6 +661,17 @@ function buildFixtures(env) {
           { type: 'tool_result', tool_call_id: 'tc_goalbudget_1', output: 'Budget set: 500000 tokens.', is_error: false },
           { type: 'tool_use', tool_call_id: 'tc_goalbudget_2', tool_name: 'SetGoalBudget', input: { value: 30, unit: 'minutes' } },
           { type: 'tool_result', tool_call_id: 'tc_goalbudget_2', output: 'Wall-clock budget set: 30 minutes.', is_error: false },
+          // The in-app browser's calls (MOCK_BROWSER=0 drops them): the agent
+          // opens a page, clicks a control, then reads the downloads and the
+          // history. Each one draws the browser tool card; the labels come from
+          // the protocol action, so "Read downloads" and "Read browsing history"
+          // are reachable even though neither app has a downloads view of its own.
+          ...(browserOn
+            ? BROWSER_CALLS.flatMap((call, i) => [
+                { type: 'tool_use', tool_call_id: `tc_browser_${i + 1}`, tool_name: 'mcp__desktop_browser__run', input: call.input },
+                { type: 'tool_result', tool_call_id: `tc_browser_${i + 1}`, output: call.output, is_error: false },
+              ])
+            : []),
           { type: 'text', text: CODE_MD },
         ], created_at: now },
         ...(env.MOCK_MANY_TURNS === '1'
@@ -533,6 +736,11 @@ function buildFixtures(env) {
   const approvalCard = approvalMock(APPROVAL_SESSION_ID, now);
   const questionVariant = variant(QUESTION_SESSION_ID, QUESTION_SESSION_TITLE, [], [questionCard], [questionInteraction(questionCard)]);
   const approvalVariant = variant(APPROVAL_SESSION_ID, APPROVAL_SESSION_TITLE, [approvalCard], [], [approvalInteraction(approvalCard)]);
+  // The browser row's card is a browser action, so its approval block, its
+  // transcript interaction and the card the fork renders all come from the same
+  // fixture the transcript's browser tool calls do.
+  const browserCard = browserApprovalMock(BROWSER_SESSION_ID, now);
+  const browserVariant = variant(BROWSER_SESSION_ID, BROWSER_SESSION_TITLE, [browserCard], [], [approvalInteraction(browserCard)]);
 
   const config = {
     providers: { example: { type: '', base_url: 'https://example.com/v1', has_api_key: true } },
@@ -660,11 +868,11 @@ function buildFixtures(env) {
     ? { turnId: LIVE_TURN_ID, durationMs: LIVE_TURN_MS, endAfterMs: 3_600, seq: 4 }
     : null;
 
-  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt, liveTurn };
+  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, browserVariant, browserOn, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt, liveTurn };
 }
 
 function createHandler({ root, token, env, fixtures }) {
-  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt } = fixtures;
+  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, browserVariant, browserOn, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt } = fixtures;
   // MOCK_RICH=0 turns the extra fixtures off, leaving the fixture body the walk
   // was originally built against; the three session rows are always listed.
   const richOn = env.MOCK_RICH !== '0';
@@ -725,7 +933,6 @@ function createHandler({ root, token, env, fixtures }) {
     },
     created_at: iso,
     updated_at: iso,
-    meta: { ...session.meta, created_at: iso, updated_at: iso },
   });
   const nowIso = () => new Date().toISOString();
   // The same per-response re-stamp for the two extra rows, which carry no
@@ -754,6 +961,7 @@ function createHandler({ root, token, env, fixtures }) {
       : [
           { id: QUESTION_SESSION_ID, ...questionVariant },
           { id: APPROVAL_SESSION_ID, ...approvalVariant },
+          ...(browserOn ? [{ id: BROWSER_SESSION_ID, ...browserVariant }] : []),
         ]),
   ];
   const sessionById = new Map(sessions.map((entry) => [entry.id, entry]));
@@ -899,7 +1107,7 @@ function createHandler({ root, token, env, fixtures }) {
         // Session metadata write (the fork posts the pin / emoji / title here;
         // upstream posts the same shape). Recorded so the next GET reflects it.
         if (sub === 'profile' && req.method === 'POST') {
-          readBody(req).then((body) => {
+          void readBody(req).then((body) => {
             if (typeof body?.title === 'string') sessionState.title = body.title;
             const pinned = body?.metadata?.pinned;
             if (typeof pinned === 'boolean') sessionState.pinned = pinned;
@@ -930,7 +1138,7 @@ function createHandler({ root, token, env, fixtures }) {
         if (sub === 'fs:diff') {
           // The diff pane's per-file route (POST .../fs:diff), so the drill into
           // one file shows lines instead of its "no line changes" state.
-          readBody(req).then((body) => {
+          void readBody(req).then((body) => {
             const wanted = typeof body?.path === 'string' ? body.path : 'file';
             return json(res, {
               path: wanted,
@@ -954,7 +1162,7 @@ function createHandler({ root, token, env, fixtures }) {
           // The file preview's route (POST .../fs:read). Serving it is what makes
           // the panel's file tab and the transcript's file links show content
           // instead of their load-error state.
-          readBody(req).then((body) => {
+          void readBody(req).then((body) => {
             const wanted = typeof body?.path === 'string' ? body.path : '';
             const text = mockFileText(wanted);
             json(res, {
@@ -990,7 +1198,14 @@ function createHandler({ root, token, env, fixtures }) {
           return json(res, {
             agent_id: 'main',
             items: [
-              { kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed', origin: { kind: 'user' }, prompt: 'Show me a config example.', steps: [], startedAt: now, endedAt: now },
+              { kind: 'turn', turnId: 't1', ordinal: 0, state: 'completed',
+                // The browser reference travels with the prompt text of the turn
+                // it opened, and the composer snapshot that resolves it rides on
+                // the turn's origin — the key upstream reads it from. The fork's
+                // pill resolves through the snapshot message's metadata instead.
+                origin: browserOn ? { kind: 'user', clientMetadata: [{ kimi_code_composer: JSON.stringify(browserComposerSnapshot(now)) }] } : { kind: 'user' },
+                prompt: browserOn ? `${BROWSER_PROMPT_TEXT}\n\n${BROWSER_REFERENCE_LINK}` : BROWSER_PROMPT_TEXT,
+                steps: [], startedAt: now, endedAt: now },
               { kind: 'turn', turnId: 't2', ordinal: 1, state: 'completed', origin: { kind: 'user' },
                 // The prompt that opened this reply: the same id the snapshot
                 // stamps on the assistant message (`prompt_id`), which is how
@@ -1041,6 +1256,20 @@ function createHandler({ root, token, env, fixtures }) {
                   { kind: 'tool', frameId: 's1.tc_getgoal_1', toolCallId: 'tc_getgoal_1', name: 'GetGoal', state: 'done', input: { goalId: 'goal_mock_1' }, output: JSON.stringify(goal) },
                   { kind: 'tool', frameId: 's1.tc_goalbudget_1', toolCallId: 'tc_goalbudget_1', name: 'SetGoalBudget', state: 'done', input: { value: 500000, unit: 'tokens' }, output: 'Budget set: 500000 tokens.' },
                   { kind: 'tool', frameId: 's1.tc_goalbudget_2', toolCallId: 'tc_goalbudget_2', name: 'SetGoalBudget', state: 'done', input: { value: 30, unit: 'minutes' }, output: 'Wall-clock budget set: 30 minutes.' },
+                  // The browser calls, matching the snapshot's tool_use parts
+                  // (MOCK_BROWSER=0 drops them). `state` follows the shared
+                  // frame contract: running | done | error.
+                  ...(browserOn
+                    ? BROWSER_CALLS.map((call, i) => ({
+                        kind: 'tool',
+                        frameId: `s1.tc_browser_${i + 1}`,
+                        toolCallId: `tc_browser_${i + 1}`,
+                        name: 'mcp__desktop_browser__run',
+                        state: 'done',
+                        input: call.input,
+                        output: call.output,
+                      }))
+                    : []),
                   { kind: 'text', frameId: 'f1', role: 'assistant', text: CODE_MD },
                 ] },
               ], startedAt: timingOn ? atOffset(LIVE_TURN_MS) : now, endedAt: timingOn ? atOffset(0) : now },
@@ -1293,7 +1522,7 @@ export function startMock({ root, port, token, env } = {}) {
   });
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {
   try {
     const { url } = await startMock({ env: process.env });
     console.log(`mock url ${url}`);
