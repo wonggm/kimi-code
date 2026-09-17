@@ -634,27 +634,27 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
    are labelled `button.ui-pill`s, not icon squares: the label is visible text and
    the state is a chip beside it (`dw-running` with the accent dot for a running
    count, `dw-count` for plain text such as "1/3"). Geometry, typography and
-   material are upstream's own: radius `--radius-lg`, padding `--space-2` /
-   `--space-3`, base font size, a `--color-hover` overlay for hover and the active
-   pill, the icon at 1.5em, and its `--color-selected` fill behind the menu
-   backdrop. */
+   material are upstream's own: radius `--radius-dock-pill`, padding
+   `--space-1` / `--space-2`, base font size on upstream's 1.42 line box, the
+   icon at `--p-ic-dock`, and a `--color-hover` fill that also carries hover and
+   the active pill through the `::after` overlay. */
 .dock-workbar .ui-pill {
   position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: var(--space-2) calc(var(--space-3) + var(--space-05)) var(--space-2) var(--space-3);
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
   border: none;
-  border-radius: var(--radius-lg);
-  background: var(--color-selected);
+  border-radius: var(--radius-dock-pill);
+  background: var(--color-hover);
   -webkit-backdrop-filter: var(--p-menu-backdrop);
   backdrop-filter: var(--p-menu-backdrop);
   color: var(--color-text);
   font-family: var(--font-ui);
   font-size: var(--text-base);
-  font-weight: var(--weight-medium);
-  line-height: var(--leading-normal);
+  font-weight: var(--weight-regular);
+  line-height: round(calc(var(--text-base) * 1.42), 1px);
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -662,8 +662,8 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
     transform var(--duration-spring-responsive) var(--spring-responsive);
 }
 .dock-workbar .ui-pill > svg {
-  width: 1.5em;
-  height: 1.5em;
+  width: var(--p-ic-dock);
+  height: var(--p-ic-dock);
   color: inherit;
 }
 /* Phone: upstream keeps the same pills and hides the text, leaving a 37px icon
@@ -678,7 +678,7 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-dock-pill);
   background: var(--color-hover);
   opacity: 0;
   transition: opacity var(--duration-base) var(--ease-out);
@@ -688,9 +688,6 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 .dock-workbar .ui-pill.is-active::after {
   opacity: 1;
 }
-.dock-workbar .ui-pill.is-active {
-  color: var(--color-accent);
-}
 .dock-workbar .ui-pill:focus-visible {
   outline: none;
   box-shadow: var(--p-focus-ring);
@@ -698,12 +695,11 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 .dock-workbar .ui-pill .dw-running {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  color: var(--color-text-muted);
+  gap: var(--space-1-5);
+  color: var(--color-text);
 }
 .dock-workbar .ui-pill .dw-count {
   color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
 }
 .dock-workbar .ui-pill.is-active .dw-running,
 .dock-workbar .ui-pill.is-active .dw-count {
@@ -711,9 +707,6 @@ html[data-liquid-glass="on"] .chat-dock.chat-dock {
 }
 /* The goal pill's status word carries the state's colour — the pill itself
    stays upstream-neutral. */
-.dock-workbar .dw-goal-status {
-  font-weight: var(--weight-medium);
-}
 .dock-workbar .dw-goal-status--active {
   color: var(--color-success);
 }
