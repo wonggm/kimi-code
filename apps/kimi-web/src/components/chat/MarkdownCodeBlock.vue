@@ -241,7 +241,7 @@ const SHADOW_CSS = `
   :host(.mdcb-wrap) [data-code], :host(.mdcb-wrap) [data-content], :host(.mdcb-wrap) [data-content] span { white-space: pre-wrap !important; overflow-wrap: anywhere; }
   :host(.mdcb-nowrap) [data-code], :host(.mdcb-nowrap) [data-content] { white-space: pre !important; }
   :host(.mdcb-nowrap) [data-content] span, :host(.mdcb-nowrap) [data-content] div { white-space: pre !important; }
-  :where(.md-code-scroll-viewport) { scrollbar-width: none; }
+  :host(.md-code-scroll-viewport) { scrollbar-width: none; }
   :where(.md-code-scroll-viewport)::-webkit-scrollbar { display: none; }
 `;
 
@@ -446,12 +446,12 @@ const ACTION_BTN_CLASS =
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-ui);
-  /* Upstream's title measures 13px — the same size as its code text, one step
-     under its 14px body scale. Ours is --text-sm (13px), so the label takes it
-     directly rather than the +1px step off the base that predates this
-     measurement. */
-  font-size: var(--text-sm);
+  /* Upstream's title takes the header's own size (16px), one step over its
+     12px code text, and the block's text colour rather than the muted one the
+     header's controls use. */
+  font-size: var(--markdown-code-header-font-size);
   font-weight: var(--weight-medium);
+  color: var(--color-text);
 }
 .mdcb-glyph {
   display: inline-flex;
@@ -465,15 +465,19 @@ const ACTION_BTN_CLASS =
    controls' box, so both selectors carry the same declarations. */
 .code-action-btn,
 .mdcb-btn {
-  width: 26px;
-  height: 26px;
+  /* The package's own defaults for these names sit on the button, so they are
+     re-declared here rather than only at the renderer. */
+  --markdown-code-action-size: 26px;
+  --markdown-code-action-radius: 8px;
+  width: var(--markdown-code-action-size);
+  height: var(--markdown-code-action-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--markdown-code-action-radius);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--markdown-code-action-fg);
   cursor: pointer;
   /* upstream's .code-action-btn: 26x26 with 6px padding around a 14px glyph */
   padding: 6px;

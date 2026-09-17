@@ -561,15 +561,14 @@ function copyDiff(code: string, idx: number) {
 }
 .md :deep(.markstream-vue),
 .md :deep(.markdown-renderer) {
-  --code-bg: var(--code-surface);
+  --code-bg: var(--code-block-surface);
   --code-fg: var(--color-text);
   --code-border: var(--code-line);
-  /* Upstream's code header takes the same surface as the block body in light
-     mode and its raised surface in dark; `--color-well` is that pair. */
-  --code-header-bg: var(--color-well);
-  --code-action-fg: var(--code-ink-muted);
+  /* Upstream's code header sits on the same surface as the block body, at 90%. */
+  --code-header-bg: var(--code-block-header-surface);
+  --code-action-fg: var(--code-block-action-ink);
   --code-action-hover-fg: var(--color-accent);
-  --markstream-code-fallback-bg: var(--code-surface);
+  --markstream-code-fallback-bg: var(--code-block-surface);
   --markstream-code-fallback-fg: var(--color-text);
   --markstream-code-border-color: var(--code-line);
   --inline-code-bg: var(--code-surface);
@@ -684,47 +683,70 @@ function copyDiff(code: string, idx: number) {
 .md :deep(.code-block-container) {
   margin: 0.6em 0;
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-sunken);
-  box-shadow: var(--shadow-xs);
+  border-radius: var(--markdown-code-radius);
+  background: var(--markdown-code-background);
+  /* Upstream's own rule asks for `--ms-shadow-subtle`, which its app leaves
+     undefined, so the block renders flat. */
+  box-shadow: none;
   overflow: hidden;
-  --vscode-editor-font-size: var(--text-sm);
-  --vscode-editor-line-height: calc(var(--text-sm) * var(--leading-normal));
-  /* Pierre's own default is rem-based, so it rendered 12px here while upstream
-     renders 13px (their root is fixed). Pin both to upstream's measured line
-     box: 13px text on a 20px line. */
-  --diffs-font-size: var(--text-sm);
-  --diffs-line-height: 20px;
+  /* The package defines this token set itself, on this very element, so the
+     binding has to sit here — a renderer-level one loses to it. */
+  --markdown-code-radius: 1rem;
+  --markdown-code-background: var(--code-block-surface);
+  --markdown-code-header-background: var(--code-block-header-surface);
+  --markdown-code-font-size: 12px;
+  --markdown-code-header-font-size: 16px;
+  --markdown-code-line-height: 1.5714;
+  --markdown-code-action-size: 26px;
+  --markdown-code-action-radius: 8px;
+  --markdown-code-action-fg: var(--code-block-action-ink);
+  --markdown-code-scrollbar-size: 10px;
+  --markdown-code-scrollbar-idle-size: 4px;
+  --markdown-code-scrollbar-thumb: var(--code-block-scrollbar-thumb);
+  --vscode-editor-font-size: var(--markdown-code-font-size);
+  --vscode-editor-line-height: calc(var(--markdown-code-font-size) * var(--markdown-code-line-height));
+  /* Pierre's own default is rem-based, so it renders the code at its own size;
+     upstream pins the block to 12px on its 22/14 line box. */
+  --diffs-font-size: var(--markdown-code-font-size);
+  --diffs-line-height: var(--markdown-code-line-height);
 }
 .md :deep(.code-block-header) {
-  /* Upstream's header takes `--code-header-bg` (its neutral code surface, the
-     block's own in light mode) and a `--code-border` hairline; ours painted the
-     bluish `--color-surface`, so the header read as a lighter band. */
-  background: var(--code-header-bg);
-  border-bottom: 1px solid var(--code-border);
-  padding: 4px 6px 4px 12px;
-  color: var(--color-text-muted);
-  font: var(--text-xs) var(--font-ui);
+  /* Re-bound on the header itself: the package defines the same names deeper in
+     the tree (on the container and the header), where a renderer-level binding
+     cannot reach. */
+  --markdown-code-header-font-size: 16px;
+  --markdown-code-action-size: 26px;
+  --markdown-code-action-radius: 8px;
+  background: var(--markdown-code-header-background);
+  border-radius: var(--markdown-code-radius) var(--markdown-code-radius) 0 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  color: var(--code-action-fg);
+  font: var(--markdown-code-header-font-size) var(--font-ui);
 }
 /* The code body wrapper was renamed in 1.0.9: `.code-block-content` is gone,
    the shiki (stream-diffs) block now mounts under `.code-block-shell-content`. */
 .md :deep(.code-block-shell-content),
 .md :deep(pre[data-markstream-pre]) {
   /* Upstream's block is ONE surface: header and code body share the surface
-     token, and the sunken container token shows only as the 1px frame.
-     Painting the body sunken left a visible step under the header. */
-  background: var(--color-surface);
+     token, and the 1px container border is the only frame. */
+  background: var(--markdown-code-background);
 }
 /* Pierre renders the highlighted code inside a shadow root. Its native gap
    variable inherits through that boundary (the Monaco padding option does not,
    it only reaches the loading fallback), so the highlighted body takes its
    vertical inset from --code-pad-block, the upstream metric. */
 .md :deep(.code-editor-container) {
-  line-height: var(--leading-normal);
+  /* Same re-binding as the header: the package's own defaults for these names
+     sit on this element, so they have to be re-declared here to take. */
+  --markdown-code-font-size: 12px;
+  --markdown-code-line-height: 1.5714;
+  font-size: var(--markdown-code-font-size);
+  line-height: var(--markdown-code-line-height);
+  --diffs-font-size: var(--markdown-code-font-size);
   --diffs-gap-block: var(--code-pad-block);
 }
 .md :deep(.code-editor-container diffs-container) {
-  --diffs-line-height: var(--leading-normal);
+  --diffs-line-height: var(--markdown-code-line-height);
 }
 /* Loading/streaming fallback <pre>: upstream hardcodes show-line-numbers on
    it while the settled stream-diffs block honors lineNumbers:false — the
@@ -813,7 +835,7 @@ function copyDiff(code: string, idx: number) {
   position: absolute;
   pointer-events: none;
   overflow: hidden;
-  border-end-end-radius: inherit;
+  border-radius: 0 0 var(--markdown-code-radius) var(--markdown-code-radius);
   mask-image: var(--markdown-code-edges-mask);
 }
 .md :deep(.md-code-edges[hidden]) {
@@ -823,7 +845,7 @@ function copyDiff(code: string, idx: number) {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--markdown-code-radius);
   box-shadow:
     inset 0 0 calc(var(--code-edge-size, 0px) * 0.35) color-mix(in srgb, var(--color-text) 2.5%, transparent),
     inset 0 0 calc(var(--code-edge-size, 0px) * 0.65) color-mix(in srgb, var(--color-text) 1.5%, transparent),
@@ -843,24 +865,24 @@ function copyDiff(code: string, idx: number) {
   display: none;
 }
 .md :deep(.md-code-scrollbar--horizontal) {
-  height: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+  height: var(--markdown-code-scrollbar-size);
 }
 .md :deep(.md-code-scrollbar--vertical) {
-  width: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+  width: var(--markdown-code-scrollbar-size);
 }
 .md :deep(.md-code-scrollbar-thumb) {
   display: block;
   position: absolute;
-  border-radius: var(--radius-full);
-  background: var(--code-scrollbar-color, var(--menu-scrollbar-color));
+  border-radius: var(--markdown-code-scrollbar-size);
+  background: var(--markdown-code-scrollbar-thumb);
 }
 .md :deep(.md-code-scrollbar--horizontal .md-code-scrollbar-thumb) {
   bottom: 0;
-  height: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+  height: var(--markdown-code-scrollbar-idle-size);
 }
 .md :deep(.md-code-scrollbar--vertical .md-code-scrollbar-thumb) {
   right: 0;
-  width: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+  width: var(--markdown-code-scrollbar-idle-size);
 }
 .md :deep(.md-code-scrollbar:hover .md-code-scrollbar-thumb),
 .md :deep(.md-code-scrollbar.is-dragging .md-code-scrollbar-thumb) {
@@ -1106,7 +1128,7 @@ function copyDiff(code: string, idx: number) {
 .md .markdown-renderer {
   font-family: var(--sans);
 }
-.md .code-block-container { border-radius: var(--radius-md); }
+.md .code-block-container { border-radius: var(--markdown-code-radius); }
 .md .diff-wrap { border-radius: var(--radius-md); }
 .md :not(pre) > code,
 .md .inline-code { border-radius: var(--radius-sm); }

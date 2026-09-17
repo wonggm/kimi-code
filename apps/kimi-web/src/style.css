@@ -528,6 +528,8 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-2xl: 20px;
+  /* Upstream's dock-pill radius (its `--radius-dock-pill`). */
+  --radius-dock-pill: 10px;
   --radius-full: 999px;
   /* Derived menu-row radius (upstream: calc(--radius-lg - --space-1 -
      --p-hairline) = 12 - 4 - 0.5 = 7.5px). */
@@ -650,6 +652,8 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --p-ic-sm: 14px;
   --p-ic-md: 16px;
   --p-ic-lg: 20px;
+  /* Upstream's dock-pill glyph size (its `--p-ic-dock`). */
+  --p-ic-dock: 18px;
 
   /* -- layout & breakpoints (design-system §02) ---------------------------- */
   --p-sidebar-w: 264px;
@@ -700,6 +704,11 @@ html[data-color-scheme="dark"] {
   --color-selected: #ffffff14;
   --color-selected-hover: #ffffff24;
   --color-hover: #ffffff0d;
+  /* Upstream's dark code surface, one flat colour for the block and its header. */
+  --code-block-surface: #292929;
+  --code-block-header-surface: rgb(41 41 41 / 90%);
+  --code-block-action-ink: rgb(255 255 255 / 42%);
+  --code-block-scrollbar-thumb: rgb(255 255 255 / 40%);
   --color-subtle: rgba(255, 255, 255, 0.05);
   --color-sidebar-bg: #0d0d0d;
   --color-accent: #1a88ff;
@@ -770,6 +779,10 @@ html[data-color-scheme="dark"] {
     --color-selected: #ffffff14;
     --color-selected-hover: #ffffff24;
     --color-hover: #ffffff0d;
+    --code-block-surface: #292929;
+    --code-block-header-surface: rgb(41 41 41 / 90%);
+    --code-block-action-ink: rgb(255 255 255 / 42%);
+    --code-block-scrollbar-thumb: rgb(255 255 255 / 40%);
     --color-subtle: rgba(255, 255, 255, 0.05);
     --color-sidebar-bg: #0d0d0d;
     --color-accent: #1a88ff;
@@ -2012,6 +2025,26 @@ html[data-liquid-glass="on"] .sheet-root:not(.step-2) .sheet-panel.sheet-panel {
   --code-scrollbar-color: color-mix(in srgb, var(--color-text) 45%, transparent);
   --code-scrollbar-color-hover: color-mix(in srgb, var(--color-text) 55%, transparent);
   --code-edge-size: 13px;
+  /* The code block's own metrics, under upstream's own names: the panel radius,
+     its one flat surface (the header sits on the same colour, at 90%), the two
+     font sizes (12px code on upstream's 22/14 line box, 16px header), the action
+     button's box and the floating scrollbar's bar, idle thumb and thumb tone.
+     The surface pair and the two ink tones are app tokens (they change with the
+     theme); the rest are fixed sizes. Markdown.vue re-binds all of them under
+     their upstream names at the renderer, because the package defines the same
+     names itself and its stylesheet lands after the app's. */
+  --code-block-surface: #ffffff;
+  --code-block-header-surface: rgb(255 255 255 / 90%);
+  --code-block-action-ink: rgb(0 0 0 / 45%);
+  --code-block-scrollbar-thumb: rgb(0 0 0 / 45%);
+  --markdown-code-radius: 1rem;
+  --markdown-code-font-size: 12px;
+  --markdown-code-header-font-size: 16px;
+  --markdown-code-line-height: 1.5714;
+  --markdown-code-action-size: 26px;
+  --markdown-code-action-radius: 8px;
+  --markdown-code-scrollbar-size: 10px;
+  --markdown-code-scrollbar-idle-size: 4px;
   --markdown-table-fade-size: 36px;
   /* The mask recipes the code-scroll decor switches on are token-defined for
      the same reason the menu fades are: gradients live here so components can
