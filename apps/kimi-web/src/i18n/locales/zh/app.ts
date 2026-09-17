@@ -13,5 +13,4 @@ export default {
   connectingRetrySuffix: '（第 {n} 次重试）',
   connectRetrying: '无法连接服务器，正在重试…',
   refreshPreview: '刷新预览',
-  internalBuildBanner: '仅供内部测试',
 } as const;

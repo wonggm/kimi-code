@@ -15,6 +15,7 @@ import {
   clearMermaidWorker,
 } from 'markstream-vue';
 import { useIsDark } from '../../composables/useIsDark';
+import { useMarkdownScrollDecor } from '../../composables/useMarkdownScrollDecor';
 import type { FilePreviewRequest } from '../../types';
 import { collectFilePathAliases, findFilePathLinks } from '../../lib/filePathLinks';
 import { extractFrontmatter } from '../../lib/frontmatter';
@@ -84,6 +85,9 @@ const { t } = useI18n();
 
 const resolveImage = inject<(src: string) => Promise<string>>('resolveImage');
 const mdRef = ref<HTMLElement | null>(null);
+// Edge fades, floating scrollbars and the wide-table fade for every code block
+// and table in this message (upstream's in-markdown scroll decor).
+useMarkdownScrollDecor(mdRef);
 const props = withDefaults(
   defineProps<{
     text: string;
@@ -705,7 +709,7 @@ function copyDiff(code: string, idx: number) {
 /* The code body wrapper was renamed in 1.0.9: `.code-block-content` is gone,
    the shiki (stream-diffs) block now mounts under `.code-block-shell-content`. */
 .md :deep(.code-block-shell-content),
-.md :deep(.markstream-pre) {
+.md :deep(pre[data-markstream-pre]) {
   /* Upstream's block is ONE surface: header and code body share the surface
      token, and the sunken container token shows only as the 1px frame.
      Painting the body sunken left a visible step under the header. */
@@ -758,7 +762,7 @@ function copyDiff(code: string, idx: number) {
   overflow-wrap: anywhere;
 }
 .md :deep(.code-block-container pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)),
-.md :deep(.markstream-pre:not(.code-pre-fallback):not(.markstream-pre--line-numbers)) {
+.md :deep(pre[data-markstream-pre]:not(.code-pre-fallback):not(.markstream-pre--line-numbers)) {
   margin: 0;
   padding: var(--code-pad-block) var(--space-3);
   overflow-x: auto;
@@ -772,11 +776,107 @@ function copyDiff(code: string, idx: number) {
   padding: 0;
   border-radius: 0;
 }
-.md :deep(.markstream-pre),
+.md :deep(pre[data-markstream-pre]),
 .md :deep(.code-pre-fallback),
 .md :deep(.code-block-shell-content pre:not(.shiki)),
 .md :deep(.code-block-shell-content pre:not(.shiki) code) {
   color: var(--color-text);
+}
+
+/* ---------------------------------------------------------------------------
+   In-message scroll decor (upstream's md-code-* / md-table-* set). The script
+   in useMarkdownScrollDecor appends the edge layer and the two floating
+   scrollbars to each code block, tracks the block's own scroller and drives
+   both from the scroll offsets; the table gets the same treatment through its
+   wrapper. The container is the positioning context for all of it.
+--------------------------------------------------------------------------- */
+.md :deep(.code-block-container),
+.md :deep(.diff-wrap) {
+  position: relative;
+}
+.md :deep(.md-code-scroll-host),
+.md :deep(.md-table-scroll-host) {
+  position: relative;
+  min-width: 0;
+}
+/* The scroller keeps its own scrolling but hides the native bar: the floating
+   thumb takes its place. */
+.md :deep(.md-code-scroll-viewport) {
+  scrollbar-width: none;
+}
+.md :deep(.md-code-scroll-viewport)::-webkit-scrollbar {
+  display: none;
+}
+/* Edge layer: a soft inset ring, masked down to the sides that still have
+   something to scroll to (the script flips the four flags). */
+.md :deep(.md-code-edges) {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+  border-end-end-radius: inherit;
+  mask-image: var(--markdown-code-edges-mask);
+}
+.md :deep(.md-code-edges[hidden]) {
+  display: none;
+}
+.md :deep(.md-code-edges)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  box-shadow:
+    inset 0 0 calc(var(--code-edge-size, 0px) * 0.35) color-mix(in srgb, var(--color-text) 2.5%, transparent),
+    inset 0 0 calc(var(--code-edge-size, 0px) * 0.65) color-mix(in srgb, var(--color-text) 1.5%, transparent),
+    inset 0 0 var(--code-edge-size, 0px) color-mix(in srgb, var(--color-text) 1%, transparent);
+  mask-image: var(--markdown-code-edge-ring-mask);
+  mask-composite: intersect;
+}
+/* Floating scrollbars — the same shape and colours as the autocomplete menus'
+   thumb (--code-scrollbar-* falls back to the menu family). */
+.md :deep(.md-code-scrollbar) {
+  position: absolute;
+  background: transparent;
+  touch-action: none;
+  user-select: none;
+}
+.md :deep(.md-code-scrollbar[hidden]) {
+  display: none;
+}
+.md :deep(.md-code-scrollbar--horizontal) {
+  height: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+}
+.md :deep(.md-code-scrollbar--vertical) {
+  width: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+}
+.md :deep(.md-code-scrollbar-thumb) {
+  display: block;
+  position: absolute;
+  border-radius: var(--radius-full);
+  background: var(--code-scrollbar-color, var(--menu-scrollbar-color));
+}
+.md :deep(.md-code-scrollbar--horizontal .md-code-scrollbar-thumb) {
+  bottom: 0;
+  height: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+}
+.md :deep(.md-code-scrollbar--vertical .md-code-scrollbar-thumb) {
+  right: 0;
+  width: var(--code-scrollbar-width, var(--menu-scrollbar-width));
+}
+.md :deep(.md-code-scrollbar:hover .md-code-scrollbar-thumb),
+.md :deep(.md-code-scrollbar.is-dragging .md-code-scrollbar-thumb) {
+  background: var(--code-scrollbar-color-hover, var(--menu-scrollbar-color-hover));
+}
+/* A wide table fades its trailing edge instead of showing a scrollbar, and
+   reserves room under it for the floating bar. */
+.md :deep(.table-node-wrapper.md-table-scroll-overflow) {
+  padding-bottom: calc(var(--code-scrollbar-width, var(--menu-scrollbar-width)) + var(--code-scrollbar-edge, var(--menu-scrollbar-edge)));
+}
+.md :deep(.table-node-wrapper.md-table-scroll-overflow > table) {
+  mask-image: var(--markdown-table-scroll-mask);
+}
+/* A run of punctuation stays on one line rather than breaking mid-run. */
+.md :deep(.text-node.md-punctuation-run) {
+  white-space: nowrap;
 }
 
 /* Links — open in a new tab (markstream handles target/rel) */

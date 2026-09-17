@@ -17,7 +17,7 @@ import type { UIQuestion } from '../../types';
 import type { QuestionAnswer, QuestionResponse } from '../../api/types';
 import { clearQuestionDraft, loadQuestionDraft, saveQuestionDraft } from '../../lib/storage';
 import Markdown from './Markdown.vue';
-import Button from '../ui/Button.vue';
+import CardButton from '../ui/CardButton.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 
@@ -384,6 +384,17 @@ function handleKeydown(e: KeyboardEvent): void {
   const num = parseInt(e.key, 10);
   if (!isNaN(num) && num >= 1 && num <= 9) {
     e.preventDefault();
+    // The "Other" row carries the next number after the options (upstream
+    // numbers it the same way and shows the digit on the row).
+    if (q.allowOther && num === q.options.length + 1) {
+      highlighted.value = q.options.length;
+      pickOther(q.id);
+      nextTick(() => {
+        scrollToHighlighted();
+        otherInputEl.value?.focus();
+      });
+      return;
+    }
     const optIdx = num - 1;
     const opt = q.options[optIdx];
     if (opt) {
@@ -407,6 +418,9 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
     <!-- Header: the question itself, the step number when there is more than
          one, and the minimize/dismiss controls. -->
     <div class="qh" :class="{ clickable: minimized }" @click="expandIfMinimized">
+      <span class="qh-ic" aria-hidden="true">
+        <Icon name="message" size="lg" />
+      </span>
       <span v-if="total > 1" class="qh-chip">{{ step + 1 }}</span>
       <span class="qtitle">{{ current.question }}</span>
       <IconButton
@@ -429,87 +443,91 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
       </IconButton>
     </div>
 
-    <template v-if="!minimized">
-      <div class="qbody">
-        <!-- Body markdown -->
-        <Markdown v-if="current.body" :text="current.body" class="qmdbody" />
+    <div v-if="!minimized" class="qpane">
+      <div class="qpane-inner">
+        <div class="qbody">
+          <!-- Body markdown -->
+          <Markdown v-if="current.body" :text="current.body" class="qmdbody" />
 
-        <!-- Options -->
-        <div class="qopts">
-          <label
-            v-for="(opt, oi) in current.options"
-            :key="opt.id"
-            class="qopt"
-            :class="{ selected: isSelected(current.id, opt.id), highlighted: current.multiSelect && oi === highlighted }"
-            @click.prevent="highlighted = oi; current.multiSelect ? toggleMulti(current.id, opt.id) : pickSingle(current.id, opt.id)"
-          >
-            <span class="qopt-key">{{ oi + 1 }}</span>
-            <span class="qopt-glyph" :class="current.multiSelect ? 'chk' : 'rad'" />
-            <span class="qopt-text">
-              <span class="qopt-label">{{ opt.label }}</span>
-              <span v-if="opt.description" class="qopt-desc">{{ opt.description }}</span>
-            </span>
-          </label>
+          <!-- Options -->
+          <div class="qopts" :class="{ multi: current.multiSelect }">
+            <label
+              v-for="(opt, oi) in current.options"
+              :key="opt.id"
+              class="qopt"
+              :class="{ selected: isSelected(current.id, opt.id), highlighted: current.multiSelect && oi === highlighted }"
+              @click.prevent="highlighted = oi; current.multiSelect ? toggleMulti(current.id, opt.id) : pickSingle(current.id, opt.id)"
+            >
+              <span v-if="current.multiSelect" class="qopt-glyph">
+                <Icon class="qopt-check" name="check" size="lg" />
+              </span>
+              <span class="qopt-text">
+                <span class="qopt-label">{{ opt.label }}</span>
+                <span v-if="opt.description" class="qopt-desc">{{ opt.description }}</span>
+              </span>
+              <span v-if="oi < 9" class="qopt-key">{{ oi + 1 }}</span>
+            </label>
 
-          <!-- Other option: the free-text input sits outside the label column
-               (upstream's `.qopt-text-other`), so the row reads as one line. -->
-          <label
-            v-if="current.allowOther"
-            class="qopt"
-            :class="{ selected: isOtherSelected(current.id), highlighted: current.multiSelect && highlighted === current.options.length }"
-            @click.prevent="highlighted = current.options.length; selectOther(current.id)"
-          >
-            <span class="qopt-key"></span>
-            <span class="qopt-glyph" :class="current.multiSelect ? 'chk' : 'rad'" />
-            <span class="qopt-text qopt-text-other">
-              <span class="qopt-label">{{ current.otherLabel ?? t('question.otherDefault') }}</span>
-              <span v-if="current.otherDescription" class="qopt-desc">{{ current.otherDescription }}</span>
-            </span>
-            <input
-              ref="otherInputEl"
-              v-model="otherTexts[current.id]"
-              class="other-input"
-              type="text"
-              :placeholder="current.otherLabel ?? t('question.otherDefault')"
-              @input="pickOther(current.id)"
-              @focus="pickOther(current.id)"
-            />
-          </label>
+            <!-- Other option: the free-text input sits outside the label column
+                 (upstream's `.qopt-text-other`), so the row reads as one line. -->
+            <label
+              v-if="current.allowOther"
+              class="qopt"
+              :class="{ selected: isOtherSelected(current.id), highlighted: current.multiSelect && highlighted === current.options.length }"
+              @click.prevent="highlighted = current.options.length; selectOther(current.id)"
+            >
+              <span v-if="current.multiSelect" class="qopt-glyph">
+                <Icon class="qopt-check" name="check" size="lg" />
+              </span>
+              <span class="qopt-text qopt-text-other">
+                <span class="qopt-label">{{ current.otherLabel ?? t('question.otherDefault') }}</span>
+                <span v-if="current.otherDescription" class="qopt-desc">{{ current.otherDescription }}</span>
+              </span>
+              <input
+                ref="otherInputEl"
+                v-model="otherTexts[current.id]"
+                class="other-input"
+                type="text"
+                :placeholder="current.otherLabel ?? t('question.otherDefault')"
+                @input="pickOther(current.id)"
+                @focus="pickOther(current.id)"
+              />
+              <span v-if="current.options.length < 9" class="qopt-key">{{ current.options.length + 1 }}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Footer: the buttons on the left, the keyboard hint on the right. -->
+        <div class="qfoot">
+          <div class="qbtns">
+            <CardButton
+              v-if="step < total - 1"
+              class="qmain"
+              variant="primary"
+              :disabled="!isCurrentAnswered()"
+              :hint-icons="['enter']"
+              @click="goNext"
+            >{{ t('question.nextQuestion') }}</CardButton>
+            <CardButton
+              v-else
+              class="qmain"
+              variant="primary"
+              :disabled="!canSubmit()"
+              :loading="submitting"
+              :hint-icons="['enter']"
+              @click="submit"
+            >{{ t('question.submit') }}</CardButton>
+            <CardButton
+              v-if="total > 1"
+              :disabled="step === 0 || busy"
+              @click="goBack"
+            >{{ t('question.back') }}</CardButton>
+            <CardButton hint="Esc" :loading="dismissing" :disabled="busy" @click="dismiss">{{ t('question.dismiss') }}</CardButton>
+          </div>
+          <span class="qhint">{{ t('question.hint') }}</span>
         </div>
       </div>
-
-      <!-- Footer: the buttons on the left, the keyboard hint on the right. -->
-      <div class="qfoot">
-        <div class="qbtns">
-          <Button
-            v-if="step < total - 1"
-            class="qmain"
-            size="md"
-            variant="primary"
-            :disabled="!isCurrentAnswered()"
-            @click="goNext"
-          >{{ t('question.nextQuestion') }}</Button>
-          <Button
-            v-else
-            class="qmain"
-            size="md"
-            variant="primary"
-            :disabled="!canSubmit()"
-            :loading="submitting"
-            @click="submit"
-          >{{ t('question.submit') }}</Button>
-          <Button
-            v-if="total > 1"
-            size="md"
-            variant="ghost"
-            :disabled="step === 0 || busy"
-            @click="goBack"
-          >{{ t('question.back') }}</Button>
-          <Button size="md" variant="ghost" :loading="dismissing" :disabled="busy" @click="dismiss">{{ t('question.dismiss') }}</Button>
-        </div>
-        <span class="qhint">{{ t('question.hint') }}</span>
-      </div>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -529,8 +547,23 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   overflow: hidden auto;
   animation: kimi-card-in var(--duration-base) var(--ease-out);
 }
-.qcard > .qh,
-.qcard > .qfoot { flex: none; }
+.qcard > .qh { flex: none; }
+.qpane-inner > .qfoot { flex: none; }
+.qpane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.qpane-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.qpane-inner > .qbody { flex: 0 1 auto; }
+.qpane-inner > .qfoot { flex: none; }
 .qcard.minimized { transition: background var(--duration-fast) var(--ease-out); }
 .qcard.minimized:hover { background: var(--color-hover); }
 
@@ -546,6 +579,19 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   align-items: center;
 }
 .qcard.minimized .qh.clickable { cursor: pointer; }
+/* The card's own mark, ahead of the step chip: 20px, aligned with the title's
+   first line like the two controls on the right. */
+.qh-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--p-ic-lg);
+  height: var(--p-ic-lg);
+  margin-top: calc((var(--text-lg) * var(--leading-tight) - var(--p-ic-lg)) / 2);
+  color: var(--color-text);
+}
+.qcard.minimized .qh-ic { margin-top: 0; }
 /* Step number chip — replaces a separate stepper; shown only when the request
    carries more than one question. */
 .qh-chip {
@@ -590,8 +636,8 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
 }
 .qmdbody { margin-bottom: var(--space-2); }
 
-/* Options — transparent rows; the hover/selected state is the row background,
-   the choice itself is the boxed glyph. */
+/* Options — transparent rows; the selected (single) or highlighted (multi) row
+   carries the background, and a multi-select row's box carries the check. */
 .qopts {
   display: flex;
   flex-direction: column;
@@ -600,7 +646,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
 }
 .qopt {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
@@ -611,56 +657,49 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
   user-select: none;
 }
 .qopt:hover,
-.qopt.highlighted { background: var(--color-hover); }
+.qopts:not(.multi) .qopt.selected,
+.qopts.multi .qopt.highlighted { background: var(--color-hover); }
 
-/* The number chip tracks the option so a number key is discoverable. */
+/* The number chip closes the row, so a number key is discoverable; upstream
+   leaves the tenth and later options unnumbered. */
 .qopt-key {
-  width: 20px;
-  height: 20px;
-  margin-top: calc((var(--text-base) * var(--leading-normal) - 20px) / 2);
+  width: var(--p-ic-lg);
+  height: var(--p-ic-lg);
+  margin-left: auto;
   border-radius: var(--radius-sm);
   background: var(--color-inline-code-bg);
   color: var(--color-text);
-  font: var(--weight-medium) var(--text-xs)/20px var(--font-ui);
+  font: var(--weight-medium) var(--text-xs)/var(--p-ic-lg) var(--font-ui);
   text-align: center;
   flex: none;
 }
-/* The "Other" row has no number. */
-.qopt-key:empty { background: transparent; }
 
-/* Radio (single) / checkbox (multi) as a bordered box, filled from the accent
-   when selected — the mark is drawn, not a glyph character. */
+/* Multi-select rows carry a box; the check mark fills it while selected. A
+   single-select row's choice is the row background alone. */
 .qopt-glyph {
-  width: 16px;
-  height: 16px;
-  margin-top: calc((var(--text-base) * var(--leading-normal) - 16px) / 2);
-  flex: none;
-  border: var(--p-hairline) solid var(--color-line-strong);
   position: relative;
-  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--p-ic-lg);
+  height: var(--p-ic-lg);
+  flex: none;
+  color: var(--color-text);
 }
-.qopt-glyph.rad { border-radius: 50%; }
-.qopt-glyph.chk { border-radius: var(--radius-xs); }
-.qopt.selected .qopt-glyph { border-color: var(--color-accent); }
-.qopt.selected .qopt-glyph.rad::after {
+.qopt-glyph::before {
   content: "";
   position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: var(--color-accent);
+  inset: 16.67%;
+  border: var(--p-hairline) solid var(--color-line-strong);
+  border-radius: var(--radius-xs);
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
-.qopt.selected .qopt-glyph.chk { background: var(--color-accent); }
-.qopt.selected .qopt-glyph.chk::after {
-  content: "";
-  position: absolute;
-  left: 4.5px;
-  top: 1.5px;
-  width: 4px;
-  height: 8px;
-  border-right: 1.5px solid var(--color-text-on-accent);
-  border-bottom: 1.5px solid var(--color-text-on-accent);
-  transform: rotate(45deg);
+.qopt-check {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
+.qopt.selected .qopt-glyph::before { opacity: 0; }
+.qopt.selected .qopt-check { opacity: 1; }
 
 /* Label + description stack vertically (top-to-bottom) so a long description
    never squeezes the label sideways into a thin, many-line column. */
@@ -738,7 +777,8 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
     flex-direction: column;
     gap: var(--space-2);
   }
-  .qbtns :deep(.ui-button) {
+  .qbtns > .cbtn {
+    justify-content: center;
     width: 100%;
     min-height: 46px;
   }

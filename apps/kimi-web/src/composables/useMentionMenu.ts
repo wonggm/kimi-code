@@ -13,10 +13,20 @@ export type MentionFileItem = FileItem & {
   matchPositions?: number[];
 };
 
-/** A mention-menu row: a searched file/folder, or a session skill. */
+/** A mention-menu row: a searched file/folder, a session skill, or a browser
+ *  reference captured on a page. */
 export type MentionItem =
   | { kind: 'file' | 'folder'; name: string; path: string; score?: number; matchPositions?: number[] }
-  | { kind: 'skill'; name: string; path: ''; score?: number };
+  | { kind: 'skill'; name: string; path: ''; score?: number }
+  | { kind: 'browser'; name: string; path: ''; refId: string; title?: string; url?: string; score?: number; matchPositions?: number[] };
+
+/** One insertable browser reference, as the app's capture store reports it. */
+export interface MentionBrowserItem {
+  refId: string;
+  label: string;
+  title?: string;
+  url?: string;
+}
 
 export interface MentionMenuDeps {
   /** The live composer text — the @token is read from it and rewritten on select. */
@@ -30,6 +40,9 @@ export interface MentionMenuDeps {
   searchFiles: () => ((q: string) => Promise<MentionFileItem[]>) | undefined;
   /** Session skills offered in the mention list (getter; empty disables them). */
   skills?: () => AppSkill[];
+  /** Browser references offered in the mention list (getter; empty disables
+   *  them). A web build with no in-app browser has none. */
+  browsers?: () => MentionBrowserItem[];
 }
 
 interface MentionToken {
@@ -67,6 +80,22 @@ function rankedSkillRows(skills: AppSkill[], queryLower: string): { item: Mentio
 
 function itemForSkill(skill: AppSkill): MentionItem {
   return { kind: 'skill', name: skill.name, path: '' };
+}
+
+/** A browser-reference row: matches the token against the reference's label,
+ *  page title and URL, in the order the capture store lists them. */
+function browserRows(browsers: MentionBrowserItem[], queryLower: string): MentionItem[] {
+  return browsers
+    .filter((entry) => [entry.label, entry.title ?? '', entry.url ?? ''].some((text) => text.toLowerCase().includes(queryLower)))
+    .map((entry) => ({
+      kind: 'browser' as const,
+      name: entry.label,
+      path: '' as const,
+      refId: entry.refId,
+      title: entry.title,
+      url: entry.url,
+      score: 0.6,
+    }));
 }
 
 /**
@@ -136,14 +165,17 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     query.value = rawToken;
     const skills = deps.skills?.() ?? [];
     const skillRows = rawToken === '' ? [] : rankedSkillRows(skills, queryLower);
+    const browserMatches = browserRows(deps.browsers?.() ?? [], queryLower);
 
     const search = deps.searchFiles();
     if (!search) {
-      // No file source (e.g. no attach upload): skills alone drive the menu.
+      // No file source (e.g. no attach upload): skills and browser references
+      // alone drive the menu.
       if (timer !== null) clearTimeout(timer);
       active.value = 0;
-      open.value = skillRows.length > 0;
-      items.value = skillRows.map((row) => row.item);
+      const rows = [...browserMatches, ...skillRows.map((row) => row.item)];
+      open.value = rows.length > 0;
+      items.value = rows;
       loading.value = false;
       return;
     }
@@ -164,9 +196,12 @@ export function useMentionMenu(deps: MentionMenuDeps) {
       // was in flight — do not touch the menu state then.
       if (generation !== searchGeneration) return;
       const fileRows = result.map(itemForFile);
-      items.value = [...fileRows, ...skillRows.map((row) => row.item)].sort(
-        (a, b) => (b.score ?? 0) - (a.score ?? 0),
-      );
+      items.value = [
+        ...browserMatches,
+        ...[...fileRows, ...skillRows.map((row) => row.item)].toSorted(
+          (a, b) => (b.score ?? 0) - (a.score ?? 0),
+        ),
+      ];
       loading.value = false;
     }, 200);
   }
@@ -219,6 +254,8 @@ export function useMentionMenu(deps: MentionMenuDeps) {
     if (getMentionToken() === null) return;
     if (item.kind === 'skill') {
       insertMention({ kind: 'skill', name: item.name, path: '' });
+    } else if (item.kind === 'browser') {
+      insertMention({ kind: 'browser', name: item.name, id: item.refId });
     } else {
       insertMention({
         kind: item.kind,
@@ -239,6 +276,12 @@ export function useMentionMenu(deps: MentionMenuDeps) {
   function complete(item: MentionItem): void {
     const mt = getMentionToken();
     if (mt === null) return;
+    // A browser reference lives in the composer as a pill, not as a bare token
+    // — there is nothing to complete in place, so Tab inserts it outright.
+    if (item.kind === 'browser') {
+      select(item);
+      return;
+    }
     const completion =
       item.kind === 'skill'
         ? item.name

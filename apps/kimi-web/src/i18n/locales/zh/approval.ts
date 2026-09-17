@@ -1,4 +1,5 @@
 export default {
+  browserDetails: '操作参数',
   title: {
     shell: '运行命令?',
     diff: '应用修改?',
@@ -9,6 +10,7 @@ export default {
     invocation: '调用?',
     todo: '更新 todo?',
     plan_review: '按这份 plan 开始实现?',
+    browser: '浏览器操作',
     generic: '批准操作?',
   },
   subagentBadge: '子 agent · {name}',

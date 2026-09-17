@@ -5,12 +5,13 @@ import { ref } from 'vue';
 
 withDefaults(defineProps<{
   modelValue?: string | number;
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md';
   type?: string;
   placeholder?: string;
   disabled?: boolean;
   readonly?: boolean;
   error?: boolean;
+  embedded?: boolean;
 }>(), {
   size: 'md',
   type: 'text',
@@ -43,7 +44,7 @@ defineExpose({ focus, select, el });
   <input
     ref="el"
     class="ui-input"
-    :class="[`ui-input--${size}`, { 'has-error': error }]"
+    :class="[`ui-input--${size}`, { 'has-error': error, 'is-embedded': embedded }]"
     :type="type"
     :value="modelValue"
     :placeholder="placeholder"
@@ -72,6 +73,14 @@ defineExpose({ focus, select, el });
 }
 .ui-input--md { height: 38px; }
 .ui-input--sm { height: 32px; font-size: var(--text-sm); border-radius: var(--radius-sm); }
+.ui-input--xs {
+  height: var(--space-6);
+  padding-inline: var(--space-2);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+.ui-input.is-embedded { border: none; background: transparent; box-shadow: none; padding-inline: 0; }
+.ui-input.is-embedded:focus { box-shadow: none; }
 .ui-input::placeholder { color: var(--color-text-faint); }
 .ui-input:hover:not(:disabled):not(:focus) { border-color: var(--color-line-strong); }
 .ui-input:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
@@ -81,12 +90,13 @@ defineExpose({ focus, select, el });
 .ui-input.has-error:focus { box-shadow: 0 0 0 3px var(--color-danger-soft); }
 
 /* Phones: iOS auto-zooms the page when a focused input renders below 16px, and
-   both sizes sit at 13-14px. The composer's textarea pins 16px for exactly this
+   every size sits at 13-14px. The composer's textarea pins 16px for exactly this
    reason; the same floor applies to every Input on a phone surface (search
    fields in the model picker / session search / add-workspace dialogs). */
 @media (max-width: 640px) {
   .ui-input { font-size: 16px; }
   .ui-input--md { height: 44px; }
   .ui-input--sm { height: 44px; font-size: 16px; }
+  .ui-input--xs { height: 44px; font-size: 16px; }
 }
 </style>

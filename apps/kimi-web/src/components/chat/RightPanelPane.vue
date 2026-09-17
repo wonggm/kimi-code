@@ -24,6 +24,7 @@ import BashTaskPanel from './BashTaskPanel.vue';
 import TurnDiffPanel from './TurnDiffPanel.vue';
 import FilePreview from '../FilePreview.vue';
 import Terminal from '../Terminal.vue';
+import Icon from '../ui/Icon.vue';
 
 const props = defineProps<{
   tab: PanelTab;
@@ -181,6 +182,13 @@ const compactionText = computed(() => {
     :session-id="sessionId"
   />
   <div v-else-if="tab.kind === 'term'" class="pane-empty">{{ t('panel.terminalUnavailable') }}</div>
+
+  <!-- The browser's own pane. Its page lives in the desktop shell's browser;
+       a web session has none, which is what upstream's own text says. -->
+  <div v-else-if="tab.kind === 'browser'" class="browser-pane">
+    <Icon name="browser" size="lg" class="browser-pane-icon" />
+    <div class="browser-pane-text">{{ t('browser.unavailable') }}</div>
+  </div>
 </template>
 
 <style scoped>
@@ -194,5 +202,25 @@ const compactionText = computed(() => {
   color: var(--color-text-faint);
   font-size: var(--text-sm);
   text-align: center;
+}
+/* The browser pane's own empty state: no page, and nothing the web app can do
+   about it — the shell that renders it is the desktop app's. */
+.browser-pane {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-text-faint);
+  text-align: center;
+}
+.browser-pane-icon {
+  color: var(--color-text-faint);
+}
+.browser-pane-text {
+  font-size: var(--text-sm);
 }
 </style>

@@ -129,7 +129,7 @@ export default {
   build: 'Build',
   versionAndUpdates: 'Version & updates',
   appVersion: 'App version',
-  appVersionHint: 'The running app’s version and build time',
+  appVersionHint: 'The running app’s version',
   serverVersion: 'Server version',
   serverVersionHint: 'The version of the connected service',
   copyServerVersion: 'Copy server version',

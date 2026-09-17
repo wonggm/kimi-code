@@ -10,7 +10,16 @@
 import type { AppTask } from '../api/types';
 import type { IconName } from './icons';
 
-export type PanelTabKind = 'diff' | 'turn-diff' | 'file' | 'agent' | 'compaction' | 'btw' | 'term';
+export type PanelTabKind = 'diff' | 'turn-diff' | 'file' | 'agent' | 'compaction' | 'btw' | 'term' | 'browser';
+
+/** What a tab's label shows when the thing behind it can describe itself: a
+ *  browser tab's page supplies its own title, favicon and status glyph. */
+export interface PanelTabPresentation {
+  title?: string;
+  icon?: IconName;
+  favicon?: string;
+  status?: { label: string; icon: IconName };
+}
 
 export type PanelTab =
   | { id: string; kind: 'diff' }
@@ -19,7 +28,8 @@ export type PanelTab =
   | { id: string; kind: 'agent'; subagentId: string }
   | { id: string; kind: 'compaction'; turnId: string }
   | { id: string; kind: 'btw'; agentId?: string; seq: number }
-  | { id: string; kind: 'term'; title?: string };
+  | { id: string; kind: 'term'; title?: string }
+  | { id: string; kind: 'browser'; browserId: string; title?: string; customTitle?: string; presentation?: PanelTabPresentation };
 
 /** How a kind joins the strip. `singleton` holds at most one tab; `keyed`
  *  replaces the tab with the same key; `always` appends, replacing only a tab
@@ -44,6 +54,10 @@ export const PANEL_TAB_RULES: Record<PanelTabKind, PanelTabRule> = {
   // Terminals append like side chats, are never restored, and upstream keeps
   // only the session's own terminal tabs when the session changes.
   term: { policy: 'always', restorable: false, icon: 'terminal', i18nKey: 'panel.tabs.term' },
+  // A browser tab. Upstream registers it as `always` + restorable, titled from
+  // the page (`customTitle || title || panel.tabs.browser`); its body needs the
+  // desktop shell's browser, so in a plain web session the pane says so.
+  browser: { policy: 'always', restorable: true, icon: 'browser', i18nKey: 'panel.tabs.browser' },
 };
 
 /** The identity a tab is de-duplicated by. Upstream's `keyOf`: the path for the
@@ -60,6 +74,8 @@ export function panelTabKey(tab: PanelTab): string | null {
       return tab.turnId;
     case 'btw':
       return tab.agentId ?? null;
+    case 'browser':
+      return tab.browserId;
     default:
       return null;
   }
@@ -79,7 +95,13 @@ export function openPanelTab(tabs: readonly PanelTab[], tab: PanelTab): PanelTab
   // `always`: upstream replaces a side chat whose `agentId` matches the one
   // being opened and appends otherwise — two session-level side chats (both
   // `agentId: undefined`) therefore replace each other rather than stacking.
-  const kept = tabs.filter((existing) => existing.kind !== 'btw' || panelTabKey(existing) !== key);
+  // A browser tab keys by its `browserId`, so re-opening the same page focuses
+  // the tab that is already there instead of stacking a second copy of it.
+  const kept = tabs.filter((existing) => {
+    if (existing.kind === 'btw') return panelTabKey(existing) !== key;
+    if (existing.kind === 'browser') return panelTabKey(existing) !== key;
+    return true;
+  });
   return [...kept, tab];
 }
 
@@ -116,6 +138,45 @@ export function closePanelTab(
   return { tabs: remaining, activeId: next?.id ?? null };
 }
 
+/** Move a tab to another position in the strip, as the drag handle and
+ *  Alt+ArrowLeft/Right do. The target index is clamped to the list, so a drag
+ *  past either end parks the tab at that end. */
+export function reorderPanelTabs(
+  tabs: readonly PanelTab[],
+  id: string,
+  toIndex: number,
+): PanelTab[] {
+  const from = tabs.findIndex((tab) => tab.id === id);
+  if (from < 0) return [...tabs];
+  const to = Math.max(0, Math.min(tabs.length - 1, Math.round(toIndex)));
+  if (to === from) return [...tabs];
+  const next = [...tabs];
+  const [moved] = next.splice(from, 1);
+  if (!moved) return [...tabs];
+  next.splice(to, 0, moved);
+  return next;
+}
+
+/** Close every tab but the one named. The survivor keeps focus. */
+export function closeOtherPanelTabs(
+  tabs: readonly PanelTab[],
+  id: string,
+): { tabs: PanelTab[]; activeId: string } | null {
+  const kept = tabs.find((tab) => tab.id === id);
+  if (!kept) return null;
+  return { tabs: [kept], activeId: kept.id };
+}
+
+/** Close every tab after the one named; the named tab stays active. */
+export function closePanelTabsToRight(
+  tabs: readonly PanelTab[],
+  id: string,
+): { tabs: PanelTab[]; activeId: string } | null {
+  const index = tabs.findIndex((tab) => tab.id === id);
+  if (index < 0) return null;
+  return { tabs: tabs.slice(0, index + 1), activeId: tabs[index]!.id };
+}
+
 /** The tabs the panel rebuilds on load: the restorable kinds only. */
 export function restorablePanelTabs(tabs: readonly PanelTab[]): PanelTab[] {
   return tabs.filter((tab) => PANEL_TAB_RULES[tab.kind].restorable);
@@ -129,6 +190,9 @@ interface StoredTab {
   turnId?: string;
   agentId?: string;
   seq?: number;
+  browserId?: string;
+  title?: string;
+  customTitle?: string;
 }
 
 export function serializeRestorableTabs(tabs: readonly PanelTab[]): StoredTab[] {
@@ -144,6 +208,8 @@ export function serializeRestorableTabs(tabs: readonly PanelTab[]): StoredTab[] 
         return { kind: tab.kind, turnId: tab.turnId };
       case 'btw':
         return { kind: tab.kind, agentId: tab.agentId, seq: tab.seq };
+      case 'browser':
+        return { kind: tab.kind, browserId: tab.browserId, title: tab.title, customTitle: tab.customTitle };
       default:
         return { kind: tab.kind };
     }
@@ -169,6 +235,13 @@ export function deserializeRestorableTabs(
         break;
       case 'btw':
         out.push({ id, kind: 'btw', agentId: tab.agentId, seq: tab.seq ?? 1 });
+        break;
+      case 'browser':
+        // Upstream stores a browser tab's id and titles and drops the rest; a
+        // stored entry without an id is a tab for nothing, so it goes.
+        if (tab.browserId) {
+          out.push({ id, kind: 'browser', browserId: tab.browserId, title: tab.title, customTitle: tab.customTitle });
+        }
         break;
       default:
         break;

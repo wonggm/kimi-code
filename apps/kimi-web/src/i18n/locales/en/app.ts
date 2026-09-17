@@ -13,5 +13,4 @@ export default {
   connectingRetrySuffix: ' (retry {n})',
   connectRetrying: 'Cannot reach the server — retrying…',
   refreshPreview: 'Refresh preview',
-  internalBuildBanner: 'Internal testing only',
 } as const;

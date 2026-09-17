@@ -85,6 +85,15 @@
   },
   "overrides": [
     {
+      // The webdiff harness describes its scenes in a data table whose
+      // follow-up stage is keyed `then` (capture.mjs reads `scene.then`), so
+      // the key is schema, not a thenable. Scoped to the harness's own scripts.
+      "files": ["apps/kimi-web/webdiff/**/*.mjs"],
+      "rules": {
+        "unicorn/no-thenable": "off"
+      }
+    },
+    {
       "files": ["**/examples/**/*.ts", "**/examples/**/*.tsx"],
       "rules": {
         "eslint/no-console": "off"

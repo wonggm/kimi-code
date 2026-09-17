@@ -20,6 +20,7 @@ import {
 import { useInputHistory } from '../../composables/useInputHistory';
 import { useSlashMenu } from '../../composables/useSlashMenu';
 import { useMentionMenu } from '../../composables/useMentionMenu';
+import { useBrowserReferences } from '../../composables/useBrowserReferences';
 import { useComposerDraft } from '../../composables/useComposerDraft';
 import { useAttachmentUpload, type Attachment } from '../../composables/useAttachmentUpload';
 import { useIsMobile } from '../../composables/useIsMobile';
@@ -248,6 +249,8 @@ const {
 // keeps the keydown orchestration because it also juggles the slash menu and
 // history recall.
 // ---------------------------------------------------------------------------
+const browserReferences = useBrowserReferences();
+
 const {
   open: mentionOpen,
   items: mentionItems,
@@ -264,6 +267,7 @@ const {
   autosize,
   searchFiles: () => props.searchFiles,
   skills: () => props.skills,
+  browsers: () => browserReferences.menuRows.value,
 });
 
 // While the field itself has focus (keyboard up on touch) the composer takes
@@ -1573,7 +1577,7 @@ function selectModel(modelId: string): void {
               :key="opt.mode"
               type="button"
               class="ui-menu-item ui-menu-item--md pd-row"
-              :class="{ 'is-current': opt.mode === status.permission }"
+              :class="{ 'is-active': opt.mode === status.permission, 'is-current': opt.mode === status.permission }"
               role="menuitemradio"
               :aria-checked="opt.mode === status.permission"
               @click="choosePermission(opt.mode)"
@@ -1702,16 +1706,6 @@ function selectModel(modelId: string): void {
         </div>
       </div>
     </div>
-    <!-- Composer footer — upstream's `.composer-footer`, the card's SIBLING
-         (not its child): the ws-bar's -16px top margin tucks it under the card's
-         bottom edge, so the card keeps its own height instead of growing to
-         wrap the chip row. The new-session state puts the workspace chip here
-         (see the ws-bar markup ConversationPane slots in); the wrapper only
-         renders when that slot has content, so it adds no element on any other
-         surface. -->
-    <div v-if="$slots.footer" class="composer-footer">
-      <slot name="footer" />
-    </div>
   <!-- Full-window drop target affordance: shown while files are dragged anywhere
        over the app (document-level listeners in useAttachmentUpload). Pure CSS
        show/hide — a Vue <Transition> can strand an invisible node when the drag
@@ -1776,6 +1770,7 @@ function selectModel(modelId: string): void {
           :plan-armed-on="planArmedOn"
           :swarm-on="swarmOn"
           show-trigger-rows
+          wrap-rows
           @files="runAddRow(openFilePicker)"
           @commands="runAddRow(() => seedTrigger('/'))"
           @mention="runAddRow(() => seedTrigger('@'))"

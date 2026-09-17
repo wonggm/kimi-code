@@ -53,8 +53,8 @@
       "reason": "Stale discovery on this one mobile settings surface, not a missing UI. The phase's click-00 is Close, which shuts the sheet, but the click list was discovered while it was open: upstream keeps its closed sheet in the DOM so its later clicks still resolve sheet controls, while the fork's sheet is gone once closed and the same clicks land on whatever is underneath. Both apps clicked the same-named control at the same index. The sheet itself is verified intact in this very run - the `settings` base scene carries every one of these texts on the fork (Appearance, Language, Model, Permission, 29.3k/122k, Tool call summary, Auto-fold messages), checked string by string."
     },
     {
-      "id": "*::walk-settings-click-01-button-modelexample-test-model::*",
-      "reason": "Same stale-discovery family on the mobile model picker: once the sheet closes, upstream's DOM still holds its model sheet - its copy (switch model, copy diagnostics, operation failed, show details, 'the last operation did not finish, try again later') and its sheet-root / sheet-scrim / sheet-panel elements - while the fork's does not. Every id here is in the pre-port baseline run as well (checked id by id against .tmp/wd043/raw-baseline), so it predates this round."
+      "id": "*::walk-settings-click-01-button-*example-test-model::*",
+      "reason": "Same stale-discovery family on the mobile model picker: once the sheet closes, upstream's DOM still holds its model sheet - its copy (switch model, copy diagnostics, operation failed, show details, 'the last operation did not finish, try again later') and its sheet-root / sheet-scrim / sheet-panel elements - while the fork's does not. Every id here is in the pre-port baseline run as well (checked id by id against .tmp/wd043/raw-baseline), so it predates this round. The glob covers both slugs this control has had: 0.43 named the scene after the control's own label ('modelexample-test-model'), 0.43.1 after the model it names ('example-test-model')."
     },
     {
       "id": "*::behaviour-panel-tail-tooltip::requirement::tail-tooltip",
@@ -463,6 +463,10 @@
     {
       "id": "*::*::missing-text::x-ad7828a7a0",
       "reason": "Chinese counterpart of the sidebar's expand-all tooltip, missing for the same reason as the `expand-all-workspaces` entry above: the fork's bubble is unmounted by the time the walk's scroll normalisation runs, upstream's survives it. The zh capture also carries the text as a hash id rather than a slug, so the English entry does not cover it."
+    },
+    {
+      "id": "*::behaviour-subagent-transcript::dom-elements-missing",
+      "reason": "The subagent pane's own container, not its content: upstream renders a subagent's transcript inside the same container as the main conversation (a second `div.chat` with its own `activity-run.open` / `ar-head.is-static` / `ar-body.open` / `sending-placeholder` and an `ui-icon-button--sm`), and heads it with the prompt bubble (`section.agent-prompt` and its wrap/text). The fork's pane (AgentDetailPanel.vue) keeps upstream's agent-prompt markup and the same classes, but renders its body in its own `agent-transcript` container, and its prompt bubble stays unrendered on this scene because the prompt is resolved from the spawning `Agent` tool call (`agentPromptOf` in composables/useDetailPanel.ts) and this scene's row resolves by agent id with no spawning tool call in the turns. Open item, recorded in PLANS/web-port-0.43.1.md: reusing the chat container in the pane, and resolving the prompt from the subagent's own transcript when the spawning call is gone. Scoped to this scene; every other scene keeps its element comparison."
     }
   ],
   "warnings": [
@@ -677,17 +681,55 @@
       "reason": "Sidebar collapse model: upstream shrinks the sidebar to a rail whose header holds the collapse toggle plus this New Session icon button; the fork hides the sidebar when collapsed (App.vue v-show) and floats a separate expand control, so no rail and no second icon button. Fork choice, recorded not ported."
     },
     {
-      "pattern": "CANVAS.doodle-canvas",
-      "reason": "New-session doodle implementation: upstream draws its doodle into a canvas that is visible in the captured state; the fork's EmptyDoodle uses Rive with a fallback, and in the harness its canvas sits in a hidden subtree when no frame has been produced, so the digest excludes it while the element is still in the page source. Both apps render the same wordmark."
-    },
-    {
       "pattern": "SPAN.mono.rvalue",
       "scenes": ["*::walk-settings-click-01-button*"],
       "reason": "The Agent defaults thinking row reads differently on purpose: upstream prints a read-only value in its value cell (`Thinking by default` -> \"No default model\", the same string its Default model row shows), while the fork renders a working Switch bound to the daemon's thinking default (`ui-switch is-on`, aria-checked true in the captured state) because the fork's thinking default is a boolean, not a model-derived level. Scoped to this surface: `rvalue` is shared by every value row on every settings panel, and a global rule would retire those comparisons too."
     },
     {
-      "pattern": "svg.kw-icon.think-bulb",
-      "reason": "An icon the fork does not draw: upstream's thinking block carries `svg.kw-icon.think-bulb`; the 0.39 port re-expressed the thinking affordance without it. Present identically in the pre-port baseline run (44 findings before this round, 44 after), so it is not a regression - dropped from the element comparison the same way the other settled element divergences are recorded."
+      "pattern": "DIV.align-center.chat-dock.pills-compact",
+      "reason": "The dock's compact pill row: upstream hides the pills' labels (and with them their count chips) as soon as its own pill row no longer fits on one line, while the fork keeps the labelled pills at every width and only compacts on a phone. Upstream's trigger is a width measure inside the minified bundle that could not be recovered; a wrap-based rule measured on the fork fires on the wrong scenes (12 of 30 in one probe, 6 in the next), and hiding a pill's label also moves the harness's own dock clicks off their target, so the guess is worse than the divergence it records. Deliberate: the fork keeps labelled pills. Open item if the compact state is wanted."
+    },
+    {
+      "pattern": "DIV.md-code-scrollbar*",
+      "reason": "Same code-block scroll decorations as DIV.md-code-edges: upstream paints its `md-code-scrollbar` / `md-code-scrollbar--horizontal` / `--vertical` overlays as light-DOM siblings of the code element, while the fork's code block is markstream's web component and its scroller lives inside that element's shadow root. The behaviour is ported (useMarkdownScrollDecor.ts + lib/codeScrollDecor.ts draw the same edge fade and floating scrollbar), and the fork's own probe of the same scene shows the overlays inside the shadow tree. Structural, not a missing feature."
+    },
+    {
+      "pattern": "SPAN.md-code-scrollbar-thumb",
+      "reason": "The thumb of the same floating scrollbar (see DIV.md-code-scrollbar*): it exists inside markstream's shadow root on the fork, so the light DOM cannot carry it."
+    },
+    {
+      "pattern": "DIV.md-code-edges",
+      "reason": "Code-block scroll decorations the walk cannot see: upstream paints its `md-code-edges` / `md-code-scrollbar` overlays as siblings of the code element in the light DOM, while the fork's code block is markstream's web component and its scroller lives inside that element's shadow root, so no amount of markup puts the overlays in the light DOM. The behaviour is ported (useMarkdownScrollDecor.ts + lib/codeScrollDecor.ts draw the same edge fade and floating scrollbar), and the fork's own probe of the same scene shows the overlays inside the shadow tree. Structural, not a missing feature."
+    },
+    {
+      "pattern": "BUTTON.ag-card.clickable",
+      "reason": "The agent card's open control: upstream renders the card as a `<button class=\"ag-card clickable\">` whenever the tool frame carries the subagent's `agent_id`, and reads it straight off the wire. The fork's card (tool-calls/AgentTool.vue) is a button only while a live task matches the tool call (resolveAgentTaskId), because the fork's wire types carry no `agent_id` on a tool frame, so a subagent whose row is gone from the task roster leaves an inert card. Open item: closing it needs the agent id on the tool frame, which is a wire change, not a web one. Recorded in PLANS/web-port-0.43.1.md."
+    },
+    {
+      "pattern": "SPAN.wi-face",
+      "reason": "Working-indicator design: upstream 0.43.1 draws a small animated face (`wi-face` with `wi-eyes` / `wi-eye--left` / `wi-eye--right`) beside the label while the agent is working. The fork's design system reserves the moon spinner for exactly this state (apps/kimi-web/AGENTS.md, design-system §04: MoonSpinner is the only renderer for the waiting-for-first-response state), so the fork keeps the moon and shares only the container and the label. Deliberate brand choice, recorded rather than ported."
+    },
+    {
+      "pattern": "SPAN.wi-eyes",
+      "reason": "Same working indicator: the eye group of upstream's animated face (see SPAN.wi-face)."
+    },
+    {
+      "pattern": "SPAN.wi-eye.wi-eye--left",
+      "reason": "Same working indicator: the left eye of upstream's animated face (see SPAN.wi-face)."
+    },
+    {
+      "pattern": "SPAN.wi-eye.wi-eye--right",
+      "reason": "Same working indicator: the right eye of upstream's animated face (see SPAN.wi-face)."
+    },
+    {
+      "pattern": "SPAN.cbtn-cap-key",
+      "scenes": ["*::behaviour-pending-approval", "*::behaviour-pending-approval-*"],
+      "reason": "Approval-card key caps name different keys: the fork decides a generic approval with number keys (1 approve, 2 approve-for-session, 3 reject, 4 feedback — pre-dating this round, see the `knum` markup it replaced in ApprovalCard.vue's diff) and prints those digits in the cap, while upstream prints the glyphs for its own bindings (a return-key icon, Ctrl+two key icons, Esc). Both caps are real; they name different keys, so the glyph form cannot match. Scoped to the approval scene — `cbtn-cap-key` is also the composer's own cap, which stays compared."
+    },
+    {
+      "pattern": "SPAN.cbtn-cap.cbtn-cap--combo",
+      "scenes": ["*::behaviour-pending-approval", "*::behaviour-pending-approval-*"],
+      "reason": "Same approval-card caps: upstream's Approve-for-session cap is a combo (the word Ctrl plus two key glyphs), the fork's is the single digit 2 for its number-key binding. See SPAN.cbtn-cap-key."
     }
   ]
 }

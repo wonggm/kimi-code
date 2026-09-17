@@ -129,7 +129,7 @@ export default {
   build: '构建',
   versionAndUpdates: '版本与更新',
   appVersion: '应用版本',
-  appVersionHint: '当前应用的版本号和构建时间',
+  appVersionHint: '当前应用的版本号',
   serverVersion: '服务端版本',
   serverVersionHint: '当前连接服务的版本',
   copyServerVersion: '复制服务端版本',

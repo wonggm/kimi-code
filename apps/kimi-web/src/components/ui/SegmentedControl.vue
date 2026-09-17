@@ -12,13 +12,14 @@ defineProps<{
   modelValue: string;
   options: { value: string; label: string; icon?: IconName; swatch?: string }[];
   size?: 'sm' | 'md';
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 </script>
 
 <template>
-  <div class="ui-seg" :class="`ui-seg--${size ?? 'md'}`" role="tablist">
+  <div class="ui-seg" :class="[`ui-seg--${size ?? 'md'}`, { 'ui-seg--disabled': disabled }]" role="tablist">
     <button
       v-for="opt in options"
       :key="opt.value"
@@ -28,6 +29,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
       type="button"
       role="tab"
       :aria-selected="opt.value === modelValue"
+      :disabled="disabled"
       @click="emit('update:modelValue', opt.value)"
     >
       <Icon v-if="opt.icon" class="ui-seg__icon" :name="opt.icon" size="sm" />
@@ -75,7 +77,9 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 .ui-seg__icon { flex: none; }
 .ui-seg--md .ui-seg__item { padding: 5px var(--space-3); font-size: var(--text-sm); }
 .ui-seg--sm .ui-seg__item { height: 24px; padding: 0 var(--space-2); font-size: var(--text-sm); }
-.ui-seg__item:hover:not(.is-on) { color: var(--color-text); }
+.ui-seg--disabled { opacity: 0.5; }
+.ui-seg__item:hover:not(.is-on):not(:disabled) { color: var(--color-text); }
+.ui-seg__item:disabled { cursor: not-allowed; }
 .ui-seg__item.is-on {
   color: var(--color-text);
   background: var(--color-surface-raised);
