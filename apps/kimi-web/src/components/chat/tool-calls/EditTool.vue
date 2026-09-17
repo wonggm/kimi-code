@@ -7,6 +7,7 @@ import { buildEditDiffLines } from '../../../lib/toolDiff';
 import { toolGlyph, toolHeadParts, toolLabel, toolSummary } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
 import ToolOutputBlock from './ToolOutputBlock.vue';
+import ToolPanel from './ToolPanel.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -27,13 +28,17 @@ const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as '
 const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
 const summary = computed(() => toolSummary(props.tool.name, props.tool.arg));
-const summaryFull = computed(() => toolSummary(props.tool.name, props.tool.arg, true));
 const head = computed(() => toolHeadParts(props.tool.name, props.tool.arg));
+const fullPath = computed(() => toolSummary(props.tool.name, props.tool.arg, true));
+const filePath = computed(() =>
+  head.value.file ? (head.value.dir ? `${head.value.dir}/${head.value.file}` : head.value.file) : '',
+);
+const leadDir = computed(() => (head.value.dir ? `${head.value.dir}/` : ''));
 
 const editDiff = computed<DiffViewLine[] | null>(() => buildEditDiffLines(props.tool));
-// Upstream prints the pair as two spans with a proportion bar rather than one
-// chip, so the counts ride on the row's `diff` prop and the chip stays for the
-// cases with no counts to show.
+// Upstream prints the pair twice from the same counts: as the row's trailing
+// pair (`tl-add` / `tl-del`) while the card is closed, and as the opened card's
+// `ed-stats`.
 const diffCounts = computed(() => {
   const diff = editDiff.value;
   if (!diff || props.tool.status === 'error') return undefined;
@@ -68,30 +73,73 @@ function toggle(): void {
     :status="status"
     :icon="glyph"
     :name="label"
-    :file="head.file"
-    :dir="head.dir"
+    :file="open ? '' : head.file"
+    :dir="open ? '' : leadDir"
     :mono="head.mono"
-    :diff="diffCounts"
+    :diff="open ? undefined : diffCounts"
     :arg="!open ? summary : ''"
     :time="tool.timing"
     :open="open"
     :expandable="canExpand || toolDiffPanel"
     @toggle="toggle"
   >
-    <template #trailing>
-      
-    </template>
-    <div v-if="summaryFull" class="bb-summary">{{ summaryFull }}</div>
-    <ToolOutputBlock :lines="tool.output" empty-text="Waiting for output…" />
+    <ToolPanel flush scroll>
+      <template #head>
+        <span class="ed-head">
+          <span class="ed-path">
+            <span v-if="head.dir" class="ed-dir">{{ head.dir }}/</span>
+            <button
+              v-if="head.file"
+              type="button"
+              class="ed-file ed-open"
+              @click.stop="emit('openFile', { path: filePath })"
+            >{{ head.file }}</button>
+            <span v-else class="ed-file">{{ fullPath }}</span>
+          </span>
+          <span v-if="diffCounts" class="ed-stats">
+            <span v-if="diffCounts.add > 0" class="ed-add">+{{ diffCounts.add }}</span>
+            <span v-if="diffCounts.del > 0" class="ed-del">−{{ diffCounts.del }}</span>
+          </span>
+        </span>
+      </template>
+      <ToolOutputBlock :lines="tool.output" empty-text="Waiting for output…" />
+    </ToolPanel>
   </ToolRow>
 </template>
 
 <style scoped>
-.bb-summary {
-  color: var(--color-text);
-  border-bottom: 1px dashed var(--color-line);
-  padding-bottom: 6px;
-  margin-bottom: 6px;
-  word-break: break-all;
+.ed-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: var(--space-2);
+  min-width: 0;
 }
+.ed-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ed-dir { color: var(--color-text-faint); }
+.ed-file { color: var(--color-text); }
+.ed-open {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.ed-open:hover { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
+.ed-open:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
+.ed-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.ed-add { color: var(--color-success); }
+.ed-del { color: var(--color-danger); }
 </style>

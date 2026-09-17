@@ -412,7 +412,14 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
   <div
     ref="dockRef"
     class="chat-dock"
-    :class="[mobile ? ['align-mobile', 'pills-compact'] : 'align-center', { 'has-popup': openPanel !== null || composerPopup }]"
+    :class="[
+      mobile ? ['align-mobile', 'pills-compact'] : 'align-center',
+      {
+        'has-popup': openPanel !== null || composerPopup,
+        'has-approval': pendingApproval !== undefined && pendingQuestion === undefined,
+        'has-question': pendingQuestion !== undefined,
+      },
+    ]"
     @click.stop
   >
     <div v-if="hasDockWork" ref="workbarRef" class="dock-workbar">

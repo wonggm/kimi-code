@@ -13,6 +13,7 @@ import LoginDialog from './components/dialogs/LoginDialog.vue';
 import SettingsDialog from './components/settings/SettingsDialog.vue';
 import AddWorkspaceDialog from './components/dialogs/AddWorkspaceDialog.vue';
 import ConfirmDialogHost from './components/dialogs/ConfirmDialogHost.vue';
+import BrowserReferenceDialogHost from './components/chat/BrowserReferenceDialogHost.vue';
 import StatusPanel from './components/chat/StatusPanel.vue';
 import WarningToasts from './components/WarningToasts.vue';
 import MobileTopBar from './components/mobile/MobileTopBar.vue';
@@ -49,7 +50,6 @@ import GlassDefs from './components/ui/GlassDefs.vue';
 import IconButton from './components/ui/IconButton.vue';
 import Icon from './components/ui/Icon.vue';
 import Spinner from './components/ui/Spinner.vue';
-import InternalBuildBanner from './components/InternalBuildBanner.vue';
 import { isMacosDesktop } from './lib/desktopFlag';
 
 // Hydrate the server-transport credential (fragment token or localStorage)
@@ -918,6 +918,7 @@ function openPr(url: string): void {
         mobile: isMobile,
         'sidebar-collapsed': sidebarCollapsed && !isMobile,
         'macos-desktop': isMacosDesktop,
+        'right-panel-open': panel.visible.value,
       }"
     >
     <!-- Desktop navigation: workspace rail + resizable session column. -->
@@ -1124,10 +1125,23 @@ function openPr(url: string): void {
       <Icon :name="sidebarCollapsed ? 'left-panel-expand' : 'left-panel'" />
     </IconButton>
 
-    <!-- Internal-build tag — pinned to the app's bottom-right corner, above
-         whatever pane happens to be there. Purely informational: pointer
-         events pass through so it never blocks clicks. -->
-    <InternalBuildBanner class="internal-build-fab" />
+    <!-- Right-panel toggle — the panel's single desktop opening/closing control,
+         pinned to the top-right corner so it stays in the same place whether the
+         panel is open (over the tab strip's tail) or closed (over the chat
+         header). The three in-pane controls upstream keeps in the DOM for the
+         mobile shell are hidden on desktop by the rules in the global block. It
+         sits after ConversationPane for the same Electron window-drag reason as
+         the sidebar toggle. -->
+    <IconButton
+      v-if="!isMobile"
+      class="right-panel-toggle"
+      size="sm"
+      :label="panel.visible.value ? t('panel.hide') : t('panel.openPanel')"
+      :aria-expanded="panel.visible.value"
+      @click="panel.visible.value ? panel.hide() : panel.show()"
+    >
+      <Icon :name="panel.visible.value ? 'panel-collapse-right' : 'right-panel-expand'" />
+    </IconButton>
 
     <!-- Model Picker overlay -->
     <ModelPicker
@@ -1260,6 +1274,9 @@ function openPr(url: string): void {
 
     <!-- Global modal-confirmation host (driven by useConfirmDialog) -->
     <ConfirmDialogHost />
+
+    <!-- Browser-reference dialog host (driven by useBrowserReferences) -->
+    <BrowserReferenceDialogHost />
 
     <!-- Mobile switcher bottom-sheet: workspace groups + sessions (mirrors the
          desktop sidebar) -->
@@ -1471,17 +1488,6 @@ function openPr(url: string): void {
   from { opacity: 0; }
 }
 
-/* Internal-build tag pinned to the app's bottom-right corner (desktop app
-   only — the component renders nothing elsewhere). Informational: never
-   intercepts pointer input. */
-.internal-build-fab {
-  position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-3);
-  z-index: var(--z-sticky);
-  pointer-events: none;
-}
-
 /* Mobile single-column shell: slim top bar (auto) over the full-width
    conversation pane (1fr). No rail, no session column, no resize handle. */
 .app.mobile {
@@ -1560,5 +1566,30 @@ function openPr(url: string): void {
 }
 .app.sidebar-collapsed.macos-desktop .chat-header {
   padding-left: 108px;
+}
+
+/* Right-panel toggle (desktop): floats over the top-right corner — the panel's
+   tab-strip tail while the panel is open, the chat header while it is closed.
+   The panel's own close button, the chat header's opener and the empty-session
+   opener stay in the DOM for the mobile shell and are hidden here, so exactly
+   one control is visible at a time. Cross-component rules (ChatHeader,
+   ConversationPane and PanelTabs render those elements), so they live in this
+   global block. */
+.right-panel-toggle {
+  position: absolute;
+  top: calc((var(--panel-head-h) - var(--icon-button-sm)) / 2);
+  right: var(--space-4);
+  z-index: var(--z-sticky);
+  /* Floats over the macOS-desktop window-drag header; keep it clickable. */
+  -webkit-app-region: no-drag;
+}
+.app:not(.mobile) .panel-tab-bar,
+.app:not(.mobile):not(.right-panel-open) .chat-header {
+  padding-right: calc(var(--space-4) + var(--icon-button-sm) + var(--space-2));
+}
+.app:not(.mobile) .chat-header .ch-panel,
+.app:not(.mobile) .empty-panel-btn,
+.app:not(.mobile) .ptb-hide {
+  display: none;
 }
 </style>

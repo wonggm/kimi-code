@@ -12,6 +12,7 @@ import { formatDuration } from '../../chatTurnRendering';
 import { parseWaitForOutput, type WaitForParse } from '../../../lib/waitForToolParse';
 import ToolRow from '../ToolRow.vue';
 import ToolOutputBlock from './ToolOutputBlock.vue';
+import ToolPanel from './ToolPanel.vue';
 import Badge from '../../ui/Badge.vue';
 
 const props = withDefaults(
@@ -197,11 +198,13 @@ watch(
         size="sm"
       >{{ statusLabel(full.finishedStatus) }}</Badge>
     </template>
-    <div v-if="glance" class="wf-glance">
-      <div class="wf-main">{{ glance.main }}</div>
-      <div v-for="(sub, i) in glance.subs" :key="i" class="wf-sub">{{ sub }}</div>
-    </div>
-    <ToolOutputBlock v-if="hasOutput" :lines="tool.output" />
+    <ToolPanel scroll>
+      <div v-if="glance" class="wf-glance">
+        <div class="wf-main">{{ glance.main }}</div>
+        <div v-for="(sub, i) in glance.subs" :key="i" class="wf-sub">{{ sub }}</div>
+      </div>
+      <ToolOutputBlock v-if="hasOutput" :lines="tool.output" />
+    </ToolPanel>
   </ToolRow>
 </template>
 

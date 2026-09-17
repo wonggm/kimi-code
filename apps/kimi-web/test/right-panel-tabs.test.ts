@@ -6,11 +6,14 @@ import {
 } from '../src/lib/rightPanelTabs';
 import {
   agentTabTitle,
+  closeOtherPanelTabs,
   closePanelTab,
+  closePanelTabsToRight,
   deserializeRestorableTabs,
   nextSideChatSeq,
   openPanelTab,
   PANEL_TAB_RULES,
+  reorderPanelTabs,
   restorablePanelTabs,
   serializeRestorableTabs,
 } from '../src/lib/panelTabs';
@@ -283,6 +286,41 @@ describe('panelTabs model', () => {
     // No row (or no description) leaves the pane on its i18n label.
     expect(agentTabTitle([], 'agent-1')).toBeUndefined();
     expect(agentTabTitle([task({ description: '' })], 'agent-1')).toBeUndefined();
+  });
+
+  it('moves a tab to another position in the strip', () => {
+    const tabs = [
+      { id: 'a', kind: 'diff' as const },
+      { id: 'b', kind: 'file' as const, path: 'src/b.ts' },
+      { id: 'c', kind: 'compaction' as const, turnId: 't1' },
+    ];
+    expect(reorderPanelTabs(tabs, 'a', 2).map((tab) => tab.id)).toEqual(['b', 'c', 'a']);
+    expect(reorderPanelTabs(tabs, 'c', 0).map((tab) => tab.id)).toEqual(['c', 'a', 'b']);
+    expect(reorderPanelTabs(tabs, 'b', 1).map((tab) => tab.id)).toEqual(['a', 'b', 'c']);
+    expect(tabs.map((tab) => tab.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('clamps a drag past either end and ignores an unknown tab', () => {
+    const tabs = [
+      { id: 'a', kind: 'diff' as const },
+      { id: 'b', kind: 'file' as const, path: 'src/b.ts' },
+    ];
+    expect(reorderPanelTabs(tabs, 'a', 9).map((tab) => tab.id)).toEqual(['b', 'a']);
+    expect(reorderPanelTabs(tabs, 'b', -4).map((tab) => tab.id)).toEqual(['b', 'a']);
+    expect(reorderPanelTabs(tabs, 'nope', 0).map((tab) => tab.id)).toEqual(['a', 'b']);
+  });
+
+  it('closes the other tabs, the tabs to the right, and all of them', () => {
+    const tabs = [
+      { id: 'a', kind: 'diff' as const },
+      { id: 'b', kind: 'file' as const, path: 'src/b.ts' },
+      { id: 'c', kind: 'compaction' as const, turnId: 't1' },
+    ];
+    expect(closeOtherPanelTabs(tabs, 'b')).toEqual({ tabs: [tabs[1]], activeId: 'b' });
+    expect(closePanelTabsToRight(tabs, 'b')).toEqual({ tabs: [tabs[0], tabs[1]], activeId: 'b' });
+    expect(closePanelTabsToRight(tabs, 'c')).toEqual({ tabs, activeId: 'c' });
+    expect(closeOtherPanelTabs(tabs, 'nope')).toBeNull();
+    expect(closePanelTabsToRight(tabs, 'nope')).toBeNull();
   });
 });
 

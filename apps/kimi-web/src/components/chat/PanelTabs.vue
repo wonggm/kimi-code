@@ -10,10 +10,12 @@
      hears back through `activate` / `close` / `add` / `toggle-expanded` / `hide`.
      The pane itself is a slot so the data wiring stays where the data lives. -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { PANEL_TAB_RULES, type PanelTab } from '../../lib/panelTabs';
+import { PANEL_TAB_RULES, type PanelTab, type PanelTabPresentation } from '../../lib/panelTabs';
 import type { IconName } from '../../lib/icons';
+import { usePanelTabReorder } from '../../composables/usePanelTabReorder';
+import { clampMenuPlacement } from '../../composables/useViewportClamp';
 import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
 import Menu from '../ui/Menu.vue';
@@ -47,6 +49,10 @@ const emit = defineEmits<{
   close: [id: string];
   /** Upstream's add menu and launcher offer the same two entries. */
   add: [kind: 'diff' | 'btw'];
+  move: [id: string, toIndex: number];
+  'close-others': [id: string];
+  'close-to-right': [id: string];
+  'close-all': [];
   'toggle-expanded': [];
   hide: [];
   'update:preview-width': [width: number];
@@ -91,6 +97,12 @@ function iconFor(tab: PanelTab): IconName {
   return PANEL_TAB_RULES[tab.kind].icon;
 }
 
+/** Only a browser tab carries a presentation: the page behind it supplies its
+ *  own title, favicon and status glyph. */
+function presentationFor(tab: PanelTab): PanelTabPresentation | undefined {
+  return tab.kind === 'browser' ? tab.presentation : undefined;
+}
+
 /** Upstream titles the path kinds from their payload (the basename), an agent
  *  tab from the agent itself, and the rest from i18n; a terminal carries its own
  *  title when it has one. */
@@ -103,6 +115,8 @@ function titleFor(tab: PanelTab): string {
       return props.agentTitle?.(tab.subagentId) ?? t(PANEL_TAB_RULES.agent.i18nKey ?? 'panel.tabs.agent');
     case 'term':
       return tab.title ?? t('panel.tabs.term');
+    case 'browser':
+      return tab.customTitle || tab.presentation?.title || tab.title || t('panel.tabs.browser');
     case 'btw':
       return tab.seq === 1 ? t('sideChat.title') : `${t('sideChat.title')} ${tab.seq}`;
     default: {
@@ -117,9 +131,26 @@ function basename(path: string): string {
   return parts.at(-1) ?? path;
 }
 
-/** Arrow keys walk the strip, as upstream's does. */
+/** Arrow keys walk the strip, as upstream's does. Alt+ArrowLeft/Right move the
+ *  focused tab itself, and the context-menu key opens the tab's menu. */
 function onTabKey(event: KeyboardEvent, index: number): void {
   const tabs = props.tabs;
+  if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    const tab = tabs[index];
+    if (!tab) return;
+    event.preventDefault();
+    emit('move', tab.id, index + (event.key === 'ArrowLeft' ? -1 : 1));
+    nextTick(() => tabButton(tab.id)?.focus());
+    return;
+  }
+  if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+    const tab = tabs[index];
+    const box = tab ? tabButton(tab.id)?.parentElement?.getBoundingClientRect() : undefined;
+    if (!tab || !box) return;
+    event.preventDefault();
+    void openContextMenu(tab.id, box.x, box.bottom, true);
+    return;
+  }
   let next: number | null = null;
   if (event.key === 'ArrowLeft') next = Math.max(0, index - 1);
   else if (event.key === 'ArrowRight') next = Math.min(tabs.length - 1, index + 1);
@@ -130,9 +161,133 @@ function onTabKey(event: KeyboardEvent, index: number): void {
   const tab = tabs[next];
   if (!tab) return;
   emit('activate', tab.id);
-  const buttons = tabsEl.value?.querySelectorAll<HTMLElement>('.ptb-tab-main');
-  buttons?.[next]?.focus();
+  tabButton(tab.id)?.focus();
 }
+
+function tabButton(id: string): HTMLElement | null {
+  return tabsEl.value?.querySelector<HTMLElement>(`[data-panel-tab-id="${id}"] .ptb-tab-main`) ?? null;
+}
+
+function onTabClick(id: string): void {
+  if (reorder.consumeClick()) return;
+  emit('activate', id);
+}
+
+// ---------------------------------------------------------------------------
+// Tab context menu
+// ---------------------------------------------------------------------------
+
+const menuTabId = ref<string | null>(null);
+const menuItems = computed(() => {
+  const index = menuTabId.value === null ? -1 : props.tabs.findIndex((tab) => tab.id === menuTabId.value);
+  return [
+    { id: 'close', icon: 'close' as IconName, label: t('panel.closeTab'), disabled: false },
+    { id: 'close-others', icon: 'tab-close-others' as IconName, label: t('panel.closeOthers'), disabled: props.tabs.length <= 1 },
+    { id: 'close-to-right', icon: 'tab-close-right' as IconName, label: t('panel.closeToRight'), disabled: index < 0 || index === props.tabs.length - 1 },
+    { id: 'close-all', icon: 'tabs-close-all' as IconName, label: t('panel.closeAll'), disabled: false },
+  ];
+});
+const menuOpen = ref(false);
+const menuReady = ref(false);
+const menuPos = ref({ left: 0, top: 0 });
+const menuEl = ref<InstanceType<typeof Menu> | null>(null);
+let menuReturnFocus: (() => void) | null = null;
+
+async function openContextMenu(id: string, x: number, y: number, focusFirst: boolean): Promise<void> {
+  closeContextMenu();
+  menuTabId.value = id;
+  menuPos.value = { left: x, top: y };
+  menuReady.value = false;
+  menuOpen.value = true;
+  const button = tabButton(id);
+  menuReturnFocus = () => button?.focus();
+  document.addEventListener('mousedown', onMenuDocClick, true);
+  window.addEventListener('keydown', onMenuKey, true);
+  await nextTick();
+  const el = menuEl.value?.el;
+  if (!el) return;
+  const box = el.getBoundingClientRect();
+  menuPos.value = clampMenuPlacement(new DOMRect(x, y, 0, 0), box.width, box.height, 'below');
+  menuReady.value = true;
+  if (focusFirst) menuEntries()[0]?.focus();
+}
+
+function closeContextMenu(refocus = false): void {
+  if (!menuOpen.value) return;
+  menuOpen.value = false;
+  menuTabId.value = null;
+  menuReady.value = false;
+  document.removeEventListener('mousedown', onMenuDocClick, true);
+  window.removeEventListener('keydown', onMenuKey, true);
+  if (refocus) menuReturnFocus?.();
+  menuReturnFocus = null;
+}
+
+function menuEntries(): HTMLElement[] {
+  const el = menuEl.value?.el;
+  return el ? [...el.querySelectorAll<HTMLElement>('.ui-menu-item:not(:disabled)')] : [];
+}
+
+function onMenuDocClick(event: MouseEvent): void {
+  const el = menuEl.value?.el;
+  if (el && event.target instanceof Node && el.contains(event.target)) return;
+  closeContextMenu();
+}
+
+function onMenuKey(event: KeyboardEvent): void {
+  if (event.isComposing) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeContextMenu(true);
+    return;
+  }
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  const entries = menuEntries();
+  if (entries.length === 0) return;
+  event.preventDefault();
+  const at = entries.indexOf(document.activeElement as HTMLElement);
+  const step = event.key === 'ArrowDown' ? 1 : -1;
+  entries[(at + step + entries.length) % entries.length]?.focus();
+}
+
+function pickMenuAction(action: string): void {
+  const id = menuTabId.value;
+  closeContextMenu(true);
+  if (id === null) return;
+  if (action === 'close') emit('close', id);
+  else if (action === 'close-others') emit('close-others', id);
+  else if (action === 'close-to-right') emit('close-to-right', id);
+  else if (action === 'close-all') emit('close-all');
+}
+
+const reorder = usePanelTabReorder({
+  container: tabsEl,
+  enabled: computed(() => props.visible && !props.mobile),
+  move: (id, toIndex) => emit('move', id, toIndex),
+  onDragStart: () => closeContextMenu(),
+});
+
+// The panel's width animates only while it opens (upstream's `sliding`); the
+// class comes off when the transition ends so a resize drag stays immediate.
+const sliding = ref(false);
+let slideTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => [props.visible, props.mobile] as const,
+  ([visible], [wasVisible]) => {
+    if (!visible || wasVisible || props.mobile) return;
+    sliding.value = true;
+    if (slideTimer !== null) clearTimeout(slideTimer);
+    slideTimer = setTimeout(() => {
+      slideTimer = null;
+      sliding.value = false;
+    }, 300);
+  },
+);
+onBeforeUnmount(() => {
+  if (slideTimer !== null) clearTimeout(slideTimer);
+  closeContextMenu();
+});
 
 function toggleAdd(): void {
   addOpen.value = !addOpen.value;
@@ -227,7 +382,7 @@ function onResizeKey(event: KeyboardEvent): void {
 <template>
   <aside
     class="global-preview"
-    :class="{ open: visible, mobile, expanded, 'no-anim': noAnim }"
+    :class="{ open: visible, mobile, expanded, 'no-anim': noAnim, sliding }"
     role="complementary"
     :aria-label="t('layout.detailPanelAria')"
     :aria-hidden="!visible"
@@ -236,7 +391,7 @@ function onResizeKey(event: KeyboardEvent): void {
   >
     <div
       v-if="resizeVisible"
-      class="panel-resize"
+      class="rh panel-resize"
       role="separator"
       aria-orientation="vertical"
       :aria-label="t('layout.resizePreviewAria')"
@@ -246,15 +401,26 @@ function onResizeKey(event: KeyboardEvent): void {
       @pointerup="endResize"
       @pointercancel="endResize"
       @keydown="onResizeKey"
-    />
+    >
+      <span class="rh-bar" aria-hidden="true" />
+    </div>
     <div class="pt-shell" :style="{ '--pfc-host-h': `${hostHeight}px` }">
       <div class="panel-tab-bar">
-        <div ref="tabsEl" class="ptb-tabs" role="tablist">
+        <div ref="tabsEl" class="ptb-tabs" :class="{ 'is-reordering': reorder.reordering.value }" role="tablist">
+          <span
+            v-if="reorder.indicatorLeft.value !== null"
+            class="ptb-drop-indicator"
+            :style="{ left: `${reorder.indicatorLeft.value}px` }"
+            aria-hidden="true"
+          />
           <div
             v-for="(tab, index) in tabs"
             :key="tab.id"
             class="ptb-tab"
-            :class="{ on: tab.id === activeTabId }"
+            :class="{ on: tab.id === activeTabId, 'is-dragging': reorder.draggingId.value === tab.id }"
+            :data-panel-tab-id="tab.id"
+            :style="reorder.styleFor(tab.id)"
+            @contextmenu.prevent.stop="openContextMenu(tab.id, $event.clientX, $event.clientY, false)"
           >
             <button
               type="button"
@@ -263,11 +429,25 @@ function onResizeKey(event: KeyboardEvent): void {
               :aria-selected="tab.id === activeTabId"
               :tabindex="tab.id === activeTabId ? 0 : -1"
               :title="titleFor(tab)"
-              @click="emit('activate', tab.id)"
+              aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+              @click="onTabClick(tab.id)"
+              @pointerdown="reorder.onPointerDown($event, tab.id)"
               @keydown="onTabKey($event, index)"
             >
-              <Icon :name="iconFor(tab)" size="sm" />
-              <span>{{ titleFor(tab) }}</span>
+              <Icon v-if="!presentationFor(tab)?.favicon" :name="presentationFor(tab)?.icon ?? iconFor(tab)" size="sm" />
+              <img
+                v-else
+                class="panel-tab-favicon"
+                :src="presentationFor(tab)?.favicon"
+                alt=""
+                draggable="false"
+              />
+              <span class="panel-tab-title">{{ titleFor(tab) }}</span>
+              <Tooltip v-if="presentationFor(tab)?.status" :text="presentationFor(tab)?.status?.label ?? ''">
+                <span class="panel-tab-status" role="img" :aria-label="presentationFor(tab)?.status?.label">
+                  <Icon :name="presentationFor(tab)?.status?.icon ?? 'info'" size="sm" />
+                </span>
+              </Tooltip>
             </button>
             <button
               type="button"
@@ -279,6 +459,7 @@ function onResizeKey(event: KeyboardEvent): void {
               <Icon name="close" size="sm" />
             </button>
           </div>
+          <span class="ptb-drag-fill" aria-hidden="true" />
         </div>
         <div class="ptb-tail">
           <Tooltip :text="t('panel.newTab')">
@@ -340,6 +521,25 @@ function onResizeKey(event: KeyboardEvent): void {
       <div ref="pfcHostEl" class="pfc-host" />
     </div>
   </aside>
+
+  <Teleport to="body">
+    <Menu
+      v-if="menuOpen"
+      ref="menuEl"
+      class="panel-context-menu"
+      :style="{ left: `${menuPos.left}px`, top: `${menuPos.top}px`, visibility: menuReady ? undefined : 'hidden' }"
+    >
+      <MenuItem
+        v-for="item in menuItems"
+        :key="item.id"
+        :disabled="item.disabled"
+        @click="pickMenuAction(item.id)"
+      >
+        <Icon :name="item.icon" />
+        <span>{{ item.label }}</span>
+      </MenuItem>
+    </Menu>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -371,6 +571,9 @@ function onResizeKey(event: KeyboardEvent): void {
 }
 .global-preview.no-anim {
   transition: none;
+}
+.global-preview.sliding {
+  transition: width var(--duration-slow) var(--ease-in-out);
 }
 .global-preview.mobile {
   position: fixed;
@@ -418,6 +621,21 @@ function onResizeKey(event: KeyboardEvent): void {
   outline: none;
   box-shadow: var(--p-focus-ring);
 }
+/* Upstream's handle reads as a hairline that lights up: the `rh` element is the
+   hit area and `rh-bar` the painted line, so the handle can be grabbed without
+   the line being visible. */
+.rh-bar {
+  position: absolute;
+  inset: 0 var(--space-05);
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.rh:hover .rh-bar {
+  background: var(--color-selected);
+}
+.rh.dragging .rh-bar {
+  background: var(--color-line-strong);
+}
 .panel-tab-bar {
   position: relative;
   height: var(--panel-head-h);
@@ -456,6 +674,34 @@ function onResizeKey(event: KeyboardEvent): void {
   color: var(--color-text-muted);
   transition: background var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out);
 }
+.ptb-tabs.is-reordering .ptb-tab {
+  transition: transform var(--duration-fast) var(--ease-in-out), background var(--duration-fast) var(--ease-out);
+}
+.ptb-tabs.is-reordering .ptb-tab.is-dragging {
+  z-index: var(--z-dropdown);
+  background: var(--color-selected-hover);
+  transition: none;
+}
+/* The strip's empty tail: a drag released here (or any click on the bare
+   strip) has no tab under it. */
+.ptb-drag-fill {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+}
+/* Where the dragged tab will land. */
+.ptb-drop-indicator {
+  position: absolute;
+  top: 50%;
+  width: var(--space-05);
+  height: var(--panel-tab-h);
+  border-radius: var(--radius-full);
+  background: var(--color-text-muted);
+  transform: translate(-50%, -50%);
+  transition: left var(--duration-fast) var(--ease-in-out);
+  z-index: var(--z-sticky);
+  pointer-events: none;
+}
 .ptb-tab:hover {
   background: var(--color-selected);
   color: var(--color-text);
@@ -482,9 +728,26 @@ function onResizeKey(event: KeyboardEvent): void {
   user-select: none;
   cursor: pointer;
 }
-.ptb-tab-main > span {
+.panel-tab-title {
+  position: relative;
+  top: 0.08em;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* A browser tab's own page furniture: the favicon replaces the kind glyph, and
+   the status chip carries the page's state. */
+.panel-tab-favicon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  object-fit: contain;
+  border-radius: var(--radius-xs);
+}
+.panel-tab-status {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--color-text-muted);
 }
 .ptb-tab-main:focus-visible {
   outline: none;
@@ -578,5 +841,15 @@ function onResizeKey(event: KeyboardEvent): void {
 }
 .pfc-host:empty {
   padding: 0;
+}
+
+/* Tab context menu — teleported to the body, positioned at the click point and
+   clamped into the viewport by the opener. */
+.panel-context-menu {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  max-height: calc(100vh - var(--space-4));
+  overflow-y: auto;
+  user-select: none;
 }
 </style>

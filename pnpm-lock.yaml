@@ -227,9 +227,6 @@ importers:
       '@fontsource-variable/jetbrains-mono':
         specifier: ^5.2.8
         version: 5.3.0
-      '@rive-app/canvas':
-        specifier: 2.38.5
-        version: 2.38.5
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -3507,9 +3504,6 @@ packages:
 
   '@radix-ui/rect@1.1.2':
     resolution: {integrity: sha512-xnXE7wG13PI+cxieVssYXlQJuYVRhH9NBoxt3KNwzghDIA69GMm7d4wXRouHIYjE+KvS6U/MsMO73NdS2MH9ZA==}
-
-  '@rive-app/canvas@2.38.5':
-    resolution: {integrity: sha512-S3W6w5D9m2JWD3IKmDYfOKppyVf197QSL4OyuIBiYOvwY552Gzu5ct+6vEevLCAXKhqiY2YuZIEMTXeUGOC5xg==}
 
   '@rolldown/binding-android-arm64@1.0.0-rc.12':
     resolution: {integrity: sha512-pv1y2Fv0JybcykuiiD3qBOBdz6RteYojRFY1d+b95WVuzx211CRh+ytI/+9iVyWQ6koTh5dawe4S/yRfOFjgaA==}
@@ -12515,8 +12509,6 @@ snapshots:
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
 
   '@radix-ui/rect@1.1.2': {}
-
-  '@rive-app/canvas@2.38.5': {}
 
   '@rolldown/binding-android-arm64@1.0.0-rc.12':
     optional: true

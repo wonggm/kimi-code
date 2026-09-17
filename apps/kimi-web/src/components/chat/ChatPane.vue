@@ -1993,10 +1993,8 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .a-msg > .msg,
 .a-msg > :deep(.think),
 .a-msg > :deep(.activity-run),
-.a-msg > :deep(.agent-card),
-.a-msg > :deep(.agent-group),
+.a-msg > :deep(.tool-line),
 .a-msg > :deep(.box),
-.a-msg > :deep(.swarm-card),
 .a-msg > :deep(.media-tool),
 .a-msg > :deep(.turn-fold) {
   margin-top: var(--chat-block-gap);
@@ -2004,10 +2002,8 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .a-msg > .msg:first-child,
 .a-msg > :deep(.think:first-child),
 .a-msg > :deep(.activity-run:first-child),
-.a-msg > :deep(.agent-card:first-child),
-.a-msg > :deep(.agent-group:first-child),
+.a-msg > :deep(.tool-line:first-child),
 .a-msg > :deep(.box:first-child),
-.a-msg > :deep(.swarm-card:first-child),
 .a-msg > :deep(.media-tool:first-child),
 .a-msg > :deep(.turn-fold:first-child) {
   margin-top: 0;
@@ -2038,10 +2034,8 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 .a-msg > .goal-prov:first-child + .msg,
 .a-msg > .goal-prov:first-child + :deep(.think),
 .a-msg > .goal-prov:first-child + :deep(.activity-run),
-.a-msg > .goal-prov:first-child + :deep(.agent-card),
-.a-msg > .goal-prov:first-child + :deep(.agent-group),
+.a-msg > .goal-prov:first-child + :deep(.tool-line),
 .a-msg > .goal-prov:first-child + :deep(.box),
-.a-msg > .goal-prov:first-child + :deep(.swarm-card),
 .a-msg > .goal-prov:first-child + :deep(.media-tool),
 .a-msg > .goal-prov:first-child + :deep(.turn-fold) {
   margin-top: 0;

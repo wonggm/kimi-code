@@ -22,7 +22,7 @@ declare const __KIMI_APP_VERSION__: string;
 declare const __KIMI_APP_BUILD_TIME__: string;
 
 // Injected by Vite `define`: true only in the web bundle embedded in the Kimi
-// Desktop app. Gates the internal-build banner (see InternalBuildBanner.vue).
+// Desktop app. One of the two signals `lib/desktopFlag.ts` combines.
 declare const __KIMI_WEB_DESKTOP__: boolean;
 
 declare module '*.vue' {
