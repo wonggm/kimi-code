@@ -10,8 +10,12 @@
 //    `finishedAt === steeredAt`.
 // Upstream rebuilds a bubble from both (a queued turn renders like any other
 // turn; a steered prompt becomes an optimistic user message), so a reload does
-// not lose the message the user just sent. Pure on purpose: the rules are
-// unit-testable without an engine or a browser.
+// not lose the message the user just sent. The two are placed differently: a
+// prompt still waiting to run belongs at the tail of the transcript, while one
+// steered into a running turn belongs where the user sent it. Appending the
+// steered one instead parked it under every later turn, so a message sent
+// mid-turn read as the newest thing in the conversation. Pure on purpose: the
+// rules are unit-testable without an engine or a browser.
 
 import type {
   AppMessage,
@@ -29,6 +33,10 @@ export interface RecoveredPromptMessage {
   key: string;
   text: string;
   createdAt: string;
+  /** Where the bubble goes: `tail` for a prompt the daemon has not started (it
+   *  runs after everything already transcribed), `chronological` for one folded
+   *  into a running turn (the user sent it mid-conversation). */
+  placement: 'tail' | 'chronological';
 }
 
 /** The plain text of a prompt's content parts. Wire content is a list of typed
@@ -78,13 +86,19 @@ export function recoveredPromptMessages(
       createdAt: promptById.get(item.triggerPromptId ?? '')?.createdAt
         ?? item.startedAt
         ?? fallbackCreatedAt,
+      placement: 'tail',
     });
   }
   for (const prompt of page.prompts) {
     if (!isFoldedSteer(prompt)) continue;
     const text = contentText(prompt.content);
     if (text.length === 0) continue;
-    out.push({ key: prompt.promptId, text, createdAt: prompt.createdAt });
+    out.push({
+      key: prompt.promptId,
+      text,
+      createdAt: prompt.createdAt,
+      placement: 'chronological',
+    });
   }
   return out;
 }
@@ -110,11 +124,29 @@ function recoveredMessage(sessionId: string, recovered: RecoveredPromptMessage):
   };
 }
 
+/** Where a message created at `createdAt` belongs: after the last message that
+ *  is not newer than it, so a rebuilt bubble lands at the point in the
+ *  conversation the user sent it. Equal times keep the newcomer last, which is
+ *  where a prompt sent just now belongs. An unparseable time means the end of
+ *  the list, the only position that claims nothing. */
+function chronologicalIndex(messages: readonly AppMessage[], createdAt: string): number {
+  const at = Date.parse(createdAt);
+  if (Number.isNaN(at)) return messages.length;
+  let index = messages.length;
+  while (index > 0) {
+    const previous = Date.parse(messages[index - 1]!.createdAt);
+    if (Number.isNaN(previous) || previous <= at) break;
+    index -= 1;
+  }
+  return index;
+}
+
 /**
- * Replace this session's rebuilt bubbles with the ones the page reports now,
- * appended at the end of the transcript. A prompt the daemon has meanwhile
- * started (or drained) leaves the list, and a prompt the snapshot already
- * carries as a real message is never doubled.
+ * Replace this session's rebuilt bubbles with the ones the page reports now. A
+ * prompt the daemon has meanwhile started (or drained) leaves the list, and a
+ * prompt the snapshot already carries as a real message is never doubled. A
+ * steered prompt is put back at its own place in the conversation; a queued one
+ * is appended, because it runs after everything already transcribed.
  */
 export function applyRecoveredPromptMessages(
   messages: readonly AppMessage[],
@@ -128,8 +160,15 @@ export function applyRecoveredPromptMessages(
   const knownPromptIds = new Set(
     kept.map((message) => message.promptId).filter((id): id is string => id !== undefined),
   );
-  const rebuilt = recovered
-    .filter((entry) => !knownPromptIds.has(entry.key))
-    .map((entry) => recoveredMessage(sessionId, entry));
-  return rebuilt.length > 0 ? [...kept, ...rebuilt] : kept;
+  const rebuilt = recovered.filter((entry) => !knownPromptIds.has(entry.key));
+  if (rebuilt.length === 0) return kept;
+
+  const merged = [...kept];
+  const tail: AppMessage[] = [];
+  for (const entry of rebuilt) {
+    const message = recoveredMessage(sessionId, entry);
+    if (entry.placement === 'tail') tail.push(message);
+    else merged.splice(chronologicalIndex(merged, entry.createdAt), 0, message);
+  }
+  return [...merged, ...tail];
 }
