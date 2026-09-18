@@ -1,6 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/AgentDetailPanel.vue -->
 <!-- A subagent's detail in the right panel. Element structure and the
      prompt-bubble clamp follow upstream's own AgentDetailPanel:
+       - meta line: subagent type · model · effort;
        - prompt bubble: the task text, collapsed to a few lines until expanded;
        - body: the subagent's transcript (the fork reads it over REST —
          `GET /sessions/{id}/transcript?agent_id=…`) rendered with the main
@@ -34,6 +35,8 @@ import {
 } from '../chatTurnRendering';
 import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX, type FoldedRenderBlock } from '../../lib/toolFold';
 import { activityRunFolding } from '../../lib/conversationPrefs';
+import { modelDisplay } from '../../lib/modelDisplay';
+import { effortLabel } from '../../lib/modelThinking';
 
 const props = defineProps<{
   member: AgentMember;
@@ -55,6 +58,34 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+// ---------------------------------------------------------------------------
+// Meta line — upstream heads the pane with the subagent's binding, above the
+// prompt bubble.
+// ---------------------------------------------------------------------------
+
+/** The effort as upstream prints it: capitalised, and dropped for the two
+ *  levels that are not an effort (`off` / `on`). */
+function effortDisplay(effort: string | undefined): string | undefined {
+  if (effort === undefined || effort.length === 0 || effort === 'off' || effort === 'on') {
+    return undefined;
+  }
+  return effortLabel(effort);
+}
+
+/** `Subagent · model · effort`, each part dropped when the daemon did not
+ *  report it — upstream joins the same three fields with ` · `. */
+const metaLine = computed(() => {
+  const type = props.member.subagentType?.trim();
+  const named = type ? type.charAt(0).toUpperCase() + type.slice(1) : undefined;
+  const binding = [
+    modelDisplay(props.member.model),
+    effortDisplay(props.member.thinkingEffort),
+  ].filter((part): part is string => part !== undefined);
+  return [named, binding.length > 0 ? binding.join(' · ') : undefined]
+    .filter((part): part is string => part !== undefined)
+    .join(' · ');
+});
 
 // ---------------------------------------------------------------------------
 // Prompt bubble
@@ -453,6 +484,9 @@ watch(
   <div class="agent-panel">
     <div ref="bodyEl" class="agent-transcript" @scroll.passive="onBodyScroll">
       <div class="agent-transcript-inner">
+        <div v-if="metaLine" class="agent-meta">
+          <span class="agent-meta-text">{{ metaLine }}</span>
+        </div>
         <section v-if="prompt" class="agent-prompt">
           <div class="agent-prompt-bubble">
             <div class="agent-prompt-wrap" :class="{ 'is-clamped': promptClamped }">
@@ -579,6 +613,33 @@ watch(
   width: 100%;
   max-width: var(--p-content-max);
   margin-inline: auto;
+}
+
+/* ---- Meta line (rules either side of the type · model · effort text) ---- */
+.agent-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  user-select: none;
+}
+.agent-meta::before,
+.agent-meta::after {
+  content: '';
+  flex: 1;
+  height: 0.5px;
+  background: var(--color-line);
+}
+.agent-meta-text {
+  font-size: var(--text-xs);
+  line-height: 1;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- Prompt bubble ---- */

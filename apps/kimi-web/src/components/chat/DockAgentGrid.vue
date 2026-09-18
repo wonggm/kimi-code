@@ -2,14 +2,16 @@
 <!-- The Background Agent body of the dock panel: upstream's `sg-grid` of cards.
      Each card is `sg-card.s-<state>.openable` with an overlay `sg-open` button
      labelled with the agent's name, a `sg-top` row carrying the ordinal and the
-     name, a `sg-foot` status line (the state glyph + word, and the elapsed time
-     pushed right), and — while it runs — the hover `sg-cancel` button. Clicking
-     a card hands the agent to the side panel. -->
+     name, a `sg-foot` column holding the bound-model row (`sg-model`) above the
+     status line (the state glyph + word, and the elapsed time pushed right), and
+     — while it runs — the hover `sg-cancel` button. Clicking a card hands the
+     agent to the side panel. -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { TaskItem } from '../../types';
 import { filterSubagentTasks, type SubagentFilter } from '../../lib/subagentFilter';
+import { modelDisplay } from '../../lib/modelDisplay';
 import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
 
@@ -51,6 +53,10 @@ const STATE_WORD: Record<TaskItem['state'], string> = {
 };
 
 const ordinal = (task: TaskItem): string => String((serials.value.get(task.id) ?? 0) + 1).padStart(2, '0');
+
+// The bound model the agent actually runs on, as upstream's `sg-model` row shows
+// it; dropped when the row carries no model (older servers, REST `/tasks` rows).
+const modelLabel = (task: TaskItem): string | undefined => modelDisplay(task.model);
 </script>
 
 <template>
@@ -69,6 +75,10 @@ const ordinal = (task: TaskItem): string => String((serials.value.get(task.id) ?
         <span class="sg-name">{{ task.name }}</span>
       </div>
       <div class="sg-foot">
+        <div v-if="modelLabel(task)" class="sg-model">
+          <Icon name="robot" size="sm" />
+          <span>{{ modelLabel(task) }}</span>
+        </div>
         <div class="sg-status">
           <span class="sg-state">
             <span v-if="task.state === 'run'" class="kw-dot kw-dot--running" aria-hidden="true" />
@@ -163,6 +173,20 @@ const ordinal = (task: TaskItem): string => String((serials.value.get(task.id) ?
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+/* Bound-model row — upstream's, at its own type size above the state line. */
+.sg-model {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.sg-model span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sg-status {
   display: flex;
