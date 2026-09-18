@@ -761,7 +761,7 @@ describe('recoveredPromptMessages', () => {
       NOW,
     );
     expect(recovered).toEqual([
-      { key: 'pr_q1', text: 'Queued behind the running turn.', createdAt: NOW },
+      { key: 'pr_q1', text: 'Queued behind the running turn.', createdAt: NOW, placement: 'tail' },
     ]);
   });
 
@@ -774,7 +774,9 @@ describe('recoveredPromptMessages', () => {
       }),
       NOW,
     );
-    expect(recovered).toEqual([{ key: 'pr_s1', text: 'steered', createdAt: NOW }]);
+    expect(recovered).toEqual([
+      { key: 'pr_s1', text: 'steered', createdAt: NOW, placement: 'chronological' },
+    ]);
   });
 
   it('ignores a started turn, a running prompt and a prompt that ran its own turn', () => {
@@ -814,8 +816,8 @@ describe('recoveredPromptMessages', () => {
     // renders them in (the queued turn is part of the transcript, the steered
     // prompt is rebuilt after it).
     expect(recovered).toEqual([
-      { key: 'pr_2', text: 'second', createdAt: NOW },
-      { key: 'pr_3', text: 'steered', createdAt: NOW },
+      { key: 'pr_2', text: 'second', createdAt: NOW, placement: 'tail' },
+      { key: 'pr_3', text: 'steered', createdAt: NOW, placement: 'chronological' },
     ]);
   });
 
@@ -858,6 +860,50 @@ describe('recoveredPromptMessages', () => {
       const held = recoveredPromptMessages(page({ items: [queuedTurn('t3', 'queued text', 'pr_q1')] }), NOW);
       const messages = [userMessage('um_1', 'queued text', { promptId: 'pr_q1' })];
       expect(applyRecoveredPromptMessages(messages, held, 's1').map((m) => m.id)).toEqual(['um_1']);
+    });
+
+    it('puts a steered prompt back where it was sent, not under every later turn', () => {
+      const steered = recoveredPromptMessages(
+        page({
+          prompts: [
+            prompt({ promptId: 'pr_s1', steeredAt: NOW, finishedAt: NOW, content: [{ type: 'text', text: 'steered' }] }),
+          ],
+        }),
+        NOW,
+      );
+      const earlier = userMessage('m1', 'hello', { createdAt: '2026-01-01T00:09:00.000Z' });
+      const later = userMessage('m2', 'reply', { createdAt: '2026-01-01T00:11:00.000Z' });
+      expect(
+        applyRecoveredPromptMessages([earlier, later], steered, 's1').map((m) => m.id),
+      ).toEqual(['m1', 'msg_opt_prompt_pr_s1', 'm2']);
+    });
+
+    it('leaves a steer sent after everything else at the end', () => {
+      const steered = recoveredPromptMessages(
+        page({
+          prompts: [
+            prompt({ promptId: 'pr_s1', steeredAt: NOW, finishedAt: NOW, content: [{ type: 'text', text: 'steered' }] }),
+          ],
+        }),
+        NOW,
+      );
+      const earlier = userMessage('m1', 'hello', { createdAt: '2026-01-01T00:09:00.000Z' });
+      expect(applyRecoveredPromptMessages([earlier], steered, 's1').map((m) => m.id)).toEqual([
+        'm1',
+        'msg_opt_prompt_pr_s1',
+      ]);
+    });
+
+    it('keeps a queued prompt at the tail even when it was typed mid-turn', () => {
+      const held = recoveredPromptMessages(
+        page({ items: [queuedTurn('t3', 'queued text', 'pr_q1')] }),
+        NOW,
+      );
+      const earlier = userMessage('m1', 'hello', { createdAt: '2026-01-01T00:09:00.000Z' });
+      const later = userMessage('m2', 'reply', { createdAt: '2026-01-01T00:11:00.000Z' });
+      expect(
+        applyRecoveredPromptMessages([earlier, later], held, 's1').map((m) => m.id),
+      ).toEqual(['m1', 'm2', 'msg_opt_prompt_pr_q1']);
     });
   });
 });
