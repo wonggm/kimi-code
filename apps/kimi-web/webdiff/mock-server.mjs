@@ -509,7 +509,7 @@ function buildFixtures(env) {
     meta: { has_prompt: true, last_prompt: 'Show me a config example.', title: 'Code block header probe', created_at: now, updated_at: now, archived: false, archived_at: null },
     activity: { status: busyOn ? 'running' : 'idle', model: 'example/test-model' },
     agent_config: { model: 'example/test-model' },
-    usage: { input_tokens: 10, output_tokens: 20, cache_read_tokens: 0, cache_creation_tokens: 0, context_tokens: 30, context_limit: 128000, turn_count: 1 },
+    usage: { input_tokens: 10, output_tokens: 20, cache_read_tokens: 246000, cache_creation_tokens: 94800, cache_reporting: 'reads+writes', cache_hit_rate_last: 61.87, cache_hit_rate_recent: 88.41, cache_recent_requests: 20, cache_hit_rate_session: 72.14, context_tokens: 30, context_limit: 128000, turn_count: 1 },
     permission_rules: [],
     message_count: 2,
   };

@@ -48,6 +48,7 @@ const props = withDefaults(
     swarmMode?: boolean;
     colorScheme?: ColorScheme;
     uiFontSize?: number;
+    liquidGlass?: boolean;
     authReady?: boolean;
     accountModel?: string | null;
     /** Managed OAuth account usage from GET /api/v1/oauth/usage. */
@@ -86,6 +87,7 @@ const emit = defineEmits<{
   setPermission: [mode: PermissionMode];
   setColorScheme: [colorScheme: ColorScheme];
   setUiFontSize: [size: number];
+  setLiquidGlass: [on: boolean];
   setConversationToc: [on: boolean];
   updateConfig: [patch: Partial<AppConfig>];
   login: [];
@@ -512,6 +514,14 @@ function openProviders(): void {
         <span class="srow-sub">{{ t('settings.conversationTocHint') }}</span>
       </span>
       <span class="toggle" :class="{ on: conversationToc }" role="switch" :aria-checked="conversationToc" />
+    </button>
+
+    <button type="button" class="srow" @click="emit('setLiquidGlass', !(liquidGlass ?? true))">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('settings.liquidGlass') }}</span>
+        <span class="srow-sub">{{ t('settings.liquidGlassHint') }}</span>
+      </span>
+      <span class="toggle" :class="{ on: liquidGlass ?? true }" role="switch" :aria-checked="liquidGlass ?? true" />
     </button>
 
     </div>

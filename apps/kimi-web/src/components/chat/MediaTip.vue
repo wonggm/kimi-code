@@ -7,7 +7,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import AuthMedia from './AuthMedia.vue';
 import Icon from '../ui/Icon.vue';
 import Spinner from '../ui/Spinner.vue';
@@ -45,8 +44,6 @@ const SIDE_GAP = 8;
 const PREVIEW_HEIGHT = 200;
 
 const rootRef = ref<HTMLElement | null>(null);
-// WebGL rim-refraction fallback (Firefox/Safari) for the hover bubble.
-useGlassRefraction(rootRef);
 const pos = ref({ top: 0, left: 0 });
 
 const displayName = computed(() => {
@@ -122,7 +119,7 @@ const tipStyle = computed(() => ({ top: `${pos.value.top}px`, left: `${pos.value
 <template>
   <div
     ref="rootRef"
-    class="media-tip lg-glass lg-lens"
+    class="media-tip"
     role="tooltip"
     :style="tipStyle"
     @mouseenter="onStay"

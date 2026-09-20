@@ -1515,7 +1515,7 @@ function probeMentionPath(kind: 'file' | 'folder', path: string): Promise<boolea
 
     <!-- Persistent failed-turn card; unlike a toast it remains after the turn
          and can be restored from a session snapshot. -->
-    <div v-if="failure && !showWorking" class="failure-card lg-glass" role="alert">
+    <div v-if="failure && !showWorking" class="failure-card" role="alert">
       <div class="failure-title">{{ t('conversation.modelRequestFailed') }}</div>
       <div v-if="failure.message" class="failure-message">{{ failure.message }}</div>
       <button type="button" class="failure-resume" @click="emit('resumeFailure')">

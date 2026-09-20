@@ -168,6 +168,10 @@ const renameComposing = ref(false);
 const generating = ref(false);
 async function startRename(): Promise<void> {
   closeMenu();
+  // The title is replaced by the input, so a scroll already running has to let
+  // go of it: the variables outlive the span and would re-apply to the title
+  // when the field closes with the pointer still on the row.
+  resetTitleScroll();
   renaming.value = true;
   renameValue.value = props.session.title;
   await nextTick();
@@ -208,6 +212,72 @@ function onGenerateTitle(): void {
       }
     });
   });
+}
+
+// True while a trailing tag renders between the title and the hover actions:
+// the awaiting / aborted pills (the first three badge v-ifs in the template) or
+// the pull-request pill. Upstream's `.has-badge` case: the tag already holds
+// the title's right edge clear of the pin / archive buttons, so the title's
+// fade band must not shift left on hover. Measured on this row: with the 51px
+// PR pill the title ends 25px left of where those buttons start, without it the
+// buttons cover the title's last ~36px, which is the shift the fade performs.
+const hasBadge = computed(
+  () =>
+    !renaming.value &&
+    (props.questionCount > 0 ||
+      props.approvalCount > 0 ||
+      props.session.pendingInteraction === 'question' ||
+      props.session.pendingInteraction === 'approval' ||
+      (!props.session.busy && props.session.lastTurnReason === 'failed') ||
+      Boolean(props.session.pullRequest)),
+);
+
+// Hover scroll for a title wider than its slot. The row measures the inner
+// span when the pointer enters and hands the distance and the duration to the
+// stylesheet, which owns the motion, the same division the row's own --sb-*
+// metrics use. A title that fits writes nothing, so a short row is never
+// touched.
+const rowRef = ref<HTMLElement | null>(null);
+const titleTextRef = ref<HTMLElement | null>(null);
+const titleShift = ref(0);
+const titleShiftMs = ref(0);
+/** 40px/s: a reading pace, not a transition. */
+const TITLE_SCROLL_SPEED = 40;
+/** Floor for that pace: a title that overflows by 18px would otherwise be gone
+ *  in 450ms, which reads as a jump rather than as text passing by. */
+const TITLE_SCROLL_MIN_MS = 600;
+/** The return leg: short, so the next hover starts from the same place without
+ *  a visible rewind. */
+const TITLE_SCROLL_RESET_MS = 180;
+/** Both halves of the hover fade band, in pixels: `--sb-fade` plus
+ *  `--sb-fade-len` on `.se:hover .t`. The travel adds it to the overflow, so the
+ *  title's own tail comes to rest where the mask is still opaque. Stopping at
+ *  the overflow alone parks the tail under the hover buttons and inside the
+ *  fade, which leaves exactly the characters the scroll was for unreadable. */
+const TITLE_HOVER_BAND_PX = 60;
+
+function onRowPointerEnter(): void {
+  const row = rowRef.value;
+  const text = titleTextRef.value;
+  const box = text?.parentElement;
+  if (!row || !text || !box) return;
+  // The pinned list styles this same row class with its own rule (the
+  // `.pinned-scroll .se` block at the foot of the stylesheet) and scrolls
+  // inside a container that carries its own mask, so its titles stay still.
+  if (row.closest('.pinned-scroll')) return;
+  // The inner span is an inline-block around a nowrap line, so its offsetWidth
+  // is the text's own width, never the slot's.
+  const overflow = text.offsetWidth - box.clientWidth;
+  if (overflow <= 0) return;
+  const travel = overflow + TITLE_HOVER_BAND_PX;
+  titleShift.value = -travel;
+  titleShiftMs.value = Math.max(TITLE_SCROLL_MIN_MS, Math.round((travel / TITLE_SCROLL_SPEED) * 1000));
+}
+
+function resetTitleScroll(): void {
+  if (titleShift.value === 0) return;
+  titleShift.value = 0;
+  titleShiftMs.value = TITLE_SCROLL_RESET_MS;
 }
 
 // Open the session's pull request in a new tab (the PR tag's only action).
@@ -275,10 +345,13 @@ defineExpose({ closeMenu });
 
 <template>
   <div
+    ref="rowRef"
     class="se"
-    :class="{ on: active }"
+    :class="{ on: active, 'has-badge': hasBadge }"
     @click="emit('select', session.id)"
     @contextmenu.prevent.stop="openContextMenu"
+    @pointerenter="onRowPointerEnter"
+    @pointerleave="resetTitleScroll"
   >
     <div class="row">
       <!-- Leading status slot (in the gutter left of the title): a spinner
@@ -318,8 +391,17 @@ defineExpose({ closeMenu });
           </Tooltip>
         </span>
         <span v-else class="t" @dblclick.stop="startRename">
-          <span v-if="session.emoji" class="emoji" aria-hidden="true">{{ session.emoji }}</span>
-          {{ session.title }}
+          <!-- The inner span is the part that travels; the mask stays on `.t`
+               so the fade holds at the slot's right edge while the text slides
+               under it. -->
+          <span
+            ref="titleTextRef"
+            class="tx"
+            :style="{ '--title-shift': `${titleShift}px`, '--title-shift-ms': `${titleShiftMs}ms` }"
+          >
+            <span v-if="session.emoji" class="emoji" aria-hidden="true">{{ session.emoji }}</span>
+            {{ session.title }}
+          </span>
         </span>
       </div>
 
@@ -487,10 +569,22 @@ defineExpose({ closeMenu });
   cursor: pointer;
   position: relative;
 }
-.se:hover { background: var(--sb-hover, var(--color-surface-sunken)); color: var(--color-text); }
+/* Row hover: upstream's flat wash, --sb-hover (= --color-hover), and nothing
+   else. The row keeps no filter because it is a wash on a panel that already
+   carries glass, not a second pane of it: the shared hover rule in style.css
+   once painted every listed control, this row among them, with the material's
+   face plus the refract lens, and the lens alone lifted the row to 97 in dark
+   where upstream reads 25. That rule no longer lists `.se`. */
+.se:hover {
+  background: var(--sb-hover, var(--color-hover));
+  color: var(--color-text);
+}
 /* Selected: neutral fill (NOT accent-tinted — selection reads as "where I
-   am", the accent stays reserved for actions and status). */
-.se.on {
+   am", the accent stays reserved for actions and status). Doubled class so the
+   active row keeps its fill while the pointer is on it: upstream declares
+   `.se.on` after `.se:hover` at equal specificity and gets that from source
+   order, and this component's scoped `.se:hover` sits above it. */
+.se.se.on {
   background: var(--color-selected);
   color: var(--color-text);
 }
@@ -529,6 +623,18 @@ defineExpose({ closeMenu });
   background: var(--color-accent);
 }
 
+/* Upstream's vignette: the title is clipped to its slot and its right end is
+   masked away instead of closed with an ellipsis, so a long title reads as
+   continuing under the row's trailing edge rather than as ending there. At rest
+   the last 16px fades; on hover the band walks 34px left, clear of the pin /
+   archive buttons that appear over the title's tail on this row (they sit at
+   `right: 26px` of `.act`, upstream's own buttons sit at the row's right edge
+   instead and cover only the time). A row carrying a trailing tag keeps the
+   resting band, because the tag already holds the title clear of those buttons.
+   The stop colour must be opaque and only its alpha is read, so the theme's
+   strong text token serves: it is opaque in both themes, and it is the value
+   upstream passes. The gradient is a token because the style guard refuses a
+   bare gradient in a rendered property. */
 .t {
   color: inherit;
   font-size: var(--ui-font-size-sm);
@@ -537,8 +643,34 @@ defineExpose({ closeMenu });
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
+  --sb-fade: 0px;
+  --sb-fade-len: 16px;
+  --sb-vignette: linear-gradient(
+    to right,
+    var(--color-text-strong) calc(100% - var(--sb-fade) - var(--sb-fade-len)),
+    transparent calc(100% - var(--sb-fade))
+  );
+  -webkit-mask-image: var(--sb-vignette);
+  mask-image: var(--sb-vignette);
+}
+.se:hover .t { --sb-fade: 34px; --sb-fade-len: 26px; }
+.se.has-badge:hover .t { --sb-fade: 0px; --sb-fade-len: 16px; }
+/* The travelling part of the title. Inline-block around a nowrap line, so its
+   width is the text's own width and the overflow is measurable; the slot
+   clips it. The run keeps a constant pace, the return is eased; the timing
+   function is picked by the same hover state that starts each leg. */
+.tx {
+  display: inline-block;
+  white-space: nowrap;
+  transform: translateX(var(--title-shift, 0px));
+  transition: transform var(--title-shift-ms, 0ms) var(--ease-out);
+}
+.se:hover .tx { transition-timing-function: linear; }
+/* No scroll where motion is unwanted: the mask alone stays. */
+@media (prefers-reduced-motion: reduce) {
+  .tx { transform: none; }
 }
 .emoji { margin-right: var(--space-1); }
 
@@ -643,14 +775,9 @@ defineExpose({ closeMenu });
    is the upstream-ported surface upstream draws tighter — so the metrics are
    restated here rather than in the primitives, which every other menu in the
    app shares. `.menu.menu` and the doubled `:deep()` selectors outrank the
-   primitives' own rules regardless of stylesheet order.
-   The `--lg-optic-*` slots are the shared glass rule's per-surface door: with
-   the glass toggle on they repaint this panel in upstream's material (its
-   `--color-menu-bg` fill, `--color-line` edge and `--shadow-menu`) instead of
-   the `lg-glass` tier's tint and rim, and the demotion regimes (reduced
-   transparency, the opaque regime) still retarget them from above. The blur
-   stays the fork's own menu retarget — it applies to every dropdown in the app
-   at a specificity these slots do not fight. */
+   primitives' own rules regardless of stylesheet order. The blur applies to
+   every dropdown in the app via `--p-menu-backdrop`, a specificity these
+   selectors do not fight. */
 .menu.menu {
   position: fixed;
   top: 0;
@@ -664,9 +791,6 @@ defineExpose({ closeMenu });
   -webkit-backdrop-filter: var(--p-menu-backdrop);
   backdrop-filter: var(--p-menu-backdrop);
   box-shadow: var(--shadow-menu);
-  --lg-optic-bg: var(--color-menu-bg);
-  --lg-optic-shadow: var(--shadow-menu);
-  --lg-optic-border: var(--color-line);
 }
 .menu.menu :deep(.ui-menu-item.ui-menu-item) {
   gap: 7px;

@@ -853,8 +853,9 @@ function copyDiff(code: string, idx: number) {
   mask-image: var(--markdown-code-edge-ring-mask);
   mask-composite: intersect;
 }
-/* Floating scrollbars — the same shape and colours as the autocomplete menus'
-   thumb (--code-scrollbar-* falls back to the menu family). */
+/* Floating scrollbars — the code block draws its own bar over the hidden
+   native one, at the --code-scrollbar-* metrics; those fall back to the menu
+   token family, which the menus themselves no longer read. */
 .md :deep(.md-code-scrollbar) {
   position: absolute;
   background: transparent;

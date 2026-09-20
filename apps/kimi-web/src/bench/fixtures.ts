@@ -129,7 +129,7 @@ export function chunkTokens(text: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// scroll-long / backdrop fixture
+// scroll-long fixture
 // ---------------------------------------------------------------------------
 
 const QUESTION_POOL = [
@@ -165,8 +165,8 @@ function assistantBody(i: number): string {
 /**
  * Build a synthetic conversation of approximately `totalTurns` chat turns
  * (alternating user/assistant messages). Each assistant reply carries formulas
- * and, every few turns, a code fence — enough to make scrolling repaint the
- * blur band over real rendered content.
+ * and, every few turns, a code fence — enough to keep scroll repaints busy
+ * with real rendered content.
  */
 export function buildLongConversation(totalTurns: number): AppMessage[] {
   const pairs = Math.max(1, Math.ceil(totalTurns / 2));

@@ -7,17 +7,12 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue';
 import { setCredential } from '../api/daemon/serverAuth';
-import { useGlassRefraction } from '../composables/useGlassRefraction';
 import Button from './ui/Button.vue';
 import Input from './ui/Input.vue';
 
 const credential = ref('');
 const inputRef = ref<InstanceType<typeof Input> | null>(null);
 const submitting = ref(false);
-
-const cardRef = ref<HTMLElement | null>(null);
-// WebGL rim-refraction fallback (Firefox/Safari): persistent auth card.
-useGlassRefraction(cardRef, { transient: false });
 
 onMounted(() => {
   void nextTick(() => inputRef.value?.focus());
@@ -41,8 +36,8 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="server-auth-overlay lg-scrim" role="dialog" aria-modal="true" aria-labelledby="server-auth-title">
-    <div ref="cardRef" class="server-auth-card lg-frost lg-lens">
+  <div class="server-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="server-auth-title">
+    <div class="server-auth-card">
       <div class="server-auth-head">
         <h1 id="server-auth-title" class="server-auth-title">Server token required</h1>
         <p class="server-auth-hint">
@@ -86,7 +81,6 @@ function onKeydown(e: KeyboardEvent): void {
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--color-bg) 70%, transparent);
-  /* defocus blur: the shared .lg-scrim utility (lg-frost family, style.css). */
 }
 
 .server-auth-card {

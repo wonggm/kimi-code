@@ -117,6 +117,11 @@ interface SessionState {
   totalOutput: number;
   totalCacheRead: number;
   totalCacheCreate: number;
+  cacheReporting?: 'none' | 'reads' | 'reads+writes';
+  cacheHitRateLast?: number;
+  cacheHitRateRecent?: number;
+  cacheRecentRequests?: number;
+  cacheHitRateSession?: number;
   contextTokens: number;
   contextLimit: number;
   turnCount: number;
@@ -153,6 +158,11 @@ function createSessionState(): SessionState {
     totalOutput: 0,
     totalCacheRead: 0,
     totalCacheCreate: 0,
+    cacheReporting: undefined,
+    cacheHitRateLast: undefined,
+    cacheHitRateRecent: undefined,
+    cacheRecentRequests: undefined,
+    cacheHitRateSession: undefined,
     contextTokens: 0,
     contextLimit: 0,
     turnCount: 0,
@@ -523,12 +533,50 @@ function getMsgById(state: SessionState, messageId: string): AppMessage | undefi
 // Usage snapshot builder
 // ---------------------------------------------------------------------------
 
+/** Read the engine's cache report off a status payload. Returns undefined when
+ *  the payload predates the field, so an absent report never clears a known one. */
+function readCacheStatus(
+  usage: unknown,
+):
+  | {
+      reporting: 'none' | 'reads' | 'reads+writes';
+      lastRequestPercent?: number;
+      recentPercent?: number;
+      recentRequestCount?: number;
+      sessionPercent?: number;
+    }
+  | undefined {
+  if (!usage || typeof usage !== 'object') return undefined;
+  const cache = (usage as { cache?: unknown }).cache;
+  if (!cache || typeof cache !== 'object') return undefined;
+  const reporting = (cache as { reporting?: unknown }).reporting;
+  if (reporting !== 'none' && reporting !== 'reads' && reporting !== 'reads+writes') {
+    return undefined;
+  }
+  const lastRequestPercent = (cache as { lastRequestPercent?: unknown }).lastRequestPercent;
+  const recentPercent = (cache as { recentPercent?: unknown }).recentPercent;
+  const recentRequestCount = (cache as { recentRequestCount?: unknown }).recentRequestCount;
+  const sessionPercent = (cache as { sessionPercent?: unknown }).sessionPercent;
+  return {
+    reporting,
+    lastRequestPercent: typeof lastRequestPercent === 'number' ? lastRequestPercent : undefined,
+    recentPercent: typeof recentPercent === 'number' ? recentPercent : undefined,
+    recentRequestCount: typeof recentRequestCount === 'number' ? recentRequestCount : undefined,
+    sessionPercent: typeof sessionPercent === 'number' ? sessionPercent : undefined,
+  };
+}
+
 function buildUsageSnapshot(state: SessionState): AppSessionUsage {
   return {
     inputTokens: state.totalInput,
     outputTokens: state.totalOutput,
     cacheReadTokens: state.totalCacheRead,
     cacheCreationTokens: state.totalCacheCreate,
+    cacheReporting: state.cacheReporting,
+    cacheHitRateLast: state.cacheHitRateLast,
+    cacheHitRateRecent: state.cacheHitRateRecent,
+    cacheRecentRequests: state.cacheRecentRequests,
+    cacheHitRateSession: state.cacheHitRateSession,
     totalCostUsd: 0,
     contextTokens: state.contextTokens,
     contextLimit: state.contextLimit,
@@ -1044,6 +1092,15 @@ export function createAgentProjector(): AgentProjector {
         if (p?.model) s.model = p.model;
         if (p?.contextTokens !== undefined) s.contextTokens = p.contextTokens;
         if (p?.maxContextTokens !== undefined) s.contextLimit = p.maxContextTokens;
+        // The engine owns the cache rate; the client only prints it.
+        const cache = readCacheStatus(p?.usage);
+        if (cache !== undefined) {
+          s.cacheReporting = cache.reporting;
+          s.cacheHitRateLast = cache.lastRequestPercent;
+          s.cacheHitRateRecent = cache.recentPercent;
+          s.cacheRecentRequests = cache.recentRequestCount;
+          s.cacheHitRateSession = cache.sessionPercent;
+        }
 
         out.push({
           type: 'sessionUsageUpdated',

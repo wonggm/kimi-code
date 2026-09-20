@@ -4,7 +4,7 @@
      engine's fs:suggest ranks fuzzy name + path-fragment matches and reports
      per-character match positions (offsets into the path) — those light up as
      bold fragments in the name / path columns. Long lists get a scroll fade
-     plus a draggable floating scrollbar (see useMenuScrollbar). -->
+     and the browser's own scrollbar (see useMenuScrollbar). -->
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -40,7 +40,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 const scrollEl = ref<HTMLElement | null>(null);
-const { maskStyle, thumbStyle, onScroll, onThumbPointerDown } = useMenuScrollbar(scrollEl);
+const { maskStyle, onScroll } = useMenuScrollbar(scrollEl);
 
 // ---------------------------------------------------------------------------
 // File-type glyphs: small line-SVG icons (viewBox 0 0 16 16) keyed off the
@@ -170,7 +170,7 @@ function pathPieces(item: MentionItem): Piece[] {
 
 <template>
   <div
-    class="mention-menu lg-glass"
+    class="mention-menu"
     :class="{ 'is-sheet': layout === 'sheet' }"
     :style="clampStyle"
     role="listbox"
@@ -214,12 +214,6 @@ function pathPieces(item: MentionItem): Piece[] {
         </div>
       </template>
     </div>
-    <div
-      v-if="thumbStyle"
-      class="menu-thumb"
-      :style="thumbStyle"
-      @pointerdown="onThumbPointerDown"
-    />
   </div>
 </template>
 
@@ -251,40 +245,13 @@ function pathPieces(item: MentionItem): Piece[] {
   border-bottom-right-radius: var(--radius-md);
 }
 
-/* Scroll container: owns the max-height + scrolling; hides the native
-   scrollbar in favor of the floating thumb. */
+/* Scroll container: owns the max-height + scrolling, and the browser draws its
+   own scrollbar on it. */
 .menu-scroll {
   max-height: 220px;
   overflow-y: auto;
-  scrollbar-width: none;
-}
-.menu-scroll::-webkit-scrollbar {
-  display: none;
 }
 
-/* Floating draggable scrollbar — sibling of the scroll container, anchored to
-   the menu frame. Interactive hit area widened by the ::before overlay. */
-.menu-thumb {
-  position: absolute;
-  right: 4px;
-  width: var(--menu-scrollbar-width);
-  border-radius: var(--radius-full);
-  background: var(--menu-scrollbar-color);
-  cursor: default;
-  touch-action: none;
-  transition: background var(--duration-base) var(--ease-out);
-}
-.menu-thumb::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(-1 * var(--space-2));
-  right: 0;
-}
-.mention-menu:hover .menu-thumb {
-  background: var(--menu-scrollbar-color-hover);
-}
 
 .mention-state {
   padding: 8px 12px;
@@ -373,15 +340,12 @@ function pathPieces(item: MentionItem): Piece[] {
 .mention-state { font-family: var(--sans); }
 
 /* ---- Sheet layout (mobile bottom sheet): same flattening as SlashMenu — no
-   absolute anchoring, no raised surface (the sheet's own lg-frost surface
-   owns the blur; the frame drops the lg-glass frost), no floating scrollbar
-   thumb. ---- */
+   absolute anchoring, no raised surface (the sheet's own surface carries the
+   treatment). ---- */
 .mention-menu.is-sheet[role="listbox"] {
   position: static;
   padding: 0;
   background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -389,9 +353,6 @@ function pathPieces(item: MentionItem): Piece[] {
 }
 .mention-menu.is-sheet .menu-scroll {
   padding: var(--space-1) var(--space-2);
-}
-.mention-menu.is-sheet .menu-thumb {
-  display: none;
 }
 .mention-menu.is-sheet .menu-scroll > :first-child {
   border-top-left-radius: 0;

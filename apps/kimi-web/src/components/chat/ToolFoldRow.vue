@@ -90,7 +90,7 @@ function onKeydown(event: KeyboardEvent): void {
   <div class="tool-fold">
     <button
       type="button"
-      class="tool-fold-chip lg-glass lg-glass"
+      class="tool-fold-chip"
       :aria-expanded="expanded"
       :aria-label="summaryLabel"
       @click="onClick"
@@ -129,10 +129,6 @@ function onKeydown(event: KeyboardEvent): void {
   font-size: var(--text-sm);
   cursor: pointer;
   user-select: none;
-  /* Float chip: a hover wash should not nest a backdrop-filter. The .lg-glass
-     class owns the backdrop-filter; we only tint via a hover overlay using
-     a flat color, never another filter. Firefox keeps its default rendering
-     (no nesting) per the upstream porting constraints. */
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 .tool-fold-chip:hover {

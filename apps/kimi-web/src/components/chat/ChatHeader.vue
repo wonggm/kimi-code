@@ -274,49 +274,51 @@ function togglePin(): void {
     </IconButton>
 
     <!-- Fixed more menu -->
-    <Menu
-      v-if="menuOpen"
-      ref="menuRef"
-      class="ch-menu"
-      :style="menuStyle"
-      @click.stop
-    >
-      <MenuItem @click="onCopyAll">
-        <Icon :name="copied ? 'check' : 'copy'" size="sm" />
-        {{ copied ? t('header.copied') : t('header.copyAll') }}
-      </MenuItem>
-      <MenuItem @click="onCopyFinalSummary">
-        <Icon name="file-text" size="sm" />
-        {{ t('header.copyFinalSummary') }}
-      </MenuItem>
-      <template v-if="sessionId">
-        <MenuItem separator />
-        <MenuItem @click="copySessionId">
-          <Icon :name="copiedId ? 'check' : 'copy'" size="sm" />
-          {{ copiedId ? t('header.copied') : t('header.copySessionId') }}
+    <Teleport to="body">
+      <Menu
+        v-if="menuOpen"
+        ref="menuRef"
+        class="ch-menu"
+        :style="menuStyle"
+        @click.stop
+      >
+        <MenuItem @click="onCopyAll">
+          <Icon :name="copied ? 'check' : 'copy'" size="sm" />
+          {{ copied ? t('header.copied') : t('header.copyAll') }}
         </MenuItem>
-        <MenuItem @click="togglePin">
-          <Icon :name="pinned ? 'star' : 'star-outline'" size="sm" />
-          {{ pinned ? t('header.unpinSession') : t('header.pinSession') }}
+        <MenuItem @click="onCopyFinalSummary">
+          <Icon name="file-text" size="sm" />
+          {{ t('header.copyFinalSummary') }}
         </MenuItem>
-        <MenuItem @click="startRename">
-          <Icon name="pencil" size="sm" />
-          {{ t('header.renameSession') }}
-        </MenuItem>
-        <MenuItem @click="forkSession">
-          <Icon name="git-fork" size="sm" />
-          {{ t('header.forkSession') }}
-        </MenuItem>
-        <MenuItem @click="exportSession">
-          <Icon name="download" size="sm" />
-          {{ t('header.exportSession') }}
-        </MenuItem>
-        <MenuItem danger @click="startArchive">
-          <Icon name="archive" size="sm" />
-          {{ t('header.archiveSession') }}
-        </MenuItem>
-      </template>
-    </Menu>
+        <template v-if="sessionId">
+          <MenuItem separator />
+          <MenuItem @click="copySessionId">
+            <Icon :name="copiedId ? 'check' : 'copy'" size="sm" />
+            {{ copiedId ? t('header.copied') : t('header.copySessionId') }}
+          </MenuItem>
+          <MenuItem @click="togglePin">
+            <Icon :name="pinned ? 'star' : 'star-outline'" size="sm" />
+            {{ pinned ? t('header.unpinSession') : t('header.pinSession') }}
+          </MenuItem>
+          <MenuItem @click="startRename">
+            <Icon name="pencil" size="sm" />
+            {{ t('header.renameSession') }}
+          </MenuItem>
+          <MenuItem @click="forkSession">
+            <Icon name="git-fork" size="sm" />
+            {{ t('header.forkSession') }}
+          </MenuItem>
+          <MenuItem @click="exportSession">
+            <Icon name="download" size="sm" />
+            {{ t('header.exportSession') }}
+          </MenuItem>
+          <MenuItem danger @click="startArchive">
+            <Icon name="archive" size="sm" />
+            {{ t('header.archiveSession') }}
+          </MenuItem>
+        </template>
+      </Menu>
+    </Teleport>
 
     <div class="ch-spacer" />
 
@@ -379,7 +381,7 @@ function togglePin(): void {
   align-items: center;
   gap: 14px;
   height: 48px;
-  padding: 0 16px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--color-line);
   background: var(--color-bg);
   font-family: var(--font-ui);
@@ -426,7 +428,7 @@ function togglePin(): void {
   background: transparent;
   padding: 0;
   color: var(--muted);
-  font-family: var(--mono);
+  font-family: var(--font-ui);
   font-size: calc(var(--ui-font-size) - 2px);
   flex: 0 1 auto;
   max-width: none;
@@ -449,12 +451,15 @@ function togglePin(): void {
   gap: 3px;
   padding: 1px 5px;
   border-radius: 999px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--color-well);
+  border: 1px solid var(--color-line);
   font-size: calc(var(--ui-font-size) - 3px);
 }
-.ch-sync-pill { border-color: var(--line); }
-.ch-diff-pill { border-color: color-mix(in srgb, var(--color-success) 20%, var(--line)); }
+.ch-sync-pill { border-color: var(--color-line); }
+.ch-diff-pill {
+  border-color: color-mix(in srgb, var(--color-success) 20%, var(--color-line));
+  font-variant-numeric: tabular-nums;
+}
 .ch-ahead { color: var(--color-warning); flex: none; }
 .ch-behind { color: var(--color-accent-hover); flex: none; }
 .ch-add { color: var(--color-success); flex: none; }
@@ -476,7 +481,7 @@ function togglePin(): void {
   flex: none;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-full);
-  background: var(--color-surface-sunken);
+  background: var(--color-well);
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   font-weight: 500;
@@ -486,8 +491,8 @@ function togglePin(): void {
 .ch-pr.pr-open { color: var(--color-success); border-color: var(--color-success-bd); background: var(--color-success-soft); }
 .ch-pr.pr-merged { color: var(--color-done); border-color: var(--color-done-bd); background: var(--color-done-soft); }
 .ch-pr.pr-closed { color: var(--color-danger); border-color: var(--color-danger-bd); background: var(--color-danger-soft); }
-.ch-pr.pr-draft { color: var(--color-text-muted); border-color: var(--color-line-strong); background: var(--color-surface-sunken); }
-.ch-pr.pr-unknown { color: var(--color-text-muted); border-color: var(--color-line-strong); background: var(--color-surface-sunken); }
+.ch-pr.pr-draft { color: var(--color-text-muted); border-color: var(--color-line-strong); background: var(--color-well); }
+.ch-pr.pr-unknown { color: var(--color-text-muted); border-color: var(--color-line-strong); background: var(--color-well); }
 .ch-pr:hover { border-color: var(--color-line-strong); }
 
 /* Fixed more-menu, anchored to the kebab trigger. Surface / items come from
