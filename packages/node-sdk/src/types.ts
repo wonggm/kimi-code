@@ -1,4 +1,5 @@
 import type { HostUiCapability } from '@moonshot-ai/agent-core-v2';
+import type { CacheStatus } from '@moonshot-ai/agent-core-v2/agent/usage/cacheRate';
 import type {
   ExportSessionManifest,
   ShellEnvironment,
@@ -397,6 +398,7 @@ export interface SessionUsage {
   readonly byModel?: Record<string, TokenUsage> | undefined;
   readonly currentTurn?: TokenUsage | undefined;
   readonly total?: TokenUsage | undefined;
+  readonly cache?: CacheStatus | undefined;
 }
 
 export interface SessionStatus {

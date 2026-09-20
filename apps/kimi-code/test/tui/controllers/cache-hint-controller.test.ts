@@ -52,6 +52,7 @@ function makeHost(
     mountEditorReplacement: vi.fn(),
     restoreEditor: vi.fn(),
     restoreInputText: vi.fn(),
+    appendCacheNotice: vi.fn(),
     recallStashedMedia: vi.fn(),
     showError: vi.fn(),
     createNewSession: vi.fn(async () => {
@@ -564,12 +565,51 @@ describe('CacheHintController cache-break detection', () => {
     controllerA.noteStepUsage(u(100000));
     controllerA.noteStepUsage(u(96000)); // 4% drop — inside the ratio gate
     expect(a.host.track).not.toHaveBeenCalled();
+    expect(a.host.appendCacheNotice).not.toHaveBeenCalled();
 
     const b = makeHost();
     const controllerB = new CacheHintController(b.host);
     controllerB.noteStepUsage(u(4000));
     controllerB.noteStepUsage(u(2500)); // drop 1500 ≤ 2000 — under the token threshold
     expect(b.host.track).not.toHaveBeenCalled();
+    expect(b.host.appendCacheNotice).not.toHaveBeenCalled();
+  });
+
+  it('tells the user what a break cost, naming the change that caused it', () => {
+    const { host, state } = makeHost();
+    const controller = new CacheHintController(host);
+    controller.noteStepUsage(u(10000));
+    controller.noteStepUsage({ ...u(7000), inputOther: 2000, inputCacheCreation: 300 });
+
+    expect(host.appendCacheNotice).toHaveBeenCalledWith(
+      'cache rebuilt: 2.2k tokens re-sent',
+    );
+
+    const switched = makeHost();
+    const switchedController = new CacheHintController(switched.host);
+    switchedController.noteStepUsage(u(10000));
+    switched.state.appState.model = 'k3';
+    switchedController.noteStepUsage(u(7000));
+
+    expect(switched.host.appendCacheNotice).toHaveBeenCalledWith(
+      'cache rebuilt after the model switch: 100 tokens re-sent',
+    );
+    expect(state.appState.model).toBe('k2');
+  });
+
+  it('shows at most one rebuilt-cache notice per turn', () => {
+    const { host } = makeHost();
+    const controller = new CacheHintController(host);
+    controller.onTurnBegin();
+    controller.noteStepUsage(u(10000));
+    controller.noteStepUsage(u(7000));
+    controller.noteStepUsage(u(1000));
+    expect(host.appendCacheNotice).toHaveBeenCalledTimes(1);
+
+    controller.onTurnBegin();
+    controller.noteStepUsage(u(20000));
+    controller.noteStepUsage(u(5000));
+    expect(host.appendCacheNotice).toHaveBeenCalledTimes(2);
   });
 
   it('skips unmeasured usage without touching the baseline', () => {

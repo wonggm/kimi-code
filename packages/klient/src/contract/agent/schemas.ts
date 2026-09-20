@@ -125,10 +125,19 @@ export const tokenUsageSchema = z.object({
   inputCacheCreation: z.number(),
 });
 
+export const cacheStatusSchema = z.object({
+  reporting: z.enum(['none', 'reads', 'reads+writes']),
+  lastRequestPercent: z.number().optional(),
+  recentPercent: z.number().optional(),
+  recentRequestCount: z.number().optional(),
+  sessionPercent: z.number().optional(),
+});
+
 export const usageStatusSchema = z.object({
   byModel: z.record(z.string(), tokenUsageSchema).optional(),
   currentTurn: tokenUsageSchema.optional(),
   total: tokenUsageSchema.optional(),
+  cache: cacheStatusSchema.optional(),
 });
 
 /**

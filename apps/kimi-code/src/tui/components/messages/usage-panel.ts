@@ -7,7 +7,7 @@
 import type { Component } from '@moonshot-ai/pi-tui';
 import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
 import { formatDuration } from '@moonshot-ai/kimi-code-oauth';
-import type { SessionUsage, TokenUsage } from '@moonshot-ai/kimi-code-sdk';
+import type { CacheStatus, SessionUsage, TokenUsage } from '@moonshot-ai/kimi-code-sdk';
 
 import {
   formatTokenCount,
@@ -56,6 +56,7 @@ export interface UsageReportOptions {
   readonly contextUsage: number;
   readonly contextTokens: number;
   readonly maxContextTokens: number;
+  readonly cache?: CacheStatus;
   readonly managedUsage?: ManagedUsageReport;
   readonly managedUsageError?: string;
 }
@@ -67,6 +68,39 @@ export interface ManagedUsageReportLineOptions {
 
 function usageNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/** Cache section. The provider decides what it reports: some send cached-read
+ *  counts only and never a write count, and some send neither, so an absent
+ *  measurement must read as unreported rather than as a zero rate. */
+function buildCacheSection(
+  cache: CacheStatus | undefined,
+  sessionUsage: SessionUsage | undefined,
+  value: Colorize,
+  muted: Colorize,
+): string[] {
+  if (cache === undefined) return [];
+  const lines: string[] = [currentTheme.boldFg('primary', 'Cache')];
+  if (cache.reporting === 'none') {
+    lines.push(muted('  not reported by this provider'));
+    return lines;
+  }
+  const totals = sessionUsage?.total;
+  const cached = usageNumber(totals?.inputCacheRead);
+  const written = usageNumber(totals?.inputCacheCreation);
+  const counts = cached + written > 0 ? muted(`   cached ${formatTokenCount(cached)} · written ${formatTokenCount(written)}`) : '';
+  const rate = (percent: number | undefined): string =>
+    percent === undefined ? muted('—') : value(`${percent.toFixed(2)}%`);
+  const label = (text: string): string => muted(text.padEnd(18));
+  const count = cache.recentRequestCount;
+  const windowLabel = count === undefined || count === 0 ? 'recent' : `last ${String(count)} requests`;
+  lines.push(`  ${label('last request')}${rate(cache.lastRequestPercent)}`);
+  lines.push(`  ${label(windowLabel)}${rate(cache.recentPercent)}`);
+  lines.push(`  ${label('session')}${rate(cache.sessionPercent)}${counts}`);
+  if (cache.reporting === 'reads') {
+    lines.push(muted('  reads only; this provider reports no cache writes'));
+  }
+  return lines;
 }
 
 function usageInputTotal(usage: TokenUsage): number {
@@ -264,6 +298,12 @@ export function buildUsageReportLines(options: UsageReportOptions): string[] {
     accent('Session usage'),
     ...buildSessionUsageSection(options.sessionUsage, options.sessionUsageError, value, muted),
   ];
+
+  const cacheSection = buildCacheSection(options.cache, options.sessionUsage, value, muted);
+  if (cacheSection.length > 0) {
+    lines.push('');
+    lines.push(...cacheSection);
+  }
 
   if (options.maxContextTokens > 0) {
     const ratio = safeUsageRatio(options.contextUsage);

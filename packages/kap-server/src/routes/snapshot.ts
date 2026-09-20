@@ -82,12 +82,12 @@ export function registerSnapshotRoutes(app: SnapshotRouteHost, deps: SnapshotRou
       try {
         const data = await assembleSnapshot(core, broadcaster, session_id);
         reply.send(okEnvelope(data, req.id));
-      } catch (err) {
-        if (err instanceof SnapshotNotFoundError) {
-          reply.send(errEnvelope(ErrorCode.SESSION_NOT_FOUND, err.message, req.id, err.stack));
+      } catch (error) {
+        if (error instanceof SnapshotNotFoundError) {
+          reply.send(errEnvelope(ErrorCode.SESSION_NOT_FOUND, error.message, req.id, error.stack));
           return;
         }
-        throw err;
+        throw error;
       }
     },
   );
@@ -169,11 +169,17 @@ function readCurrentPromptId(main: IAgentScopeHandle | undefined): string | unde
 function toSnapshotUsage(status: LegacyStatusSnapshot | undefined): SessionUsage {
   if (status === undefined) return emptySessionUsage();
   const total = status.usage?.total;
+  const cache = status.usage?.cache;
   return {
     input_tokens: total?.inputOther ?? 0,
     output_tokens: total?.output ?? 0,
     cache_read_tokens: total?.inputCacheRead ?? 0,
     cache_creation_tokens: total?.inputCacheCreation ?? 0,
+    cache_reporting: cache?.reporting ?? 'none',
+    cache_hit_rate_last: cache?.lastRequestPercent,
+    cache_hit_rate_recent: cache?.recentPercent,
+    cache_recent_requests: cache?.recentRequestCount,
+    cache_hit_rate_session: cache?.sessionPercent,
     context_tokens: status.contextTokens,
     context_limit: status.maxContextTokens,
   };
