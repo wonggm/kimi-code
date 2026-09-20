@@ -21,6 +21,7 @@ const appState: AppState = {
   contextUsage: 0,
   contextTokens: 0,
   maxContextTokens: 0,
+  cache: { reporting: 'none' },
   isCompacting: false,
   isReplaying: false,
   streamingPhase: 'idle',

@@ -1,4 +1,5 @@
 import type {
+  CacheStatus,
   GoalChange,
   GoalSnapshot,
   ModelAlias,
@@ -63,7 +64,7 @@ export interface AppState {
   contextTokens: number;
   maxContextTokens: number;
   cumulativeTokens?: number;
-  cacheHitRate?: number;
+  cache: CacheStatus;
   isCompacting: boolean;
   isReplaying: boolean;
   streamingPhase: 'idle' | 'waiting' | 'thinking' | 'composing' | 'shell';

@@ -155,6 +155,7 @@ export async function showUsage(host: SlashCommandHost): Promise<void> {
     contextUsage: host.state.appState.contextUsage,
     contextTokens: host.state.appState.contextTokens,
     maxContextTokens: host.state.appState.maxContextTokens,
+    cache: host.state.appState.cache,
     managedUsage: managedUsage?.usage,
     managedUsageError: managedUsage?.error,
   };

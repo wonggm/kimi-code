@@ -5,6 +5,7 @@ import type { TokenUsage } from '#human/llm/usage';
 import { type ErrorCode } from '#/errors';
 import { Error2 } from '#/_base/errors/errors';
 
+import { type CacheStatus } from './cacheRate';
 import { UsageErrors } from './errors';
 
 export { UsageErrors } from './errors';
@@ -22,6 +23,7 @@ export interface UsageStatus {
   readonly byModel?: Record<string, TokenUsage>;
   readonly total?: TokenUsage;
   readonly currentTurn?: TokenUsage;
+  readonly cache?: CacheStatus;
 }
 
 export interface UsageRecordedContext {

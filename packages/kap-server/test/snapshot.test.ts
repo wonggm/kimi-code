@@ -75,6 +75,13 @@ describe('server-v2 snapshot route enrichment', () => {
           {
             status: () => ({
               total: { inputOther: 120, output: 34, inputCacheRead: 56, inputCacheCreation: 7 },
+              cache: {
+                reporting: 'reads+writes',
+                lastRequestPercent: (56 / 183) * 100,
+                recentPercent: (56 / 183) * 100,
+                recentRequestCount: 4,
+                sessionPercent: (56 / 183) * 100,
+              },
             }),
           },
         ],
@@ -215,6 +222,11 @@ describe('server-v2 snapshot route enrichment', () => {
       output_tokens: 34,
       cache_read_tokens: 56,
       cache_creation_tokens: 7,
+      cache_reporting: 'reads+writes',
+      cache_hit_rate_last: (56 / 183) * 100,
+      cache_hit_rate_recent: (56 / 183) * 100,
+      cache_recent_requests: 4,
+      cache_hit_rate_session: (56 / 183) * 100,
       context_tokens: 4321,
       context_limit: 262144,
     });
@@ -465,6 +477,11 @@ describe('server-v2 GET /api/v1/sessions/:id/snapshot', () => {
     expect(snap.session.usage.output_tokens).toBe(34);
     expect(snap.session.usage.cache_read_tokens).toBe(56);
     expect(snap.session.usage.cache_creation_tokens).toBe(7);
+    expect(snap.session.usage.cache_reporting).toBe('reads+writes');
+    expect(snap.session.usage.cache_hit_rate_last).toBeCloseTo((56 / 183) * 100);
+    expect(snap.session.usage.cache_hit_rate_recent).toBeCloseTo((56 / 183) * 100);
+    expect(snap.session.usage.cache_recent_requests).toBe(1);
+    expect(snap.session.usage.cache_hit_rate_session).toBeCloseTo((56 / 183) * 100);
     expect(snap.session.usage.context_tokens).toBeGreaterThan(0);
     expect(snap.session.usage.context_limit).toBeUndefined();
   });

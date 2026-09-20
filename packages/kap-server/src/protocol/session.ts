@@ -10,11 +10,19 @@ import {
 
 import { workspaceIdSchema } from './workspace';
 
+export const cacheReportingSchema = z.enum(['none', 'reads', 'reads+writes']);
+export type CacheReporting = z.infer<typeof cacheReportingSchema>;
+
 export const sessionUsageSchema = z.object({
   input_tokens: z.number().int().nonnegative(),
   output_tokens: z.number().int().nonnegative(),
   cache_read_tokens: z.number().int().nonnegative(),
   cache_creation_tokens: z.number().int().nonnegative(),
+  cache_reporting: cacheReportingSchema.optional(),
+  cache_hit_rate_last: z.number().optional(),
+  cache_hit_rate_recent: z.number().optional(),
+  cache_recent_requests: z.number().int().nonnegative().optional(),
+  cache_hit_rate_session: z.number().optional(),
   total_cost_usd: z.number().nonnegative().optional(),
   context_tokens: z.number().int().nonnegative(),
   context_limit: z.number().int().nonnegative().optional(),
@@ -29,6 +37,7 @@ export function emptySessionUsage(): SessionUsage {
     output_tokens: 0,
     cache_read_tokens: 0,
     cache_creation_tokens: 0,
+    cache_reporting: 'none',
     total_cost_usd: 0,
     context_tokens: 0,
     context_limit: 0,

@@ -18,6 +18,7 @@ export type { SkillActivatedEvent } from '@moonshot-ai/agent-core-v2/features/sk
 export type { PluginCommandActivatedEvent } from '@moonshot-ai/agent-core-v2/agent/pluginCommand/pluginCommand';
 export type { ErrorEvent, WarningEvent } from '@moonshot-ai/agent-core-v2/errors';
 export type { UsageStatus } from '@moonshot-ai/agent-core-v2/agent/usage/usage';
+export type { CacheStatus } from '@moonshot-ai/agent-core-v2/agent/usage/cacheRate';
 
 export type {
   TurnStartedEvent,

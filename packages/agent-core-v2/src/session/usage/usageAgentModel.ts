@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { AgentLLMRequestSource } from '#/agent/llmRequester/llmRequester';
+import { cacheStatus, CACHE_RECENT_WINDOW } from '#/agent/usage/cacheRate';
 import type { UsageStatus } from '#/agent/usage/usage';
 import { AgentStatusUpdated } from '#/agent/usage/usageEvents';
 import {
@@ -21,6 +22,8 @@ export interface UsageRecordInput {
 export class UsageAgentModel extends AgentModel<UsageModelState> {
   private currentTurnId: number | undefined;
   private currentTurn: TokenUsage | undefined;
+  private lastRequest: TokenUsage | undefined;
+  private readonly recentRequests: TokenUsage[] = [];
 
   constructor(context: AgentModelContext) {
     super(context);
@@ -28,6 +31,9 @@ export class UsageAgentModel extends AgentModel<UsageModelState> {
       const current = this.state.byModel[event.model];
       this.state.byModel[event.model] =
         current === undefined ? copyUsage(event.usage) : addUsage(current, event.usage);
+      this.lastRequest = copyUsage(event.usage);
+      this.recentRequests.push(copyUsage(event.usage));
+      if (this.recentRequests.length > CACHE_RECENT_WINDOW) this.recentRequests.shift();
     });
   }
 
@@ -75,6 +81,7 @@ export class UsageAgentModel extends AgentModel<UsageModelState> {
       byModel: hasByModel ? byModel : undefined,
       total,
       currentTurn: this.currentTurn === undefined ? undefined : copyUsage(this.currentTurn),
+      cache: cacheStatus(total, this.lastRequest, this.recentRequests),
     };
   }
 }

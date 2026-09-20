@@ -25,6 +25,7 @@ const baseState: AppState = {
   contextUsage: 0,
   contextTokens: 0,
   maxContextTokens: 0,
+  cache: { reporting: 'none' },
   isCompacting: false,
   isReplaying: false,
   streamingPhase: 'idle',
@@ -52,6 +53,10 @@ const payload: StatusLinePayload = {
   contextUsage: 12,
   contextTokens: 1024,
   maxContextTokens: 8192,
+  cacheHitRateLast: 61.87,
+  cacheHitRateRecent: 88.41,
+  cacheRecentRequests: 20,
+  cacheHitRateSession: 72.14,
   sessionId: 'ses-1',
   version: '1.2.3',
 };
