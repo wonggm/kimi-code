@@ -12,7 +12,6 @@ import { useI18n } from 'vue-i18n';
 import { CodeBlockNode } from 'markstream-vue';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { useCodeBlockPrefs } from '../../lib/codeBlockPrefs';
-import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import { useIsDark } from '../../composables/useIsDark';
 import Icon from '../ui/Icon.vue';
 
@@ -201,12 +200,6 @@ const innerProps = computed<Record<string, unknown>>(() => {
 // origin — scripts run, but they cannot reach our origin's storage or DOM.
 const isPreviewable = computed(() => language.value === 'html' || language.value === 'html-vue');
 const previewOpen = ref(false);
-const previewFrameRef = ref<HTMLElement | null>(null);
-// WebGL rim-refraction fallback (Firefox/Safari) on the glass frame (the
-// backdrop stays a plain translucent layer). Non-transient like ui/Dialog: the
-// runner can stay open indefinitely, so its backdrop keeps refreshing instead
-// of freezing the snapshot for the whole app.
-useGlassRefraction(previewFrameRef, { transient: false });
 
 function openPreview(): void {
   previewOpen.value = true;
@@ -373,7 +366,7 @@ const ACTION_BTN_CLASS =
     </CodeBlockNode>
     <Teleport to="body">
       <div v-if="previewOpen" class="mdcb-preview-backdrop" @click="closePreview">
-        <div ref="previewFrameRef" class="mdcb-preview lg-glass lg-lens" role="dialog" :aria-label="t('common.preview')" @click.stop>
+        <div class="mdcb-preview" role="dialog" :aria-label="t('common.preview')" @click.stop>
           <div class="mdcb-preview-head">
             <span class="mdcb-preview-dot" aria-hidden="true" />
             <span class="mdcb-preview-title">{{ t('common.preview') }}</span>
@@ -506,8 +499,7 @@ const ACTION_BTN_CLASS =
 }
 
 /* HTML preview runner overlay. Teleported to body; the backdrop is a plain
-   translucent layer and the frame is a separate .lg-glass element, so Firefox
-   never sees a backdrop-filter nested inside another filtered element. */
+   translucent layer and the frame sits on top of it. */
 .mdcb-preview-backdrop {
   position: fixed;
   inset: 0;

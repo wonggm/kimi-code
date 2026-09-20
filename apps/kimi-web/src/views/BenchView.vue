@@ -16,7 +16,7 @@
   Optional: &theme=dark|light  &glass=on|off
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, provide, ref } from 'vue';
+import { computed, nextTick, onMounted, provide, ref } from 'vue';
 import type { AppApprovalRequest, AppMessage, AppModel, AppSkill, AppWarning } from '../api/types';
 import type { ChatTurn, ConversationStatus, TaskItem, TodoView } from '../types';
 import { messagesToTurns } from '../composables/messagesToTurns';
@@ -31,18 +31,14 @@ import ChatPane from '../components/chat/ChatPane.vue';
 import ConversationToc, { type ConversationTocItem } from '../components/chat/ConversationToc.vue';
 import ChatDock from '../components/chat/ChatDock.vue';
 import Dialog from '../components/ui/Dialog.vue';
-import GlassDefs from '../components/ui/GlassDefs.vue';
 import Sheet from '../components/ui/Sheet.vue';
 import Tooltip from '../components/ui/Tooltip.vue';
 import BottomSheet from '../components/dialogs/BottomSheet.vue';
 import SettingsDialog from '../components/settings/SettingsDialog.vue';
 import ServerAuthDialog from '../components/ServerAuthDialog.vue';
 import WarningToasts from '../components/WarningToasts.vue';
-import { ensureGlassEngine } from '../lib/glass/gl-renderer';
 
 const appearance = useAppearance();
-// Liquid-glass WebGL refraction fallback lifecycle (see App.vue — same hook).
-onUnmounted(ensureGlassEngine());
 
 // Markdown injects this to rewrite local image URLs; a no-op stub is fine here.
 provide('resolveImage', (src: string) => Promise.resolve(src));
@@ -84,7 +80,13 @@ const status: ConversationStatus = {
   modelId: 'kimi-k2',
   ctxUsed: 18_400,
   ctxMax: 131_072,
-  cacheHitRate: 0.62,
+  cacheReporting: 'reads+writes',
+  cacheHitRateLast: 61.87,
+  cacheHitRateRecent: 88.41,
+  cacheRecentRequests: 20,
+  cacheHitRateSession: 72.14,
+  cacheReadTokens: 246_000,
+  cacheCreationTokens: 94_800,
   permission: 'manual',
   branch: 'main',
   cwd: '~/work/muedm',
@@ -147,7 +149,6 @@ const ctx: BenchContext = {
     if (el) el.scrollTop = el.scrollHeight;
   },
   setTheme: (theme: Theme) => appearance.setColorScheme(theme),
-  setGlass: (on: boolean) => appearance.setLiquidGlass(on),
   dialogOpen,
   sheetOpen,
   bottomSheetOpen,
@@ -180,9 +181,7 @@ function sceneConversation(): AppMessage[] {
 
 function applyQueryAppearance(params: URLSearchParams): void {
   const theme: Theme = params.get('theme') === 'light' ? 'light' : 'dark';
-  const glass = params.get('glass') !== 'off';
   appearance.setColorScheme(theme);
-  appearance.setLiquidGlass(glass);
 }
 
 onMounted(async () => {
@@ -227,9 +226,6 @@ onMounted(async () => {
 
 <template>
   <div class="bench-root">
-    <!-- Shared liquid-glass SVG defs (floating glass surfaces on the bench
-         page append the #lg-refract filter via @supports). -->
-    <GlassDefs />
     <!-- A thin bench toolbar; also hosts the tooltip trigger for pixel poses. -->
     <div class="bench-bar">
       <span class="bench-bar__title">kimi-web bench</span>
@@ -238,9 +234,8 @@ onMounted(async () => {
       </Tooltip>
     </div>
 
-    <!-- Conversation column. Mirrors ConversationPane's structure: .chat-layout
-         hosts the top blur band (::before) + vignette; .panes.chat-scroll is the
-         scroller; .content-wrap constrains the reading column. -->
+    <!-- Conversation column. Mirrors ConversationPane's structure: .panes.chat-scroll
+         is the scroller; .content-wrap constrains the reading column. -->
     <div class="chat-layout">
       <div ref="scrollerEl" class="panes chat-scroll" data-bench="scroller">
         <div class="content-wrap align-center">
@@ -305,14 +300,12 @@ onMounted(async () => {
       :notify-question="true"
       :notify-approval="true"
       :sound="false"
-      :liquid-glass="appearance.liquidGlass.value"
       :wide-mode="appearance.wideMode.value"
       :models="models"
       @close="settingsOpen = false"
       @set-color-scheme="appearance.setColorScheme($event)"
       @set-accent="appearance.setAccent($event)"
       @set-ui-font-size="appearance.setUiFontSize($event)"
-      @set-liquid-glass="appearance.setLiquidGlass($event)"
       @set-wide-mode="appearance.setWideMode($event)"
     />
 
@@ -322,11 +315,11 @@ onMounted(async () => {
   </div>
 </template>
 
-<!-- Non-scoped: replicates ConversationPane's scroller / blur-band / vignette
-     exactly (same selectors + values) so scroll-long measures the real
-     backdrop-filter-over-scrolling-text cost. ConversationPane is client-coupled
-     and out of the required component list, so its structural CSS lives here.
-     Only loaded on the dev-only bench page — never in production. -->
+<!-- Non-scoped: replicates ConversationPane's scroller exactly (same selectors
+     + values) so scroll-long measures the real scrolled-transcript rendering
+     cost. ConversationPane is client-coupled and out of the required component
+     list, so its structural CSS lives here. Only loaded on the dev-only bench
+     page — never in production. -->
 <style>
 .bench-root {
   position: fixed;
@@ -393,36 +386,6 @@ onMounted(async () => {
 .content-wrap.align-center {
   margin-left: auto;
   margin-right: auto;
-}
-
-/* Edge vignette (glass-gated) — fade transcript at top/bottom. */
-html[data-liquid-glass='on'] .bench-root .panes {
-  --con-pane-vignette: linear-gradient(
-    to bottom,
-    transparent 0,
-    black 28px,
-    black calc(100% - 28px),
-    transparent 100%
-  );
-  -webkit-mask-image: var(--con-pane-vignette);
-  mask-image: var(--con-pane-vignette);
-}
-
-/* Top blur band (glass-gated) — blurs scrolling text under the 96px header zone.
-   The material (blur / saturate / brightness + the @supports refraction lens) is
-   owned by the shared band rule in style.css; this block keeps geometry and the
-   fade mask only. */
-html[data-liquid-glass='on'] .bench-root .chat-layout::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 96px;
-  z-index: 2;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(to bottom, black 0, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 0, transparent 100%);
 }
 
 .bench-dock {

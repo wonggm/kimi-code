@@ -20,7 +20,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** rAF-driven scrollTop animation (deterministic; repaints the blur band). */
+/** rAF-driven scrollTop animation (deterministic). */
 function animateScroll(ctx: BenchContext, dir: 'down' | 'up', durationMs: number): Promise<void> {
   return new Promise((resolve) => {
     const el = ctx.scroller();
@@ -53,13 +53,12 @@ function setAssistantText(ctx: BenchContext, text: string): void {
 // 1. streaming-replay
 // ---------------------------------------------------------------------------
 // ~2000-token KaTeX + code fixture replayed as token deltas at ~40 tok/s
-// through the real pipeline, auto-follow scroll, glass on, dark theme.
+// through the real pipeline, auto-follow scroll, dark theme.
 
 const STREAM_TOKENS_PER_SEC = 40;
 
 async function streamingReplay(ctx: BenchContext): Promise<void> {
   ctx.setTheme('dark');
-  ctx.setGlass(true);
   ctx.messages.value = streamingSeed();
   ctx.turnActive.value = true;
   await ctx.settle(400); // let the seed + chrome paint before sampling
@@ -83,24 +82,18 @@ async function streamingReplay(ctx: BenchContext): Promise<void> {
 // 2. scroll-long
 // ---------------------------------------------------------------------------
 // 500-turn conversation; programmatic smooth scroll top→bottom→top across the
-// glass on/off × dark/light matrix (four combos, sampled in one run).
+// dark/light theme sweep (two combos, sampled in one run).
 
 async function scrollLong(ctx: BenchContext): Promise<void> {
   ctx.messages.value = buildLongConversation(500);
   ctx.turnActive.value = false;
   await ctx.settle(600); // render all 500 turns before sampling
 
-  const combos: Array<[Theme, boolean]> = [
-    ['dark', true],
-    ['dark', false],
-    ['light', true],
-    ['light', false],
-  ];
+  const themes: Theme[] = ['dark', 'light'];
   ctx.sampler.start();
-  for (const [theme, glass] of combos) {
+  for (const theme of themes) {
     ctx.setTheme(theme);
-    ctx.setGlass(glass);
-    await ctx.settle(350); // let the theme/glass restyle paint
+    await ctx.settle(350); // let the theme restyle paint
     await animateScroll(ctx, 'down', 3000);
     await animateScroll(ctx, 'up', 3000);
   }
@@ -111,7 +104,7 @@ async function scrollLong(ctx: BenchContext): Promise<void> {
 // 3. dialog-storm
 // ---------------------------------------------------------------------------
 // SettingsDialog (with MenuSelect), Dialog, Sheet, BottomSheet, ServerAuthDialog
-// — 20 open/close cycles over a populated conversation, glass on, dark.
+// — 20 open/close cycles over a populated conversation, dark.
 
 type OverlayKind = 'settings' | 'dialog' | 'sheet' | 'bottomSheet' | 'serverAuth';
 
@@ -139,8 +132,7 @@ function setOverlay(ctx: BenchContext, kind: OverlayKind, open: boolean): void {
 
 async function dialogStorm(ctx: BenchContext): Promise<void> {
   ctx.setTheme('dark');
-  ctx.setGlass(true);
-  ctx.messages.value = buildLongConversation(40); // populated backdrop
+  ctx.messages.value = buildLongConversation(40); // populated conversation
   await ctx.settle(500);
 
   ctx.sampler.start();
@@ -148,7 +140,7 @@ async function dialogStorm(ctx: BenchContext): Promise<void> {
   for (let i = 0; i < cycles; i++) {
     const kind = OVERLAY_ORDER[i % OVERLAY_ORDER.length]!;
     setOverlay(ctx, kind, true);
-    await ctx.settle(240); // entrance animation + backdrop-filter blur paint
+    await ctx.settle(240); // entrance animation paint
     setOverlay(ctx, kind, false);
     await ctx.settle(140);
   }
@@ -165,7 +157,6 @@ async function dialogStorm(ctx: BenchContext): Promise<void> {
 
 async function dockToc(ctx: BenchContext): Promise<void> {
   ctx.setTheme('dark');
-  ctx.setGlass(true);
   ctx.messages.value = buildLongConversation(60);
   await ctx.settle(500);
 

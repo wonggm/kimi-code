@@ -1,12 +1,10 @@
 <!-- apps/kimi-web/src/components/ui/MenuSelect.vue -->
 <!-- Design-system §03 MenuSelect: settings-style dropdown that renders the
-     open list as a teleported HTML panel so it picks up the liquid-glass
-     surface. Native <select> popups are OS widgets and cannot be styled (and
-     in Firefox they would also render unblurred behind a frosted dialog);
-     this component is the answer for the settings dialog. Position the panel
-     with fixed coordinates computed from the trigger's bounding rect and
-     <Teleport> to <body> so an ancestor backdrop-filter cannot capture the
-     fixed coordinates or render nothing in Firefox. -->
+     open list as a teleported HTML panel. Native <select> popups are OS
+     widgets and cannot be styled, so a styled component is the answer for
+     the settings dialog. Position the panel with fixed coordinates computed
+     from the trigger's bounding rect and <Teleport> to <body> so an ancestor
+     with `overflow: hidden` cannot clip it. -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Menu from './Menu.vue';
@@ -235,9 +233,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Wrapper carries only the `ui-select` identity and the capsule radius the
-   glass rim/outer shadow in style.css (`.sd .ui-select`) follows; the trigger
-   below paints the visible control, exactly as before. */
+/* Wrapper carries only the `ui-select` identity and the capsule radius; the
+   trigger below paints the visible control, exactly as before. */
 .ui-select {
   position: relative;
   width: 100%;
@@ -258,14 +255,7 @@ onBeforeUnmount(() => {
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   color: var(--color-text);
-  /* Capsule like the composer/dock glass pills (Select.vue's own
-     --radius-md doesn't reach this component — scoped). The deeper side
-     padding keeps the label and chevron clear of the curved ends. */
   border-radius: var(--radius-full);
-  /* The trigger declares its own hairline, as upstream's does. The rim used to
-     come from the glass rule in style.css, which the liquid-glass toggle gates
-     — with the toggle off the button fell back to the browser's own border
-     (measured: `2px outset`, radius 0). */
   border: var(--p-hairline) solid var(--color-line-strong);
   padding: 0 var(--space-4);
 }
@@ -291,7 +281,7 @@ onBeforeUnmount(() => {
 .ms-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Teleported anchor — menu surface sits inside this so position:fixed works
-   against the viewport. The Menu primitive provides the glass styling.
+   against the viewport. The Menu primitive provides the surface styling.
    z-index must clear --z-modal (400): every current use site is inside the
    settings Dialog, and a panel teleported to <body> with the plain
    --z-dropdown (200) paints UNDER the dialog overlay and looks like the

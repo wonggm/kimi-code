@@ -95,7 +95,7 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <div
-      class="media-preview-overlay lg-scrim"
+      class="media-preview-overlay"
       role="dialog"
       aria-modal="true"
       aria-label="Media preview"
@@ -168,10 +168,6 @@ onUnmounted(() => {
   box-sizing: border-box;
   background: rgb(0 0 0 / 78%);
   animation: media-preview-in var(--duration-base) var(--ease-out);
-  /* Always-on defocus scrim (the lg-scrim utility on this element —
-     lg-frost family, style.css): the blur survives the liquid-glass toggle,
-     matching the other modal overlays; with glass off the app behind is
-     still dimmed and defocused. */
 }
 
 .media-preview-close {

@@ -3,7 +3,6 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ChatTurn } from '../../types';
-import { useGlassRefraction } from '../../composables/useGlassRefraction';
 
 export interface ConversationTocItem {
   id: string;
@@ -36,12 +35,7 @@ const visible = computed(
   () => !props.mobile && !props.sessionLoading && props.items.length > 1,
 );
 
-const cardEl = ref<HTMLElement | null>(null);
-// WebGL rim-refraction fallback (Firefox/Safari): the card only refracts
-// while actually revealed — expansion itself is pure CSS clip-path (the
-// renderer mirrors clip-path onto the slice canvas each layout pass).
 const revealed = ref(false);
-useGlassRefraction(cardEl, { when: computed(() => visible.value && revealed.value) });
 </script>
 
 <template>
@@ -71,7 +65,7 @@ useGlassRefraction(cardEl, { when: computed(() => visible.value && revealed.valu
         :class="{ active: activeTurnId === item.id }"
       />
     </div>
-    <div ref="cardEl" class="toc-card lg-glass lg-lens">
+    <div class="toc-card">
       <div class="toc-card-scroll">
         <button
           v-for="item in items"
@@ -185,12 +179,6 @@ useGlassRefraction(cardEl, { when: computed(() => visible.value && revealed.valu
   pointer-events: auto;
   clip-path: inset(0 0 0 0 round var(--radius-lg));
 }
-
-/* Liquid glass on: the card carries .lg-glass, so the shared consuming rule
-   in style.css paints the material (translucent surface tint, bloom, rim,
-   8px dark / 20px light blur) — the hand-written duplicate and its
-   per-theme retune are gone; the solid .toc-card background above remains
-   as the glass-off fallback. */
 
 .toc-card-scroll {
   display: flex;

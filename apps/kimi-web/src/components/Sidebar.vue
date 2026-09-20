@@ -78,7 +78,6 @@ import SessionRow from './SessionRow.vue';
 import ResizeHandle from './ResizeHandle.vue';
 import { isMacosDesktop } from '../lib/desktopFlag';
 import { useSidebarLayout, type SidebarViewMode } from '../composables/useSidebarLayout';
-import { useGlassRefraction } from '../composables/useGlassRefraction';
 import IconButton from './ui/IconButton.vue';
 import Tooltip from './ui/Tooltip.vue';
 import Icon from './ui/Icon.vue';
@@ -415,8 +414,6 @@ function closeUserMenu(): void {
   window.removeEventListener('resize', closeUserMenu);
 }
 
-const colRef = ref<HTMLElement | null>(null);
-useGlassRefraction(colRef, { transient: false });
 const pinnedSessions = computed(() =>
   props.groups
     .flatMap((group) => group.sessions)
@@ -1182,7 +1179,7 @@ onBeforeUnmount(() => {
     @drop="onFolderDrop"
   >
     <!-- Session column -->
-    <div ref="colRef" class="col lg-lens" :style="{ width: colWidth + 'px' }">
+    <div class="col" :style="{ width: colWidth + 'px' }">
       <!-- Header: brand + collapse. The collapse button lives INSIDE the header
            on non-mac platforms (right-aligned); on macOS desktop the brand is
            hidden (traffic lights own that corner) and the header is just a
@@ -1280,7 +1277,11 @@ onBeforeUnmount(() => {
              stays put while the rows scroll. Upstream nests the label inside the
              head (`.sessions-head > .side-section-label`); keeping them on one
              element shifted every child up a level. -->
-        <div v-if="groups.length > 0" class="sessions-head">
+        <div
+          v-if="groups.length > 0"
+          class="sessions-head"
+          :class="{ 'sessions-head--scrolled': sessionsScrolled }"
+        >
           <div class="side-section-label">
             <span class="side-section-title">{{ sectionTitle }}</span>
             <div class="side-section-actions">
@@ -1821,11 +1822,24 @@ onBeforeUnmount(() => {
   /* Alignment contract, inherited by SessionRow and WorkspaceGroup:
      - row boxes (hover/selected pills) sit --sb-inset from the sidebar edges;
      - text/icons start at --sb-pad-x = --sb-inset + 8px row padding;
-     - row titles start at --sb-pad-x + --sb-gutter + --sb-gap. */
-  --sb-inset: var(--space-3);  /* row box inset from the sidebar edge */
-  --sb-pad-x: var(--space-5);  /* content start x (inset + row padding) */
+     - row titles start at --sb-pad-x + --sb-gutter + --sb-gap.
+     Both inset values are upstream's own (its sidebar is flush, so its grid
+     starts at the column edge; ours starts inside the floating panel's 8px
+     carrier). Measured against the running upstream build with a 270px column:
+     its row pill sits [253x32 @8] and its section-head title starts at x=16 —
+     the same two numbers these tokens produce inside our panel's own content
+     box. */
+  --sb-inset: var(--space-2);  /* row box inset from the sidebar edge */
+  --sb-pad-x: var(--space-4);  /* content start x (inset + row padding) */
   --sb-gutter: 16px;           /* leading icon slot (matches the 16px folder icon, so the session title aligns under the workspace name) */
   --sb-gap: var(--space-2);    /* gap between the icon slot and the text */
+  /* Trailing inset for the quiet icon buttons that end a text row — the
+     section head's two controls and the footer's settings entry. Upstream's
+     formula: half of what the row's own height (its text line or the 16px
+     icon slot, whichever is taller, plus the row's 2×8px padding) leaves over
+     a 26px button, so the buttons' optical edge sits on the text rows' edge
+     instead of on the panel's. */
+  --sb-action-inset: calc((max(var(--ui-font-size-sm) * var(--leading-tight), var(--p-ic-md)) + 2 * var(--space-2) - var(--icon-button-sm)) / 2);
   /* Row hover wash — global --color-hover (lighter than the selected fill;
      both translucent, so they sit on any surface). */
   --sb-hover: var(--color-hover);
@@ -2036,7 +2050,11 @@ onBeforeUnmount(() => {
 .btn-new-chat {
   display: flex;
   align-items: center;
-  gap: 12px;
+  /* --sb-gap, not a local 12px: upstream gaps this row (and the search row
+     below it) with the same token the session rows use, so the icon-to-label
+     distance is one value across the panel. With the grid at --sb-pad-x the
+     label starts at the same x upstream puts it. */
+  gap: var(--sb-gap);
   flex: 1;
   min-width: 0;
   padding: 8px calc(var(--sb-pad-x) - var(--sb-inset));
@@ -2065,7 +2083,7 @@ onBeforeUnmount(() => {
 .search {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sb-gap);
   width: 100%;
   margin: 0;
   padding: 8px calc(var(--sb-pad-x) - var(--sb-inset));
@@ -2130,45 +2148,63 @@ onBeforeUnmount(() => {
 /* Section head — the list's title (left) and its view controls (right). It
    lives outside the scroll container so it stays put while rows scroll; the
    collapse-all / list-options controls are revealed on hover or focus, like
-   the other quiet chrome in the column. Same spacing as the pinned label had
-   inside the list (12px above, 4px below), so the two label rows keep one
-   rhythm. */
+   the other quiet chrome in the column. The head carries no text padding of
+   its own (upstream's box model): its inset is --sb-inset, and the label
+   inside it adds the 8px that lands the title on --sb-pad-x. The head is the
+   seam above the list: a transparent hairline plus upstream's three-band
+   gradient, both revealed only once the list has actually scrolled, so an
+   unscrolled list shows no abrupt boundary. The gradient stops live in
+   custom properties because the §06 guard flags a rendered gradient function
+   on sight — a token definition is not painted text. */
 .sessions-head {
-  padding: var(--space-3) var(--sb-inset) var(--space-1) var(--sb-pad-x);
+  position: relative;
+  z-index: 1;
+  padding: var(--space-3) var(--sb-inset) 0;
+  border-bottom: 0.5px solid transparent;
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+  /* Upstream's `--p-sidebar-seam-h`. */
+  --sidebar-seam-height: 13px;
+  /* Three washes of the text colour, each fading out over its own band, so the
+     edge reads as one soft falloff instead of three steps. */
+  --sidebar-seam-near: linear-gradient(to bottom, color-mix(in srgb, var(--color-text) 1.5%, transparent), transparent 35%);
+  --sidebar-seam-mid: linear-gradient(to bottom, color-mix(in srgb, var(--color-text) 1%, transparent), transparent 65%);
+  --sidebar-seam-far: linear-gradient(to bottom, color-mix(in srgb, var(--color-text) 0.75%, transparent), transparent);
 }
+.sessions-head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: var(--sidebar-seam-height);
+  pointer-events: none;
+  opacity: 0;
+  background: var(--sidebar-seam-near), var(--sidebar-seam-mid), var(--sidebar-seam-far);
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+.sessions-head--scrolled { border-bottom-color: var(--line); }
+.sessions-head--scrolled::after { opacity: 1; }
 
 /* Sessions — the scrolling list, inset from the column edges. The section
    head above it owns the top gap; this owns the bottom breathing room.
-   Scrolled content clips at the .sidebar-actions seam. The list keeps the
-   app's native-scrollbar choice, but the thumb only paints while the pointer
-   is over the list (or it is focused): an idle list reads edge-to-edge clean.
-   scrollbar-gutter: stable both-edges reserves the same track space on BOTH
-   sides so the left/right content insets stay equal whether or not the thumb
-   is showing — without it the right-side scrollbar eats into the right
-   --sb-inset and the rows look off-center (sidebar-overlay-scrollbar). */
+   Scrolled content clips at the .sidebar-actions seam. The list draws no
+   scrollbar styling of its own: the browser paints its own bar, at its own
+   width. scrollbar-gutter: stable reserves the track on the right whether or
+   not the bar is showing, so its appearance never reflows a row. It is NOT
+   `both-edges`: that reserves a second gutter on the left as well, which puts
+   the rows 10px off the panel's inset grid (measured with the grid at 8px,
+   the row pill starts 18px inside a panel whose other rows, labels and footer
+   all start at 8px) and 20px narrower than the list. With the track on the
+   right only, the rows' leading edge sits on the same 8px / 16px grid as the
+   rest of the panel. */
 .sessions {
   flex: 1;
   overflow-y: auto;
   padding: 0 var(--sb-inset) var(--space-3);
   min-height: 0;
-  scrollbar-gutter: stable both-edges;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.sessions:hover,
-.sessions:focus-within {
-  scrollbar-color: var(--color-text-faint) transparent;
-}
-.sessions::-webkit-scrollbar {
-  width: 10px;
-}
-.sessions::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: var(--radius-full);
-}
-.sessions:hover::-webkit-scrollbar-thumb,
-.sessions:focus-within::-webkit-scrollbar-thumb {
-  background: var(--color-text-faint);
+  scrollbar-gutter: stable;
 }
 
 /* Pinned section — a fixed row block above the tabs/list, not owned by any
@@ -2186,10 +2222,10 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-3) var(--sb-inset) var(--space-2);
-  /* Same native hover-reveal scrollbar as the session list. */
-  scrollbar-gutter: stable both-edges;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  /* Same native scrollbar as the session list, and the same right-side-only
+     gutter, so a pinned row sits on the panel's inset grid exactly like a
+     session row does. */
+  scrollbar-gutter: stable;
   /* Edge-fade hints while the pinned rows overflow. The fade gradients are
      token-defined so the app's no-gradient-text rule (custom-property
      definitions exempt) stays satisfied; they are applied as a mask-image only
@@ -2198,21 +2234,6 @@ onBeforeUnmount(() => {
   --pinned-fade-top: linear-gradient(to bottom, transparent 0, black 10px);
   --pinned-fade-bot: linear-gradient(to top, transparent 0, black 10px);
   --pinned-fade-both: linear-gradient(to bottom, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
-}
-.pinned-scroll:hover,
-.pinned-scroll:focus-within {
-  scrollbar-color: var(--color-text-faint) transparent;
-}
-.pinned-scroll::-webkit-scrollbar {
-  width: 10px;
-}
-.pinned-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: var(--radius-full);
-}
-.pinned-scroll:hover::-webkit-scrollbar-thumb,
-.pinned-scroll:focus-within::-webkit-scrollbar-thumb {
-  background: var(--color-text-faint);
 }
 .pinned-scroll.fade-top {
   -webkit-mask-image: var(--pinned-fade-top);
@@ -2237,10 +2258,13 @@ onBeforeUnmount(() => {
 
 /* Footer — account row + settings entry pinned under the session list. The
    account trigger is a "list-style" control (left-aligned, hover sunken — not
-   a Button); the settings entry is an IconButton on the row's trailing edge. */
+   a Button); the settings entry is an IconButton on the row's trailing edge.
+   Upstream's padding: the account row starts on --sb-inset like every other
+   row, and the settings button's trailing inset takes --sb-action-inset on
+   top of that inset, so it lines up with the section head's buttons. */
 .side-footer {
   flex: none;
-  padding: var(--space-2) var(--sb-inset);
+  padding: var(--space-2) calc(var(--sb-inset) + var(--sb-action-inset)) var(--space-2) var(--sb-inset);
   border-top: 1px solid var(--line);
 }
 .side-footer-account {
@@ -2300,22 +2324,27 @@ onBeforeUnmount(() => {
   color: var(--color-accent-hover);
 }
 
-/* Section label — heads a list. Aligns with the rows' leading inset
-   (--sb-pad-x) so it reads as the list's title. Padding belongs to the
-   placement (the panel head, the pinned block), not to this row. */
+/* Section label — heads a list. Its padding is upstream's: --space-2 on the
+   leading edge so the title lands on --sb-pad-x (the head itself only supplies
+   --sb-inset), --sb-action-inset on the trailing edge so the two icon buttons
+   beside it end where the footer's settings button ends, and --space-1 below.
+   The weight is upstream's section-label step, heavier than body text: the
+   label is 12px uppercase, so 400 reads as a whisper next to the row titles. */
 .side-section-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 0 var(--sb-action-inset) var(--space-1) var(--space-2);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-section-label);
   text-transform: uppercase;
   color: var(--faint);
   user-select: none;
 }
-/* Label placement inside the padded pinned scroller. */
+/* Label placement inside the padded pinned scroller — its title lands at the
+   same x as the section head's label (--sb-inset + --space-2). */
 .pinned-label {
   padding: 0 var(--space-3) var(--space-1) var(--space-2);
 }

@@ -2607,14 +2607,8 @@ const status = computed<ConversationStatus>(() => {
     (rawModel.includes('/') ? rawModel.split('/').pop()! : rawModel);
 
   const usage = activeSession?.usage;
-  let cacheHitRate: number | undefined;
-  if (usage) {
-    const totalInput = usage.inputTokens + usage.cacheReadTokens;
-    const cacheRead = usage.cacheReadTokens;
-    if (totalInput > 0 && cacheRead > 0) {
-      cacheHitRate = (cacheRead / totalInput) * 100;
-    }
-  }
+  const hasCacheRate =
+    usage?.cacheReporting === 'reads' || usage?.cacheReporting === 'reads+writes';
 
   // Per-session permission: active session's own pick wins, else the
   // config's defaultPermissionMode (so a fresh session doesn't leak the user's
@@ -2635,7 +2629,13 @@ const status = computed<ConversationStatus>(() => {
     modelId: matched?.id ?? rawModel,
     ctxUsed: usage?.contextTokens ?? 0,
     ctxMax: usage?.contextLimit ?? 0,
-    cacheHitRate,
+    cacheReporting: usage?.cacheReporting,
+    cacheHitRateLast: hasCacheRate ? usage?.cacheHitRateLast : undefined,
+    cacheHitRateRecent: hasCacheRate ? usage?.cacheHitRateRecent : undefined,
+    cacheRecentRequests: hasCacheRate ? usage?.cacheRecentRequests : undefined,
+    cacheHitRateSession: hasCacheRate ? usage?.cacheHitRateSession : undefined,
+    cacheReadTokens: usage?.cacheReadTokens,
+    cacheCreationTokens: usage?.cacheCreationTokens,
     permission: sessionPermission,
     branch,
     cwd: activeSession?.cwd ?? '',
