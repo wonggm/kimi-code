@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Surface catalogue</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 32px 24px 64px; background: #0d0d0f; color: #e8e8ea;
+         font: 14px/1.55 ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 40px 0 4px; padding-top: 20px; border-top: 1px solid #26262b; }
+  h3 { font-size: 15px; margin: 0 0 6px; display: flex; align-items: baseline; gap: 10px; }
+  p { margin: 0 0 12px; color: #b6b6bd; max-width: 78ch; }
+  .share { font-size: 12px; font-weight: 400; color: #8b8b93; }
+  .lead { color: #b6b6bd; max-width: 78ch; }
+  .note { background: #17171a; border: 1px solid #2a2a30; border-radius: 10px; padding: 12px 14px; margin: 16px 0 0; max-width: 78ch; }
+  .note b { color: #e8e8ea; }
+  code { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 12.5px; background: #1b1b20; padding: 1px 5px; border-radius: 5px; }
+  .card { background: #141417; border: 1px solid #26262b; border-radius: 12px; padding: 16px; margin: 16px 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .crops { margin-top: 12px; }
+  figure { margin: 0; }
+  img { display: block; border: 1px solid #2f2f36; border-radius: 6px; background: #000; }
+  .row > figure img { width: 460px; height: auto; }
+  .crops img { width: auto; max-width: none; }
+  figcaption { font-size: 11.5px; color: #8b8b93; margin-top: 5px; }
+  .strip { margin: 8px 0 4px; }
+  .strip img { width: auto; max-width: 100%; }
+</style></head>
+<body>
+<h1>Surface catalogue</h1>
+<p class="lead">The liquid glass system is gone. This is what can replace it. Every shot is the real app built from the current source, served with fixtures, at 1440&times;900. Nothing here uses a filter.</p>
+<div class="note"><b>How to answer:</b> tell me a surface, an edge treatment and a menu frost, for example "molded, overlay, flat". You can also see them live: add <code>?catalogue=surface</code> to your kimi web URL and flip them on the real page, with content and scrolling.</div>
+
+<h2>1. Surface material (pick one)</h2>
+<p>The three axes are independent. This one decides the panels, cards, menus and chrome. The strips below are the same crop cut from each candidate, in the same order, so the five sit side by side at 1:1.</p>
+<div class="strip"><img src="strip-seam-dark.png" alt="sidebar seam comparison"></div>
+<div class="strip"><img src="strip-composer-dark.png" alt="composer comparison"></div>
+<div class="strip"><img src="strip-seam-light.png" alt="sidebar seam comparison, light"></div>
+
+  <article class="card">
+    <h3>plain<span class="share">0% of the frame changes</span></h3>
+    <p>Flat surfaces, one hairline per seam, page tone throughout. The baseline you get with the glass merely deleted.</p>
+    <div class="row">
+      <figure><img src="frame-plain-dark.png" alt="plain, dark"><figcaption>whole app, dark</figcaption></figure>
+      <figure><img src="frame-plain-light.png" alt="plain, light"><figcaption>whole app, light</figcaption></figure>
+    </div>
+    <div class="row crops">
+      <figure><img src="seam-plain-dark.png" alt="seam detail"><figcaption>sidebar seam 1:1, dark</figcaption></figure>
+      <figure><img src="seam-plain-light.png" alt="seam detail"><figcaption>sidebar seam 1:1, light</figcaption></figure>
+      <figure><img src="composer-plain-dark.png" alt="composer detail"><figcaption>composer + dock 1:1, dark</figcaption></figure>
+      <figure><img src="panelseam-plain-dark.png" alt="panel seam"><figcaption>panel seam 1:1, dark</figcaption></figure>
+    </div>
+  </article>
+  <article class="card">
+    <h3>elevation<span class="share">17.5% dark / 17.9% light of the frame changes</span></h3>
+    <p>Chrome columns take the surface tone; borders give way to a contact shadow, a lift and a 1px ring.</p>
+    <div class="row">
+      <figure><img src="frame-elevation-dark.png" alt="elevation, dark"><figcaption>whole app, dark</figcaption></figure>
+      <figure><img src="frame-elevation-light.png" alt="elevation, light"><figcaption>whole app, light</figcaption></figure>
+    </div>
+    <div class="row crops">
+      <figure><img src="seam-elevation-dark.png" alt="seam detail"><figcaption>sidebar seam 1:1, dark</figcaption></figure>
+      <figure><img src="seam-elevation-light.png" alt="seam detail"><figcaption>sidebar seam 1:1, light</figcaption></figure>
+      <figure><img src="composer-elevation-dark.png" alt="composer detail"><figcaption>composer + dock 1:1, dark</figcaption></figure>
+      <figure><img src="panelseam-elevation-dark.png" alt="panel seam"><figcaption>panel seam 1:1, dark</figcaption></figure>
+    </div>
+  </article>
+  <article class="card">
+    <h3>hairline<span class="share">0.4% of the frame changes</span></h3>
+    <p>Keeps the page tone. Only the seams move: the brand blue at the top of each edge, fading into the neutral line.</p>
+    <div class="row">
+      <figure><img src="frame-hairline-dark.png" alt="hairline, dark"><figcaption>whole app, dark</figcaption></figure>
+      <figure><img src="frame-hairline-light.png" alt="hairline, light"><figcaption>whole app, light</figcaption></figure>
+    </div>
+    <div class="row crops">
+      <figure><img src="seam-hairline-dark.png" alt="seam detail"><figcaption>sidebar seam 1:1, dark</figcaption></figure>
+      <figure><img src="seam-hairline-light.png" alt="seam detail"><figcaption>sidebar seam 1:1, light</figcaption></figure>
+      <figure><img src="composer-hairline-dark.png" alt="composer detail"><figcaption>composer + dock 1:1, dark</figcaption></figure>
+      <figure><img src="panelseam-hairline-dark.png" alt="panel seam"><figcaption>panel seam 1:1, dark</figcaption></figure>
+    </div>
+  </article>
+  <article class="card">
+    <h3>molded<span class="share">24.3% dark / 7.8% light of the frame changes</span></h3>
+    <p>A physical face. Shallow vertical gradient, lit top edge and shaded bottom edge baked in as inset shadows.</p>
+    <div class="row">
+      <figure><img src="frame-molded-dark.png" alt="molded, dark"><figcaption>whole app, dark</figcaption></figure>
+      <figure><img src="frame-molded-light.png" alt="molded, light"><figcaption>whole app, light</figcaption></figure>
+    </div>
+    <div class="row crops">
+      <figure><img src="seam-molded-dark.png" alt="seam detail"><figcaption>sidebar seam 1:1, dark</figcaption></figure>
+      <figure><img src="seam-molded-light.png" alt="seam detail"><figcaption>sidebar seam 1:1, light</figcaption></figure>
+      <figure><img src="composer-molded-dark.png" alt="composer detail"><figcaption>composer + dock 1:1, dark</figcaption></figure>
+      <figure><img src="panelseam-molded-dark.png" alt="panel seam"><figcaption>panel seam 1:1, dark</figcaption></figure>
+    </div>
+  </article>
+  <article class="card">
+    <h3>layered<span class="share">17.5% dark / 17.9% light of the frame changes</span></h3>
+    <p>The elevation tone with the lit gradient seams kept.</p>
+    <div class="row">
+      <figure><img src="frame-layered-dark.png" alt="layered, dark"><figcaption>whole app, dark</figcaption></figure>
+      <figure><img src="frame-layered-light.png" alt="layered, light"><figcaption>whole app, light</figcaption></figure>
+    </div>
+    <div class="row crops">
+      <figure><img src="seam-layered-dark.png" alt="seam detail"><figcaption>sidebar seam 1:1, dark</figcaption></figure>
+      <figure><img src="seam-layered-light.png" alt="seam detail"><figcaption>sidebar seam 1:1, light</figcaption></figure>
+      <figure><img src="composer-layered-dark.png" alt="composer detail"><figcaption>composer + dock 1:1, dark</figcaption></figure>
+      <figure><img src="panelseam-layered-dark.png" alt="panel seam"><figcaption>panel seam 1:1, dark</figcaption></figure>
+    </div>
+  </article>
+
+<h2>2. Transcript edge treatment (pick one)</h2>
+<p>What happens where the message list meets the header and the dock.</p>
+<div class="strip"><img src="strip-edge-dark.png" alt="edge comparison"></div>
+
+  <article class="card">
+    <h3>hard</h3>
+    <p>The scroller clips at its own edge. Nothing is painted over the transcript.</p>
+    <div class="row crops">
+      <figure><img src="edge-hard-dark.png" alt="top edge, dark"><figcaption>transcript top 1:1, dark</figcaption></figure>
+      <figure><img src="edge-hard-light.png" alt="top edge, light"><figcaption>transcript top 1:1, light</figcaption></figure>
+    </div>
+  </article>
+  <article class="card">
+    <h3>vignette</h3>
+    <p>The scroller fades its own content out at both ends, through a mask. Nothing floats above it.</p>
+    <div class="row crops">
+      <figure><img src="edge-vignette-dark.png" alt="top edge, dark"><figcaption>transcript top 1:1, dark</figcaption></figure>
+      <figure><img src="edge-vignette-light.png" alt="top edge, light"><figcaption>transcript top 1:1, light</figcaption></figure>
+    </div>
+  </article>
+  <article class="card">
+    <h3>overlay</h3>
+    <p>The chat header floats over the transcript and a painted veil fades content into the page colour before it reaches the bar. No filter.</p>
+    <div class="row crops">
+      <figure><img src="edge-overlay-dark.png" alt="top edge, dark"><figcaption>transcript top 1:1, dark</figcaption></figure>
+      <figure><img src="edge-overlay-light.png" alt="top edge, light"><figcaption>transcript top 1:1, light</figcaption></figure>
+    </div>
+  </article>
+
+<h2>3. Upstream's menu blur (pick one)</h2>
+<p>Upstream's own menus, dock work panel and workbar chips carry a 24px backdrop blur. It is not part of the deleted system, so it survived. This switch decides whether it stays or the app has no filter left anywhere.</p>
+<div class="strip"><img src="strip-menu-dark.png" alt="dropdown comparison"></div>
+<div class="row">
+  <figure><img src="menufrost-upstream-dark.png" alt="upstream menu frost"><figcaption>upstream &middot; the model dropdown, dark</figcaption></figure>
+  <figure><img src="menufrost-flat-dark.png" alt="flat menu"><figcaption>flat &middot; the same dropdown, dark</figcaption></figure>
+  <figure><img src="menufrost-upstream-light.png" alt="upstream menu frost, light"><figcaption>upstream &middot; light</figcaption></figure>
+  <figure><img src="menufrost-flat-light.png" alt="flat menu, light"><figcaption>flat &middot; light</figcaption></figure>
+</div>
+
+<h2>4. Panel seam, all surfaces</h2>
+<div class="strip"><img src="strip-panel-dark.png" alt="panel seam comparison"></div>
+</body></html>
