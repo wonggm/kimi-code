@@ -43,7 +43,7 @@ async function timed(label, fn) {
 export function timingReport() {
   return [...timings.entries()]
     .map(([label, { count, ms }]) => ({ label, count, totalMs: ms, avgMs: Math.round(ms / count) }))
-    .sort((a, b) => b.totalMs - a.totalMs);
+    .toSorted((a, b) => b.totalMs - a.totalMs);
 }
 
 export const STORAGE = {
@@ -54,11 +54,6 @@ export const STORAGE = {
   // The two apps disagree on this key name; seeding the wrong one silently
   // drops the font-scale dimension from the comparison.
   fontScale: { upstream: 'kimi-web.font-scale', fork: 'kimi-web.ui-font-size' },
-  // Liquid glass is the fork's own system (upstream has none), so every
-  // comparison is taken with it OFF — otherwise the fork's glass surfaces
-  // differ from upstream's for a reason that is not under comparison. The app
-  // reads `'false'` as off (useAppearance.loadLiquidGlass).
-  glass: 'kimi-web.liquid-glass',
 };
 
 export const BOOT_KEYS = {
@@ -86,7 +81,6 @@ export function buildSeed({ app, locale, theme, token }) {
       expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     }),
   };
-  if (app === 'fork') seed[STORAGE.glass] = 'false';
   return seed;
 }
 
@@ -886,7 +880,7 @@ export async function captureSurface(cdp, { url, outDir, name, steps = [], attem
     },
     coverage: { reached, gaps, opened: true },
   };
-  const classNames = Object.keys(raw.classes).sort();
+  const classNames = Object.keys(raw.classes).toSorted();
   const inventory = {
     pageHash: hash(classNames.join('\n')),
     classCount: classNames.length,

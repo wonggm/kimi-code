@@ -268,14 +268,20 @@ const reorder = usePanelTabReorder({
   onDragStart: () => closeContextMenu(),
 });
 
-// The panel's width animates only while it opens (upstream's `sliding`); the
-// class comes off when the transition ends so a resize drag stays immediate.
+// The panel's width animates in both directions, as upstream's `sliding` does:
+// the class is set for the open and for the close, so the panel slides out over
+// the same 260ms it slid in over. It comes off when the transition ends, which
+// keeps a resize drag immediate. A phone never slides: the panel is a fixed
+// full-viewport overlay there and its closed state is `display: none`, so a
+// width transition would have nothing to draw. `wasVisible` is the previous
+// `visible`, so an unchanged one means only `mobile` moved and no width is
+// changing.
 const sliding = ref(false);
 let slideTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => [props.visible, props.mobile] as const,
   ([visible], [wasVisible]) => {
-    if (!visible || wasVisible || props.mobile) return;
+    if (visible === wasVisible || props.mobile) return;
     sliding.value = true;
     if (slideTimer !== null) clearTimeout(slideTimer);
     slideTimer = setTimeout(() => {

@@ -22,6 +22,7 @@ import Button from '../ui/Button.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import MenuSelect from '../ui/MenuSelect.vue';
 import ModelEffortSelect from '../ui/ModelEffortSelect.vue';
+import ModelPicker from './ModelPicker.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
@@ -167,8 +168,44 @@ const {
 const dialogRef = ref<HTMLElement | null>(null);
 useDialogFocus(dialogRef);
 
+// "More models…" in a subagent pin's model menu opens the full picker over this
+// dialog. Its selection lands on the pin the menu belonged to, not on the
+// session's model, so the picker is mounted here with its own select handler
+// instead of going out to App.vue's picker (which switches the session).
+type MorePickerTarget = { kind: 'secondary' } | { kind: 'profile'; name: string };
+const morePickerTarget = ref<MorePickerTarget | null>(null);
+
+function openMorePicker(target: MorePickerTarget): void {
+  morePickerTarget.value = target;
+}
+
+function closeMorePicker(): void {
+  morePickerTarget.value = null;
+}
+
+const morePickerCurrent = computed(() => {
+  const target = morePickerTarget.value;
+  if (target === null) return '';
+  return target.kind === 'secondary'
+    ? secondaryModelAlias.value
+    : props.config?.subagentModels?.[target.name] ?? '';
+});
+
+function onMorePicked(modelId: string): void {
+  const target = morePickerTarget.value;
+  morePickerTarget.value = null;
+  if (target === null) return;
+  if (target.kind === 'secondary') setSecondaryModel(modelId);
+  else setSubagentModel(target.name, modelId);
+}
+
 function handleKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape') emit('close');
+  if (e.key !== 'Escape') return;
+  // The pin picker is its own modal on top of this one and closes on Escape
+  // itself; without this guard one Escape would take the settings dialog with
+  // it (neither dialog stops propagation of the shared document listener).
+  if (morePickerTarget.value !== null) return;
+  emit('close');
 }
 onMounted(() => document.addEventListener('keydown', handleKeydown));
 onUnmounted(() => {
@@ -703,8 +740,10 @@ function archiveTime(iso: string): string {
                     :placeholder="t('settings.noSecondaryModel')"
                     :disabled="configSaving"
                     :aria-label="t('settings.secondaryModel')"
+                    show-more
                     @update:model-value="setSecondaryModel($event)"
                     @update:effort-value="setSecondaryModel(secondaryModelAlias, $event)"
+                    @more="openMorePicker({ kind: 'secondary' })"
                   />
                 </div>
               </div>
@@ -729,8 +768,10 @@ function archiveTime(iso: string): string {
                       :effort-groups="(modelAlias) => effortGroupsForProfile(profile, modelAlias)"
                       :disabled="configSaving"
                       :aria-label="`${t('settings.subagentModels')} — ${profile.name}`"
+                      show-more
                       @update:model-value="setSubagentModel(profile.name, $event)"
                       @update:effort-value="setSubagentEffort(profile.name, $event)"
+                      @more="openMorePicker({ kind: 'profile', name: profile.name })"
                     />
                   </div>
                 </div>
@@ -973,6 +1014,21 @@ function archiveTime(iso: string): string {
         </div>
       </section>
     </div>
+
+    <!-- "More models…" inside a subagent pin's model menu: the full picker,
+         opened on top of this dialog. The pick lands on the pin that opened
+         it (the global subagent default, or that profile's own pin) — it is
+         not the session's model, so it cannot go through the composer's
+         picker in App.vue. -->
+    <ModelPicker
+      v-if="morePickerTarget"
+      :models="models ?? []"
+      :current="morePickerCurrent"
+      :starred-ids="client.starredModelIds.value"
+      @select="onMorePicked"
+      @toggle-star="client.toggleStarModel($event)"
+      @close="closeMorePicker"
+    />
   </Dialog>
 </template>
 

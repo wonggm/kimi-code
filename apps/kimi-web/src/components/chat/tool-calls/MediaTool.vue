@@ -61,7 +61,7 @@ function openMediaPreview(): void {
         preload="metadata"
       />
       <Tooltip :text="media.path || mediaTitle">
-        <button type="button" class="media-expand lg-glass" aria-label="Open fullscreen" @click="openMediaPreview">
+        <button type="button" class="media-expand" aria-label="Open fullscreen" @click="openMediaPreview">
           <Icon name="panel-expand" size="sm" />
         </button>
       </Tooltip>

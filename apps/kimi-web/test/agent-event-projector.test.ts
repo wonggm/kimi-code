@@ -479,6 +479,68 @@ describe('session status single-sourcing', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'sessionUsageUpdated' }));
   });
 
+  it('carries the engine cache report through to the usage snapshot, unchanged', () => {
+    const projector = createAgentProjector();
+    projector.project('turn.started', { turnId: 1 }, 's1');
+    const events = projector.project(
+      'agent.status.updated',
+      {
+        agentId: 'main',
+        usage: {
+          total: { inputOther: 100, output: 10, inputCacheRead: 300, inputCacheCreation: 0 },
+          cache: {
+            reporting: 'reads',
+            lastRequestPercent: 75,
+            recentPercent: 88.41,
+            recentRequestCount: 20,
+            sessionPercent: 37.5,
+          },
+        },
+      },
+      's1',
+    );
+
+    const usageEvent = events.find((e) => e.type === 'sessionUsageUpdated') as
+      | { usage: Record<string, unknown> }
+      | undefined;
+    expect(usageEvent?.usage).toMatchObject({
+      cacheReporting: 'reads',
+      cacheHitRateLast: 75,
+      cacheHitRateRecent: 88.41,
+      cacheRecentRequests: 20,
+      cacheHitRateSession: 37.5,
+    });
+  });
+
+  it('leaves the cache report alone when the payload predates it', () => {
+    const projector = createAgentProjector();
+    projector.project(
+      'agent.status.updated',
+      {
+        agentId: 'main',
+        usage: {
+          total: { inputOther: 100, output: 10, inputCacheRead: 300, inputCacheCreation: 0 },
+          cache: { reporting: 'reads+writes', lastRequestPercent: 60, sessionPercent: 40 },
+        },
+      },
+      's1',
+    );
+    const later = projector.project(
+      'agent.status.updated',
+      { agentId: 'main', contextTokens: 500 },
+      's1',
+    );
+    const usageEvent = later.find((e) => e.type === 'sessionUsageUpdated') as
+      | { usage: Record<string, unknown> }
+      | undefined;
+
+    expect(usageEvent?.usage).toMatchObject({
+      cacheReporting: 'reads+writes',
+      cacheHitRateLast: 60,
+      cacheHitRateSession: 40,
+    });
+  });
+
   it('seedInFlight returns only the seeded message — status comes from the snapshot', () => {
     const projector = createAgentProjector();
     const events = projector.seedInFlight('s1', {

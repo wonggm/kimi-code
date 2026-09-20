@@ -62,7 +62,6 @@ function pointerIsStationary(event: PointerEvent): boolean {
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { isAnyMenuOpen, menuOpenCount } from '../../composables/useMenuOpen';
-import { useGlassRefraction } from '../../composables/useGlassRefraction';
 
 type Placement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -91,9 +90,6 @@ const bubble = ref<HTMLElement>();
 const open = ref(false);
 const mounted = ref(false);
 
-// WebGL rim-refraction fallback for Firefox/Safari (inert on Chromium). The
-// bubble only participates while actually shown (v-show="open").
-useGlassRefraction(bubble, { when: open });
 const positioned = ref(false);
 const bubbleStyle = ref<Record<string, string>>({ maxWidth: `${props.maxWidth}px` });
 
@@ -249,7 +245,7 @@ onBeforeUnmount(() => {
       v-if="mounted"
       ref="bubble"
       v-show="open"
-      class="ui-tip__bubble lg-glass lg-lens"
+      class="ui-tip__bubble"
       :class="{ positioned }"
       :style="[bubbleStyle, { '--tip-lines': maxLines }]"
       role="tooltip"
@@ -283,24 +279,4 @@ onBeforeUnmount(() => {
   transition: opacity var(--duration-fast) var(--ease-out);
 }
 .ui-tip__bubble.positioned { opacity: 1; }
-/* Glass fallback background is light/translucent — restore dark-on-light text
-   in dark theme (frost bg + light text reads correctly). In light theme the
-   bubble stays on the original inverted dark fill + light text; the dark-frost
-   bg scoped to dark theme only preserves that look without a per-theme rewrite
-   of the base rule. */
-html[data-liquid-glass="on"] .ui-tip__bubble.lg-glass { color: var(--color-text); }
-/* "Light theme" here means light, not merely "not explicitly dark": a
-   system-scheme user on a dark OS must get the dark treatment, so the system
-   case is spelled out under a light-OS media query (same keying as the
-   `--lg-*` light re-tune in style.css). */
-html[data-color-scheme="light"][data-liquid-glass="on"] .ui-tip__bubble.lg-glass {
-  background: var(--color-text);
-  color: var(--color-bg);
-}
-@media (prefers-color-scheme: light) {
-  html[data-color-scheme="system"][data-liquid-glass="on"] .ui-tip__bubble.lg-glass {
-    background: var(--color-text);
-    color: var(--color-bg);
-  }
-}
 </style>

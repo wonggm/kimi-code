@@ -1,17 +1,20 @@
 <!-- apps/kimi-web/src/components/settings/ModelPicker.vue -->
-<!-- Modal overlay for switching the active session's model. -->
+<!-- Modal overlay for switching the active session's model. Follows upstream's
+     picker: a 640x680 flush dialog whose column carries the 22px side gutter
+     itself, a borderless provider chip strip, and rows of a name over one muted
+     meta line, with the current-model check and the star grouped at the trailing
+     edge. -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { AppModel } from '../../api/types';
 import { useDialogFocus } from '../../composables/useDialogFocus';
 import { formatTokens } from '../../lib/formatTokens';
 import Dialog from '../ui/Dialog.vue';
-import Button from '../ui/Button.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 import Input from '../ui/Input.vue';
-import Badge from '../ui/Badge.vue';
+import Kbd from '../ui/Kbd.vue';
 import Spinner from '../ui/Spinner.vue';
 
 const { t } = useI18n();
@@ -43,6 +46,7 @@ function isStarred(modelId: string): boolean {
 const query = ref('');
 const searchRef = ref<HTMLInputElement | null>(null);
 const dialogRef = ref<HTMLElement | null>(null);
+const listRef = ref<HTMLElement | null>(null);
 const activeTab = ref('all');
 
 // Focus the search box on open; restore focus to the opener on close.
@@ -80,6 +84,7 @@ const filtered = computed<AppModel[]>(() => {
 
 const flat = computed<AppModel[]>(() => filtered.value);
 const selectedIdx = ref(0);
+const canClear = computed(() => query.value.length > 0);
 
 // Reset selection when filter changes
 watch([query, activeTab], () => { selectedIdx.value = 0; });
@@ -89,6 +94,39 @@ watch(providerTabs, (tabs) => {
 watch(flat, (items) => {
   selectedIdx.value = Math.min(selectedIdx.value, Math.max(items.length - 1, 0));
 });
+// The list scrolls inside a fixed-height dialog now, so arrow-key movement has
+// to bring the row it landed on back into view.
+watch(selectedIdx, async () => {
+  await nextTick();
+  listRef.value?.querySelector<HTMLElement>('.model-row.is-selected')?.scrollIntoView({ block: 'nearest' });
+});
+
+// -------------------------------------------------------------------------
+// Row meta line
+// -------------------------------------------------------------------------
+
+// Upstream folds everything secondary about a model into one muted line under
+// the name: the provider, then its context size, then any capability tag.
+const CAPABILITY_KEYS: Record<string, string> = {
+  image_in: 'model.capabilityImageInput',
+  video_in: 'model.capabilityVideoInput',
+  tool_use: 'model.capabilityToolUse',
+  thinking: 'model.capabilityThinking',
+  always_thinking: 'model.capabilityAlwaysThinking',
+};
+
+function capabilityLabel(tag: string): string {
+  const key = CAPABILITY_KEYS[tag];
+  return key ? t(key) : tag.replaceAll('_', ' ');
+}
+
+function modelMeta(model: AppModel): string {
+  return [
+    model.provider,
+    t('model.contextSuffix', { size: formatTokens(model.maxContextSize) }),
+    ...(model.capabilities ?? []).map(capabilityLabel),
+  ].join(' · ');
+}
 
 // -------------------------------------------------------------------------
 // Keyboard navigation
@@ -131,12 +169,26 @@ function flatIdx(m: AppModel): number {
 function selectTab(tabId: string): void {
   activeTab.value = tabId;
 }
+
+function clearSearch(): void {
+  query.value = '';
+  searchRef.value?.focus();
+}
 </script>
 
 <template>
-  <Dialog :open="true" :close-on-esc="false" :title="t('model.title')" size="xl" height="fixed" @close="emit('close')">
+  <Dialog
+    :open="true"
+    :close-on-esc="false"
+    :title="t('model.title')"
+    size="lg"
+    height="fixed"
+    :padded="false"
+    @close="emit('close')"
+  >
     <div ref="dialogRef" class="mp">
-      <!-- Search -->
+      <!-- Search. The wrap anchors the clear control, which fades in only once
+           there is something to clear. -->
       <div class="search-wrap">
         <Input
           ref="searchRef"
@@ -146,18 +198,33 @@ function selectTab(tabId: string): void {
           spellcheck="false"
           autofocus
         />
+        <button
+          type="button"
+          class="search-clear"
+          :class="{ 'is-on': canClear }"
+          :aria-label="t('model.clearSearch')"
+          @click="clearSearch"
+        >
+          <Icon name="close" size="sm" />
+        </button>
       </div>
 
-      <div v-if="providerTabs.length > 1" class="tab-strip">
-        <Button
+      <div
+        v-if="providerTabs.length > 1"
+        class="chip-strip"
+        :aria-label="t('model.providerTabs')"
+      >
+        <button
           v-for="tab in providerTabs"
           :key="tab.id"
-          :variant="tab.id === activeTab ? 'secondary' : 'ghost'"
-          size="sm"
+          type="button"
+          class="chip"
+          :class="{ 'is-active': tab.id === activeTab }"
+          :aria-pressed="tab.id === activeTab"
           @click="selectTab(tab.id)"
         >
           {{ tab.label }}
-        </Button>
+        </button>
       </div>
 
       <!-- Loading state -->
@@ -173,7 +240,13 @@ function selectTab(tabId: string): void {
       </div>
 
       <!-- Model list -->
-      <div v-else class="model-list">
+      <div
+        v-else
+        ref="listRef"
+        class="model-list"
+        role="listbox"
+        :aria-label="t('model.title')"
+      >
         <div
           v-for="m in flat"
           :key="m.id"
@@ -187,26 +260,23 @@ function selectTab(tabId: string): void {
           @click="choose(m.id)"
           @mouseenter="selectedIdx = flatIdx(m)"
         >
-          <span class="check">
-            <Icon v-if="m.id === current" name="check" size="sm" />
-          </span>
           <span class="model-main">
             <span class="model-name">{{ m.displayName ?? m.model }}</span>
-            <span class="model-id">{{ m.id }}</span>
-            <span v-if="m.capabilities && m.capabilities.length > 0" class="caps">
-              <Badge v-for="cap in m.capabilities" :key="cap" variant="info" size="sm">{{ cap }}</Badge>
-            </span>
+            <span class="model-meta">{{ modelMeta(m) }}</span>
           </span>
-          <span class="model-provider">{{ m.provider }}</span>
-          <span class="model-ctx">{{ t('model.contextSuffix', { size: formatTokens(m.maxContextSize) }) }}</span>
-          <IconButton
-            size="sm"
-            :label="isStarred(m.id) ? t('model.unstarTitle') : t('model.starTitle')"
-            @click.stop="emit('toggle-star', m.id)"
-          >
-            <Icon v-if="isStarred(m.id)" name="star" size="md" />
-            <Icon v-else name="star-outline" size="md" />
-          </IconButton>
+          <span class="model-side">
+            <Icon v-if="m.id === current" class="model-check" name="check" size="sm" />
+            <IconButton
+              class="model-star"
+              :class="{ 'is-starred': isStarred(m.id) }"
+              size="sm"
+              :label="isStarred(m.id) ? t('model.unstarTitle') : t('model.starTitle')"
+              @click.stop="emit('toggle-star', m.id)"
+            >
+              <Icon v-if="isStarred(m.id)" name="star" size="md" />
+              <Icon v-else name="star-outline" size="md" />
+            </IconButton>
+          </span>
         </div>
         <div v-if="flat.length === 0 && !loading && !unavailable" class="empty">
           {{ props.models.length === 0 ? t('model.emptyNoModels') : t('model.emptyNoMatch') }}
@@ -214,58 +284,158 @@ function selectTab(tabId: string): void {
       </div>
 
       <!-- Footer hint -->
-      <div class="footer-hint">{{ t('model.footerHint') }}</div>
+      <div class="footer-hint">
+        <Kbd :keys="['↑', '↓']" />
+        <span>{{ t('model.hintNavigate') }}</span>
+        <span class="hint-dot">·</span>
+        <Kbd :keys="['Enter']" />
+        <span>{{ t('model.hintSelect') }}</span>
+        <span class="hint-dot">·</span>
+        <Kbd :keys="['Esc']" />
+        <span>{{ t('model.hintClose') }}</span>
+      </div>
     </div>
   </Dialog>
 </template>
 
 <style scoped>
-.mp { display: flex; flex-direction: column; gap: var(--space-2); }
+/* The dialog body is flush, so this column owns its own top inset and the 22px
+   side gutter that the search field and the chip strip read. */
+.mp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  min-height: 0;
+  padding-top: var(--space-1);
+}
 
 /* Search */
-.search-wrap { padding-bottom: var(--space-1); }
+.search-wrap {
+  position: relative;
+  margin: 0 22px;
+  padding-bottom: var(--space-1);
+}
+/* Room for the clear control to sit over the field's right edge. */
+.search-wrap :deep(.ui-input) {
+  padding-right: 30px;
+  /* Upstream's own well for this field: --color-surface-overlay is white in
+     light and 10% white in dark in both apps, so the field reads as a recess in
+     the dialog rather than as the dialog surface itself. The resting shadow
+     stays under it. */
+  background: var(--color-surface-overlay);
+}
+/* While the caret is in the field it keeps the neutral hairline and the resting
+   shadow. The shared Input swaps both for the accent ring on focus, which
+   upstream's own search never shows: its field reads the same whether or not it
+   is focused. */
+.search-wrap :deep(.ui-input:focus) {
+  border-color: var(--color-line-strong);
+  box-shadow: var(--shadow-xs);
+}
+.search-clear {
+  position: absolute;
+  top: 0;
+  bottom: var(--space-1);
+  right: var(--space-2);
+  margin-block: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-hover);
+  color: var(--color-text-faint);
+  cursor: pointer;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out), visibility var(--duration-fast),
+    background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.search-clear.is-on {
+  visibility: visible;
+  opacity: 1;
+}
+.search-clear:hover {
+  background: var(--color-selected);
+  color: var(--color-text-muted);
+}
+.search-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
 
-.tab-strip {
+/* Provider chips */
+.chip-strip {
   display: flex;
   gap: var(--space-1);
+  margin: 0 22px;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+.chip-strip::-webkit-scrollbar {
+  display: none;
+}
+.chip {
+  flex: none;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.chip:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+.chip.is-active {
+  background: var(--color-selected);
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+.chip:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
 }
 
 /* Model list */
 .model-list {
   display: flex;
   flex-direction: column;
-  padding: var(--space-1) 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1) var(--space-2);
 }
 
 .model-row {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   cursor: pointer;
   color: var(--color-text);
   min-width: 0;
-  transition: background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out);
 }
-.model-row:hover, .model-row.is-selected {
-  background: var(--color-surface-sunken);
+.model-row:hover,
+.model-row.is-selected {
+  background: var(--color-hover);
 }
 .model-row.is-current {
-  background: var(--color-accent-soft);
-  box-shadow: inset 0 0 0 1px var(--color-accent-bd);
+  background: var(--color-selected);
 }
 
-.check {
-  width: 14px;
-  height: 14px;
-  color: var(--color-accent);
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 .model-main {
   flex: 1;
   min-width: 0;
@@ -275,58 +445,75 @@ function selectTab(tabId: string): void {
 }
 .model-name {
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
+  font-size: var(--text-base);
+  line-height: 20px;
   color: var(--color-text);
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.model-id {
-  font-family: var(--font-mono);
+.model-row.is-current .model-name {
+  font-weight: var(--weight-medium);
+}
+.model-meta {
+  font-family: var(--font-ui);
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  line-height: 18px;
+  color: var(--color-text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.model-provider {
-  flex: none;
-  max-width: 110px;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.model-ctx {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-}
-.caps {
+
+/* The check marks where the session is now; the star stays out of the way until
+   the row is pointed at, selected by the keyboard, or already starred. */
+.model-side {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.model-check {
+  color: var(--color-text);
+  flex: none;
+}
+.model-star {
+  color: var(--color-text-faint);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out), visibility var(--duration-fast);
+}
+.model-row:hover .model-star,
+.model-row.is-selected .model-star,
+.model-star.is-starred,
+.model-star:focus-visible {
+  visibility: visible;
+  opacity: 1;
+}
+.model-star.is-starred {
+  color: var(--star);
 }
 
 .state-row {
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-5) 0;
   color: var(--color-text-muted);
   font-family: var(--font-ui);
   font-size: var(--text-base);
 }
-.state-row.unavail { color: var(--color-warning); }
+.state-row.unavail {
+  color: var(--color-warning);
+}
 
 .empty {
-  padding: var(--space-5) 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--color-text-muted);
   font-family: var(--font-ui);
   font-size: var(--text-base);
@@ -334,22 +521,37 @@ function selectTab(tabId: string): void {
 
 /* Footer */
 .footer-hint {
-  padding-top: var(--space-2);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-top: .5px solid var(--color-line);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   color: var(--color-text-faint);
-  border-top: 1px solid var(--color-line);
+}
+.hint-dot {
+  margin: 0 var(--space-1);
+}
+
+/* Touch: there is no keyboard to hint at, and the star has no hover to be
+   revealed by, so it stays on screen. */
+@media (hover: none) {
+  .model-star {
+    visibility: visible;
+    opacity: 1;
+  }
+  .footer-hint {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {
-  .model-provider,
-  .caps {
-    display: none;
-  }
-  /* Provider tabs and the row's star button are the dialog's only controls on a
-     phone: at desktop size they land at 30px / 26px tall, under the touch floor.
-     The rows already clear 44px. */
-  .tab-strip :deep(.ui-button) {
+  /* The chip strip and the row's star are the dialog's only controls on a
+     phone: at desktop size they land at 28px / 26px tall, under the touch
+     floor. The rows already clear 44px. */
+  .chip-strip .chip {
     min-height: 44px;
   }
   .model-row :deep(.ui-icon-button) {

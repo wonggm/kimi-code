@@ -36,6 +36,17 @@ export interface WireSessionUsage {
   output_tokens: number;
   cache_read_tokens: number;
   cache_creation_tokens: number;
+  /** `none` when the provider reports no cache information at all. */
+  cache_reporting?: 'none' | 'reads' | 'reads+writes';
+  /** Cache hit rate on the last model request, in percent. */
+  cache_hit_rate_last?: number;
+  /** Cache hit rate over the last `cache_recent_requests` model requests, in
+   *  percent. */
+  cache_hit_rate_recent?: number;
+  /** How many requests the recent rate covers. */
+  cache_recent_requests?: number;
+  /** Session-wide cache hit rate, in percent. */
+  cache_hit_rate_session?: number;
   total_cost_usd: number;
   context_tokens: number;
   context_limit: number;

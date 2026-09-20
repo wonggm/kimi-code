@@ -67,6 +67,47 @@ const showCost = computed(() => typeof props.costUsd === 'number' && props.costU
 const costText = computed(() =>
   showCost.value ? `$${(props.costUsd as number).toFixed(4)}` : t('status.statusNone'),
 );
+
+// A provider that reports nothing must read as unreported, not as a zero rate.
+const showCache = computed(
+  () =>
+    props.status.cacheReporting === 'reads' ||
+    props.status.cacheReporting === 'reads+writes',
+);
+const cacheRate = computed(
+  () => props.status.cacheHitRateLast ?? props.status.cacheHitRateSession,
+);
+const cacheText = computed(() =>
+  showCache.value && cacheRate.value !== undefined
+    ? `${cacheRate.value.toFixed(2)}%`
+    : '',
+);
+const cacheRead = computed(() => props.status.cacheReadTokens ?? 0);
+const cacheWritten = computed(() => props.status.cacheCreationTokens ?? 0);
+// The last-request figure is the headline because it is what the badge shows.
+// The rolling window and the session average sit beside it, since a single good
+// request after a rebuild can hide a cache that is otherwise failing.
+const cacheRatesText = computed(() => {
+  const recent = props.status.cacheHitRateRecent;
+  const session = props.status.cacheHitRateSession;
+  if (!showCache.value || recent === undefined || session === undefined) return '';
+  return t('status.cacheRates', {
+    recent: recent.toFixed(2),
+    count: String(props.status.cacheRecentRequests ?? 0),
+    session: session.toFixed(2),
+  });
+});
+// The counts carry the cached-versus-charged split as two numbers rather than a
+// filled track: an unfilled remainder is honest, a greyed bar read as a target.
+const cacheCountsText = computed(() =>
+  cacheRead.value + cacheWritten.value > 0
+    ? `${formatTokens(cacheRead.value)} cached · ${formatTokens(cacheWritten.value)} written`
+    : '',
+);
+const cacheNoteText = computed(() => {
+  if (!showCache.value) return t('status.cacheNotReported');
+  return props.status.cacheReporting === 'reads' ? t('status.cacheReadsOnly') : '';
+});
 </script>
 
 <template>
@@ -97,6 +138,15 @@ const costText = computed(() =>
         <dd>
           <span class="ctx-text">{{ contextValue }}</span>
           <span v-if="status.ctxMax > 0" class="bar"><i :style="{ width: pct + '%' }"></i></span>
+        </dd>
+      </div>
+      <div class="row">
+        <dt>{{ t('status.cacheLabel') }}</dt>
+        <dd>
+          <span v-if="cacheText" class="ctx-text">{{ cacheText }}</span>
+          <span v-if="cacheRatesText" class="cache-counts">{{ cacheRatesText }}</span>
+          <span v-if="cacheCountsText" class="cache-counts">{{ cacheCountsText }}</span>
+          <span v-if="cacheNoteText" class="cache-note">{{ cacheNoteText }}</span>
         </dd>
       </div>
       <div class="row">
@@ -152,6 +202,14 @@ const costText = computed(() =>
   display: block;
   height: 100%;
   background: var(--color-accent);
+}
+
+/* Cache row: same 5px track as the context bar, with the session input split
+   between what came from the cache and what the provider charged in full. */
+.cache-counts,
+.cache-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
 @media (max-width: 640px) {

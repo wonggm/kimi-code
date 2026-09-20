@@ -47,6 +47,11 @@ export default {
   thinkingOn: '开',
   thinkingOff: '关',
   cacheNote: '提示：切换模型或思考程度会使已有的提示词缓存失效。建议新建会话，避免额外的 token 消耗。',
+  cacheLabel: '缓存',
+  cacheTooltip: '最近一次请求缓存命中率：{last}%。最近 {count} 次请求：{recent}%。会话平均：{session}%。',
+  cacheRates: '平均 {recent}%（最近 {count} 次请求）· 会话平均 {session}%',
+  cacheReadsOnly: '该服务商只上报缓存读取量，因此命中率按「读取量 ÷ 未命中输入量」计算。',
+  cacheNotReported: '该服务商未上报本会话的缓存信息。',
   starredModels: '收藏',
   moreModels: '更多模型…',
   // 状态面板

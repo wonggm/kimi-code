@@ -2,7 +2,8 @@
 // check-style.mjs — design-system §06 anti-pattern guard for apps/kimi-web.
 //
 // Scans src/** for the rules in the design system (§06 of the DesignSystemView spec):
-//   no-gradient-text, no-glassmorphism (.frost exempt), no-color-glow,
+//   no-gradient-text, no-glassmorphism (only the shared material in
+//   src/style.css; components must not add their own), no-color-glow,
 //   icon-from-registry (hand-written <svg>; Icon/Spinner/MoonSpinner + the
 //   32x22 brand mark exempt), no-emoji-icon (moon in MoonSpinner exempt),
 //   no-hardcoded-hex (DiffView/DiffLines/Terminal domain colors + var()
@@ -126,8 +127,13 @@ function checkFile(abs) {
         add('no-gradient-text', file, line, trimmed.slice(0, 80));
       }
 
-      // no-glassmorphism (TopBar frost variant + liquid-glass tiers exempt)
-      if (/backdrop-filter\s*:/i.test(raw) && !/\bfrost\b|lg-glass|lg-frost|liquidGlass/.test(text)) {
+      // no-glassmorphism — the shared material in src/style.css is the only
+      // place glass may be declared; a component adding its own
+      // `backdrop-filter` is still a finding. Two exemptions remain, both
+      // upstream's own material: the `.frost` variant of ui/TopBar, and
+      // upstream's frosted-menu blur (`--p-menu-backdrop`) shared by its
+      // menus, dock work panel and workbar pills.
+      if (/backdrop-filter\s*:/i.test(raw) && !/\bfrost\b|--p-menu-backdrop/.test(text)) {
         add('no-glassmorphism', file, line, trimmed.slice(0, 80));
       }
 

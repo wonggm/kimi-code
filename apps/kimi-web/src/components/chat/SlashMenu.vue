@@ -1,7 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/SlashMenu.vue -->
 <!-- Popup list of slash commands shown above the Composer textarea. Matched
-     fragments are bold-highlighted; long lists get a scroll fade plus a
-     draggable floating scrollbar (see useMenuScrollbar). -->
+     fragments are bold-highlighted; long lists get a scroll fade and the
+     browser's own scrollbar (see useMenuScrollbar). -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -33,7 +33,7 @@ const emit = defineEmits<{
 
 const itemRefs = ref<HTMLElement[]>([]);
 const scrollEl = ref<HTMLElement | null>(null);
-const { maskStyle, thumbStyle, onScroll, onThumbPointerDown } = useMenuScrollbar(scrollEl);
+const { maskStyle, onScroll } = useMenuScrollbar(scrollEl);
 
 /** Split a string into highlighted / plain pieces from the given ranges. */
 function pieces(text: string, ranges?: [number, number][]): { text: string; hit: boolean }[] {
@@ -93,7 +93,7 @@ watch(
 <template>
   <div
     v-if="rows.length > 0 || items.length === 0"
-    class="slash-menu lg-glass"
+    class="slash-menu"
     :class="{ 'is-sheet': layout === 'sheet' }"
     :style="clampStyle"
     role="listbox"
@@ -125,12 +125,6 @@ watch(
         </span>
       </div>
     </div>
-    <div
-      v-if="thumbStyle"
-      class="menu-thumb"
-      :style="thumbStyle"
-      @pointerdown="onThumbPointerDown"
-    />
   </div>
 </template>
 
@@ -150,15 +144,11 @@ watch(
   z-index: var(--z-dropdown);
 }
 
-/* Scroll container: owns the max-height + scrolling; hides the native
-   scrollbar in favor of the floating thumb. */
+/* Scroll container: owns the max-height + scrolling, and the browser draws its
+   own scrollbar on it. */
 .menu-scroll {
   max-height: 240px;
   overflow-y: auto;
-  scrollbar-width: none;
-}
-.menu-scroll::-webkit-scrollbar {
-  display: none;
 }
 
 /* Concentric corners: the frame is radius-lg with space-1 padding, so the
@@ -227,29 +217,6 @@ watch(
   font-weight: var(--weight-semibold);
 }
 
-/* Floating draggable scrollbar — sibling of the scroll container, anchored to
-   the menu frame. Interactive hit area widened by the ::before overlay. */
-.menu-thumb {
-  position: absolute;
-  right: 4px;
-  width: var(--menu-scrollbar-width);
-  border-radius: var(--radius-full);
-  background: var(--menu-scrollbar-color);
-  cursor: default;
-  touch-action: none;
-  transition: background var(--duration-base) var(--ease-out);
-}
-.menu-thumb::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(-1 * var(--space-2));
-  right: 0;
-}
-.slash-menu:hover .menu-thumb {
-  background: var(--menu-scrollbar-color-hover);
-}
 
 @media (max-width: 520px) {
   .slash-item {
@@ -265,14 +232,11 @@ watch(
 /* ---- Sheet layout (mobile bottom sheet): the composer renders this menu
    inside a grab-handle sheet instead of an anchored floating panel, so the
    frame flattens — no absolute anchoring, no raised surface (the sheet's own
-   lg-frost surface owns the blur; the frame drops the lg-glass frost), no
-   floating scrollbar thumb (touch scrolls the list). ---- */
+   surface carries the treatment). ---- */
 .slash-menu.is-sheet[role="listbox"] {
   position: static;
   padding: 0;
   background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -280,9 +244,6 @@ watch(
 }
 .slash-menu.is-sheet .menu-scroll {
   padding: var(--space-1) var(--space-2);
-}
-.slash-menu.is-sheet .menu-thumb {
-  display: none;
 }
 .slash-menu.is-sheet .menu-scroll > :first-child {
   border-top-left-radius: 0;

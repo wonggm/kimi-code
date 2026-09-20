@@ -48,6 +48,13 @@ export default {
   thinkingOff: 'Off',
   cacheNote:
     'Note: Switching models or thinking effort invalidates the existing prompt cache. Start a new chat to avoid extra token costs.',
+  cacheLabel: 'Cache',
+  cacheTooltip:
+    'Cache hit rate on the last request: {last}%. Last {count} requests: {recent}%. Session average: {session}%.',
+  cacheRates: 'avg {recent}% over the last {count} requests · session avg {session}%',
+  cacheReadsOnly:
+    'This provider reports cache reads only, so the rate counts reads against uncached input.',
+  cacheNotReported: 'This provider reports no cache information for this session.',
   starredModels: 'Starred',
   moreModels: 'More models…',
   // Status panel

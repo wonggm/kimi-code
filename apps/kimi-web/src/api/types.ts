@@ -46,6 +46,17 @@ export interface AppSessionUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /** `none` when the provider reports no cache information, in which case the
+   *  hit rates are absent and no meter should render. */
+  cacheReporting?: 'none' | 'reads' | 'reads+writes';
+  /** Cache hit rate on the last model request, in percent. */
+  cacheHitRateLast?: number;
+  /** Cache hit rate over the recent window of model requests, in percent. */
+  cacheHitRateRecent?: number;
+  /** How many requests the recent rate covers. */
+  cacheRecentRequests?: number;
+  /** Session-wide cache hit rate, in percent. */
+  cacheHitRateSession?: number;
   totalCostUsd: number;
   contextTokens: number;
   contextLimit: number;

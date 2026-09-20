@@ -476,6 +476,7 @@ html[data-color-scheme="dark"][data-accent="mono"] {
      copying upstream's neutral greys. --color-text-muted / --color-text-faint
      already carry light values above. */
   --color-composer-bg: var(--color-surface-raised);
+  --color-composer-focus-line: rgba(0, 0, 0, 0.25);
   --color-menu-bg: rgba(255, 255, 255, 0.95);
   --color-menu-bg-frost: color-mix(in srgb, var(--color-bg) 70%, transparent);
   --color-user-bubble-bg: var(--color-surface-sunken);
@@ -486,13 +487,17 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-topbar-bg-frost: color-mix(in srgb, var(--color-surface) 78%, transparent);
   --color-text-strong: #000000;
   --color-text-on-scrim: #ffffff;
-  /* Send disc: the fork's light send is the blue accent (the dark block keeps
-     upstream's near-white disc); disabled is a faint black wash on the page. */
-  --color-send-bg: var(--color-accent);
-  --color-send-bg-hover: var(--color-accent-hover);
+  /* Send disc. Light takes upstream's own two fills: a near-black disc with the
+     page colour as its glyph, and a flat #252525 on hover. The reader asked for
+     the disc to match the reference build, which drops the fork's blue light
+     send; the dark block already carries upstream's near-white disc and is
+     untouched. Disabled is a faint black wash on the page. */
+  --color-send-bg: rgba(0, 0, 0, 0.9);
+  --color-send-bg-hover: #252525;
   --color-send-bg-disabled: rgba(0, 0, 0, 0.05);
-  /* Glyph on the accent disc (upstream's --color-send-icon), and the two fill
-     washes upstream's card buttons and card avatars paint themselves with. */
+  /* Glyph on the disc (upstream's --color-send-icon: white here, near-black on
+     the dark block's near-white disc), and the two fill washes upstream's card
+     buttons and card avatars paint themselves with. */
   --color-send-icon: #ffffff;
   --color-fill-1: rgba(0, 0, 0, 0.03);
   --color-fill-2: rgba(0, 0, 0, 0.05);
@@ -636,6 +641,9 @@ html[data-color-scheme="dark"][data-accent="mono"] {
      upstream's stylesheet, so the shell keeps its own numbers there. */
   --p-hairline: 0.5px;
   --panel-head-h: 48px;
+  /* Mobile title bar, content row: the safe-area inset is added on top, and the
+     pill state takes the header's own vertical inset out of it. */
+  --mobile-topbar-h: 50px;
   --panel-tab-h: 28px;
   --panel-tab-pad-x: 10px;
   --panel-tab-max-w: 168px;
@@ -732,6 +740,7 @@ html[data-color-scheme="dark"] {
   --color-info: #58a6ff;
   /* Composer / menu / diff surfaces + foregrounds (upstream dark). */
   --color-composer-bg: #1f1f1f;
+  --color-composer-focus-line: rgba(255, 255, 255, 0.25);
   --color-menu-bg: rgba(41, 41, 41, 0.95);
   --color-menu-bg-frost: color-mix(in srgb, #121212 70%, transparent);
   --color-user-bubble-bg: #292929;
@@ -806,6 +815,7 @@ html[data-color-scheme="dark"] {
     --color-info: #58a6ff;
     /* Composer / menu / diff surfaces + foregrounds (upstream dark). */
     --color-composer-bg: #1f1f1f;
+    --color-composer-focus-line: rgba(255, 255, 255, 0.25);
     --color-menu-bg: rgba(41, 41, 41, 0.95);
     --color-menu-bg-frost: color-mix(in srgb, #121212 70%, transparent);
     --color-user-bubble-bg: #292929;
@@ -831,629 +841,7 @@ html[data-color-scheme="dark"] {
   }
 }
 
-/* Liquid glass (feature-gated; off = no visual effect) — ONE shared
-   parametric material system that paints in TWO regimes (design plan:
-   PLANS/design-language-catalogue.md §5 direction C).
-
-   Refractive regime (the default): a translucent tint over a strongly
-   saturated blurred backdrop (saturate 190%, brightness 1.04), an asymmetric
-   edge rim lit from the top-left key light (top white, side-left white,
-   side-right black, bottom black), the tier's resting drop shadow, and — on
-   engines that accept an SVG filter reference inside `backdrop-filter` — a
-   visible rim refraction of the content behind the panel (the lens chain lives
-   in components/ui/GlassDefs.vue and is selected in the @supports block below,
-   gated on the .lg-lens marker class rather than on the tiers). The face colour
-   is `--lg-face`: the theme surface pushed by the render-time ambient read of
-   what is actually behind that surface.
-
-   Opaque regime (the designed demotion, the Mica lesson): same hue family and
-   geometry, no blur, no refraction, no GL pane, one faint top-edge rim. Reached
-   per element (.lg-demoted), app-wide (html[data-glass-regime="opaque"], which
-   the frame-budget watchdog latches) and by the OS transparency contract.
-
-   Architecture: the gate block declares every recipe constant as a custom
-   property; the tier classes set the per-surface parameters (--lg-blur,
-   --lg-tint-a, --lg-drop-shadow); ONE shared rule consumes the whole family and
-   reads its material through the --lg-optic-* slots with the refractive recipe
-   as each slot's fallback, so a regime change is a token retarget rather than a
-   cascade fight. Classless band surfaces (the chat-main blur bands) and the
-   sidebar column consume the same variable family instead of re-declaring the
-   recipe. With the toggle OFF, none of this applies.
-
-   Doubled classes (.lg-glass.lg-glass etc.) raise specificity to (0,3,1) so
-   these win over components that deliberately raise their own (e.g.
-   `.slash-menu[role="listbox"]` at (0,3,0)) — every rule that components
-   override keeps the doubled pattern. */
-
-/* ---- Token block (gate) — the D1 recipe constants ------------------------ */
-html[data-liquid-glass="on"] {
-  /* saturate + a touch of brightness keep the backdrop luminous through the
-     tint. */
-  --lg-sat: 220%;
-  --lg-bright: 1.04;
-  /* Refraction depth: the edge zone the SVG lens bends, mirrored by the CSS
-     inset edge-glow below so non-supporting engines keep a hint of it. */
-  --lg-edge-px: 16px;
-
-  /* Per-tier blur depths. glass 20px — text behind smears into clearly
-     visible bokeh while the panel stays translucent. frost 64px —
-     dialogs/sheets/composer sit on top of the live transcript, so the
-     backdrop has to be knocked out. band 28px — a step stronger than glass:
-     the chat blur bands and the dock squares embedded in them are the one
-     place the user asked to read as clearly blurred. */
-  --lg-blur-glass: 20px;
-  --lg-blur-frost: 64px;
-  --lg-blur-band: 28px;
-  /* Menus/dropdowns sit over live transcript text and stay open while the
-     user reads them — a step above band so the text behind smears out
-     instead of ghosting through the item labels. */
-  --lg-blur-menu: 36px;
-
-  /* Per-tier tint alphas (~0.24 dark for small floating elements —
-     translucent enough that the blurred text behind reads as bokeh bands
-     rather than a flat wash; frost sits over live content and stays denser). */
-  --lg-tint-glass-a: 24%;
-  --lg-tint-frost-a: 40%;
-  --lg-tint-band-a: 6%;
-  /* A touch denser than glass so item labels keep their contrast against the
-     (now strongly blurred) content behind the menu. */
-  --lg-tint-menu-a: 28%;
-
-  /* (An earlier "specular corner bloom" radial gradient painted a static
-     white patch at the top-right of every panel — not how liquid glass
-     behaves: the specular highlight is a rim band that follows the edge
-     curvature and the key light, so it lives in the rim/shader layers, not
-     in the face background.) */
-
-  /* Asymmetric edge rim — the glass edge catching a top-left key light:
-     bright top specular, lit left hairline, shaded right hairline, bottom
-     shade. Declared as color-mix values so tiers can soften per surface. */
-  --lg-rim-top: color-mix(in srgb, #fff 88%, transparent);
-  --lg-rim-side-l: color-mix(in srgb, #fff 38%, transparent);
-  --lg-rim-side-r: color-mix(in srgb, #000 18%, transparent);
-  --lg-rim-bottom: color-mix(in srgb, #000 24%, transparent);
-
-  /* Per-tier resting drop shadow — menus / tooltips / toasts rest on
-     shadow-sm, dialogs / sheets / the composer on shadow-xl, bands embed in
-     a shared frost slab so they carry no drop of their own. (An earlier
-     warm/cool chromatic shadow pair read as a cheap orange/blue halo rather
-     than dispersion — removed.) */
-  --lg-drop-glass: var(--shadow-sm);
-  --lg-drop-frost: var(--shadow-xl);
-  --lg-drop-band: 0 0 0 0 transparent;
-
-  /* Specular strength of the rim band, consumed as a shader uniform by
-     gl-renderer (and mirrored by the SVG lens variant selection below). Dark
-     surfaces carry the bright edge; on a white surface a bright rim is
-     invisible, so the light-theme block drops the highlight strength, softens
-     the white top edge and deepens the shaded edges so the rim reads as a
-     darker contour, and routes the lens to the softer SVG variant. */
-  --lg-spec: 0.42;
-  --lg-lens-filter: url(#lg-refract);
-
-  /* Render-time ambient tint (direction C): the two per-surface channels the
-     engine writes — `--lg-amb-deepen` when the content behind the panel reads
-     darker than the rest of the page, `--lg-amb-lift` when it reads brighter
-     (never both). Both are 0% until the engine measures something, which is
-     also the no-engine state; the element-level `--lg-face` in the consuming
-     rule below is what mixes them into the surface colour. The reference is the
-     page's own measured luminance in the same pass (Rec. 709 on gamma-encoded
-     channels, the weights the shader uses), so there is no per-theme constant
-     to keep in step: an ordinary transcript frame leaves the tint untouched and
-     only a genuinely dark or bright region behind a surface moves it. */
-  --lg-amb-deepen: 0%;
-  --lg-amb-lift: 0%;
-
-  /* Demoted (opaque) regime — the Mica lesson. A designed resting state: the
-     same hue family and geometry as the glass, no optics. The faint top edge
-     keeps the surface readable as a raised plane rather than a hole. */
-  --lg-flat-top: color-mix(in srgb, var(--color-surface-raised) 96%, white);
-  --lg-flat-rim: color-mix(in srgb, #fff 26%, transparent);
-
-  /* Default tier parameters = the glass tier, so the shared consuming rule
-     below never resolves an undefined var() on classless surfaces (they
-     retarget what they need: the sidebar / right panel step up to the frost
-     parameters, the new-messages pill only densifies the tint). */
-  --lg-blur: var(--lg-blur-glass);
-  --lg-tint-a: var(--lg-tint-glass-a);
-  --lg-drop-shadow: var(--lg-drop-glass);
-}
-/* Light-theme re-tune: much more blur on the glass tier than the dark-theme
-   20px — on a white surface a 20px blur of dark text is barely perceptible,
-   40px smears it into clearly visible bokeh bands (test-page box D
-   direction). Both tints drop so the frost reads as airy glass on white
-   instead of an opaque card; the dark theme (explicit or system-dark) keeps
-   the denser values from the gate block.
-
-   The same block carries the theme-linked specular (direction C): a white rim
-   highlight has nowhere to read on a white face, so the light theme cuts the
-   highlight strength, keeps only a soft top edge and lets the shaded edges
-   carry the contour; the SVG lens and the GL shader both take the lower
-   number. */
-html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) {
-  --lg-blur-glass: 40px;
-  --lg-blur-menu: 52px;
-  --lg-tint-glass-a: 20%;
-  --lg-tint-frost-a: 46%;
-  --lg-tint-menu-a: 24%;
-  --lg-spec: 0.22;
-  --lg-lens-filter: url(#lg-refract-soft);
-  --lg-rim-top: color-mix(in srgb, #fff 60%, transparent);
-  --lg-rim-side-l: color-mix(in srgb, #fff 20%, transparent);
-  --lg-rim-side-r: color-mix(in srgb, #000 24%, transparent);
-  --lg-rim-bottom: color-mix(in srgb, #000 30%, transparent);
-  --lg-flat-rim: color-mix(in srgb, #fff 55%, transparent);
-}
-/* `data-color-scheme="system"` follows the OS, so it has to be spelled out in
-   both directions like the `--color-*` layer above it: light when the OS is
-   light, and the gate's dark values when the OS is dark. (Keying the light
-   re-tune on `:not([data-color-scheme="dark"])` — as an earlier revision did —
-   silently gave a system-dark user the light blur/tint/spec numbers, because
-   `system` is not `dark`.) */
-@media (prefers-color-scheme: light) {
-  html[data-liquid-glass="on"][data-color-scheme="system"] {
-    --lg-blur-glass: 40px;
-    --lg-blur-menu: 52px;
-    --lg-tint-glass-a: 20%;
-    --lg-tint-frost-a: 46%;
-    --lg-tint-menu-a: 24%;
-    --lg-spec: 0.22;
-    --lg-lens-filter: url(#lg-refract-soft);
-    --lg-rim-top: color-mix(in srgb, #fff 60%, transparent);
-    --lg-rim-side-l: color-mix(in srgb, #fff 20%, transparent);
-    --lg-rim-side-r: color-mix(in srgb, #000 24%, transparent);
-    --lg-rim-bottom: color-mix(in srgb, #000 30%, transparent);
-    --lg-flat-rim: color-mix(in srgb, #fff 55%, transparent);
-  }
-}
-/* Sidebar rim softening (light only). The two light-theme shaded-edge tokens
-   (`--lg-rim-side-r` 24% black, `--lg-rim-bottom` 30% black) read as a hard
-   hairline along the sidebar column's right and bottom rims on a near-white
-   surface, while the other light-glass consumers (panels, dialogs, menus)
-   still rely on those same contours to read as floating planes. Scope the
-   softening to `.side .col` instead of touching the global tokens: the
-   column is already in the shared consuming rule's selector list, so a
-   higher-specificity re-declaration of the two vars cascades into its
-   box-shadow without a specificity fight. Halved values keep the soft
-   shaded contour (a step weaker than the dark gate's 18/24) without the
-   hard line. Mirrors the dual light-mode paths above (explicit light +
-   system-light) so the override tracks the same theme transitions. */
-html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) .side .col {
-  --lg-rim-side-r: color-mix(in srgb, #000 12%, transparent);
-  --lg-rim-bottom: color-mix(in srgb, #000 16%, transparent);
-}
-@media (prefers-color-scheme: light) {
-  html[data-liquid-glass="on"][data-color-scheme="system"] .side .col {
-    --lg-rim-side-r: color-mix(in srgb, #000 12%, transparent);
-    --lg-rim-bottom: color-mix(in srgb, #000 16%, transparent);
-  }
-}
-
-/* ---- Tier parameter rules — tiers only set parameters -------------------- */
-html[data-liquid-glass="on"] .lg-glass.lg-glass {
-  --lg-blur: var(--lg-blur-glass);
-  --lg-tint-a: var(--lg-tint-glass-a);
-  --lg-drop-shadow: var(--lg-drop-glass);
-}
-html[data-liquid-glass="on"] .lg-frost.lg-frost {
-  --lg-blur: var(--lg-blur-frost);
-  --lg-tint-a: var(--lg-tint-frost-a);
-  --lg-drop-shadow: var(--lg-drop-frost);
-}
-/* Menu retarget — dropdown/popup menus keep the glass tier's rim and drop
-   shadow but take the stronger menu blur and a slightly denser tint, so the
-   transcript text behind an open menu smears out instead of ghosting through
-   the item labels. Listed by concrete class (they all carry .lg-glass, which
-   would otherwise win the parameter slots). The `--lg-optic-filter`
-   re-declaration is load-bearing, not redundancy: the composer card clears
-   that slot on ITSELF while a menu is open (the nested-backdrop-filter
-   suppression below), custom properties inherit, and the menus hang inside
-   the card in the DOM — so without this line the open menu inherits `none`
-   and renders with no blur at all. The demote/reduced-transparency rules
-   still win: they match the menu element directly at higher specificity. */
-html[data-liquid-glass="on"] :is(
-  .ui-menu.ui-menu,
-  .model-dropdown.model-dropdown,
-  .perm-dropdown.perm-dropdown,
-  .add-menu.add-menu,
-  .slash-menu.slash-menu,
-  .mention-menu.mention-menu
-) {
-  --lg-blur: var(--lg-blur-menu);
-  --lg-tint-a: var(--lg-tint-menu-a);
-  --lg-optic-filter: var(--lg-glass-filter);
-}
-/* Band tier — embedded blur surfaces, not floating ones: the dock squares
-   ride inside the bottom frost slab, so they keep the 14px blur and a faint
-   tint but shed the rim and the drop shadow. */
-html[data-liquid-glass="on"] .lg-band.lg-band {
-  --lg-blur: var(--lg-blur-band);
-  --lg-tint-a: var(--lg-tint-band-a);
-  --lg-rim-top: transparent;
-  --lg-rim-side-l: transparent;
-  --lg-rim-side-r: transparent;
-  --lg-rim-bottom: transparent;
-  --lg-drop-shadow: var(--lg-drop-band);
-}
-
-/* ---- THE shared consuming rule — one material for every tier -------------
-   The tint stops compose from the element's cascaded --lg-tint-a (so hover
-   lifts and per-surface overrides are pure variable retargeting — the
-   `background` shorthand recomputes from them). Surfaces without a template
-   class (the sidebar column, the docked right panel, the new-messages pill)
-   are appended to the selector list so they consume the material directly
-   instead of re-declaring it; components still retarget the parameters.
-
-   Direction C adds two things here. `--lg-face` is the theme surface pushed
-   toward white or black by the render-time ambient read (both channels are 0%
-   until the engine measures the content behind the panel, and stay 0% with no
-   engine at all), so every tier's tint derives from an ambient-aware surface
-   instead of a fixed theme colour. And the three `--lg-optic-*` slots are the
-   regime switch: the material reads each slot with the refractive recipe as
-   its fallback, so the demoted state retargets the slots and every surface —
-   including the ones whose tiers were set by a high-specificity component
-   rule — flips to the designed opaque face without a specificity fight. */
-html[data-liquid-glass="on"] :is(
-  .lg-glass.lg-glass,
-  .lg-frost.lg-frost,
-  .lg-band.lg-band,
-  .side .col,
-  .right-panel,
-  .newmsg-pill.newmsg-pill
-) {
-  --lg-face: color-mix(
-    in srgb,
-    #000 var(--lg-amb-deepen),
-    color-mix(in srgb, #fff var(--lg-amb-lift), var(--color-surface-raised))
-  );
-  --lg-tint: color-mix(in srgb, var(--lg-face) var(--lg-tint-a), transparent);
-  --lg-tint-top: color-mix(
-    in srgb,
-    color-mix(in srgb, var(--lg-face) 95%, white) var(--lg-tint-a),
-    transparent
-  );
-  --lg-glass-bg: linear-gradient(
-    to bottom,
-    var(--lg-tint-top) 0%,
-    var(--lg-tint) 30%
-  ), var(--lg-tint);
-  /* Demoted face: the same ambient-adjusted surface, painted solid with a
-     single lighter stop at the top edge — geometry kept, optics dropped. */
-  --lg-flat-bg: linear-gradient(
-    to bottom,
-    var(--lg-flat-top) 0%,
-    var(--lg-face) 26%
-  ), var(--lg-face);
-  /* `--lg-bg` keeps its historical name (component rules re-assert it per
-     state) and now carries the regime: it resolves through the optic slot, so
-     a surface that re-declares `background: var(--lg-bg)` still follows the
-     demotion instead of pinning itself to the glass face. */
-  --lg-bg: var(--lg-optic-bg, var(--lg-glass-bg));
-  --lg-glass-shadow:
-    inset 0 1px 0 var(--lg-rim-top),
-    inset 1px 0 0 var(--lg-rim-side-l),
-    inset -1px 0 0 var(--lg-rim-side-r),
-    inset 0 -1px 0 var(--lg-rim-bottom),
-    inset 0 0 calc(var(--lg-edge-px) / 3) color-mix(in srgb, var(--color-surface-raised) 12%, transparent),
-    var(--lg-drop-shadow);
-  --lg-glass-filter: blur(var(--lg-blur)) saturate(var(--lg-sat))
-    brightness(var(--lg-bright)) var(--lg-lens, );
-  background: var(--lg-optic-bg, var(--lg-glass-bg));
-  border-color: var(--lg-optic-border, color-mix(in srgb, var(--color-line-strong) 60%, transparent));
-  -webkit-backdrop-filter: var(--lg-optic-filter, var(--lg-glass-filter));
-  backdrop-filter: var(--lg-optic-filter, var(--lg-glass-filter));
-  box-shadow: var(--lg-optic-shadow, var(--lg-glass-shadow));
-}
-
-/* ---- Two-regime ambient: the demoted (opaque) state ---------------------
-   The perf fallback IS part of the design, so it gets one recipe here and
-   three ways in:
-   - `.lg-demoted` on any glass element — the per-element door: a component
-     that wants one panel out of the material, and the way the design-system
-     demo shows both regimes side by side;
-   - `html[data-glass-regime="opaque"]` set by the frame-budget watchdog in
-     gl-renderer, which demotes every surface and stops the loop;
-   - `prefers-reduced-transparency: reduce` in the accessibility block below,
-     which retargets the same slots from the root.
-   The switch works because the shared consuming rule reads its material
-   through the `--lg-optic-*` slots with the refractive recipe as the fallback
-   — a retarget at (0,4,1) reaches every tier without fighting the
-   component-level rules. Border and radius are deliberately untouched: the
-   demoted surface keeps the glass geometry and sheds only blur, refraction
-   and the GL pane, plus one faint top-edge rim so it still reads as a raised
-   plane. Band-family surfaces (the dock squares embedded in a frost slab)
-   lose the optics but keep their wash — their job is a tint, not a plane. */
-html[data-glass-regime="opaque"][data-liquid-glass="on"] :is(
-  .lg-glass.lg-glass,
-  .lg-frost.lg-frost,
-  .side .col,
-  .right-panel,
-  .newmsg-pill.newmsg-pill
-),
-html[data-liquid-glass="on"] :is(
-  .lg-glass.lg-glass,
-  .lg-frost.lg-frost,
-  .side .col,
-  .right-panel,
-  .newmsg-pill.newmsg-pill
-).lg-demoted.lg-demoted {
-  --lg-optic-filter: none;
-  --lg-optic-bg: var(--lg-flat-bg);
-  --lg-optic-shadow:
-    inset 0 1px 0 var(--lg-flat-rim),
-    var(--lg-drop-shadow);
-  --lg-optic-border: color-mix(in srgb, var(--color-line-strong) 80%, transparent);
-}
-html[data-glass-regime="opaque"][data-liquid-glass="on"] .lg-band.lg-band,
-html[data-liquid-glass="on"] .lg-band.lg-band.lg-demoted {
-  --lg-optic-filter: none;
-}
-/* The sidebar column collapses onto the sidebar background token rather than
-   the raised surface, so the frame stays one flat colour — the same special
-   case the reduced-transparency override below makes. It lands after the
-   recipe rule and ties with it on specificity, so source order decides. */
-html[data-glass-regime="opaque"][data-liquid-glass="on"] .side .col {
-  --lg-optic-bg: var(--color-sidebar-bg);
-}
-/* The blur bands are pseudo-element slabs with their own filter declaration
-   (they are not on the consuming rule's selector list), so the regime has to
-   reach them by name. */
-html[data-glass-regime="opaque"][data-liquid-glass="on"] :is(.chat-main, .bench-root .chat-layout)::before,
-html[data-glass-regime="opaque"][data-liquid-glass="on"] .chat-main::after {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-/* ---- Blur bands (band-family consumers) -----------------------------------
-   The transcript overlay bands (.chat-main::after bottom slab, plus the
-   BenchView top band) consume the band variables directly — blur depth,
-   saturation and brightness exist in exactly one place here; the components
-   keep only geometry and masks. The transcript top band
-   (.chat-main::before in ConversationPane.vue) deliberately keeps its own
-   plain pre-d1 CSS blur and stays off the refraction path. */
-html[data-liquid-glass="on"] .bench-root .chat-layout::before,
-html[data-liquid-glass="on"] .chat-main::after {
-  -webkit-backdrop-filter: blur(var(--lg-blur-band)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
-  backdrop-filter: blur(var(--lg-blur-band)) saturate(var(--lg-sat)) brightness(var(--lg-bright));
-}
-
-/* ---- SVG rim refraction (feature-detected) --------------------------------
-   On engines where `backdrop-filter: url(#…)` parses, the GlassDefs lens
-   chain (feDisplacementMap edge refraction + feSpecularLighting rim-band
-   highlight + subtle feTurbulence grain) is APPENDED after the base
-   blur/saturate/brightness. This must be a SEPARATE declaration inside
-   @supports: on
-   engines that reject the url() function the whole declaration is dropped at
-   parse time and the plain backdrop-filter above stays intact.
-
-   Scope is keyed on the `.lg-lens` marker class, NOT on the tiers: the lens
-   applies to every glass surface — floating overlays AND the always-visible
-   large-area surfaces (the sidebar column, the composer card, the docked
-   right panel; the transcript top band deliberately keeps its plain pre-d1
-   CSS blur and is not lensed). The marker pairs with a tier class
-   (`.lg-glass.lg-lens` or `.lg-frost.lg-lens`) or a component rule that
-   retargets `--lg-blur`, so it inherits that tier's parameters
-   (`--lg-blur`, `--lg-tint-a`, `--lg-drop-shadow`) from the rules above.
-   On the WebGL fallback path (Firefox/Safari) the per-frame cost of lensing
-   the large surfaces is gated by the dirty-check in gl-renderer.ts
-   layoutAndRender: static panes skip the style sync and the repaint, which
-   holds p95 frame time at the pre-refraction baseline (16.1ms both, live
-   Firefox dpr 1.5, transcript scroll storm). An earlier headless-chromium
-   measurement (SwiftShader, no GPU) showed 142ms mean frames with the lens
-   on large surfaces — that number is software rasterization and does not
-   apply to real hardware; do not re-gate the surfaces on the strength of it.
-   What stays excluded are surfaces that MOVE with the transcript scroll
-   (tool-fold chips, the new-messages pill) or repaint on every keystroke
-   (composer pills): there the lens re-rasterizes on every frame for a
-   refraction nobody notices.
-   Specificity: the doubled class puts this at (0,3,1), the same level as the
-   tier rules it extends, so the WS-1B dialog/sheet stagger suppression
-   further down this sheet — which adds `:not(.step-2)` on top of a doubled
-   class — still outranks it and wins.
-
-   Direction C turns the lens into a TOKEN (`--lg-lens`) instead of a full
-   `backdrop-filter` re-declaration: the shared consuming rule composes the
-   whole chain once, so the regime switch and the demoted retarget below can
-   reach it. `--lg-lens-filter` carries the theme-selected filter (hard
-   variant in dark, soft variant in light — see the light re-tune block). The
-   `:not()` guards keep a demoted surface from re-adding the lens at all. */
-@supports (backdrop-filter: url(#lg-refract)) {
-  html[data-liquid-glass="on"]:not([data-glass-regime="opaque"]) .lg-lens.lg-lens:not(.lg-demoted) {
-    --lg-lens: var(--lg-lens-filter);
-  }
-}
-
-/* The TOC card stays mounted under its collapsed rail sliver (clip-path
-   morphs it open on hover/focus). The clip hides it visually but does not
-   stop backdrop rasterization, so while collapsed the lens chain would
-   re-run on every transcript scroll frame over a card-sized region that
-   shows only a nine-pixel bar. Drop the lens until the card is actually
-   revealed (the sliver stays frosted by the consuming rule's own chain). */
-html[data-liquid-glass="on"] .conversation-toc:not(:hover):not(:focus-within) .toc-card.toc-card {
-  --lg-lens: initial;
-}
-
-/* ---- WebGL fallback cooperation (additive hooks for src/lib/glass) --------
-   On engines that parse but do not render `backdrop-filter: url(#…)`
-   (Firefox/Safari), src/lib/glass/gl-renderer.ts paints the missing
-   refraction layer with WebGL: it snapshots the page behind each opted-in
-   panel and renders rim displacement / chromatic fringe / specular glint /
-   grain into a `.lg-gl-pane` canvas mounted directly beneath the panel.
-   The renderer sets html[data-glass-engine="webgl"] while that path is live
-   and marks registered panels with [data-lg-gl-reg] plus [data-lg-gl-rel] on
-   static panels only; the snapshot clone hides every .lg-lens element so no
-   pane can refract itself. The canvas bakes the
-   tier's blur + saturate + brightness from the snapshot, so a panel loses
-   its own backdrop-filter ONLY once its canvas has actually painted
-   (.lg-gl-refracted) — before that, or for panes the canvas cap demoted, the
-   plain CSS blur chain above stays untouched. The tint, border, rim insets
-   and dispersion shadows stay in CSS in every case. */
-html[data-glass-engine="webgl"] [data-lg-gl-rel] {
-  /* A static panel would paint ABOVE its preceding-sibling canvas; making it
-     relative keeps the DOM paint order (canvas below pane) without moving
-     anything. gl-renderer sets this marker only on panels whose computed
-     position is static — positioned panels (absolute/fixed anchored menus)
-     already paint above the canvas and must NOT be flipped to relative,
-     which would drop their anchoring offsets and pull them back in flow. */
-  position: relative;
-}
-html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
-  --lg-optic-filter: none;
-}
-.lg-gl-pane {
-  /* Pane canvas slices: geometry/position set inline by the renderer each
-     layout pass so the slice tracks its panel exactly. */
-  display: block;
-  pointer-events: none;
-}
-
-/* ---- Accessibility states as tokens --------------------------------------
-   Direction C treats the three media features as designed states of the same
-   material system, not as ad-hoc component fixes. Each one retargets the
-   `--lg-*` tokens the shared consuming rule reads, in one place:
-
-   - prefers-reduced-transparency → the demoted (opaque) regime everywhere.
-     Same slots the frame-budget watchdog and `.lg-demoted` use, so the OS
-     contract and the perf fallback are literally the same visual state, and
-     the ambient read is dropped (a surface that must not be translucent has
-     no business re-tinting itself from what is behind it).
-   - prefers-contrast: more → stronger edge: the rim hairlines thicken, the
-     inset edge-glow zone widens and the tints densify, so a panel separates
-     from its backdrop by its edge and its face opacity rather than by
-     translucency alone. Light faces take the same edge in the other direction
-     (black-alpha rims) — a white rim on a white surface carries no contrast.
-   - prefers-reduced-motion → no specular travel and no morph: the glass
-     material transitions snap, and the named spring presets collapse to a
-     still, single-step curve (see the motion block). */
-@media (prefers-reduced-transparency: reduce) {
-  /* Exactly the opaque regime's recipe — the same slots the frame-budget
-     watchdog retargets — plus the OS contract's extra strictness: the ambient
-     read is dropped (a surface that must not be translucent has no business
-     re-tinting itself from what sits behind it) and the border goes to the
-     full-strength hairline. */
-  html[data-liquid-glass="on"] :is(
-    .lg-glass.lg-glass,
-    .lg-frost.lg-frost,
-    .side .col,
-    .right-panel,
-    .newmsg-pill.newmsg-pill
-  ) {
-    --lg-optic-filter: none;
-    --lg-optic-bg: var(--lg-flat-bg);
-    --lg-optic-shadow:
-      inset 0 1px 0 var(--lg-flat-rim),
-      var(--lg-drop-shadow);
-    --lg-optic-border: var(--color-line-strong);
-    --lg-amb-deepen: 0%;
-    --lg-amb-lift: 0%;
-  }
-  /* Band surfaces keep their faint wash (their job is a tint, not a plane) and
-     lose only the optics — the same split as the regime rule. */
-  html[data-liquid-glass="on"] .lg-band.lg-band {
-    --lg-optic-filter: none;
-    --lg-amb-deepen: 0%;
-    --lg-amb-lift: 0%;
-  }
-  /* The dock work panel and its pills take upstream's menu material directly
-     (its `--color-menu-bg-frost` fill behind `--p-menu-backdrop`) rather than a
-     tier, so the OS contract is restated for them: a solid raised face, no
-     blur. */
-  .dock-work-panel,
-  .dock-workbar .ui-pill {
-    background: var(--color-surface-raised);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  /* The sidebar column collapses onto the sidebar background token (not the
-     raised surface) so the frame stays one flat color. */
-  html[data-liquid-glass="on"] .side .col {
-    --lg-optic-bg: var(--color-sidebar-bg);
-  }
-  html[data-liquid-glass="on"] :is(.chat-main, .bench-root .chat-layout)::before,
-  html[data-liquid-glass="on"] .chat-main::after {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  html[data-liquid-glass="on"] .lg-scrim {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  /* The composer's three ported dropdowns declare `backdrop-filter: blur(24px)`
-     unconditionally in Composer.vue's scoped styles, so the recipes above only
-     cover them on the glass path (where `--lg-optic-filter: none` already
-     reaches them through the shared consuming rule). This guard covers the
-     glass-off path and is not gated on the toggle. `:root` lifts the pair to
-     (0,3,0), outranking the scoped `.x[data-v-…]` rule at (0,2,0). The face is
-     the same menu token each panel declares — `--color-menu-bg` for the two
-     anchored panels, the frosted ink for the wide dock menu. */
-  :root :is(.model-dropdown.model-dropdown, .perm-dropdown.perm-dropdown) {
-    background: var(--color-menu-bg);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  :root .add-menu.add-menu {
-    background: var(--color-menu-bg-frost);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-@media (prefers-contrast: more) {
-  html[data-liquid-glass="on"] {
-    /* Edge carries the separation instead of the blur. */
-    --lg-rim-top: color-mix(in srgb, #fff 92%, transparent);
-    --lg-rim-side-l: color-mix(in srgb, #fff 45%, transparent);
-    --lg-rim-side-r: color-mix(in srgb, #000 30%, transparent);
-    --lg-rim-bottom: color-mix(in srgb, #000 38%, transparent);
-    --lg-edge-px: 20px;
-    --lg-tint-glass-a: 56%;
-    --lg-tint-frost-a: 74%;
-    --lg-tint-menu-a: 62%;
-    --lg-flat-rim: color-mix(in srgb, #fff 60%, transparent);
-  }
-  /* The same recipe has to DARKEN on light faces — a white rim on a white
-     surface is invisible — so there the contrast edge is carried by
-     black-alpha rims, deepened away from the top-left key light so the
-     direction of the shading survives the flip. Mirrors the keying of the
-     light re-tune (explicit light, plus the system branch under a light OS):
-     that block sits at (0,3,1) and outranks the (0,1,1) rule above, so without
-     these a light-theme contrast user got only --lg-edge-px. */
-  html[data-liquid-glass="on"]:not([data-color-scheme="dark"]):not([data-color-scheme="system"]) {
-    --lg-rim-top: color-mix(in srgb, #000 46%, transparent);
-    --lg-rim-side-l: color-mix(in srgb, #000 55%, transparent);
-    --lg-rim-side-r: color-mix(in srgb, #000 68%, transparent);
-    --lg-rim-bottom: color-mix(in srgb, #000 76%, transparent);
-    --lg-tint-glass-a: 52%;
-    --lg-tint-frost-a: 80%;
-    --lg-flat-rim: color-mix(in srgb, #000 40%, transparent);
-  }
-  @media (prefers-color-scheme: light) {
-    html[data-liquid-glass="on"][data-color-scheme="system"] {
-      --lg-rim-top: color-mix(in srgb, #000 46%, transparent);
-      --lg-rim-side-l: color-mix(in srgb, #000 55%, transparent);
-      --lg-rim-side-r: color-mix(in srgb, #000 68%, transparent);
-      --lg-rim-bottom: color-mix(in srgb, #000 76%, transparent);
-      --lg-tint-glass-a: 52%;
-      --lg-tint-frost-a: 80%;
-      --lg-flat-rim: color-mix(in srgb, #000 40%, transparent);
-    }
-  }
-}
-/* prefers-reduced-motion: glass never animates — the hover lift and the
-   material transitions snap instead of easing, and no spring curve is
-   selected (the presets collapse to a single step, so a menu/dialog that is
-   still transitioned by a component rule lands without travelling). (The
-   global reduced-motion kill-switch further down this sheet zeroes durations
-   app-wide; this is the explicit system-scope rule for glass.) */
 @media (prefers-reduced-motion: reduce) {
-  html[data-liquid-glass="on"] :is(.lg-glass.lg-glass, .lg-frost.lg-frost, .lg-band.lg-band, .side .col, .right-panel, .newmsg-pill.newmsg-pill) {
-    transition: none !important;
-  }
-  /* `!important` because the interactive-glass hover rule further down this
-     sheet carries the identical selector — source order alone would hand the
-     hover lift straight back to it. */
-  html[data-liquid-glass="on"] .lg-glass.lg-glass:is(button, [role="button"], a):hover {
-    transform: none !important;
-  }
   /* Engines without `linear()` reject the substituted value at computed-value
      time, which reverts `transition-property` to its `all` initial — so the
      step curve is only substituted where it parses, and the fallback for the
@@ -1472,191 +860,1122 @@ html[data-glass-engine="webgl"] .lg-gl-refracted.lg-gl-refracted {
   }
 }
 
-/* ---- Overlay scrim --------------------------------------------------------
-   The shared defocus layer behind modal / sheet / lightbox floating windows:
-   Dialog, Sheet, BottomSheet, ServerAuthDialog, the Composer attachment
-   lightbox and MediaPreview all carry .lg-scrim instead of hand-writing the
-   recipe. Gated on the liquid-glass toggle: the blur is a glass feature, and
-   upstream draws these same overlays as a flat translucent colour with no
-   backdrop-filter, so the toggle now takes the fork to upstream's rendering
-   rather than leaving a defocus behind (amends the earlier always-on
-   decision). */
-html[data-liquid-glass="on"] .lg-scrim {
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  backdrop-filter: blur(10px) saturate(140%);
+
+/* Liquid glass — one material, on the control layer only. Apple's Liquid
+   Glass, the Regular variant.
+
+   Apple's split, which this follows: the material belongs to the controls the
+   reader operates, never to the content. The floating sidebar, the outline card,
+   the settings pane, the popovers and every control that highlights on hover
+   carry the filter; the composer card carries the material's edge, rim and
+   shadow with no filter at rest, because it sits on the dock strip rather than
+   over content, and takes the plain blur on focus; the chat header's row paints
+   nothing and its pill takes DeepSeek's own fill, blur and hairline once the
+   transcript is scrolled past 80px. The dock's chips carry the material over the ground. Messages, code
+   blocks and cards stay opaque, and so does most of the modal layer (sheets,
+   toasts, the server-auth card): it carries text over content the reader is not
+   meant to be reading, and a translucent face there let the transcript behind it
+   read through. The settings pane is the one modal surface that is glass, over a
+   scrim that blurs the page behind it, so its legibility rests on that blur
+   rather than on the tint. The tooltip is the other exception: it paints an
+   inverted surface, the text colour as its fill, and takes only the edge.
+
+   What the material samples is the graded ground (--lg-ground on #app), not a
+   flat --bg: one tone behind a 264px column gave a tone plus a rim rather than
+   glass over a surface. The dock strip paints no surface of its own under the
+   gate for the same reason, and neither does the conversation column.
+
+   Architecture: the gate block declares the recipe; one rule paints the outline
+   card from those tokens, a second densifies the face for the menus, a third
+   moves the sidebar's material onto a carrier inset from the window edges, and
+   the SVG lenses in GlassDefs.vue are appended on engines that render
+   `backdrop-filter: url(...)` (Chromium, Edge); every other engine keeps the
+   plain blur chain.
+
+   Legibility is the constraint, not an afterthought: content sits under the
+   material only where it scrolls behind a control that blurs it, the menus and
+   popovers that open over live text run a near-solid face rather than the
+   chrome's, and nothing is blurred over the transcript: the reader asked for the
+   defocus at its edges to go.
+
+   Turning it off: the Settings switch writes html[data-liquid-glass="off"], for
+   which none of these rules match, and `prefers-reduced-transparency: reduce`
+   never matches either. Both states render the app's own opaque design. */
+html[data-liquid-glass="on"] {
+  /* Regular: a blur with a light saturation lift, so the backdrop stays
+     colourful instead of washing grey, and a small brightness lift. */
+  --lg-blur: blur(18px) saturate(140%);
+  /* The fill of a panel, and the surface it is mixed from. MengTo's dark-glass
+     skill pairs a smoky fill at about 45% with a thin top highlight, a blur and
+     a saturation lift, and says why: the highlight is what keeps a translucent
+     panel crisp instead of muddy. The fill colour is the app's raised surface,
+     not a hue, and it is mixed at MengTo's 45% in both themes. The panel's own
+     face below is what parts the two themes, not the tint. */
+  --lg-face: var(--color-surface-raised);
+  --lg-tint-panel: 45%;
+  /* The floating panel's own face, which is not the neutral raised surface the
+     other tiers mix from. Upstream's sidebar tone is `#f9fbfc` in light, a cool
+     off-white with a blue cast; a neutral white at 45% over this near-white
+     ground renders as pure white, which leaves the panel indistinguishable from
+     the page. Measured before this token: the fork's panel read 255,255,255
+     against a 255,255,255 page, where upstream reads 249,251,252. The value below
+     is upstream's tone adjusted so the same 45% glass over the same ground lands
+     on it.
+     Dark is upstream's own tone rather than the light value: a black face at the
+     same 45%. The panel is 45% opaque, so 55% of each pixel is the graded ground
+     behind it and 45% is the face. Measured on the rendered app at 1280x800 with
+     a 2x device pixel ratio, the panel reads 15 at CSS y=200 against a page of
+     27 beside it, 13 at y=400 against 22, 9 to 10 at y=600 against 16 to 17, and
+     8 at y=700 against 16, so it sits 7 to 12 levels below the page at every
+     height. The arithmetic holds at each point: 0.55 x 27 = 15, 0.55 x 22 = 12
+     against the measured 13, 0.55 x 16.5 = 9, and 0.55 x 16 = 9 against the
+     measured 8 to 9. Upstream's sidebar is opaque, so its token
+     `--color-sidebar-bg: #0d0d0d` renders a flat `rgb(13,13,13)` everywhere;
+     ours matches that reading at mid height and varies around it as the ground
+     passes through.
+     The face as the fork shipped it, `rgb(38 42 46)` at a 38% tint, read 33 to 34
+     at CSS y=200 against the page's 27, six to seven levels above it, which is
+     the grey slab. An intermediate face of `rgb(13 13 13)` at the same 38% tint
+     read 22 to 23 there, four to five levels below the page. Raising the tint
+     further flattens and darkens the panel, but hides the edge refraction, which
+     lives in the backdrop. */
+  --lg-face-panel: rgb(242 246 248);
+  --lg-rim-top: rgba(255, 255, 255, 0.9);
+  /* The rest of the perimeter. liqui.design puts it at a third of the top line
+     (`rim-lo` 0.28 against `rim-hi` 0.85), and that ratio is what makes a
+     surface read as an object on a flat background: nothing crosses behind the
+     left panel, the composer or the dock chips, so their blur has no contrast to
+     work on and the edge is the only place the material can show itself. Both
+     lines stand above that ratio here, by request, so the edge reads clearly: in
+     light the catch at 0.55 against the top line's 0.9, in dark 0.2 against
+     0.34. At the reference ratio the light edge was barely visible against a
+     white ground. Neither light value moved when dark's pair came up. */
+  --lg-rim-catch: rgba(255, 255, 255, 0.55);
+  /* The reference material's 1px inner line, drawn in CSS. Both rim tokens
+     above are white, which is right for a face that is darker than its ground
+     and invisible on one that is lighter: on this theme's near-white page a
+     white catch has nothing to read against, so the left panel, the composer
+     card, the outline card, the dock chips and the composer's two discs carry
+     this ring as well. It is a
+     drawn hairline, not a lens pass: the SVG lens paints no contour in either
+     theme. The reference puts its thin dark line where the rim compression
+     meets the fill, and this ring is what imitates that line. The discs joined
+     it when they lost their lens, and there the catch above reads as a lip
+     because it is painted on their border rather than inset over this ring:
+     without that, the two rings would cover the same perimeter pixel and the
+     catch would darken the lip instead of showing one. */
+  --lg-rim-shade: rgb(15 23 42 / 16%);
+  /* The lighter fill: what a control that highlights on hover paints, and what
+     the surfaces with nothing behind them use. */
+  --lg-tint-a: 46%;
+  /* Menus and popovers open over live text: near-solid, so their labels hold
+     their contrast against the panel rather than against what is behind it.
+     Their face is the raised surface, which is upstream's own: their menus mix
+     `--color-menu-bg` (95% of `#292929` in dark, 95% of white in light), and a
+     face built from the page colour instead renders a menu darker than the page
+     rather than lighter. Measured over the transcript, the page-coloured face at
+     this tint read 23 where upstream reads 41. */
+  --lg-face-solid: var(--color-bg);
+  --lg-face-menu: var(--color-surface-raised);
+  --lg-tint-dense: 88%;
+  /* A pane works over the blurred scrim rather than over live text, so it can
+     carry a lighter face than a menu and still be legible: the blur is doing the
+     separating, and the tint only has to hold the pane's own text. */
+  --lg-tint-pane: 72%;
+  /* The discs' fill tint. The material mixed each disc's own fill token at a
+     flat 78% in both themes, which is right in dark (a near-white token over a
+     dark ground) and wrong in light once the light Send took upstream's
+     near-black fill: 78% of a 0.9-alpha black leaves 70% black, and over a
+     white page that composites to 76, a mid grey rather than the near-black
+     disc the reference paints at about 25. Light mixes the token at full
+     strength, which lands the disc at 25; dark keeps 78%. */
+  --lg-tint-disc: 100%;
+  /* The composer card's own face, which is not the panel tier: the card sits on
+     the dock strip over the graded ground rather than over a blurred scrim, so
+     it can carry a thinner fill than a pane and still hold its text. Light runs
+     it thinner than dark because a near-white face over a near-white ground has
+     no tone step at all at the pane tier, while the same thinness over the dark
+     ground would drop the card's own contrast. */
+  --lg-tint-card: 74%;
+  --lg-tint-card-focus: 62%;
+  /* The outline card's blur, off the dense tier it used to share: at the menus'
+     18px the blurred transcript behind it still read as text, so the card runs
+     a wider 30px.
+     In light the card now paints the menus' own face rather than a fill of its
+     own: the reader asked for it to match the composer's dropdowns, and the
+     black fill it used to carry read darker than they do. Measured over this
+     ground, the old 4% black face composited to 240 where a menu reads about
+     253, and every step the card darkened was a step out of --color-text-muted's
+     contrast (4.2:1 against the black face, 4.8:1 against the old white one).
+     Dark keeps its 72% black: the reader asked for this card darker there in an
+     earlier round and has not changed that, and the menus' near-white face
+     would read as a lit plate over the transcript rather than the defocused
+     card the dark theme wants. The two themes part company here on purpose. */
+  --lg-toc-fill: color-mix(in srgb, var(--lg-face-menu) var(--lg-tint-dense), transparent);
+  --lg-toc-blur: blur(30px) saturate(140%);
+  --lg-edge: color-mix(in srgb, var(--color-text) 9%, transparent);
+  --lg-shadow: var(--shadow-sm);
+  /* The floating panel's own drop shadow, and the composer card's second one.
+     The reference material separates a capsule from the page with a soft shadow
+     rather than with a painted edge, and on a white page --shadow-sm's 1px and
+     3px lines read as a hairline rather than as depth.
+     The panel gets no cast at all in light, and the sidebar's own clipping is
+     why. `aside.side` carries `overflow: hidden` so its fixed-width column can
+     slide out and be clipped while the container animates to zero, so a cast on
+     the panel can only paint inside the 8px gutter between the panel's edge and
+     the sidebar's box, and its outer boundary lands exactly on that clip. At
+     8px / 24px / -8px / 22% the gutter ramped 241 to 249 and then stepped to a
+     255 page: a falloff that short reads as a rectangle outline, which is what
+     the reader saw and rejected. A wider cast does not help, because the clip
+     is the boundary either way, and a 16px blur sized to finish at the clip
+     still stepped 3 levels there. So the panel loses the cast and keeps the
+     separation it can actually show: a face 4 levels below the page (251
+     against 255) inside a bright lip and a 1px line. The composer card is not
+     clipped, so it keeps a real one through --lg-card-shadow below. Dark keeps
+     --shadow-sm. */
+  --lg-float-shadow: 0 0 0 0 rgb(0 0 0 / 0%);
+  /* The composer card's second shadow. The card already casts
+     --composer-card-shadow from its own component, a 16px blur at 7% black; the
+     reference material puts a wider, softer cast under a capsule than that, and
+     than --shadow-sm's 1px and 3px lines. Dark takes a zero shadow, so the card
+     there keeps exactly the one shadow it had. */
+  --lg-card-shadow: 0 8px 24px -8px rgb(16 24 40 / 22%);
+  /* The composer card's rim pair, the one rim-carrying surface whose pair is
+     held in a token: the card's own component rule already draws its 1px
+     hairline and that stays, and this token is the pair the panel, the chips
+     and the discs paint, which only dark reads. In light the pair would land on
+     the foot line --lg-rim-shade draws, because an `inset 0 0 0 1px` ring
+     covers the same perimeter pixel and the ring is the earlier layer in the
+     list: measured with the pair declared, the card's foot line went 215 to 237
+     at the probe's column and its rim pixel 252 to 254. That is a second bright
+     line inside a hairline the light theme's card already has at rest, so light
+     keeps a zero shadow here; its focused card keeps the pair it already
+     declared. Declared as a zero shadow rather than `none` because the token is
+     one item in a box-shadow list. */
+  --lg-card-rim: 0 0 0 0 rgb(0 0 0 / 0%);
+  --lg-lens: url(#lg-refract-soft);
+  /* The band-limited twin of --lg-lens: the same material with its displacement
+     and its highlight confined to a band at the rim, so the face between the
+     bands stays as it was and only the rim bends. The band is 28px in light
+     (#lg-bezel-soft) and 3px in dark (#lg-bezel), and in dark the blur equals
+     the width so the highlight ramps across the whole band: at 28px the dark
+     highlight read as a thick grey band inside the panel's and the card's edges,
+     and at 6px with a 2px blur its inner boundary read as a cliff. Light keeps
+     28px because its band measures nothing on that theme's near-white ground.
+     For surfaces large enough to have an unlit middle, the floor is 56px in both
+     directions in light and 6px in dark. The @supports block below wires it to
+     the floating sidebar and the composer card; the two discs (32px) take no
+     lens at all, and the header pill (36px) has its own 7px variant,
+     --lg-head-filter. */
+  --lg-bezel-lens: url(#lg-bezel-soft);
+  /* The ground. A flat --bg gave the material one tone to sample, so a column
+     read as a tone plus a rim rather than as glass over a surface. It carries no
+     hue: a light wash in from the top left, a shade in at the bottom right, and
+     nothing blue anywhere. Gradient values live here, one token per line, for
+     the same reason the menu fades do: the §06 guard sees token definitions
+     rather than a component painting a gradient.
+     The shade was raised from 5% to 10% because on a white page a 5% shade left
+     the whole field within 13 levels of the page, so a translucent face over it
+     showed no tone step at all; at 10% the field spans about 23 levels corner to
+     corner and the panel, card and chips read a real gradient through their
+     fills. */
+  --lg-ground: linear-gradient(160deg, rgb(255 255 255 / 35%), transparent 55%), linear-gradient(340deg, rgb(16 24 40 / 10%), transparent 60%);
+  /* Behind a popup the page goes out of focus, not just darker. */
+  --lg-scrim-blur: blur(14px) saturate(140%);
+  /* The workbar chips' wash is upstream's own rather than the material's face:
+     their chip paints the same colour their hovers do, 3% black in light, and
+     doubles it under its own overlay when pointed at. Matching that puts the
+     light chip just under the page instead of above it, and lifts the dark chip
+     clear of a ground that is darker here than upstream's page, which the
+     material's face tier could not do at 14%. */
+  --lg-chip-fill: rgba(0, 0, 0, 0.03);
+  --lg-chip-fill-hover: rgba(0, 0, 0, 0.059);
+  /* How far the floating sidebar sits off the window edges. */
+  --lg-sidebar-inset: var(--space-2);
+  /* The header's surface, read off DeepSeek's own stylesheet. Their bar takes
+     `--ds-color-bg-surface-raised` (45% white in light, 25% white in dark),
+     `blur(--ds-blur-glass)` (12px) and `--ds-color-border-default` (10% black in
+     light, 6% white in dark). Theirs arrives on a scroll and leaves again at the
+     top; ours is painted at every scroll position, so the header reads the same
+     at the transcript's ends as in its middle. The bar is a fixed pill: its
+     inline inset never changes.
+     The light bar paints neither of the two tokens below. Its face is
+     --lg-head-face and its edge is --lg-head-shadow: the reference capsule's
+     hue-free lift, a stronger white at the head than at the foot, with a bright
+     lip at the head, a 1px line just inside it and a soft drop shadow, which on
+     a white page is the whole edge. So light reads
+     this fill as transparent and its hairline as transparent, and only dark
+     paints them: the bar keeps DeepSeek's 6% white hairline there, and a fill
+     sized below their 25%, because this ground is a graded field that runs
+     lighter at the top left than their page. Over a code block at 36,41,46 under
+     the bar their 25% rendered 91,94,97 and 19% rendered 78,81,84; the reader
+     asked for a reading in the low sixties, and 9.5% lands it: the same sample
+     renders 57,61,64, the bar's left end over the bare graded ground renders
+     52,52,52 where 19% rendered 73, and its right end 45,45,45 where 19%
+     rendered 67. */
+  --lg-head-fill: rgb(255 255 255 / 0%);
+  --lg-head-border: rgb(0 0 0 / 0%);
+  /* The bar's face, anchored on the reference material's own sample colour:
+     Huawei's immersive-light capsule sets `materialColor: '#4DFFFFFF'` — 30%
+     white — over a transparent `backgroundColor`, and their levels are semantic
+     only, with no optical constants anywhere. Their FAQ also gives the reason
+     this fill is thin rather than opaque: refraction is a property of the
+     material, and the documented way to remove it is a thicker, less
+     transparent style, so an opaque fill removes both the transparency and the
+     refraction. The capsule is not a flat plate either: its fill lifts more at
+     the head than at the foot, and that vertical asymmetry is what makes it
+     read as a lit surface rather than as a sheet of the page. The material
+     carries no hue of its own: its colour is the backdrop's, which is why the
+     reference capsule reads blue over a sky and green over foliage. The face
+     only lifts, and no stop adds a colour. Both stops are translucent so the
+     transcript still shows through: measured against the backdrop under the
+     bar, this pair lifts it about 3 levels at the head and about 1 at the foot,
+     where the 80% / 52% pair before it lifted the whole bar to a flat 253
+     whatever passed underneath. */
+  --lg-head-face: linear-gradient(180deg, rgb(255 255 255 / 34%), rgb(255 255 255 / 16%));
+  /* The reference capsule separates from its backdrop with a soft drop shadow,
+     a bright lip at the top of the perimeter and a line just inside it. On
+     a white page those two lines are the whole edge. The second line is a
+     bright ring rather than a dark rule: a 1px dark rule at 8% drew a 235 line
+     across the bar's foot where the page reads 253, which is a hard edge on a
+     surface that has no drop below it there, so the ring is white at 60% and
+     the perimeter reads on the content behind the bar instead. */
+  --lg-head-shadow: inset 0 1px 0 rgb(255 255 255 / 95%), inset 0 0 0 1px rgb(255 255 255 / 60%), 0 6px 18px -8px rgb(16 24 40 / 16%);
+  /* 18px, the material's own radius, not DeepSeek's 12px: the reader asked for
+     this bar to read more glassy, and the transcript behind it now reads as
+     clearly smeared rather than merely softened. This is the one value on the
+     pill that departs from the reference's stylesheet. The base rules on both
+     bar selectors name this token; the bar's own lens chain is
+     --lg-head-filter below, wired inside the @supports block, so an engine that
+     rejects url() keeps this plain blur. */
+  --lg-head-blur: blur(18px);
+  /* The bar's chain where the lens renders: the same blur plus the #lg-bezel-bar
+     lens, whose band is 7px at the rim. That band gives it a floor of 14px, so
+     the 36px bar clears it with a 22px unlit middle and only what passes under
+     its head and its foot bends, by up to 5px. Both themes define this token
+     even though only light carries the lens: an undefined token inside var()
+     makes the whole declaration invalid and would strip the dark bar's blur. */
+  --lg-head-filter: blur(18px) saturate(140%) url(#lg-bezel-bar);
+  --lg-head-inset: var(--lg-sidebar-inset);
+  --lg-head-inline: 12px;
+  --lg-head-height: 36px;
+  /* The header's git pills. Upstream's pill paints its own raised well (opaque
+     #f5f5f5 light, #1f1f1f dark) and reads as a step off its bar, which is white
+     in light and the page in dark: 245 over 255, and 31 over 18. The same
+     opaque well on this glass bar reads as a hole instead, because the bar is
+     already lifted (about 243 in light at the pills' line, 57,60,64 in dark by
+     measurement): 31 under a 57-level bar is a 26-level well. So the pill takes
+     a lift rather than a surface, at the size of the step upstream has: 4% black
+     over the light bar and 7% white over the dark one (71 over 57). */
+  --lg-pill-fill: rgb(0 0 0 / 4%);
 }
-@media (prefers-reduced-transparency: reduce) {
-  .lg-scrim {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+html[data-color-scheme="dark"][data-liquid-glass="on"] {
+  --lg-head-fill: rgb(255 255 255 / 9.5%);
+  --lg-head-border: rgb(255 255 255 / 6%);
+  /* The 9.5% face and DeepSeek's 6% hairline stay, and so does the plain
+     blur. The bar's edge is no longer the hairline alone: the reader asked
+     for the light theme's bright lip on this bar too, since a 6% white
+     outline on a 52-level bar reads as a grey box, so the dark capsule takes
+     the lip and a drop shadow of its own. No lens: dark keeps the plain
+     `blur(18px)`, and the face stays flat rather than the light theme's
+     graded lift. */
+  --lg-head-face: none;
+  --lg-head-shadow: inset 0 1px 0 rgb(255 255 255 / 30%), 0 6px 18px -8px rgb(0 0 0 / 45%);
+  --lg-head-filter: blur(18px);
+  /* Upstream's own dark tone, taken at the same 45% as light. The light block's
+     --lg-face-panel comment carries the measurement. */
+  --lg-face-panel: rgb(0 0 0);
+  --lg-tint-panel: 45%;
+  /* The light theme's pair, brought up from 0.2 and 0.12 by request: those
+     alphas were dark's own and the reader saw no rim at all, only a faint grey
+     outline. The reason is the alpha's size against a dark face rather than a
+     light one: a 0.12 white line composites to 60 over the card's 34 face
+     where light's 0.55 composites to 254 over a 252 one, so the same ratio
+     that draws light's edge leaves dark within a level or two of the face
+     beside it. At 0.34 and 0.2 the ring reads 78 over that face and the top
+     row of the lip 138, and the panel's edge line goes 72 to 88 over a face of
+     49. Both tokens are shared by the panel, the card, the two discs and the
+     dock chips, so the rim lifts on all of them together, which is intended. */
+  --lg-rim-top: rgba(255, 255, 255, 0.34);
+  --lg-rim-catch: rgba(255, 255, 255, 0.2);
+  /* Transparent: the 1px inner line is the light theme's. Dark's white catch
+     already draws its edge, and the ring the light block paints would be a
+     no-op here. */
+  --lg-rim-shade: rgb(0 0 0 / 0%);
+  --lg-tint-a: 8%;
+  --lg-chip-fill: rgba(255, 255, 255, 0.05);
+  --lg-chip-fill-hover: rgba(255, 255, 255, 0.0975);
+  /* The dense face is upstream's opacity here, not the page's own tone: their
+     menus paint rgba(41,41,41,0.95) and read 40-41 wherever one opens. At 74% a
+     mix of --color-bg left 26% of the backdrop showing, and what sits behind a
+     menu read straight through the blur: measured with the rows hidden, the
+     dock's chips are legible inside an open permission menu. At 95% the face
+     holds at 23 under the material's lens over the same ground and nothing
+     behind it reads through, which is the near-solid the menus are for. */
+  --lg-tint-dense: 95%;
+  --lg-tint-disc: 78%;
+  --lg-tint-card: 92%;
+  --lg-tint-card-focus: 74%;
+  --lg-pill-fill: rgb(255 255 255 / 7%);
+  --lg-toc-fill: rgb(0 0 0 / 72%);
+  --lg-edge: color-mix(in srgb, var(--color-text) 14%, transparent);
+  --lg-shadow: var(--shadow-sm);
+  --lg-float-shadow: var(--shadow-sm);
+  /* A zero shadow rather than `none`: this token is one item in a box-shadow
+     list, and `none` is only valid as the whole value. */
+  --lg-card-shadow: 0 0 0 0 rgb(0 0 0 / 0%);
+  /* The card's rim pair; the light block leaves this token a zero shadow,
+     because the pair would land a second bright line inside the hairline that
+     theme's card already draws at rest. Dark's card had no rim at rest in
+     either theme: its perimeter was its component hairline at 59 against a
+     face of 34, so it read as a flat dark box. The pair is the one the panel,
+     the chips and the discs already paint; the component's own shadow stays
+     with Composer.vue. */
+  --lg-card-rim: inset 0 1px 0 var(--lg-rim-top), inset 0 0 0 1px var(--lg-rim-catch);
+  --lg-lens: url(#lg-refract);
+  --lg-bezel-lens: url(#lg-bezel);
+  --lg-ground: linear-gradient(160deg, rgb(255 255 255 / 7%), transparent 55%), linear-gradient(340deg, rgb(0 0 0 / 30%), transparent 62%);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-color-scheme="system"][data-liquid-glass="on"] {
+    --lg-head-fill: rgb(255 255 255 / 9.5%);
+    --lg-head-border: rgb(255 255 255 / 6%);
+    /* The 9.5% face and DeepSeek's 6% hairline stay, and so does the plain
+       blur. The bar's edge is no longer the hairline alone: the reader asked
+       for the light theme's bright lip on this bar too, since a 6% white
+       outline on a 52-level bar reads as a grey box, so the dark capsule takes
+       the lip and a drop shadow of its own. No lens: dark keeps the plain
+       `blur(18px)`, and the face stays flat rather than the light theme's
+       graded lift. The bar's filter token carries the plain blur here rather
+       than the bar lens: dark's white specular already reads on its own ground,
+       and the token has to exist in both themes because an undefined token
+       inside var() invalidates the whole declaration. */
+    --lg-head-face: none;
+    --lg-head-shadow: inset 0 1px 0 rgb(255 255 255 / 30%), 0 6px 18px -8px rgb(0 0 0 / 45%);
+    --lg-head-filter: blur(18px);
+    /* Upstream's own dark tone, taken at the same 45% as light. The light block's
+       --lg-face-panel comment carries the measurement. */
+    --lg-face-panel: rgb(0 0 0);
+    --lg-tint-panel: 45%;
+    /* The light theme's pair, brought up from 0.2 and 0.12 by request: those
+       alphas were dark's own and the reader saw no rim at all, only a faint
+       grey outline. The reason is the alpha's size against a dark face rather
+       than a light one: a 0.12 white line composites to 60 over the card's 34
+       face where light's 0.55 composites to 254 over a 252 one, so the same
+       ratio that draws light's edge leaves dark within a level or two of the
+       face beside it. At 0.34 and 0.2 the ring reads 78 over that face and the
+       top row of the lip 138, and the panel's edge line goes 72 to 88 over a
+       face of 49. Both tokens are shared by the panel, the card, the two discs
+       and the dock chips, so the rim lifts on all of them together, which is
+       intended. */
+    --lg-rim-top: rgba(255, 255, 255, 0.34);
+    --lg-rim-catch: rgba(255, 255, 255, 0.2);
+    /* Transparent: the 1px inner line is the light theme's. Dark's white catch
+       already draws its edge, and the ring the light block paints would be a
+       no-op here. */
+    --lg-rim-shade: rgb(0 0 0 / 0%);
+    --lg-tint-a: 8%;
+    --lg-chip-fill: rgba(255, 255, 255, 0.05);
+    --lg-chip-fill-hover: rgba(255, 255, 255, 0.0975);
+    --lg-tint-dense: 95%;
+    --lg-tint-disc: 78%;
+    --lg-tint-card: 92%;
+    --lg-tint-card-focus: 74%;
+    --lg-pill-fill: rgb(255 255 255 / 7%);
+    --lg-toc-fill: rgb(0 0 0 / 72%);
+    --lg-edge: color-mix(in srgb, var(--color-text) 14%, transparent);
+    --lg-shadow: var(--shadow-sm);
+    --lg-float-shadow: var(--shadow-sm);
+    /* A zero shadow rather than `none`: this token is one item in a box-shadow
+       list, and `none` is only valid as the whole value. */
+    --lg-card-shadow: 0 0 0 0 rgb(0 0 0 / 0%);
+    /* The card's rim pair; the light block leaves this token a zero shadow,
+       because the pair would land a second bright line inside the hairline
+       that theme's card already draws at rest. Dark's card had no rim at rest
+       in either theme: its perimeter was its component hairline at 59 against
+       a face of 34, so it read as a flat dark box. The pair is the one the
+       panel, the chips and the discs already paint; the component's own shadow
+       stays with Composer.vue. */
+    --lg-card-rim: inset 0 1px 0 var(--lg-rim-top), inset 0 0 0 1px var(--lg-rim-catch);
+    --lg-lens: url(#lg-refract);
+    --lg-bezel-lens: url(#lg-bezel);
+    --lg-ground: linear-gradient(160deg, rgb(255 255 255 / 7%), transparent 55%), linear-gradient(340deg, rgb(0 0 0 / 30%), transparent 62%);
   }
 }
 
-/* Interactive glass — hover lift on `.lg-glass` pills (Mode / Model /
-   permission / paperclip). The base `.lg-glass.lg-glass` rule is (0,3,1);
-   each component's own `.x:hover { background: … }` is (0,2,0), so the
-   glass rule wins and the component hover is silently masked. Fixing it
-   here keeps the cascade consistent for every interactive surface without
-   per-component overrides. Keyed off `:is(button,[role="button"],a)` so
-   menu PANELS (which are not interactive roots) don't get the hover lift.
-   The tint-alpha and drop-shadow vars are reassigned on hover — the
-   `background` and `box-shadow` on the shared rule recompute from them, so
-   the lift is purely CSS-var driven (no re-declaration needed). */
-html[data-liquid-glass="on"] .lg-glass.lg-glass:is(button, [role="button"], a) {
-  /* The tint stop clamps at 100% alpha, so the responsive curve's overshoot
-     tail would be dead time on `background` — only the transform and the
-     shadow geometry can carry it (same split as WarningToasts). */
-  transition:
-    background var(--duration-spring-gentle) var(--spring-gentle),
-    box-shadow var(--duration-spring-responsive) var(--spring-responsive),
-    transform var(--duration-spring-responsive) var(--spring-responsive);
-}
-html[data-liquid-glass="on"] .lg-glass.lg-glass:is(button, [role="button"], a):hover {
-  --lg-tint-a: 50%;
-  --lg-drop-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+@media (prefers-reduced-transparency: no-preference) {
+  /* The ground the material samples. Flat --bg left the material with one tone
+     behind it, so the surfaces that used to paint --bg step out of the way
+     instead: one graded field runs under the whole window, and the material
+     samples that. */
+  html[data-liquid-glass="on"] #app {
+    background-image: var(--lg-ground);
+  }
+  html[data-liquid-glass="on"] .app,
+  html[data-liquid-glass="on"] .con,
+  html[data-liquid-glass="on"] .chat-dock {
+    background-color: transparent;
+  }
+  /* The right panel paints --bg, which upstream can do because its page is that
+     one tone everywhere. Here the conversation column sits on the graded ground,
+     so an opaque panel draws a seam down its own left edge: measured at the top
+     of the window, the transcript beside that edge reads 26 and the panel reads
+     18, and the step runs past 20 levels further left where the gradient is
+     lighter. The panel steps out of the way as the surfaces above do, and the
+     shell keeps the hairline that marks its edge. Not the mobile overlay: there
+     the panel covers the window, and nothing may read through it. */
+  html[data-liquid-glass="on"] .global-preview:not(.mobile) {
+    background-color: transparent;
+  }
+
+  /* The composer card sits on the dock strip, not over content. It used to take
+     only the material's edge, rim and shadow, with no filter: nothing scrolls
+     under the card, so a blur would have nothing to sample but the ground. That
+     reasoning is about the blur alone, and the reader asked for the rim's
+     refraction, so the card now carries the material's blur and the band-limited
+     bezel lens (in the @supports block below) on top of it. The face is no
+     longer an opaque plate either: it is --lg-tint-card, 74% in light and 92% in
+     dark, and light runs it thinner because at 92% over a near-white ground the
+     graded field showed through by about one level and the card read as a flat
+     plate; at 74% the field reads a few levels across the card's height, which
+     is the tone step that makes it read as glass rather than paper. Dark keeps
+     its original 92%, so nothing moves there. The card is 728x120, clear of the
+     bezel's floors in both directions: 56px for light's 28px band and 6px for
+     dark's 3px one.
+     Measured by removing the lens and diffing, the rim it buys is small: with
+     dark's earlier 28px band the top edge went 31 to 34 and the face 31 to 35,
+     a 2.1-level mean over the card and 4.3 over its outer band. The band's
+     width, not the rim, was the reader's complaint: at 28px the card's head
+     decayed from 35 to 30 across about thirty pixels, and at the current 3px
+     band with its 3px blur it reads 32, 31, 31, 30, 30, steps of one. In light
+     the bezel buys no measurable rim either way, because the ground behind the
+     card is smooth and its highlight is white.
+     Light's card edge is therefore its own hairline, which holds the rim at 221,
+     plus the foot line --lg-rim-shade draws and the --lg-card-shadow this round
+     stacks under the card.
+     Dark's card carries the rim pair as well, through --lg-card-rim: the reader
+     asked for the light theme's lip on the dark card too, and the card was the
+     one glass surface with no rim at all at rest, because --lg-rim-shade is
+     transparent there and the pair was declared under focus alone. Measured on
+     the dark card, the ring line reads 78 against its 34 face and the top row
+     of the lip 138, where the card's own hairline holds the perimeter at 59.
+     The pair sits in the list where light's zero shadow leaves nothing, so the
+     light card's readings are untouched: the ring would otherwise cover the
+     foot line --lg-rim-shade draws, since both land on the same perimeter
+     pixel. */
+  html[data-liquid-glass="on"] .composer-card {
+    -webkit-backdrop-filter: var(--lg-blur);
+    backdrop-filter: var(--lg-blur);
+    background-color: color-mix(in srgb, var(--color-composer-bg, var(--lg-face)) var(--lg-tint-card), transparent);
+    box-shadow:
+      var(--lg-card-rim),
+      inset 0 -1px 0 var(--lg-rim-shade),
+      var(--composer-card-shadow),
+      var(--lg-card-shadow);
+  }
+  /* Focus opens the card up: the face goes to --lg-tint-card-focus, 62% in
+     light and 74% in dark, thinner still so the ground reads through it
+     further while the caret is in the box, and the rim pair replaces the rest
+     state's --lg-card-rim. The card's own border and shadow are the
+     component's, and focus no longer moves either of them: it is carried by
+     the --composer-card-focus-line pseudo-element, which this branch does not
+     override, so the line fades in here exactly as it does with the gate off.
+     The edge keeps the panel's treatment, since nothing passes behind this
+     card either: the top line plus the faint catch, and the foot keeps the
+     --lg-rim-shade line the rest state draws. Dark keeps its original 74%, so
+     nothing moves there. The filter chain is the card's own, set at rest;
+     the @supports block names this selector too, so the bezel lens stays on the
+     rim while the caret is in the box. */
+  html[data-liquid-glass="on"] .composer-card:focus-within {
+    -webkit-backdrop-filter: var(--lg-blur);
+    backdrop-filter: var(--lg-blur);
+    background-color: color-mix(in srgb, var(--color-composer-bg, var(--lg-face)) var(--lg-tint-card-focus), transparent);
+    box-shadow:
+      inset 0 1px 0 var(--lg-rim-top),
+      inset 0 0 0 1px var(--lg-rim-catch),
+      inset 0 -1px 0 var(--lg-rim-shade),
+      var(--composer-card-shadow),
+      var(--lg-card-shadow);
+  }
+
+  /* The composer's two discs take the material as the dock's chips do: the
+     material's blur, a translucent fill in each button's own hue, and the rim
+     pair plus the shade ring over the button's own shadow.
+     They take no lens. They ran the refract pair until this round, because the
+     bezel pair is not available to them in light: at 32px they are under that
+     theme's 28px band's 56px floor, so the band-limited lens would bend the
+     whole face. Dark's band, cut to 3px, would clear a 32px disc, so the floor
+     no longer keeps the family off them there; the discs take the CSS rim and no
+     lens in both themes. The refract pair is the
+     wrong instrument for a disc either: its scale is 0.8 in objectBoundingBox
+     units, so its displacement is a fraction of the element's own size — a
+     12.8px swing across a 32px disc — and its specular covers the whole face
+     rather than a band at the rim, which is a wash over the element instead of
+     an edge. Measured by removing the lens and
+     diffing over the disc, in dark that moved the Stop by 70.8 levels on
+     average (78 at its worst) and the Send by 23.2, and its brightest pixel on
+     the Send went 191 to 209 against the reference's own near-white disc; in
+     light the Stop took 3.5, and the Send took 0.18 on average (7 at its worst,
+     its edge pixel 151 to 149), because its near-black fill is 90% opaque and
+     the lens is painted behind the fill, so almost nothing the filter paints
+     reaches the eye. What the reader saw was the light Stop's 3.5 levels
+     spread over the whole face: a wash, with no edge. So the discs keep the
+     material's blur and the CSS rim and take no lens, and the ring is what
+     gives them an edge: the two white lines alone leave the 32px grey Stop
+     rimless on a white card, so it carries --lg-rim-shade as the chips and the
+     panel do, and the Send carries it too rather than being the one disc with
+     an asymmetric edge.
+     The lip needs the border, not a second inset. Both rim rings are
+     `inset 0 0 0 1px`, so they cover the same pixel of the perimeter and the
+     catch, being the earlier shadow, blends over the shade underneath it: on
+     the horizontal diameter the disc read 235 against a 245 face, a line with
+     no lip above it, which is what the reader had asked to be rid of. The
+     catch is therefore painted on the disc's own border instead, where it sits
+     outside the ring rather than under it: border 250, ring 236, face 245, the
+     reference material's bright lip with its 1px line just inside. The discs
+     are 32px with `box-sizing: border-box` and no border of their own, so the
+     box keeps its size and only the content box loses a pixel a side.
+     The fill is a mix of each disc's own fill token rather than a token of its own:
+     --color-send-bg at --lg-tint-disc keeps the near-black disc in light and the
+     near-white one in dark, --color-subtle at 70% the stop's neutral.
+     Send is scoped to :not(:disabled) on purpose: the scoped disabled and
+     is-starting rules win the fill on their own, at a higher specificity than
+     this one, but neither declares a filter or a shadow, so without the guard
+     the disabled disc would keep the material's rim and its blur under a flat
+     fill. A control the reader cannot press should not offer the material's
+     edge, so the disabled Send stays flat: its own faint wash, no filter, no
+     rim. The disc while a turn is starting keeps the scoped full-strength fill
+     so the spinner reads on it.
+     The scoped :hover rules win over both of these, so a pointed-at disc paints
+     its own hover fill and the flat hover shadow: hovering steps the fill, which
+     is the state change the flat design already had. */
+  html[data-liquid-glass="on"] .send:not(:disabled) {
+    -webkit-backdrop-filter: var(--lg-blur);
+    backdrop-filter: var(--lg-blur);
+    background-color: color-mix(in srgb, var(--color-send-bg, var(--color-accent)) var(--lg-tint-disc), transparent);
+    border: 1px solid var(--lg-rim-catch);
+    box-shadow:
+      inset 0 1px 0 var(--lg-rim-top),
+      inset 0 0 0 1px var(--lg-rim-catch),
+      inset 0 0 0 1px var(--lg-rim-shade),
+      var(--shadow-send);
+  }
+  html[data-liquid-glass="on"] .stop {
+    -webkit-backdrop-filter: var(--lg-blur);
+    backdrop-filter: var(--lg-blur);
+    background-color: color-mix(in srgb, var(--color-subtle) 70%, transparent);
+    border: 1px solid var(--lg-rim-catch);
+    box-shadow:
+      inset 0 1px 0 var(--lg-rim-top),
+      inset 0 0 0 1px var(--lg-rim-catch),
+      inset 0 0 0 1px var(--lg-rim-shade),
+      var(--shadow-xs);
+  }
+
+  /* Every control that highlights on hover over the page becomes glass while it
+     is hovered: the material's blur and lens, the chrome's face in place of the
+     flat wash, and the rim that marks the material's edge. The blur is what the
+     hover is for. These elements sit on the graded ground or over the
+     transcript, so there is something behind them to bend. */
+  html[data-liquid-glass="on"] :is(
+    .pr:hover,
+    .pr--merged:hover,
+    .pr--closed:hover,
+    .gh:hover,
+    .btn-new-chat:hover,
+    .search:hover,
+    .user-menu-trigger:hover,
+    .done-more-btn:hover,
+    .show-more:hover,
+    .u-edit:hover,
+    .u-copy:hover,
+    .a-cpbtn:hover,
+    .failure-resume:hover,
+    .q-bub:hover,
+    .q-rm:hover,
+    .q-act:hover,
+    .msg-time:hover,
+    .ws-chip:hover,
+    .ws-chip.open,
+    .newmsg-pill:hover,
+    button.ui-pill:hover:not(:disabled)
+  ) {
+    -webkit-backdrop-filter: var(--lg-blur) var(--lg-lens);
+    backdrop-filter: var(--lg-blur) var(--lg-lens);
+    background-color: color-mix(in srgb, var(--lg-face) var(--lg-tint-a), transparent);
+  }
+
+  /* Inside a panel that already carries a filter (a menu, the outline card, the
+     settings pane, the composer card) a descendant's blur renders nothing, so the
+     hover there keeps the component's own wash and takes nothing from the
+     material. Nothing is declared for those: a rim inside a panel draws the faded
+     frame around a darker middle that the reader asked to be rid of. */
+
+  /* The workbar chips take the material: they sit on the dock strip, which paints
+     no surface of its own under the gate, so a filter on a chip samples the
+     ground. Upstream's own 24px blur is replaced by the material's chain rather
+     than dropped, and the chips run no lens: the refract pair's specular covers
+     the whole element, which on a 30px chip washes it out rather than bending
+     anything at its edge. */
+  /* The chips carry the material's edge as the panel and the composer card do,
+     for the same reason: the dock strip behind them is transparent ground, so
+     nothing passes behind a chip to blur or bend. */
+  html[data-liquid-glass="on"] .dock-workbar .ui-pill {
+    -webkit-backdrop-filter: var(--lg-blur);
+    backdrop-filter: var(--lg-blur);
+    background-color: var(--lg-chip-fill);
+    box-shadow:
+      inset 0 1px 0 var(--lg-rim-top),
+      inset 0 0 0 1px var(--lg-rim-catch),
+      inset 0 0 0 1px var(--lg-rim-shade),
+      var(--lg-shadow);
+  }
+  /* Upstream's chip doubles its own wash while it is pointed at, because their
+     chip carries an overlay of the same colour rather than a different fill. The
+     material's hover tier is lighter than that in both themes, so a chip would
+     step back towards the ground instead of forward. */
+  html[data-liquid-glass="on"] .dock-workbar .ui-pill:hover:not(:disabled) {
+    background-color: var(--lg-chip-fill-hover);
+  }
+
+  /* The outline card opens over live text, so its labels are read against its
+     own face rather than against what is behind it. It keeps its own blur,
+     wider than the menus', because the card's defocus is the point: at 18px the
+     blurred transcript behind it still read as text. In light the face is now
+     the menus' own (--lg-toc-fill resolves to the same --lg-face-menu /
+     --lg-tint-dense mix), so the card and the composer's dropdowns read the
+     same: measured over the same patch the face goes 240 to 255 against a menu's
+     254. Dark keeps the black fill its own token carries, and is untouched. The
+     card is the one surface in the family whose whole point is the defocus the
+     reader sees through, which is why it keeps the wider blur rather than the
+     dense tier's. The denser light face also paints over most of the lens:
+     removing the lens now moves the card 0.01 of a level on average, where the
+     old 4% black face let it move 3.65 levels — a face that opaque leaves the
+     filter nowhere to show, and the lens paints no contour in either theme. What
+     draws this card's edge in light is its own 1px ring (--lg-rim-shade), the
+     reference material's thin dark line. Dark is unchanged at 23.4. */
+  html[data-liquid-glass="on"] .toc-card {
+    -webkit-backdrop-filter: var(--lg-toc-blur);
+    backdrop-filter: var(--lg-toc-blur);
+    background-color: var(--lg-toc-fill);
+    box-shadow:
+      inset 0 0 0 1px var(--lg-rim-shade),
+      var(--lg-shadow);
+  }
+
+  /* The menus and popovers that open over live text take the same dense face,
+     built from the page colour: they darken what is behind them in the dark
+     theme rather than laying a grey plate over it. The add menu is not in this
+     list: it spans the composer card, and it carries the dock work panel's own
+     material instead (--color-menu-bg-frost with --p-menu-backdrop, both already
+     on the component's rule and both the same values the dock panel uses), which
+     the dense face used to override here. */
+  html[data-liquid-glass="on"] :is(
+    .ui-menu,
+    .model-dropdown,
+    .perm-dropdown,
+    .slash-menu,
+    .mention-menu
+  ) {
+    background-color: color-mix(in srgb, var(--lg-face-menu) var(--lg-tint-dense), transparent);
+  }
+
+  /* The modal layer stays opaque: dialogs, sheets, the server-auth card and
+     toasts all carry text and all open over content the reader is not meant to
+     be reading. They keep their own surface and take the material's edge, rim
+     and shadow, so the family still reads as one. The tooltip is not in this
+     list: it paints an inverted surface (the text colour as its fill, the page
+     colour as its text), and swapping that fill for the material's face left its
+     own label at the wrong end of the scale. */
+  html[data-liquid-glass="on"] :is(
+    .ui-dialog,
+    .ui-sheet,
+    .sheet-panel,
+    .server-auth-card,
+    .ui-toast
+  ) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--lg-shadow);
+  }
+  html[data-liquid-glass="on"] .ui-tip__bubble {
+    box-shadow: var(--lg-shadow);
+  }
+
+  /* The settings pane is the one modal surface that is glass. It sits over the
+     blurred scrim rather than over live text, so the blur is what protects its
+     legibility and the pane can stay translucent. It carries no filter of its
+     own: an element with backdrop-filter is a backdrop root, so a filter here
+     would leave the pane sampling its own empty scrim and render flat. Its inner
+     groups and cards keep their own opaque surfaces. */
+  html[data-liquid-glass="on"] .ui-dialog:has(.sd) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: color-mix(in srgb, var(--lg-face-solid) var(--lg-tint-pane), transparent);
+    box-shadow: var(--lg-shadow);
+  }
+
+  /* Behind a popup, the page goes out of focus rather than just darker, so the
+     reader has one plane to rest on. The scrim's own tint is unchanged. */
+  html[data-liquid-glass="on"] :is(
+    .ui-dialog__overlay,
+    .ui-sheet__scrim,
+    .sheet-scrim,
+    .server-auth-overlay,
+    .media-preview-overlay,
+    .att-lightbox
+  ) {
+    -webkit-backdrop-filter: var(--lg-scrim-blur);
+    backdrop-filter: var(--lg-scrim-blur);
+  }
+
+  /* The header's bar is DeepSeek's top bar and the row itself is the pill.
+     Theirs is not a gesture: a plain scroll listener sets their scrolled class
+     once `window.scrollY` passes 80, called once on mount, and the class fills
+     the bar in, their dark token 25% white and their light one 45%, over
+     `blur(12px)` and a hairline at 6% to 10%.
+     Here the bar spans the conversation column rather than the window, so the
+     row itself carries the surface: DeepSeek's in dark, the reference capsule's
+     face and edge in light, painted at every scroll position rather than
+     arriving on a scroll: the header
+     reads the same at the transcript's ends as in its middle. The pill's shape is
+     fixed too, a 12px inline inset, so nothing about the row moves while the
+     reader scrolls. It is 36px tall, and its side padding plus its contents add
+     up to that same 36px, so the pill is the tightest capsule its contents fit
+     in. Its top edge is the floating panel's top edge, both at `--lg-head-inset`,
+     which is also the 8px offset DeepSeek's own bar floats at; the band the pane
+     reserves is `--panel-head-h`, so the pill sits 8px down from the band's top
+     and 4px clear of its foot. Light's surface is the reference capsule's, not
+     DeepSeek's flat plate: its face is `--lg-head-face`, a neutral white lift
+     that runs stronger at the head than at the foot with no hue of its own —
+     its colour is the backdrop's, which is why the reference capsule reads blue
+     over a sky and green over foliage — and its edge is
+     `--lg-head-shadow`, a soft drop shadow with a bright lip at the head and a
+     bright 60% ring just inside the perimeter. `--lg-head-fill` and `--lg-head-border`
+     therefore read transparent in light and paint only in dark. Dark keeps
+     DeepSeek's reading: it sits below their 25% because this ground is a graded
+     field that runs lighter at the top left, and measured against their page the
+     same 25% renders about 17 levels brighter (91 against their 74); and the
+     reader then asked for the bar to come down further, to a reading in the low
+     sixties. 9.5% is that reading at the sample the fill is sized against, and
+     that pass moved the fill alone: the hairline is still DeepSeek's 6%. The
+     edge is no longer that hairline alone, though: the reader asked for the
+     light theme's lip on this bar too, because a 6% white outline on a 52-level
+     bar reads as a grey box, so dark's `--lg-head-shadow` paints a 30% white lip
+     at the head over a 45% drop shadow, and the fill, the blur and the flat face
+     stay as they were. Its own
+     menu is
+     teleported to body, because a filter here would be a containing block for its
+     fixed positioning.
+     The blur is the one departure from DeepSeek's: the reader asked for this bar
+     to read more glassy, so `--lg-head-blur` runs at the material's own 18px
+     rather than DeepSeek's 12px, and the transcript behind the bar reads as clearly
+     smeared instead of merely softened. The step is small on the page and that is
+     the face's doing, not the blur's: measured over the transcript at a scroll
+     where content passes under the bar, swapping 18px back to 12px moves 0.29 of
+     a level on average and 10.3 at the strongest pixel, because the face carries
+     most of what the reader sees. The pill's lens is its own variant: the
+     36px bar is under the light band's 56px floor, where its 28px band would
+     meet itself from both edges and the whole face would bend, so the
+     bar takes a 7px band instead (`#lg-bezel-bar`, reached through
+     `--lg-head-filter` in the @supports block below). Its floor is 14px, so
+     the bar keeps a 22px unlit middle and only its head and its foot bend what
+     passes under them, by up to 5px. The refract pair is not an option here
+     either: its whole-face specular would wash a bar this thin. Its edge is not
+     a rim token
+     either: neither `--lg-rim-top` (white at 90%) nor `--lg-rim-catch` (white at
+     55%) is visible on a near-white bar over a near-white page, so the light edge
+     is the pair `--lg-head-shadow` insets — a 95% white lip at the head and a
+     60% white ring just inside the perimeter, the reference's bright lip and the
+     line it draws below it — over the
+     drop shadow that separates the capsule from the
+     page. That ring is bright rather than dark on purpose: a 1px dark rule at
+     8% drew a 235 line across the bar's foot where the page reads 253, a hard
+     edge on a surface with no cast below it there, so the perimeter now reads
+     on the content behind the bar. The face is sized to the border box (`background-origin: border-box`),
+     not to the padding box: at the padding box the 1px transparent border row
+     wraps and shows the gradient's own foot colour, a dark line above the lip
+     that the reference does not have. */
+  html[data-liquid-glass="on"] .chat-header {
+    position: absolute;
+    top: var(--lg-head-inset);
+    left: var(--lg-head-inline);
+    right: var(--lg-head-inline);
+    height: var(--lg-head-height);
+    z-index: var(--z-sticky);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--lg-head-border);
+    border-radius: var(--radius-full);
+    -webkit-backdrop-filter: var(--lg-head-blur);
+    backdrop-filter: var(--lg-head-blur);
+    background-image: var(--lg-head-face);
+    background-origin: border-box;
+    background-color: var(--lg-head-fill);
+    box-shadow: var(--lg-head-shadow);
+  }
+  html[data-liquid-glass="on"] .panes.has-header {
+    padding-top: var(--panel-head-h, 48px);
+  }
+
+  /* The header's git and PR pills. They paint an opaque well, a surface that
+     reads right on a flat bar (upstream's #1f1f1f pill on its #121212 page is a
+     step up, 31 against 18) and wrong on this one, because the bar is glass and
+     already lifted: at the pills' own y the bar reads 57,60,64 in dark, so the
+     same opaque well is a 26-level pit cut into it. The pill takes a lift
+     instead, sized to upstream's own step: --lg-pill-fill is 7% white in dark
+     (measured 71,74,77 over the bar here, a 14-level lift against upstream's 13)
+     and 4% black in light, where the bar reads about 243 and upstream's pill is
+     darker than its bar rather than lighter (245 over 255, the same 10-level
+     step). Only
+     the fill moves: the hairline each pill already draws, the sync pill's line
+     and the diff pill's green, stays.
+     The PR badge is excluded from the first rule: it is a button whose state is
+     carried by its fill (a success, done or danger soft), and a lift would drop
+     that signal to the border and the label alone. Its draft and unknown states
+     are the exception, and the second rule catches them: they paint the same
+     neutral well the git pills do, so they take the same lift. */
+  html[data-liquid-glass="on"] .chat-header .ch-pill:not(.ch-pr) {
+    background-color: var(--lg-pill-fill);
+  }
+  html[data-liquid-glass="on"] .chat-header :is(.ch-pr.pr-draft, .ch-pr.pr-unknown) {
+    background-color: var(--lg-pill-fill);
+  }
+
+  /* Mobile: the same pill, with its shape driven by the transcript rather than
+     fixed. At either end of the transcript the bar is the flat band it has
+     always been, full width, square, flush with the top of the screen and
+     carrying the safe-area padding. The moment the transcript leaves an end it
+     lifts into the capsule: inset 12px on the sides, 8px down from the safe
+     area, with its foot in the same place, so only its head and its sides move.
+     Its surface is the desktop pill's in both states — the face gradient, the
+     hairline and the drop shadow — and the bar
+     floats in both states, so the pane reserves its band and the transcript
+     passes under the blur the whole way down. The drop shadow reads as the
+     band's own foot separation when the bar is flat and full width, not as a
+     floating capsule, so it stays in both shapes. */
+  html[data-liquid-glass="on"] .app.mobile {
+    grid-template-rows: 1fr;
+  }
+  html[data-liquid-glass="on"] .app.mobile .con .panes {
+    /* The bar's foot lands on this line in both states; the extra step is the
+       same 4px the desktop band leaves below its pill. */
+    padding-top: calc(var(--mobile-topbar-h) + var(--safe-top) + var(--space-1));
+  }
+  html[data-liquid-glass="on"] .app.mobile .topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--mobile-topbar-h) + var(--safe-top));
+    z-index: var(--z-sticky);
+    padding-top: var(--safe-top);
+    border: 1px solid var(--lg-head-border);
+    border-radius: 0;
+    -webkit-backdrop-filter: var(--lg-head-blur);
+    backdrop-filter: var(--lg-head-blur);
+    background-image: var(--lg-head-face);
+    background-origin: border-box;
+    background-color: var(--lg-head-fill);
+    box-shadow: var(--lg-head-shadow);
+    transition:
+      top var(--duration-spring-gentle) var(--spring-gentle),
+      left var(--duration-spring-gentle) var(--spring-gentle),
+      right var(--duration-spring-gentle) var(--spring-gentle),
+      height var(--duration-spring-gentle) var(--spring-gentle),
+      padding-top var(--duration-spring-gentle) var(--spring-gentle),
+      border-radius var(--duration-spring-gentle) var(--spring-gentle);
+  }
+  html[data-liquid-glass="on"] .app.mobile .topbar.is-pill {
+    top: calc(var(--safe-top) + var(--lg-head-inset));
+    left: var(--lg-head-inline);
+    right: var(--lg-head-inline);
+    height: calc(var(--mobile-topbar-h) - var(--lg-head-inset));
+    padding-top: 0;
+    border-radius: var(--radius-full);
+  }
+
+  @media (min-width: 641px) {
+    /* The sidebar floats: the material moves off the column onto a carrier inset
+       from the window edges, and the column keeps the window's own ground around
+       it. The two opaque surfaces inside the column step aside so the material
+       shows through the whole height. */
+    html[data-liquid-glass="on"] .side,
+    html[data-liquid-glass="on"] .sidebar-actions {
+      background-color: transparent;
+    }
+    html[data-liquid-glass="on"] .side .col {
+      position: relative;
+      padding: var(--lg-sidebar-inset);
+      /* The seams the flat design drew belong to the flat design; the material's
+         edge is the rim. */
+      border-right-color: transparent;
+    }
+    html[data-liquid-glass="on"] .side .col::before {
+      content: '';
+      position: absolute;
+      inset: var(--lg-sidebar-inset);
+      z-index: -1;
+      border: 1px solid transparent;
+      border-radius: var(--radius-2xl);
+      -webkit-backdrop-filter: var(--lg-blur);
+      backdrop-filter: var(--lg-blur);
+      background-color: color-mix(in srgb, var(--lg-face-panel) var(--lg-tint-panel), transparent);
+      /* The panel takes the same material as the header's pill: a translucent
+         fill, the one-pixel top highlight the reference pairs with it, and the
+         shadow. The fill's tone is the panel's own rather than the pill's, and
+         the two part company in dark, where the bar sits above the page and this
+         panel below it. No border: behind this panel sits the ground and nothing
+         else, so the edge is where the material has to show. The top keeps its
+         bright line and the other three sides take the faint catch, at liqui's
+         third.
+         The rim also bends the ground, through the band-limited lens the
+         @supports block below appends: at about 254x884 the panel is far above
+         the band's floor in both themes (56px for light's 28px band, 6px for
+         dark's 3px one), so only its outer 28px moves in light and its outer 3px
+         in dark, and its face stays as it was. The reader asked for the
+         border-edge refraction on exactly this panel. What that buys is
+         theme-dependent, measured by removing the lens and diffing.
+         In dark the band is the highlight: a white specular reads on a dark
+         ground, and the current 3px band with its 3px blur ramps across its whole
+         width, so the face is flat within about seven CSS pixels of the edge.
+         Sampled every 2 device pixels at the reader's 2x, the left edge reads
+         30, 26, 23, 21, 19, 18, 17, 16, 16 and the head
+         37, 34, 31, 29, 27, 26, 25, 24, 24, the head flat within about ten CSS
+         pixels of the edge. The band was narrowed in three steps to get here: at
+         28px it painted a thick grey band inside the edge, the face still at 75
+         twenty pixels in and short of its floor at forty; at 6px with only a 2px
+         blur its inner boundary read as a cliff, the left edge falling
+         70, 58, 44, 36, 33, 32, 30, 29, 27 and the head
+         76, 65, 52, 44, 40, 40, 38, 37, 35 after the rim line, steps of up to 14
+         and 13 levels; and at 4px with a 4px blur the left edge read
+         42, 41, 38, 36, 34, 33, 31, 30, 29, 28, 27 and the head
+         50, 48, 46, 44, 42, 40, 39, 38, 37, 36, 35, steps of up to 3 and 2, with
+         the left edge at 1x reading 48, 89, 47, 46, 44, 43, 41, 39, 38, 37, 36,
+         35, 34, 34, the rim line then a smooth fall to a flat 34.
+         The rim line itself rose slightly as the band narrowed, because the same
+         highlight concentrates: 101 to 110 on the panel's left edge and 154 to
+         160 at its head, measured against the reverted rim structure.
+         Light cannot use that mechanism at all, because the ground behind the
+         panel is a smooth gradient, so the displacement has little contrast to
+         bend, and a white highlight has nowhere to read on a near-white face.
+         Light's edge is drawn outside the lens instead: the CSS rim (the bright
+         lip of --lg-rim-top over the faint catch, with the 1px line of
+         --lg-rim-shade just inside it) over the --lg-float-shadow this round
+         adds under the panel.
+         An earlier round gave the light bezel a dark contour ring in place of
+         that, a multiply over the rim's own backdrop. Measured, it painted a
+         soft band rather than a line (here the rim went from a flat 251 down
+         to 227 and ramped back to the face over roughly 20px), and the reference
+         material shows a 1px line at that place, so the ring was removed. The
+         lens draws no contour in either theme, and the CSS ring is what
+         imitates the reference's line. */
+      box-shadow:
+        inset 0 1px 0 var(--lg-rim-top),
+        inset 0 0 0 1px var(--lg-rim-catch),
+        inset 0 0 0 1px var(--lg-rim-shade),
+        var(--lg-float-shadow);
+    }
+  }
 }
 
-/* Chrome — the sidebar (`.side .col`) consumes the shared frost material from
-   the consuming rule above (it is on the selector list even though the
-   template stays class-free). The sidebar has nothing scrolling behind it on
-   most layouts (the blur is mostly stylistic), but the matching tint keeps it
-   in the same family. It doesn't float, so the drop shadow steps down to
-   shadow-sm and the lit side rim is dropped at the flush window edge. */
-html[data-liquid-glass="on"] .side .col {
-  --lg-blur: var(--lg-blur-frost);
-  --lg-tint-a: var(--lg-tint-frost-a);
-  --lg-rim-side-l: transparent;
-  --lg-drop-shadow: var(--shadow-sm);
-}
-/* The sidebar column already carries a right hairline (border-right:1px
-   solid var(--line)); collapse it under the frost hairline so the seam
-   reads as one. */
-html[data-liquid-glass="on"] .side .col {
-  border-right-color: color-mix(in srgb, var(--color-line-strong) 60%, transparent);
-}
-/* Top bar — fully transparent like the Moonshot AI site header: no tint, no
-   separator line, and NO backdrop-filter of its own (a filter on the header
-   would capture the kebab menu's position:fixed coordinates and push it off
-   to the wrong spot — same bug class as the composer's modes menu before it
-   was teleported). Instead it is lifted out of flow as an overlay on the
-   conversation column: the chat scroller extends to the very top of the
-   column and message text physically passes UNDER the bar, where the
-   .chat-main::before blur band (ConversationPane.vue) blurs it as it goes. */
-html[data-liquid-glass="on"] .chat-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: var(--z-sticky);
-  background: transparent;
-  border-bottom-color: transparent;
-}
-
-
-/* Composer pill material — the toolbar chips (YOLO / Mode / model / paperclip)
-   sit INSIDE the frosted composer card, so there is nothing behind them to
-   blur; glass there is purely material. Mix the tint from the text colour
-   (grey frost in light mode, pale frost in dark mode) so the chips separate
-   visually from the card instead of reading as flat white boxes, with a
-   stronger wash on hover. Doubled class + :is() outranks the base and light
-   glass rules ((0,3,1)); the hover rule must additionally outrank the global
-   `.lg-glass.lg-glass:is(...):hover` tint override, which it does via the
-   extra `.composer-card`. Only the tint vars are reassigned — the base
-   `background` shorthand recomputes from them, and the shared D1 rim +
-   dispersion shadow compose around them. */
-html[data-liquid-glass="on"] .composer-card .lg-glass.lg-glass:is(button, [role="button"], a) {
-  --lg-tint: color-mix(in srgb, var(--color-text) 8%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-text) 4%, transparent);
-}
-html[data-liquid-glass="on"] .composer-card .lg-glass.lg-glass:is(button, [role="button"], a):hover {
-  --lg-tint: color-mix(in srgb, var(--color-text) 13%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-text) 8%, transparent);
-}
-/* The thinking-effort segmented control inside the model dropdown paints an
-   opaque sunken fill — a solid grey slab over the glass panel. Swap it for a
-   faint neutral wash when glass is on so the panel reads as one material. */
-html[data-liquid-glass="on"] .model-dropdown .effort-segments {
-  background: color-mix(in srgb, var(--color-text) 6%, transparent);
-  border-color: color-mix(in srgb, var(--color-line-strong) 50%, transparent);
-}
-
-/* Settings-dialog controls — same glass material as the composer pills
-   (text-colour tint + refraction rim), but no backdrop-filter: they sit on
-   the frosted dialog panel, so there is nothing behind them to blur (and
-   nested backdrop-filter renders nothing in Firefox and Chromium). Scoped to the settings
-   root (.sd); the primary CTA keeps its solid accent fill, like the
-   composer's Send button. Existing border-radius is kept — settings controls
-   stay rectangular. */
-html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button, .ui-select, .sm-picker) {
-  --lg-tint: color-mix(in srgb, var(--color-text) 8%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-text) 4%, transparent);
-  --lg-bg: linear-gradient(
-    to bottom,
-    var(--lg-tint-top) 0%,
-    var(--lg-tint) 30%
-  ), var(--lg-tint);
-  border-color: color-mix(in srgb, var(--color-line-strong) 60%, transparent);
-  box-shadow:
-    inset 0 1px 0 var(--lg-rim-top),
-    inset 0 0 0 1px color-mix(in srgb, #fff 22%, transparent),
-    inset 0 -1px 0 var(--lg-rim-bottom),
-    var(--shadow-sm);
-  transition:
-    background var(--duration-base),
-    box-shadow var(--duration-base);
-}
-/* The full gradient background only on real buttons: the `background` shorthand
-   would wipe the select's own chevron painting, so selects take the tint as
-   background-color. */
-html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button) {
-  background: var(--lg-bg);
-}
-html[data-liquid-glass="on"] .sd :is(.ui-select, .sm-picker) {
-  background-color: var(--lg-tint);
-}
-html[data-liquid-glass="on"] .sd :is(.ui-button:not(.ui-button--primary), .ui-icon-button, .ui-select, .sm-picker):hover:not(:disabled) {
-  --lg-tint: color-mix(in srgb, var(--color-text) 13%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--color-text) 8%, transparent);
-}
-
-/* A backdrop-filter nested inside another backdrop-filter element silently
-   renders nothing — every menu inside the frosted composer card (slash,
-   mention, model, permission) shows sharp, unblurred text behind it (verified
-   on chromium-1223: a descendant panel hanging outside the card's box renders
-   its backdrop unfiltered — pixel variance 2944 vs 2.5 for an unnested
-   control). The card's own blur is invisible anyway while a menu is open
-   (the menu covers it), so drop it in every engine and the nested menus blur
-   correctly. Doubled class to outrank the `.lg-frost.lg-frost` base rule.
-   Direction C routes this through the `--lg-optic-filter` slot rather than a
-   direct `backdrop-filter` declaration, so the demoted regime (which retargets
-   the same slot) is never outranked by it. */
-html[data-liquid-glass="on"] .composer-card.lg-frost.lg-frost {
-  --lg-optic-filter: none;
-}
-
-/* …but only while a menu could suffer from it. On the SVG-lens path
-   (Chromium), when NO in-card menu is open the card re-enables the full
-   lens chain — the refraction the D1 design wants on the composer. The
-   :not(:has(...)) lifts specificity to (0,5,1), outranking both the
-   suppression above (0,4,1) and the generic lens rule (0,3,1); being last
-   in the sheet settles the tie with neither. The Firefox/Safari WebGL path
-   never enters this @supports block: there the card's refraction is painted
-   by the canvas underneath and its backdrop-filter stays off. The two
-   regime guards at the end keep a demoted card from re-lighting the optic
-   (the opaque regime is designed, so it must survive this re-enable). */
+/* Chromium renders the lens. Every other engine keeps the plain blur chain
+   above. The five menus and the outline card take #lg-refract (--lg-lens),
+   whose specular covers the element and is right for a small surface. The
+   outline card names its own blur, because the lens rides on whatever chain it
+   is appended to and the card's is deliberately wider than the material's.
+   The two discs took that lens until this round and no longer take one: its
+   scale is 0.8 in objectBoundingBox units, so on a 32px element its
+   displacement is a 12.8px swing and its specular covers the whole face, which
+   is a wash over the element rather than an edge.
+   The band-limited family (#lg-bezel / #lg-bezel-soft / #lg-bezel-bar in
+   GlassDefs.vue, the first two reached through --lg-bezel-lens and the third
+   through --lg-head-filter) confines its displacement and its highlight to a
+   band at the rim, so the face between the bands stays as it was and only the
+   rim bends. The band's width is the variant's erode radius and its floor on
+   element size is twice that: below the floor there is no unlit middle left and
+   the whole face bends. The band is 28px in light and 3px in dark, and in dark
+   the blur equals the width so the highlight ramps across the whole band: at
+   28px dark's highlight read as a thick grey band inside the panel's and the
+   card's edges, and at 6px with a 2px blur its inner boundary read as a cliff,
+   while light's measures nothing on that theme's near-white ground. The floating
+   sidebar (about 254x884) and the composer card (about 728x120) clear both
+   floors and take the bezel pair; the header pill (36px) is under light's floor
+   and takes the 7px bar variant, whose 14px floor it clears with 22px of unlit
+   middle left; the two discs (32px) take no lens at all in either theme, though
+   dark's 6px floor would clear them.
+   A lens is painted behind the element's own fill, so what it can show is
+   scaled by that fill's transparency: the same filter moves 9.3 levels on
+   average over the transcript under a 4% face, 23 in dark under the outline
+   card's 72% black, and 0.18 under the light Send's 90% black — that fill was
+   the one that hid the light lens almost completely, and what little came
+   through was at its edge, that pixel going 151 to 149.
+   The fill decides how much of the lens reads at all. The bezel targets
+   also sit on the graded ground, whose gradient is smooth enough that a 12px
+   displacement has little contrast to bend, so on them the bending moves 0.01
+   of a level and the fill's opacity is what decides whether the highlight shows
+   through. The lens draws no contour in either theme. In light the edge is the
+   CSS rim — the bright lip of --lg-rim-top over --lg-rim-catch, with the 1px
+   inner line of --lg-rim-shade just inside it — over the outer shadow this
+   round declares (--lg-float-shadow on the floating panel, --lg-card-shadow on
+   the composer card, --lg-head-shadow on the bar, and --lg-head-face as the
+   bar's neutral face). The dark card carries the same pair through
+   --lg-card-rim, and dark's bar takes its lip from --lg-head-shadow's head line,
+   because that bar runs no lens. What the bar's own band buys is measured in the
+   header's comment above.
+   An earlier round gave the light twins a dark contour ring instead, a multiply
+   over the rim's own backdrop; measured it painted a soft band rather than a
+   line (the panel's rim from a flat 251 to 227 over roughly 20px, the composer
+   card's darkest rim pixel from 221 to 214 with an 8-level ramp back over about
+   15px), and the reference material shows a 1px line in that place, so the ring
+   was removed from both filters. In dark the 28px band lifted the panel's rim by
+   35 levels through its own white specular, a figure from before the band was
+   narrowed and not re-measured since, and that ring was never rendered
+   there. */
 @supports (backdrop-filter: url(#lg-refract)) {
   @media (prefers-reduced-transparency: no-preference) {
-    html[data-liquid-glass="on"]:not([data-glass-regime="opaque"]) .composer-card.lg-lens.lg-lens:not(.lg-demoted):not(.lg-gl-refracted):not(:has(.slash-menu, .mention-menu, .perm-dropdown, .model-dropdown)) {
-      --lg-optic-filter: var(--lg-glass-filter);
+    html[data-liquid-glass="on"] :is(
+      .ui-menu,
+      .model-dropdown,
+      .perm-dropdown,
+      .slash-menu,
+      .mention-menu
+    ) {
+      -webkit-backdrop-filter: var(--lg-blur) var(--lg-lens);
+      backdrop-filter: var(--lg-blur) var(--lg-lens);
     }
+    html[data-liquid-glass="on"] .toc-card {
+      -webkit-backdrop-filter: var(--lg-toc-blur) var(--lg-lens);
+      backdrop-filter: var(--lg-toc-blur) var(--lg-lens);
+    }
+    html[data-liquid-glass="on"] .side .col::before {
+      -webkit-backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
+      backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
+    }
+    html[data-liquid-glass="on"] .composer-card,
+    html[data-liquid-glass="on"] .composer-card:focus-within {
+      -webkit-backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
+      backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
+    }
+    html[data-liquid-glass="on"] .chat-header,
+    html[data-liquid-glass="on"] .app.mobile .topbar {
+      -webkit-backdrop-filter: var(--lg-head-filter);
+      backdrop-filter: var(--lg-head-filter);
+    }
+  }
+}
+
+/* Increase Contrast: a definite edge, one step more elevation, no tint change. */
+@media (prefers-contrast: more) {
+  html[data-liquid-glass="on"] {
+    --lg-edge: color-mix(in srgb, var(--color-text) 34%, transparent);
+    --lg-shadow: var(--shadow-md);
   }
 }
 
 /* Wide screen mode — settings toggle writes data-wide-mode on <html>. The
    reading column, composer and dock all size off --read-max (declared on
    .con in ConversationPane.vue), so one reassignment widens the whole
-   conversation column. Independent of the liquid-glass toggle. */
+   conversation column. */
 html[data-wide-mode="on"] .con {
   --read-max: 1100px;
 }
@@ -1987,30 +2306,18 @@ body {
 }
 
 
-/* ---- perf: WS-1B ---- */
-/* Dialog / bottom-sheet open jank (dialog-storm). The frosted panels carry
-   `.lg-frost` (blur 46px); rasterizing the panel frost in the mount frame
-   stacks it on top of the scrim's full-viewport blur. Dialog and BottomSheet
-   stagger the two rasters instead — scrim filter on frame 2 (`step-1`),
-   panel frost on frame 3 (`step-2`). Their entrance animations start at
-   opacity 0, so both steps land while the overlay is still nearly invisible:
-   identical settled pixels, identical animation, no single frame pays the
-   full blur cost. Doubled classes outrank the frozen `.lg-frost.lg-frost`
-   base rule ((0,3,1)). */
-html[data-liquid-glass="on"] .ui-dialog.ui-dialog:not(.step-2),
-html[data-liquid-glass="on"] .sheet-root:not(.step-2) .sheet-panel.sheet-panel {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
 
-/* ---- autocomplete menus: scroll fade + floating scrollbar ---- */
-/* The slash and @-mention menus fade their top/bottom edges and draw a
-   draggable floating scrollbar thumb. The fade gradients are token-defined
-   so the app's no-gradient-text rule (tokens exempt) and the shared
-   --menu-scroll-fade length stay in one place; components swap between the
-   three forms (top / bottom / both) depending on scroll position. */
+/* ---- autocomplete menus: scroll fade ---- */
+/* The slash and @-mention menus fade their top/bottom edges. The fade gradients
+   are token-defined so the app's no-gradient-text rule (tokens exempt) and the
+   shared --menu-scroll-fade length stay in one place; components swap between
+   the three forms (top / bottom / both) depending on scroll position. The menus
+   draw no scrollbar of their own any more: they use the browser's. */
 :root {
   --menu-scroll-fade: 14px;
+  /* The menu metrics stay for the code block's own floating bar, which reads the
+     width, the edge and the two tones as its fallbacks; the track inset and the
+     minimum thumb height are left over from the menus' removed thumb. */
   --menu-scrollbar-track-inset: 2px;
   --menu-scrollbar-thumb-min: 24px;
   --menu-scrollbar-width: 4px;

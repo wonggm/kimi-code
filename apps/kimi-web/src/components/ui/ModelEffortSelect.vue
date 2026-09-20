@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Menu from './Menu.vue';
 import MenuItem from './MenuItem.vue';
 import Icon from './Icon.vue';
@@ -16,13 +17,20 @@ type Props = {
   disabled?: boolean;
   size?: 'sm' | 'md';
   ariaLabel?: string;
+  /** Render the pinned "More models…" row below the list. It leaves this menu
+   *  for the host's full model picker, so the host must handle `@more` — the
+   *  row is only shown where that picker exists. */
+  showMore?: boolean;
 };
 
-const props = withDefaults(defineProps<Props>(), { size: 'md' });
+const props = withDefaults(defineProps<Props>(), { size: 'md', showMore: false });
 const emit = defineEmits<{
   'update:modelValue': [value: string];
   'update:effortValue': [value: string];
+  more: [];
 }>();
+
+const { t } = useI18n();
 
 const open = ref(false);
 const submenuOpen = ref(false);
@@ -30,12 +38,31 @@ const activeModel = ref<string | null>(null);
 const highlightIndex = ref(0);
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const menuRef = ref<InstanceType<typeof Menu> | null>(null);
+const listRef = ref<HTMLElement | null>(null);
 const submenuRef = ref<InstanceType<typeof Menu> | null>(null);
 const itemRefs = new Map<string, HTMLElement>();
 const menuStyle = ref<Record<string, string>>({});
 const submenuStyle = ref<Record<string, string>>({});
 
-const flatOptions = computed(() => props.groups.flatMap((group) => group.options));
+// The current model's provider group leads; the rest keep the caller's order.
+// Groups without a label are caller-side pseudo-entries (the subagent pins'
+// leading "Inherit (session model)" row), so they keep their place at the top
+// and only the provider groups are reordered. Hoisting the current provider is
+// what keeps the common case — a pin in a provider the user already runs — at
+// the top of the list instead of below every other provider.
+const orderedGroups = computed(() => {
+  const plain = props.groups.filter((group) => !group.label);
+  const labeled = props.groups.filter((group) => group.label);
+  const current = labeled.findIndex((group) =>
+    group.options.some((option) => option.value === props.modelValue),
+  );
+  if (current > 0) {
+    const hoisted = labeled.splice(current, 1)[0];
+    if (hoisted) labeled.unshift(hoisted);
+  }
+  return [...plain, ...labeled];
+});
+const flatOptions = computed(() => orderedGroups.value.flatMap((group) => group.options));
 const selectedLabel = computed(() =>
   flatOptions.value.find((option) => option.value === props.modelValue)?.label ?? props.placeholder ?? '',
 );
@@ -73,6 +100,27 @@ function onDocClick(event: MouseEvent): void {
 
 function onScrollOrResize(): void {
   void updatePositions();
+}
+
+// The list scrolls inside the panel now, so a row can move under the fixed
+// effort submenu. Re-anchor it on the row, and drop it once the row itself has
+// scrolled out of the list region — a submenu floating over a row the reader
+// can no longer see is worse than no submenu. (Closing on every scroll would
+// also break keyboard navigation: ArrowDown focuses a row, the browser scrolls
+// it into view, and the event would dismiss the submenu it just opened.)
+function onListScroll(): void {
+  if (!submenuOpen.value) return;
+  const item = activeModel.value === null ? undefined : itemRefs.get(activeModel.value);
+  const list = listRef.value;
+  if (item && list) {
+    const rect = item.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    if (rect.bottom < listRect.top || rect.top > listRect.bottom) {
+      closeSubmenu();
+      return;
+    }
+  }
+  void updateSubmenuPosition();
 }
 
 function focusModel(index: number): void {
@@ -114,6 +162,10 @@ function onKeydown(event: KeyboardEvent): void {
     return;
   }
   if (event.key === 'Enter' || event.key === ' ') {
+    // The panel's own controls outside the list (the "More models…" row, the
+    // trigger) are plain buttons: Enter/Space there has to reach the browser's
+    // activation, not choose the highlighted model.
+    if (event.target instanceof Node && !listRef.value?.contains(event.target)) return;
     const option = flatOptions.value[highlightIndex.value];
     if (option && !option.disabled) {
       event.preventDefault();
@@ -206,6 +258,14 @@ function selectEffort(effort: string): void {
   triggerRef.value?.focus();
 }
 
+// "More models…" leaves this menu for the host's full picker (the composer's
+// own row does the same). The menu closes first so the picker's overlay is not
+// fighting the teleported panel for the click.
+function openMore(): void {
+  close();
+  emit('more');
+}
+
 async function toggle(): Promise<void> {
   if (props.disabled) return;
   if (open.value) {
@@ -254,26 +314,47 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <div v-if="open" class="ms-anchor" :style="menuStyle">
         <Menu ref="menuRef" class="ms-panel">
-          <template v-for="(group, gi) in groups" :key="gi">
-            <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
-            <div
-              v-for="(option, oi) in group.options"
-              :key="`${gi}-${oi}`"
-              :ref="(element) => setItemRef(option.value, element)"
-              class="ms-item-anchor"
-              @mouseenter="activateModel(option.value)"
-              @focusin="activateModel(option.value)"
-            >
-              <MenuItem
-                :active="option.value === modelValue"
-                :disabled="option.disabled"
-                :aria-label="option.label"
-                @click="selectModel(option.value)"
+          <!-- The list owns the scroll. A provider can carry dozens of models,
+               so the region is capped and scrolls while the pinned row below it
+               (the full picker's entry point) stays put — same split as the
+               composer's model menu. The current model's provider group leads
+               (orderedGroups) so the usual case sits at the top. -->
+          <div ref="listRef" class="ms-list" @scroll="onListScroll">
+            <template v-for="(group, gi) in orderedGroups" :key="gi">
+              <div v-if="group.label" class="ms-group-label">{{ group.label }}</div>
+              <div
+                v-for="(option, oi) in group.options"
+                :key="`${gi}-${oi}`"
+                :ref="(element) => setItemRef(option.value, element)"
+                class="ms-item-anchor"
+                @mouseenter="activateModel(option.value)"
+                @focusin="activateModel(option.value)"
               >
-                <span class="ms-option-label">{{ option.label }}</span>
-                <span class="ms-submenu-arrow" aria-hidden="true">›</span>
-              </MenuItem>
-            </div>
+                <MenuItem
+                  :active="option.value === modelValue"
+                  :disabled="option.disabled"
+                  :aria-label="option.label"
+                  @click="selectModel(option.value)"
+                >
+                  <span class="ms-check" aria-hidden="true">
+                    <Icon v-if="option.value === modelValue" name="check" size="sm" />
+                  </span>
+                  <span class="ms-option-label">{{ option.label }}</span>
+                  <span class="ms-submenu-arrow" aria-hidden="true">›</span>
+                </MenuItem>
+              </div>
+            </template>
+          </div>
+
+          <template v-if="showMore">
+            <MenuItem separator />
+            <MenuItem class="ms-more" :aria-label="t('status.moreModels')" @click="openMore">
+              <span class="ms-check ms-more-icon" aria-hidden="true">
+                <Icon name="list-lines" size="sm" />
+              </span>
+              <span class="ms-option-label">{{ t('status.moreModels') }}</span>
+              <Icon class="ms-more-arrow" name="chevron-right" size="sm" />
+            </MenuItem>
           </template>
         </Menu>
         <Menu
@@ -338,10 +419,27 @@ onBeforeUnmount(() => {
 .ms-trigger--open, .ms-trigger:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: var(--p-focus-ring); }
 .ms-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
 .ms-anchor { position: fixed; top: 0; left: 0; z-index: calc(var(--z-modal) + 1); }
-.ms-panel, .ms-submenu { max-height: min(360px, 50vh); overflow-y: auto; }
-.ms-submenu { position: fixed; min-width: 160px; }
+/* The panel does not scroll: the model list inside it does, so the pinned
+   "More models…" row below the list stays reachable however many providers
+   there are (the composer's model menu splits the same way). */
+.ms-panel { max-height: min(400px, 56vh); overflow: hidden; }
+.ms-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(320px, 44vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ms-submenu { position: fixed; min-width: 160px; max-height: min(360px, 50vh); overflow-y: auto; }
 .ms-item-anchor { width: 100%; }
+/* Leading check column, as the composer's model rows carry: a fixed-width slot
+   so a model's name starts in the same place whether or not it is the current
+   one. */
+.ms-check { width: var(--p-ic-sm); flex: none; display: flex; justify-content: center; color: var(--color-accent); }
 .ms-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-submenu-arrow { color: var(--color-text-muted); font-size: var(--text-lg); line-height: 1; }
+.ms-more .ms-more-icon { color: var(--color-text-muted); }
+.ms-more-arrow { flex: none; color: var(--color-text-muted); }
 .ms-group-label { font-family: var(--font-ui); font-size: var(--text-xs); font-weight: var(--weight-medium); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-muted); padding: var(--space-2) var(--space-2) var(--space-1); }
 </style>

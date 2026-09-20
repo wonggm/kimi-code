@@ -699,16 +699,37 @@ void bindChatDock;
 
 const following = ref(true);
 const showPill = ref(false);
+/** Mobile top bar: true while the transcript sits clear of both of its ends,
+    which lifts the bar out of its flat full-width band into the floating pill.
+    It enters and leaves only at an end, so a scroll that stops mid-transcript
+    leaves the pill up. Desktop ignores it: there the pill's shape is fixed. */
+const headPill = ref(false);
 
 /** Within this many pixels from the bottom counts as "at the bottom" —
     scrolling DOWN into this zone re-enables the follow. */
 const BOTTOM_THRESHOLD = 80;
 const USER_ACTION_FOLLOW_LOCK_MS = 1000;
+/** An end counts as reached within this many pixels, so momentum settling at
+    the foot and sub-pixel layout at the head both read as "at the end". */
+const HEAD_EDGE_EPSILON = 2;
 
 function distanceFromBottom(): number {
   const el = panesRef.value;
   if (!el) return 0;
   return el.scrollHeight - el.scrollTop - el.clientHeight;
+}
+
+function headPillFor(el: HTMLElement): boolean {
+  const scrollable = el.scrollHeight - el.clientHeight;
+  if (scrollable <= HEAD_EDGE_EPSILON) return false;
+  return el.scrollTop > HEAD_EDGE_EPSILON && scrollable - el.scrollTop > HEAD_EDGE_EPSILON;
+}
+
+function updateHeadPill(): void {
+  if (!props.mobile) return;
+  const el = panesRef.value;
+  const next = el ? headPillFor(el) : false;
+  if (next !== headPill.value) headPill.value = next;
 }
 
 let lastScrollTop = 0;
@@ -729,6 +750,7 @@ function hasUserActionFollowLock(): boolean {
 
 function onPanesScroll(): void {
   scheduleTocTableHitTest();
+  updateHeadPill();
   const el = panesRef.value;
   if (!el) return;
   const top = el.scrollTop;
@@ -1658,6 +1680,7 @@ onMounted(() => {
       resizeObserver = new ResizeObserver(() => {
         scheduleTocTableHitTest();
         updatePanesScrollbarWidth();
+        updateHeadPill();
         const el = panesRef.value;
         if (!el) return;
         const { scrollHeight, clientHeight } = el;
@@ -1723,7 +1746,13 @@ function openComposerPermissionMenu(): void {
   (dockedComposerRef.value ?? emptyComposerRef.value)?.openPermissionMenu();
 }
 
-defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openComposerPermissionMenu });
+defineExpose({
+  loadComposerForEdit,
+  focusComposer,
+  openComposerModelMenu,
+  openComposerPermissionMenu,
+  headPill,
+});
 </script>
 
 <template>
@@ -2147,102 +2176,6 @@ defineExpose({ loadComposerForEdit, focusComposer, openComposerModelMenu, openCo
   overflow-anchor: none;
   scrollbar-gutter: stable;
 }
-/* Edge vignette — fade the transcript to invisible at the top and bottom so
-   messages "scroll under" the floating top bar and composer instead of being
-   hard-clipped. Pure compositing (mask is paint-only, no layout or input
-   impact, no backdrop-filter). Gated behind the liquid-glass toggle.
-   The bottom fade is short on purpose: the frost layer below
-   (.chat-main::after) makes text illegible before the mask makes it
-   invisible, so a long eased tail here would only re-introduce the grey
-   ghost-text look the frost replaced. */
-html[data-liquid-glass="on"] .panes {
-  --con-pane-vignette: linear-gradient(
-    to bottom,
-    transparent 0,
-    black 28px,
-    black calc(100% - 28px),
-    rgb(0 0 0 / 45%) calc(100% - 14px),
-    transparent 100%
-  );
-  -webkit-mask-image: var(--con-pane-vignette);
-  mask-image: var(--con-pane-vignette);
-}
-
-/* Top blur band — the top bar is a transparent overlay (style.css) and the
-   scroller extends beneath it, so message text physically passes under the
-   bar. This band blurs that underlaying text: full strength across the
-   48px header zone, then fading out over the next 48px so it blends into
-   the vignette instead of ending in a hard edge. An overlay on .chat-main
-   (not a .panes pseudo, which would scroll with the content), so it spans
-   the chat column only and never blurs the docked right panel; the header
-   itself stays filter-free so it never captures fixed-position menus.
-   Blur runs a step stronger than the .lg-glass dropdowns (14px vs 8px) —
-   the band is the one place the user asked to read as clearly blurred. */
-html[data-liquid-glass="on"] .chat-main::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 96px;
-  pointer-events: none;
-  z-index: 2;
-  -webkit-backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
-  backdrop-filter: blur(14px) saturate(170%) brightness(1.04);
-  -webkit-mask-image: linear-gradient(to bottom, black 0, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 0, transparent 100%);
-}
-
-/* Bottom frost layer — one continuous glass slab that the dock sits inside
-   of, instead of a discrete blur strip parked above it. Spans from the very
-   bottom of the layout up to 72px into the transcript: blur strength ramps
-   0 → full over that top strip (eased pixel stops, so the ramp thickness is
-   independent of dock height), then holds at full strength behind the dock,
-   where the chips and composer read as embedded in the frost. Anchored via
-   --dock-height (set inline from the measured dockHeight ref). Paints above
-   the transcript (z-index 2) and below the dock (.chat-dock is z-sticky);
-   the dock opts into transparency in liquid-glass mode so the frost shows
-   through. Perf: the dock region blurs only the static page background (the
-   transcript never extends under the dock — sibling layout), so the
-   per-frame raster cost of the backdrop-filter stays confined to the top
-   72px strip — the same cost class as the top band (style.css perf: WS-1A).
-   Same placement rule as the top band: on .chat-main, never on .panes
-   (a .panes pseudo would scroll with the content). The blur material is
-   owned by the shared band rule in style.css; this block keeps geometry
-   and the ramp mask only. */
-html[data-liquid-glass="on"] .chat-main::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: calc(var(--dock-height, 0px) + 72px);
-  pointer-events: none;
-  z-index: 2;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    rgb(0 0 0 / 20%) 20px,
-    rgb(0 0 0 / 55%) 44px,
-    black 72px
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    rgb(0 0 0 / 20%) 20px,
-    rgb(0 0 0 / 55%) 44px,
-    black 72px
-  );
-}
-
-/* With the header overlaid, clear its height at rest so the first message
-   and the load-older sentinel are not parked behind the bar; content still
-   scrolls under it. Only when the header actually renders (never on mobile
-   or the empty session, where the extra height would add a stray scrollbar). */
-html[data-liquid-glass="on"] .panes.has-header {
-  padding-top: var(--panel-head-h, 48px);
-}
-
 /* Chat tab layout: the chat column (header + message list + dock) sits in
    .chat-main; the right panel is a floating card positioned absolutely over
    it, so opening the panel shifts the transcript
@@ -2297,11 +2230,43 @@ html[data-liquid-glass="on"] .panes.has-header {
   position: relative;
 }
 
+/* The transcript fades out at its foot rather than ending at a hard edge
+   against the dock. This is upstream's vignette, applied as a mask on the
+   transcript instead of as a painted overlay. Upstream paints an overlay, which
+   works there because its page is one flat colour; here the ground is graded, so
+   a painted plate showed its own tone and its side edges against that ground. A
+   mask fades the content itself, so the ground behind it shows through and there
+   is no edge.
+   The band is 28px, not upstream's 72. Upstream's ramp rises out of the dock,
+   which it paints over the transcript's foot, so the band it needs is invisible.
+   Here the dock is a column of the layout and the pane ends at its top edge, so
+   the band is empty space the reader sees: leaving it at 72px put a 105px hole
+   between the last line and the composer. The transcript already keeps 33px clear
+   at its foot (`.chat`'s own 26px pad plus the last row's margin, measured), and
+   28px fits inside that, so no line is ever faded at rest and no gap is added.
+   The pane's only child is the transcript, and the floating "latest messages"
+   pill and the abort toast are siblings of the pane rather than children, so the
+   mask does not reach them. It is keyed to the dock's presence, so a session
+   with no transcript keeps its centred composer unfaded. */
+.panes.chat-scroll:has(~ .chat-dock) {
+  --fade: 28px;
+  --scroll-fade-foot: linear-gradient(
+    to bottom,
+    black calc(100% - var(--fade)),
+    rgb(0 0 0 / 70%) calc(100% - 20px),
+    rgb(0 0 0 / 30%) calc(100% - 11px),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--scroll-fade-foot);
+  mask-image: var(--scroll-fade-foot);
+}
+
 /* Chat reading column max-width + alignment. */
 .content-wrap {
   width: 100%;
   max-width: var(--read-max);
   min-height: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -2605,19 +2570,6 @@ html[data-liquid-glass="on"] .panes.has-header {
   z-index: 3;
 }
 .newmsg-pill:hover { background: var(--panel2); }
-/* Liquid glass: the pill floats over the bottom vignette/blur zone, so it
-   consumes the shared glass material from the consuming rule in style.css
-   (.newmsg-pill is on its selector list) with a denser tint than a dropdown
-   — faded moving text must not read through it. Sibling of the bands (not
-   nested), so the backdrop-filter is safe in Firefox and Chromium. */
-html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill {
-  --lg-tint: color-mix(in srgb, var(--panel) 68%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--panel) 68%, transparent);
-}
-html[data-liquid-glass="on"] .newmsg-pill.newmsg-pill:hover {
-  --lg-tint: color-mix(in srgb, var(--panel2) 78%, transparent);
-  --lg-tint-top: color-mix(in srgb, var(--panel2) 78%, transparent);
-}
 .pill-chevron {
   width: 12px;
   height: 12px;

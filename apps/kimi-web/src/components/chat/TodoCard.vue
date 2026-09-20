@@ -1,10 +1,12 @@
 <!-- apps/kimi-web/src/components/chat/TodoCard.vue -->
 <!-- Read-only todo list driven by the model's TodoList tool (latest full-list
      write wins). Rendered inside the dock panel: a current-progress
-     completion count with a thin progress bar on top, then each todo as a
-     frosted card (`.lg-frost` rows; plain raised surface when the liquid
-     glass toggle is off). Rows share StatusGlyph with the background
-     bash/subagent task lists so the three stay visually identical. -->
+     completion count with a thin progress bar on top, then each todo as a row.
+     The rows carry no material of their own — the dock panel they sit in takes
+     upstream's menu material (see the material note in style.css), so a second
+     blur here would nest a backdrop-filter inside it for nothing. Rows share
+     StatusGlyph with the background bash/subagent task lists so the three stay
+     visually identical. -->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';

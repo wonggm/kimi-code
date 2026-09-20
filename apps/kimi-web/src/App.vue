@@ -22,6 +22,7 @@ import MobileSettingsSheet from './components/mobile/MobileSettingsSheet.vue';
 import Onboarding from './components/settings/Onboarding.vue';
 import GlobalLoading from './components/GlobalLoading.vue';
 import DebugPanel from './debug/DebugPanel.vue';
+import GlassDefs from './components/ui/GlassDefs.vue';
 import { isTraceEnabled } from './debug/trace';
 import { useKimiWebClient } from './composables/useKimiWebClient';
 import { setLocale, type LocaleCode } from './i18n';
@@ -32,12 +33,10 @@ import { useAuthGate } from './composables/useAuthGate';
 import { usePageTitle } from './composables/usePageTitle';
 import { useSidebarLayout } from './composables/useSidebarLayout';
 import { useFilePreview } from './composables/useFilePreview';
-import { ensureGlassEngine } from './lib/glass/gl-renderer';
 import { useDetailPanel } from './composables/useDetailPanel';
 import { useRightPanel } from './composables/useRightPanel';
 import { useIsMobile } from './composables/useIsMobile';
 import { useMemoizedSwarmMembers } from './composables/useMemoizedSwarmMembers';
-import { useGlassRefraction } from './composables/useGlassRefraction';
 import type { SwarmMember } from './composables/swarmGroups';
 import ServerAuthDialog from './components/ServerAuthDialog.vue';
 import { initServerAuth, onAuthRequired } from './api/daemon/serverAuth';
@@ -46,7 +45,6 @@ import type { AppConfig, ManagedUsageResult, ThinkingLevel } from './api/types';
 import { effectiveThinkingLevel } from './lib/modelThinking';
 import { stripSkillPrefix } from './lib/slashCommands';
 import Button from './components/ui/Button.vue';
-import GlassDefs from './components/ui/GlassDefs.vue';
 import IconButton from './components/ui/IconButton.vue';
 import Icon from './components/ui/Icon.vue';
 import Spinner from './components/ui/Spinner.vue';
@@ -62,10 +60,6 @@ const authRequired = ref(false);
 let offAuthRequired: (() => void) | null = null;
 
 const client = useKimiWebClient();
-// Liquid-glass WebGL refraction fallback (Firefox/Safari; no-op on Blink).
-// The renderer is a module singleton — this only ties its lifecycle to the
-// mounted app (see lib/glass/gl-renderer.ts).
-onUnmounted(ensureGlassEngine());
 // When the server runs with `--dangerous-bypass-auth`, `/meta` advertises it
 // and we skip the token prompt entirely — there is no credential to enter.
 const showServerAuth = computed(
@@ -347,6 +341,12 @@ const {
 
 // Reference to ConversationPane so we can imperatively switch tabs
 const conversationPaneRef = ref<InstanceType<typeof ConversationPane> | null>(null);
+
+// Mobile top bar: the pane owns the transcript's scroll position, so it owns the
+// state that lifts the bar into its pill.
+const mobileHeadPill = computed<boolean>(
+  () => isMobile.value && conversationPaneRef.value?.headPill === true,
+);
 
 // Dialog visibility refs
 const showModelPicker = ref(false);
@@ -790,11 +790,6 @@ async function handleGenerateSessionTitle(
 // regular warning stack from client.exportSession.
 const exportToastVisible = ref(false);
 const exportToastDone = ref(false);
-const exportToastEl = ref<HTMLElement | null>(null);
-// WebGL rim-refraction fallback (Firefox/Safari): like the design-system toast,
-// this one rests over live content for seconds, so non-transient — the page
-// snapshot keeps refreshing underneath (see ui/Toast.vue).
-useGlassRefraction(exportToastEl, { transient: false });
 let exportToastTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => client.exportState.value,
@@ -883,8 +878,8 @@ function openPr(url: string): void {
 
 <template>
   <div class="app-shell">
-    <!-- SVG defs for the liquid-glass refraction layer (zero-footprint; see
-         components/ui/GlassDefs.vue). -->
+    <!-- SVG filters for the glass material's edge refraction (zero footprint;
+         see components/ui/GlassDefs.vue). -->
     <GlassDefs />
     <ServerAuthDialog v-if="showServerAuth" />
     <section v-if="showAuthGate" class="auth-page">
@@ -991,6 +986,7 @@ function openPr(url: string): void {
       :running="running"
       :branch="client.status.value.branch"
       :session-count="activeWorkspaceSessionCount"
+      :pill="mobileHeadPill"
       @open-switcher="showMobileSwitcher = true"
       @open-settings="showMobileSettings = true"
     />
@@ -1162,6 +1158,7 @@ function openPr(url: string): void {
       :color-scheme="client.colorScheme.value"
       :accent="client.accent.value"
       :ui-font-size="client.uiFontSize.value"
+      :liquid-glass="client.liquidGlass.value"
       :managed-provider-status="client.managedProviderStatus.value"
       :account-model="client.defaultModel.value"
       :plan-usage="planUsage"
@@ -1172,7 +1169,6 @@ function openPr(url: string): void {
       :notify-permission="client.notifyPermission.value"
       :sound="client.soundOnComplete.value"
       :conversation-toc="client.conversationToc.value"
-      :liquid-glass="client.liquidGlass.value"
       :wide-mode="client.wideMode.value"
       :lab-sidebar-tabs="client.labSidebarTabs.value"
       :config="client.config.value"
@@ -1183,12 +1179,12 @@ function openPr(url: string): void {
       @set-color-scheme="client.setColorScheme($event)"
       @set-accent="client.setAccent($event)"
       @set-ui-font-size="client.setUiFontSize($event)"
+      @set-liquid-glass="client.setLiquidGlass($event)"
       @set-notify="client.setNotifyOnComplete($event)"
       @set-notify-question="client.setNotifyOnQuestion($event)"
       @set-notify-approval="client.setNotifyOnApproval($event)"
       @set-sound="client.setSoundOnComplete($event)"
       @set-conversation-toc="client.setConversationToc($event)"
-      @set-liquid-glass="client.setLiquidGlass($event)"
       @set-wide-mode="client.setWideMode($event)"
       @set-lab-sidebar-tabs="client.setLabSidebarTabs"
       @update-config="handleUpdateConfig($event)"
@@ -1256,8 +1252,7 @@ function openPr(url: string): void {
     <Transition name="export-toast">
       <div
         v-if="exportToastVisible"
-        ref="exportToastEl"
-        class="export-toast lg-glass lg-lens"
+        class="export-toast"
         role="status"
         aria-live="polite"
       >
@@ -1313,6 +1308,7 @@ function openPr(url: string): void {
       :swarm-mode="client.swarmMode.value"
       :color-scheme="client.colorScheme.value"
       :ui-font-size="client.uiFontSize.value"
+      :liquid-glass="client.liquidGlass.value"
       :auth-ready="client.authReady.value"
       :account-model="client.defaultModel.value"
       :plan-usage="planUsage"
@@ -1331,6 +1327,7 @@ function openPr(url: string): void {
       @set-color-scheme="client.setColorScheme($event)"
       @set-ui-font-size="client.setUiFontSize($event)"
       @set-conversation-toc="client.setConversationToc($event)"
+      @set-liquid-glass="client.setLiquidGlass($event)"
       @update-config="handleUpdateConfig($event)"
       @login="() => { showMobileSettings = false; openLogin(); }"
       @logout="client.logout"
@@ -1477,6 +1474,14 @@ function openPr(url: string): void {
   /* Floats over the macOS-desktop window-drag header; keep it clickable. */
   -webkit-app-region: no-drag;
 }
+/* While the header is the floating pill, the toggle centres on the pill rather
+   than on the 48px band the pill sits inside: the band's own centre leaves it
+   2px above the pill's. Same formula as the right-panel toggle, and only the
+   vertical position moves; the macOS variant's `left` and its disabled
+   animation stay as they are. */
+html[data-liquid-glass="on"] .sidebar-toggle-btn {
+  top: calc(var(--lg-head-inset) + (var(--lg-head-height) - var(--icon-button-sm)) / 2);
+}
 /* macOS desktop (hidden title bar): resident beside the floating traffic
    lights (green light's right edge ≈ 68px; 72 keeps a gap that matches the
    lights' own 8px rhythm); no entrance animation since it never appears. */
@@ -1513,7 +1518,7 @@ function openPr(url: string): void {
 }
 
 /* Top-center export toast (success / in-flight). Fixed so it floats above the
-   whole app; lg-glass treatment keeps it on the design-system float language. */
+   whole app. */
 .export-toast {
   position: fixed;
   top: 18px;
@@ -1557,15 +1562,17 @@ function openPr(url: string): void {
    content clears the floating sidebar toggle (.sidebar-toggle-btn) — and the
    macOS traffic lights on desktop builds. Animated in step with the sidebar
    width transition. Cross-component rule (ChatHeader renders the header), so
-   it lives in this global block. */
+   it lives in this global block. The transition is the padding follow alone:
+   the pill's shape is fixed, so its box never moves while the reader scrolls.
+   With the material off the padding follow is all there ever was. */
 .app:not(.mobile) .chat-header {
   transition: padding-left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .app.sidebar-collapsed .chat-header {
-  padding-left: 52px;
+  padding-left: 56px;
 }
 .app.sidebar-collapsed.macos-desktop .chat-header {
-  padding-left: 108px;
+  padding-left: 112px;
 }
 
 /* Right-panel toggle (desktop): floats over the top-right corner — the panel's
@@ -1583,9 +1590,17 @@ function openPr(url: string): void {
   /* Floats over the macOS-desktop window-drag header; keep it clickable. */
   -webkit-app-region: no-drag;
 }
+/* While the header is the floating pill, the toggle centres on the pill rather
+   than on the 48px band the pill sits inside: the band's own centre leaves it
+   2px above the pill's. With the right panel open the toggle floats over the
+   panel's tab strip, which still fills the band, so that state keeps the band's
+   centre. */
+html[data-liquid-glass="on"] .app:not(.right-panel-open) .right-panel-toggle {
+  top: calc(var(--lg-head-inset) + (var(--lg-head-height) - var(--icon-button-sm)) / 2);
+}
 .app:not(.mobile) .panel-tab-bar,
 .app:not(.mobile):not(.right-panel-open) .chat-header {
-  padding-right: calc(var(--space-4) + var(--icon-button-sm) + var(--space-2));
+  padding-right: calc(var(--space-4) + var(--icon-button-sm) + var(--space-2) - var(--space-1));
 }
 .app:not(.mobile) .chat-header .ch-panel,
 .app:not(.mobile) .empty-panel-btn,

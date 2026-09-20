@@ -25,8 +25,11 @@ const props = withDefaults(
     branch?: string;
     /** Number of sessions in the active workspace (sub-line). */
     sessionCount?: number;
+    /** True while the transcript sits away from both of its ends. The bar lifts
+     *  out of its flat band into the floating pill; the material stays on. */
+    pill?: boolean;
   }>(),
-  { workspace: null, sessionTitle: '', running: false, branch: '', sessionCount: 0 },
+  { workspace: null, sessionTitle: '', running: false, branch: '', sessionCount: 0, pill: false },
 );
 
 const emit = defineEmits<{
@@ -50,7 +53,7 @@ const statusText = computed<string>(() =>
 </script>
 
 <template>
-  <div class="topbar">
+  <div class="topbar" :class="{ 'is-pill': pill }">
     <span class="wsq">{{ chip }}</span>
 
     <button
@@ -92,7 +95,7 @@ const statusText = computed<string>(() =>
   gap: 10px;
   /* Grow the bar by the top inset so the 50px content row stays below the
      status bar / notch in standalone PWA mode and landscape. */
-  height: calc(50px + var(--safe-top));
+  height: calc(var(--mobile-topbar-h) + var(--safe-top));
   flex: none;
   padding: var(--safe-top) max(12px, var(--safe-right)) 0 max(12px, var(--safe-left));
   border-bottom: 1px solid var(--color-line);

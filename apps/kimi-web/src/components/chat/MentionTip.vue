@@ -9,7 +9,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { formatCapturedAt, browserCaptureTargetLine, type BrowserCapture, type BrowserReference } from '../../lib/browserReference';
-import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import Icon from '../ui/Icon.vue';
 import type { MentionKind } from '../../lib/mentionTokens';
 
@@ -69,8 +68,6 @@ const pathParts = computed(() => {
 });
 
 const rootRef = ref<HTMLElement | null>(null);
-// WebGL rim-refraction fallback (Firefox/Safari) for the hover bubble.
-useGlassRefraction(rootRef);
 const pos = ref({ top: 0, left: 0 });
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -146,7 +143,7 @@ const browserSource = computed(() => {
 <template>
   <div
     ref="rootRef"
-    class="mention-tip lg-glass lg-lens"
+    class="mention-tip"
     role="tooltip"
     :style="tipStyle"
     @mouseenter="onStay"

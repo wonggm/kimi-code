@@ -17,7 +17,7 @@ onBeforeUnmount(() => setMenuOpen(false));
 </script>
 
 <template>
-  <div ref="el" class="ui-menu lg-glass" role="menu">
+  <div ref="el" class="ui-menu" role="menu">
     <slot />
   </div>
 </template>
@@ -29,7 +29,10 @@ onBeforeUnmount(() => setMenuOpen(false));
   background: var(--color-surface-raised);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  /* Upstream's menu shadow, the one its own `.ui-menu` carries. It is three
+     layers and it is softer than the small-control shadow, because a menu lifts
+     further off the page than a button does. */
+  box-shadow: var(--shadow-menu);
   display: flex;
   flex-direction: column;
 }

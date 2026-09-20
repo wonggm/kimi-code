@@ -18,7 +18,6 @@ import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import type { DetachTaskTarget } from '../../lib/detachTarget';
 import Composer from './Composer.vue';
 import GoalPanel from './GoalPanel.vue';
-import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
@@ -190,12 +189,6 @@ const panelEl = computed<HTMLElement | null>(() => {
 // Upstream's `has-popup` marks the dock while any of its popups is up, the
 // composer's own menus included.
 const composerPopup = ref(false);
-// WebGL rim-refraction fallback (Firefox/Safari). Registered transient (the
-// composable's default, like ui/Menu): the panel closes on any outside
-// mousedown, so freezing the shared page snapshot while it is up is exactly the
-// menu behaviour the flag exists for. The element is v-if'd, so its ref
-// appearing/disappearing is the mount signal.
-useGlassRefraction(panelEl);
 
 /** The same pill toggles its panel shut; another pill swaps the body. The panel
  *  grows from the clicked pill, so its centre is read off the button here —
@@ -606,28 +599,28 @@ function clickWorkbar(id: DockPanelKind, event?: MouseEvent): void {
   background: var(--color-bg);
   z-index: var(--z-sticky);
 }
+/* The transcript's foot fade lives on the pane in `ConversationPane.vue`, not
+   here: it is a mask on the scroller, so it is anchored to the pane's foot
+   rather than to this dock's box. This dock paints no vignette of its own. */
 .chat-dock.align-center { margin-left: auto; margin-right: auto; }
 .chat-dock.align-left { margin-left: 0; margin-right: auto; }
 .chat-dock.align-mobile { max-width: none; }
 
-/* Liquid glass: drop the opaque background so the frost layer behind the
-   dock (ConversationPane's .chat-main::after) shows through and the chips
-   and composer read as embedded in one glass slab. Cards in the dock
-   (question / approval / todo panel) carry their own backgrounds. */
-html[data-liquid-glass="on"] .chat-dock.chat-dock {
-  background: transparent;
-}
-
 /* Icon-only workbar squares above the composer. Each square is a small
-   band-tier glass pill (.lg-band — 14px blur, embedded look) replacing the
-   old labeled work pills. Upstream class `ptb-` is kept for parity with the
-   screenshot evidence. */
+   pill replacing the old labeled work pills. Upstream class `ptb-` is kept
+   for parity with the screenshot evidence. */
 .dock-workbar {
   position: relative;
   display: flex;
   align-items: center;
+  /* Upstream's own geometry for this row: its chips start 16px inside the
+     composer card's left edge (`--space-4` on top of the dock's own inset),
+     rather than flush with it, and the row wraps (its declaration, without
+     which the labelled chips spill past the card's right edge between 641px
+     and 920px). */
+  flex-wrap: wrap;
   gap: 6px;
-  padding: 4px var(--dock-inline-right) 2px var(--dock-inline-left);
+  padding: 4px calc(var(--dock-inline-right) + var(--space-4)) 2px calc(var(--dock-inline-left) + var(--space-4));
 }
 
 /* Dock pills. Upstream's container is the same `dock-workbar`, but its children

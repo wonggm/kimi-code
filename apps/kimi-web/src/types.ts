@@ -366,7 +366,20 @@ export interface ConversationStatus {
   modelId: string;
   ctxUsed: number;
   ctxMax: number;
-  cacheHitRate?: number;
+  cacheReporting?: 'none' | 'reads' | 'reads+writes';
+  /** Cache hit rate on the last model request, in percent. Absent when the
+   *  provider reports no cache information. */
+  cacheHitRateLast?: number;
+  /** Cache hit rate over the recent window, in percent. Drives the health
+   *  colour, since one good request does not mean a healthy cache. */
+  cacheHitRateRecent?: number;
+  /** How many requests the recent rate covers. */
+  cacheRecentRequests?: number;
+  /** Session-wide cache hit rate, in percent. Absent when unreported. */
+  cacheHitRateSession?: number;
+  /** Session totals behind the rates, for the status panel breakdown. */
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
   permission: 'manual' | 'auto' | 'yolo';
   branch: string;
   /** Working directory of the active session */

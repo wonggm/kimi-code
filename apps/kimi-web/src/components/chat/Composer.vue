@@ -26,7 +26,6 @@ import { useAttachmentUpload, type Attachment } from '../../composables/useAttac
 import { useIsMobile } from '../../composables/useIsMobile';
 import { clampMenuPlacement } from '../../composables/useViewportClamp';
 import { trackMenuOpen } from '../../composables/useMenuOpen';
-import { useGlassRefraction } from '../../composables/useGlassRefraction';
 import { openFileAttachment } from '../../lib/openFileAttachment';
 import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import Spinner from '../ui/Spinner.vue';
@@ -289,13 +288,15 @@ function onBarBlur(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Floating-panel viewport clamping — the model dropdown, slash panel and
-// @-mention panel all open upward from the composer, which sits at the bottom
-// of the dock; the empty-session composer renders mid-pane, so each panel is
-// measured against its anchor and flips below (or clamps into the viewport)
-// when the space above is too small. Slash / Mention keep their wrap-relative
-// absolute positioning (only the flip + edge insets are injected); the model
-// dropdown is clamped through the shared placement helper.
+// Floating-panel viewport clamping — the model dropdown, the permission
+// dropdown, the slash panel and the @-mention panel all open upward from the
+// composer, which sits at the bottom of the dock; the empty-session composer
+// renders mid-pane, so each panel is measured against its anchor and flips below
+// (or clamps into the viewport) when the space above is too small. Slash /
+// Mention keep their wrap-relative absolute positioning (only the flip + edge
+// insets are injected); the two dropdowns are clamped through the shared
+// placement helper, and being teleported to <body> they are placed in viewport
+// coordinates outright.
 // ---------------------------------------------------------------------------
 
 const cinWrapRef = ref<HTMLElement | null>(null);
@@ -369,14 +370,11 @@ watch(
   { flush: 'post' },
 );
 
-// Model dropdown — right-aligned to the toolbar (the historical `right: 10px`
-// placement), clamped into the viewport horizontally and flipped below when the
-// space above the toolbar is too small.
+// Model dropdown — teleported to <body> and placed in viewport coordinates,
+// clamped horizontally and flipped below when the space above the toolbar is
+// too small.
 const modelDropdownRef = ref<HTMLElement | null>(null);
-// The composer card itself is an always-on lens surface: non-transient, so
-// the page snapshot keeps refreshing while it refracts.
 const cardRef = ref<HTMLElement | null>(null);
-useGlassRefraction(cardRef, { transient: false });
 const modelDropdownStyle = ref<Record<string, string>>({});
 
 function positionModelDropdown(): void {
@@ -392,15 +390,20 @@ function positionModelDropdown(): void {
   const pillRect = bar.querySelector('.model-pill')?.getBoundingClientRect() ?? barRect;
   const anchor = new DOMRect(pillRect.left + pillRect.width / 2 - width / 2, pillRect.top, width, pillRect.height);
   const { top, left, placement } = clampMenuPlacement(anchor, width, height, 'above', { gap: 14, margin: 8 });
+  // These are already viewport coordinates: the menu is teleported to <body>
+  // and position:fixed, so that is its containing block. The card-relative
+  // version had to subtract the toolbar's own top / left here because the
+  // toolbar was the containing block; that subtraction now moves the menu up by
+  // the toolbar's top offset and left by its left offset.
   const style: Record<string, string> = {
-    top: `${Math.round(top - barRect.top)}px`,
+    top: `${Math.round(top)}px`,
     bottom: 'auto',
-    left: `${Math.round(left - barRect.left)}px`,
+    left: `${Math.round(left)}px`,
   };
   if (placement === 'above' && top > pillRect.top - 14 - height + 0.5) {
     // The helper relaxed the top clamp (space above was smaller than the
     // margin) — keep the panel glued to the pill's edge instead of drifting.
-    style.top = `${Math.round(pillRect.top - barRect.top - 14 - height)}px`;
+    style.top = `${Math.round(pillRect.top - 14 - height)}px`;
   }
   modelDropdownStyle.value = style;
 }
@@ -421,6 +424,65 @@ function syncModelDropdownViewport(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Permission dropdown placement. It used to be laid out entirely by CSS
+// (`.perm-dropdown { left: 10px; bottom: calc(100% + 4px) }` against the
+// toolbar), which is why it needed no measuring: the toolbar was its containing
+// block and carried it through every move of the card. Teleported to <body>
+// (see the model dropdown), neither offset has a containing block left, so both
+// are recomputed in viewport space on open: the same 10px in from the card's
+// content edge, and the same foot, four px above the toolbar's top edge. That
+// last number is where `100% + 4px` resolved, since `100%` was the toolbar's own
+// height; the toolbar's 4px top pad then sits between that edge and the pill, so
+// the panel's foot ends 8px above the trigger.
+// Anchored to the foot rather than the top because the panel's height is set by
+// the description column the composer measures (the widest of the three
+// descriptions), so it is only known once the panel exists.
+// ---------------------------------------------------------------------------
+
+const PERM_MENU_LEFT_INSET = 10;
+const PERM_MENU_GAP = 4;
+const permDropdownRef = ref<HTMLElement | null>(null);
+const permDropdownPos = ref<Record<string, string>>({});
+
+function positionPermDropdown(): void {
+  const card = cardRef.value;
+  const bar = toolbarRef.value;
+  const menu = permDropdownRef.value;
+  if (!card || !bar || !menu) return;
+  const cardRect = card.getBoundingClientRect();
+  const barRect = bar.getBoundingClientRect();
+  const width = menu.offsetWidth;
+  // clientLeft skips the card's own hairline, so the left edge lands where the
+  // toolbar's did (`left: 10px` resolved against the toolbar's padding box).
+  const anchor = new DOMRect(
+    cardRect.left + card.clientLeft + PERM_MENU_LEFT_INSET,
+    barRect.top,
+    width,
+    barRect.height,
+  );
+  const { left } = clampMenuPlacement(anchor, width, menu.offsetHeight, 'above', { gap: PERM_MENU_GAP, margin: 8 });
+  permDropdownPos.value = {
+    left: `${left}px`,
+    bottom: `${Math.round(window.innerHeight - barRect.top + PERM_MENU_GAP)}px`,
+  };
+}
+
+let permDropdownObserver: ResizeObserver | null = null;
+function syncPermDropdownViewport(): void {
+  const menu = permDropdownRef.value;
+  if (permDropdownOpen.value && menu) {
+    if (!permDropdownObserver) {
+      permDropdownObserver = new ResizeObserver(() => positionPermDropdown());
+      permDropdownObserver.observe(menu);
+    }
+  } else {
+    permDropdownObserver?.disconnect();
+    permDropdownObserver = null;
+  }
+  positionPermDropdown();
+}
+
+// ---------------------------------------------------------------------------
 // Model pill icon-only collapse — in very narrow rows the model label gives
 // way to a bare chevron pill (hover tooltip still shows model + effort). The
 // pill's natural widths are measured while expanded; the collapse flips once
@@ -429,7 +491,20 @@ function syncModelDropdownViewport(): void {
 // ---------------------------------------------------------------------------
 
 const MODEL_PILL_COLLAPSE_SLACK = 16;
+// The meter gives way before the model label. Measured on the live app the badge
+// held its full 67px at every width down to 760px while the label was squeezed
+// from a 19px shortfall to 144px, so the row was shedding the text that
+// identifies the session and keeping a number that reads 99% for the whole
+// session. Neither of the toolbar's own signals works here: its natural widths
+// never exceed the row because the flex children shrink rather than overflow,
+// and plain truncation is constant because the app caps the label at 170px even
+// on a wide screen. The label's shortfall against its own natural width is the
+// signal that varies, so the two thresholds below sit either side of the 19px
+// baseline the cap itself produces.
+const CACHE_METER_HIDE_SHORTFALL = 48;
+const CACHE_METER_RESTORE_SHORTFALL = 26;
 const modelPillCollapsed = ref(false);
+const cacheMeterHidden = ref(false);
 let toolbarNaturalLeft = 0;
 let toolbarNaturalRight = 0;
 let toolbarAvailable = 0;
@@ -443,6 +518,34 @@ function measureToolbarWidths(): void {
   toolbarAvailable = toolbar.clientWidth;
   toolbarNaturalLeft = left?.scrollWidth ?? 0;
   toolbarNaturalRight = right?.scrollWidth ?? 0;
+}
+
+/** Shed the meter once the model label is squeezed beyond the app's own cap, and
+ *  bring it back only when the label is back at that baseline. One threshold per
+ *  direction, with a dead zone between them: a single threshold would let the
+ *  badge reappear and immediately re-squeeze the label it just yielded to.
+ *
+ *  Restoring costs a second measurement. The badge is wider than what the
+ *  restore measurement saw (the average token joins it when the cache is
+ *  unhealthy), so the state that follows a restore has to be validated on the
+ *  next frame — otherwise a widened badge sits squeezing the label until the
+ *  next window resize. */
+function updateCacheMeterVisibility(): void {
+  const toolbar = toolbarRef.value;
+  if (!toolbar) return;
+  const name = toolbar.querySelector<HTMLElement>('.model-pill .mp-name');
+  if (!name) return;
+  const shortfall = name.scrollWidth - name.clientWidth;
+  if (!cacheMeterHidden.value) {
+    if (shortfall > CACHE_METER_HIDE_SHORTFALL) {
+      cacheMeterHidden.value = true;
+    }
+    return;
+  }
+  if (shortfall <= CACHE_METER_RESTORE_SHORTFALL) {
+    cacheMeterHidden.value = false;
+    void nextTick(refitToolbar);
+  }
 }
 
 function updateModelPillCollapse(): void {
@@ -471,19 +574,25 @@ const modelPillLabel = computed(() => {
   return thinkingSuffix.value ? `${model} ${thinkingSuffix.value}` : model;
 });
 
-function onComposerResize(): void {
+function refitToolbar(): void {
   updateModelPillCollapse();
+  updateCacheMeterVisibility();
+}
+
+function onComposerResize(): void {
+  refitToolbar();
   if (slashOpen.value || mentionOpen.value) {
     syncAutocompleteViewport('slash');
     syncAutocompleteViewport('mention');
   }
   if (dropdownOpen.value) void nextTick(positionModelDropdown);
+  if (permDropdownOpen.value) void nextTick(positionPermDropdown);
 }
 
 // Model changes can lengthen/shorten the pill label — re-fit the collapse
 // decision with the next frame.
 watch(() => props.status?.model, () => {
-  void nextTick(updateModelPillCollapse);
+  void nextTick(refitToolbar);
 });
 
 // ---------------------------------------------------------------------------
@@ -907,15 +1016,26 @@ const dropdownOpen = ref(false);
 const permDropdownOpen = ref(false);
 const toolbarRef = ref<HTMLElement | null>(null);
 
-// The model dropdown is clamped (and watched for size) only while it is open;
-// the pill-collapse measurement runs on the toolbar. Both watchers sit here,
-// after their refs exist.
+// The model dropdown and the permission dropdown are clamped (and watched for
+// size) only while open; the pill-collapse measurement runs on the toolbar.
+// These watchers sit here, after their refs exist. The permission dropdown needs
+// its own observer because its width follows the description column, which the
+// composer re-measures after mount and on a locale change.
 watch(dropdownOpen, () => {
   if (dropdownOpen.value) {
     void nextTick(syncModelDropdownViewport);
   } else {
     modelDropdownObserver?.disconnect();
     modelDropdownObserver = null;
+  }
+});
+
+watch(permDropdownOpen, () => {
+  if (permDropdownOpen.value) {
+    void nextTick(syncPermDropdownViewport);
+  } else {
+    permDropdownObserver?.disconnect();
+    permDropdownObserver = null;
   }
 });
 
@@ -963,7 +1083,14 @@ function onDocClick(e: MouseEvent): void {
   // the row would silently do nothing. The sheet dismisses itself instead
   // (scrim / grab handle / Escape), which routes back through closeDropdown().
   if (isMobile.value && dropdownOpen.value) return;
-  if (toolbarRef.value && !toolbarRef.value.contains(e.target as Node)) {
+  // The two dropdowns are teleported to <body> too, so a press on one of their
+  // rows is no longer inside the toolbar either, and the same trap applies: this
+  // capture-phase close would unmount the row before its own handler ran. They
+  // count as inside their own trigger's control; their rows close the menu
+  // themselves (selectModel / choosePermission).
+  const target = e.target as Node;
+  if (modelDropdownRef.value?.contains(target) || permDropdownRef.value?.contains(target)) return;
+  if (toolbarRef.value && !toolbarRef.value.contains(target)) {
     closeDropdown();
     closePermDropdown();
   }
@@ -989,6 +1116,60 @@ const ctxTooltip = computed(() => {
   const max = formatTokens(props.status?.ctxMax ?? 0);
   return t('status.ctxTooltip', { used, max, pct: pct.value });
 });
+
+// Cache meter. The engine scores it, so the client only formats: `reporting`
+// says whether the provider sends cache data at all, and 'none' must hide the
+// readout rather than claim a zero rate. A genuine 0 does render.
+//
+// The badge carries one figure: the rolling window over the last 20 requests.
+// That is the health question the meter answers, and one rebuilt prefix moves
+// it by a few points instead of repainting the badge. The last request and the
+// session figure stay in the hover tooltip, where a reader who wants them goes.
+const CACHE_GOOD_PERCENT = 95;
+const CACHE_MID_PERCENT = 80;
+const cacheRate = computed(
+  () =>
+    props.status?.cacheHitRateRecent ??
+    props.status?.cacheHitRateLast ??
+    props.status?.cacheHitRateSession,
+);
+const cacheLast = computed(
+  () => props.status?.cacheHitRateLast ?? props.status?.cacheHitRateSession,
+);
+const cacheRecent = computed(
+  () => props.status?.cacheHitRateRecent ?? props.status?.cacheHitRateSession,
+);
+const showCache = computed(
+  () =>
+    cacheRate.value !== undefined &&
+    (props.status?.cacheReporting === 'reads' || props.status?.cacheReporting === 'reads+writes'),
+);
+const cacheBand = computed(() => {
+  const rate = cacheRate.value ?? 0;
+  if (rate >= CACHE_GOOD_PERCENT) return 'is-good';
+  return rate >= CACHE_MID_PERCENT ? 'is-mid' : 'is-low';
+});
+const cacheTooltip = computed(() => {
+  if (!showCache.value) return '';
+  const parts = [
+    t('status.cacheTooltip', {
+      last: (cacheLast.value ?? 0).toFixed(2),
+      recent: (cacheRecent.value ?? 0).toFixed(2),
+      count: String(props.status?.cacheRecentRequests ?? 0),
+      session: (props.status?.cacheHitRateSession ?? 0).toFixed(2),
+    }),
+  ];
+  if (props.status?.cacheReporting === 'reads') parts.push(t('status.cacheReadsOnly'));
+  return parts.join(' ');
+});
+const cacheText = computed(() => `${(cacheRate.value ?? 0).toFixed(2)}%`);
+
+// The measured row keeps the meter only while it has room for the model label
+// too; see updateModelPillCollapse.
+const showCacheMeter = computed(() => showCache.value && !cacheMeterHidden.value);
+const ctxGroupLabel = computed(() =>
+  showCacheMeter.value ? `${ctxTooltip.value} ${cacheTooltip.value}` : ctxTooltip.value,
+);
 
 const showCompact = computed(() => pct.value >= 80);
 
@@ -1116,11 +1297,16 @@ function toggleAddMenu(): void {
       // right: 0` inside the card, whose box is border-box with a 1px border) —
       // so the panel copies the card's content-box left edge and width, not its
       // border box, which would be 2px wider.
+      // The vertical anchor is the card's top edge too (`bottom: calc(100% +
+      // var(--space-2))` on the card), not the trigger's: anchoring on the
+      // trigger left the panel's foot 71px below the card's top, so it covered
+      // the card instead of floating above it. The 8px literal is `--space-2`
+      // resolved, since an inline style cannot read a custom property.
       const cardEl = cardRef.value;
       const card = cardEl?.getBoundingClientRect();
       const style: Record<string, string> = {
         left: `${Math.round((card?.left ?? r.left) + (cardEl?.clientLeft ?? 0))}px`,
-        bottom: `${Math.round(window.innerHeight - r.top + 8)}px`,
+        bottom: `${Math.round(window.innerHeight - (card?.top ?? r.top) + 8)}px`,
       };
       if (cardEl) style.width = `${Math.round(cardEl.clientWidth)}px`;
       addMenuStyle.value = style;
@@ -1260,18 +1446,18 @@ onMounted(() => {
   scheduleMenuDescriptionMeasure();
   void document.fonts?.ready.then(scheduleMenuDescriptionMeasure);
   void document.fonts?.ready.then(() => measureWmPill());
-  // Toolbar measurement: re-fit the model pill's collapse decision on any
-  // toolbar resize, window resize, model change, or late font load (label
-  // widths are font-dependent).
+  // Toolbar measurement: re-fit the model pill's collapse decision and the cache
+  // meter's visibility on any toolbar resize, window resize, model change, or
+  // late font load (label widths are font-dependent).
   const toolbar = toolbarRef.value;
   if (toolbar && typeof ResizeObserver !== 'undefined') {
-    toolbarObserver = new ResizeObserver(() => updateModelPillCollapse());
+    toolbarObserver = new ResizeObserver(() => refitToolbar());
     toolbarObserver.observe(toolbar);
   }
-  updateModelPillCollapse();
+  refitToolbar();
   window.addEventListener('resize', onComposerResize);
   void document.fonts?.ready.then(() => {
-    updateModelPillCollapse();
+    refitToolbar();
     if (dropdownOpen.value) void nextTick(positionModelDropdown);
   });
 });
@@ -1288,6 +1474,8 @@ onUnmounted(() => {
   menuResizeObservers.clear();
   modelDropdownObserver?.disconnect();
   modelDropdownObserver = null;
+  permDropdownObserver?.disconnect();
+  permDropdownObserver = null;
 });
 
 function choosePermission(mode: PermissionMode): void {
@@ -1351,7 +1539,7 @@ function selectModel(modelId: string): void {
       />
     </div>
 
-    <div v-if="previewAttachment" class="att-lightbox lg-scrim" @click.self="closeAttachmentPreview">
+    <div v-if="previewAttachment" class="att-lightbox" @click.self="closeAttachmentPreview">
       <div class="att-lightbox-card">
         <Tooltip :text="t('model.close')">
           <button
@@ -1374,7 +1562,7 @@ function selectModel(modelId: string): void {
     </div>
 
     <!-- Main composer card -->
-    <div ref="cardRef" class="composer-card lg-frost lg-lens">
+    <div ref="cardRef" class="composer-card">
       <!-- Input row with popup menus -->
       <div
         ref="cinWrapRef"
@@ -1497,7 +1685,7 @@ function selectModel(modelId: string): void {
           <div v-if="status" ref="addRef" class="add">
             <Tooltip :text="t('composer.addMenu')">
               <IconButton
-                class="composer-attach lg-glass"
+                class="composer-attach"
                 size="md"
                 :label="t('composer.addMenu')"
                 :class="{ open: addOpen }"
@@ -1509,14 +1697,16 @@ function selectModel(modelId: string): void {
               </IconButton>
             </Tooltip>
 
-            <!-- Teleported to body: position:fixed coords are viewport-based, and
-                 the card's backdrop-filter would otherwise become the containing
-                 block, throwing the menu off to the wrong position. -->
+            <!-- Teleported to body: position:fixed coords are viewport-based, so
+                 the card must not be the containing block, and (once the caret
+                 is in the card) the card's own backdrop-filter would make it a
+                 filter root, leaving a descendant's filter nothing to read. The
+                 two dropdowns below ride the same rule. -->
             <Teleport to="body">
               <div
                 v-if="addOpen && !isMobile"
                 ref="addMenuRef"
-                class="add-menu lg-glass"
+                class="add-menu"
                 :style="addMenuStyle"
                 @click.stop
                 @keydown="onAddKeydown"
@@ -1548,7 +1738,7 @@ function selectModel(modelId: string): void {
           <!-- Permission pill — click to open dropdown -->
           <span
             v-if="status"
-            class="perm-pill lg-glass"
+            class="perm-pill"
             :class="['perm-' + status.permission, { open: permDropdownOpen }]"
             role="button"
             tabindex="0"
@@ -1564,34 +1754,40 @@ function selectModel(modelId: string): void {
             <span class="perm-pill-label">{{ permLabel }}</span>
           </span>
 
-          <!-- Permission dropdown — anchored to the toolbar left side -->
-          <div
-            v-if="permDropdownOpen && status"
-            class="ui-menu perm-dropdown lg-glass"
-            :style="permissionMenuStyle"
-            role="menu"
-            @click.stop
-          >
-            <button
-              v-for="opt in PERM_MODES"
-              :key="opt.mode"
-              type="button"
-              class="ui-menu-item ui-menu-item--md pd-row"
-              :class="{ 'is-active': opt.mode === status.permission, 'is-current': opt.mode === status.permission }"
-              role="menuitemradio"
-              :aria-checked="opt.mode === status.permission"
-              @click="choosePermission(opt.mode)"
+          <!-- Permission dropdown. Teleported to body and fixed (like the add
+               menu above), so it blurs the page rather than the inside of the
+               composer card; positionPermDropdown supplies the viewport
+               coordinates, permissionMenuStyle the measured description column. -->
+          <Teleport to="body">
+            <div
+              v-if="permDropdownOpen && status"
+              ref="permDropdownRef"
+              class="ui-menu perm-dropdown"
+              :style="[permissionMenuStyle, permDropdownPos]"
+              role="menu"
+              @click.stop
             >
-              <span class="pd-icon"><Icon :name="opt.icon" size="md" :style="{ color: opt.rowColor }" /></span>
-              <span class="pd-info">
-                <span class="pd-name" :style="{ color: opt.rowColor }">{{ t(opt.labelKey) }}</span>
-                <span class="pd-desc">{{ t(opt.descKey) }}</span>
-              </span>
-              <span class="pd-check">
-                <Icon v-if="opt.mode === status.permission" name="check" size="sm" :style="{ color: 'var(--color-accent)' }" />
-              </span>
-            </button>
-          </div>
+              <button
+                v-for="opt in PERM_MODES"
+                :key="opt.mode"
+                type="button"
+                class="ui-menu-item ui-menu-item--md pd-row"
+                :class="{ 'is-active': opt.mode === status.permission, 'is-current': opt.mode === status.permission }"
+                role="menuitemradio"
+                :aria-checked="opt.mode === status.permission"
+                @click="choosePermission(opt.mode)"
+              >
+                <span class="pd-icon"><Icon :name="opt.icon" size="md" :style="{ color: opt.rowColor }" /></span>
+                <span class="pd-info">
+                  <span class="pd-name" :style="{ color: opt.rowColor }">{{ t(opt.labelKey) }}</span>
+                  <span class="pd-desc">{{ t(opt.descKey) }}</span>
+                </span>
+                <span class="pd-check">
+                  <Icon v-if="opt.mode === status.permission" name="check" size="sm" :style="{ color: 'var(--color-accent)' }" />
+                </span>
+              </button>
+            </div>
+          </Teleport>
 
         </div>
 
@@ -1604,21 +1800,28 @@ function selectModel(modelId: string): void {
                lives in the tooltip. The ring is aria-hidden, so the trigger
                exposes those numbers via aria-label; focusable so keyboard and
                switch-control users reach the same tooltip hover users see. -->
-          <Tooltip :text="ctxTooltip">
+          <Tooltip :text="ctxGroupLabel">
             <span
               v-if="status && !hideContext"
               class="ctx-group"
               role="img"
               tabindex="0"
-              :aria-label="ctxTooltip"
+              :aria-label="ctxGroupLabel"
             >
               <ContextRing :pct="pct" />
               <span class="ctx-num">{{ formatTokens(status.ctxUsed) }}</span>
               <!-- The separator belongs to the cache readout: with no cache rate
                    reported it used to hang after the token count with nothing
                    following it. -->
-              <span v-if="status?.cacheHitRate" class="ctx-sep">|</span>
-              <span v-if="status?.cacheHitRate" class="cache-badge" :title="`${status.cacheHitRate.toFixed(2)}% cache hit rate`">{{ status.cacheHitRate.toFixed(2) }}%</span>
+              <span v-if="showCacheMeter" class="ctx-sep">|</span>
+              <span
+                v-if="showCacheMeter"
+                class="cache-badge"
+                :class="cacheBand"
+              >
+                <Icon name="refresh" size="sm" :style="{ color: 'var(--color-text-faint)' }" />
+                {{ cacheText }}
+              </span>
             </span>
           </Tooltip>
 
@@ -1629,7 +1832,7 @@ function selectModel(modelId: string): void {
             <button
               v-if="status"
               type="button"
-              class="model-pill lg-glass"
+              class="model-pill"
               :class="{ open: dropdownOpen, 'icon-only': modelPillCollapsed }"
               :aria-label="modelPillLabel"
               aria-haspopup="menu"
@@ -1644,10 +1847,8 @@ function selectModel(modelId: string): void {
           <!-- Send + stop — one toolbar slot. Desktop: `display: contents`, so
                the two keep their own slots exactly as before (stop only visible
                while running). Mobile: both stack in one cell and cross-fade.
-               No `lg-glass` on either: they are solid discs, not chips, and
-               upstream draws them opaque — the glass wash overrode the disabled
-               fill (upstream's faint neutral wash) with a full-strength accent
-               one, so a disabled Send read as the primary action. -->
+               They are solid discs, not chips, drawn opaque so a disabled Send
+               doesn't read as the primary action. -->
           <div class="send-stop">
             <Tooltip :text="running ? t('composer.interruptTitle') : null">
               <button
@@ -1678,32 +1879,35 @@ function selectModel(modelId: string): void {
           </div>
         </div>
 
-        <!-- Model dropdown — current provider models + controls + more. Positioned by
-             inline style (viewport-clamped, flips below when short of space
-             above); measured against the toolbar via modelDropdownRef. One
-             container for both form factors, as upstream has it: its phone
-             capture carries the same `ui-menu model-dropdown`, anchored to the
-             right edge. -->
-        <div
-          v-if="dropdownOpen && status"
-          ref="modelDropdownRef"
-          class="ui-menu model-dropdown lg-glass"
-          :style="modelDropdownStyle"
-          role="menu"
-          @click.stop
-        >
-          <!-- Starred / provider models + thinking + more — shared with the
-               mobile bottom-sheet variant below. -->
-          <ComposerModelMenu
-            :models="models"
-            :starred-ids="starredIds"
-            :status="status"
-            :thinking="thinking"
-            @select="selectModel"
-            @more="closeDropdown(); emit('pickModel')"
-            @set-thinking="(level) => emit('setThinking', level)"
-          />
-        </div>
+        <!-- Model dropdown — current provider models + controls + more. Teleported
+             to body and fixed, placed by the inline style positionModelDropdown
+             computes in viewport coordinates (anchored on the model pill, gap 14,
+             clamped horizontally, flips below when short of space above); the
+             pill is measured through modelDropdownRef. One container for both
+             form factors, as upstream has it: its phone capture carries the same
+             `ui-menu model-dropdown`, anchored to the right edge. -->
+        <Teleport to="body">
+          <div
+            v-if="dropdownOpen && status"
+            ref="modelDropdownRef"
+            class="ui-menu model-dropdown"
+            :style="modelDropdownStyle"
+            role="menu"
+            @click.stop
+          >
+            <!-- Starred / provider models + thinking + more — shared with the
+                 mobile bottom-sheet variant below. -->
+            <ComposerModelMenu
+              :models="models"
+              :starred-ids="starredIds"
+              :status="status"
+              :thinking="thinking"
+              @select="selectModel"
+              @more="closeDropdown(); emit('pickModel')"
+              @set-thinking="(level) => emit('setThinking', level)"
+            />
+          </div>
+        </Teleport>
       </div>
     </div>
   <!-- Full-window drop target affordance: shown while files are dragged anywhere
@@ -1719,9 +1923,9 @@ function selectModel(modelId: string): void {
 
   <!-- Mobile menu sheets: on ≤640px the slash / mention / add / model menus
        open as grab-handle bottom sheets instead of the anchored floating
-       panels above. Teleported to body so the composer card's frost (a
-       backdrop-filter) can't become the fixed-position containing block.
-       Closing a sheet closes its underlying menu state. -->
+       panels above. Teleported to body so the composer card can't become the
+       fixed-position containing block. Closing a sheet closes its underlying
+       menu state. -->
   <Teleport to="body">
     <BottomSheet
       :model-value="slashOpen && isMobile"
@@ -1851,16 +2055,39 @@ function selectModel(modelId: string): void {
      it that way keeps a visible edge in the light theme too, where a literal
      white hairline would vanish on a light card. */
   --composer-card-border: color-mix(in srgb, var(--color-text) 14%, transparent);
+  /* Upstream's focus line, from the token sheet: the perimeter the card lifts
+     to while the caret is in the box, at 25% in either theme. */
+  --composer-card-focus-line: var(--color-composer-focus-line);
   position: relative;
   border: 1px solid var(--composer-card-border);
   border-radius: var(--composer-card-radius);
   background: var(--color-composer-bg, var(--color-bg));
   box-shadow: var(--composer-card-shadow);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  /* The card's own shadow is what the material branch swaps on focus, so it
+     runs at upstream's rate: the slow duration on the in-out curve. */
+  transition: box-shadow var(--duration-slow) var(--ease-in-out);
 }
-.composer-card:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: var(--composer-card-shadow), 0 0 0 3px var(--color-accent-soft);
+/* Upstream's focus animation. The card's own border and shadow hold still; a
+   pseudo-element carrying a second border fades in one pixel inside the
+   hairline, so focus reads as the perimeter thickening rather than as the card
+   swapping one border colour for another. Both directions run on the slow
+   duration and the in-out curve, so the line leaves on blur at the rate it
+   arrived. The material branch in style.css overrides the card's border and
+   shadow rather than this pseudo-element, so the fade is what carries focus
+   there too. */
+.composer-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: inherit;
+  border-color: var(--composer-card-focus-line);
+  border-radius: var(--composer-card-radius);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-slow) var(--ease-in-out);
+}
+.composer-card:focus-within::after {
+  opacity: 1;
 }
 
 
@@ -1890,7 +2117,6 @@ function selectModel(modelId: string): void {
   justify-content: center;
   padding: 24px;
   background: rgba(20, 23, 28, 0.62);
-  /* defocus blur: the shared .lg-scrim utility (lg-frost family, style.css). */
 }
 .att-lightbox-card {
   position: relative;
@@ -2290,11 +2516,8 @@ function selectModel(modelId: string): void {
 /* Permission pill — upstream's metrics: a full-height capsule
    (--composer-control-size) with the label at --ui-font-size-sm on a 1
    line-height, a wider right pad than left (the asymmetric pad that seats the
-   glyph), and the hover painted by an ::after overlay. The overlay is the
-   upstream mechanism (the element's own background stays untouched), which is
-   why a hover reads on both sides of the liquid-glass toggle — a plain
-   `.perm-pill:hover { background }` would be outranked by the global glass
-   rule in style.css and vanish whenever glass is on. */
+   glyph), and the hover painted by an ::after overlay. The overlay keeps the
+   element's own background untouched. */
 .perm-pill {
   position: relative;
   display: inline-flex;
@@ -2302,8 +2525,6 @@ function selectModel(modelId: string): void {
   gap: var(--space-1);
   height: var(--composer-control-size);
   padding: 0 var(--space-3) 0 var(--space-2);
-  /* Transparent hairline reserves the 1px slot for the liquid-glass rim without
-     adding a visible border when the feature is off. */
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   font-size: var(--ui-font-size-sm);
@@ -2393,16 +2614,25 @@ function selectModel(modelId: string): void {
   line-height: 16px;
 }
 
+/* Cache meter. One typographic voice with the token count beside it: same
+   family and size, medium weight, glyph pushed back to faint so the figure
+   leads. The accent is reserved for trouble, because above 95% the healthy
+   value is a constant and an accent spent on a constant marks nothing. */
 .cache-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: calc(var(--ui-font-size) - 1px);
-  color: var(--accent-primary);
-  opacity: 0.7;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  font-weight: var(--weight-medium);
   letter-spacing: 0;
   line-height: 16px;
 }
+.cache-badge.is-good { color: var(--color-text); }
+.cache-badge.is-mid { color: var(--color-text-muted); }
+.cache-badge.is-low { color: var(--color-warning); }
 
 .ctx-sep {
   font-size: calc(var(--ui-font-size) - 1px);
@@ -2421,8 +2651,6 @@ function selectModel(modelId: string): void {
   gap: var(--space-1);
   height: var(--composer-control-size);
   padding: 0 var(--space-3);
-  /* Transparent hairline reserves the 1px slot for the liquid-glass rim without
-     adding a visible border when the feature is off. */
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   font-size: var(--ui-font-size);
@@ -2461,8 +2689,7 @@ function selectModel(modelId: string): void {
   transform: scale(0.97);
 }
 /* Icon-only collapse — the model label gives way to a bare chevron pill in
-   very narrow rows (see modelPillCollapsed); the interlocking .lg-glass
-   material keeps its tint + rim because the .lg-glass class is never removed. */
+   very narrow rows (see modelPillCollapsed). */
 .model-pill.icon-only {
   width: var(--composer-control-size);
   height: var(--composer-control-size);
@@ -2509,24 +2736,30 @@ function selectModel(modelId: string): void {
   transform: rotate(180deg);
 }
 
-/* Model dropdown — anchored to the toolbar; the flip / horizontal clamp comes
-   from the inline style computed in positionModelDropdown. The frame itself
-   never scrolls: ComposerModelMenu's .md-list region owns the overflow so the
-   thinking row / cache note / "more models" row stay pinned in view. */
+/* Model dropdown — teleported to <body> and placed in viewport coordinates by
+   positionModelDropdown, which also supplies the flip below and the horizontal
+   clamp. It must not live inside the composer card: the card's own
+   backdrop-filter (it carries one while it holds focus) makes the card a
+   backdrop root, and a filter inside a backdrop root has nothing to sample, so
+   the menu's blur and lens render flat. The frame itself never scrolls:
+   ComposerModelMenu's .md-list region owns the overflow so the thinking row /
+   cache note / "more models" row stay pinned in view. */
 .model-dropdown {
-  position: absolute;
+  position: fixed;
   z-index: var(--z-dropdown);
   min-width: 200px;
   max-height: min(70vh, 520px);
   overflow: hidden;
-  /* Upstream's menu surface: translucent raised ink over a 24px backdrop blur,
-     with its own shadow. Measured from the live page. */
+  /* Upstream's menu surface: translucent raised ink over a 24px backdrop blur.
+     The shadow is the same token its own `.ui-menu` carries, so this menu and
+     the shared primitive lift alike; the literal that used to sit here was the
+     dark value only, missing the token's third layer. */
   background: var(--color-menu-bg, var(--color-surface-raised));
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
   backdrop-filter: blur(24px) saturate(1.8);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24);
+  box-shadow: var(--shadow-menu);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -2545,23 +2778,25 @@ function selectModel(modelId: string): void {
   border-bottom-right-radius: var(--radius-md);
 }
 
-/* Permission dropdown — anchored to the toolbar left side */
+/* Permission dropdown. Teleported to <body> and fixed, like the model dropdown
+   above and for the same reason; the stylesheet used to carry its anchor
+   (`bottom: calc(100% + 4px); left: 10px`), which positionPermDropdown now
+   computes in viewport coordinates. */
 .perm-dropdown {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 10px;
+  position: fixed;
   z-index: var(--z-dropdown);
   min-width: 220px;
   width: max-content;
   max-width: calc(100vw - var(--space-8));
-  /* Same measured menu surface as the model dropdown (upstream's permission
-     trigger was not measurable, so the anchor stays the fork's). */
+  /* Same measured menu surface as the model dropdown, shadow included: the
+     shared menu token, not the dark literal that used to sit here (upstream's
+     permission trigger was not measurable, so the anchor stays the fork's). */
   background: var(--color-menu-bg, var(--color-surface-raised));
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
   backdrop-filter: blur(24px) saturate(1.8);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24);
+  box-shadow: var(--shadow-menu);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -2662,13 +2897,14 @@ function selectModel(modelId: string): void {
   width: max-content;
   max-width: calc(100vw - var(--space-8));
   /* Upstream's wide dock menu uses the frosted ink (measured
-     rgba(18,18,18,0.7)) with the same blur as the other menus. */
+     rgba(18,18,18,0.7)) with the same blur as the other menus, and upstream's
+     own `.add-menu` rule paints `--shadow-menu` on it. */
   background: var(--color-menu-bg-frost, var(--color-surface-raised));
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
   backdrop-filter: blur(24px) saturate(1.8);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24);
+  box-shadow: var(--shadow-menu);
   padding: 6px 12px;
   display: flex;
   flex-direction: column;

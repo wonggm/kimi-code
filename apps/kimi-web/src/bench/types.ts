@@ -25,7 +25,6 @@ export interface BenchContext {
   followScroll: () => void;
 
   setTheme: (theme: Theme) => void;
-  setGlass: (on: boolean) => void;
 
   /** Overlay mount flags (v-if / :open / v-model in the BenchView template). */
   dialogOpen: Ref<boolean>;

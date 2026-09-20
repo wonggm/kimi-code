@@ -9,7 +9,7 @@ process.env.CHROME_BIN = fs
   .filter((n) => n.startsWith('chromium-'))
   .map((n) => path.join(cache, n, 'chrome-linux64', 'chrome'))
   .filter((p) => fs.existsSync(p))
-  .sort()
+  .toSorted()
   .at(-1);
 
 const { launchChrome, connectPage, killChrome } = await import(`${REPO}/apps/kimi-web/bench/cdp.mjs`);
@@ -20,7 +20,6 @@ const seed = {
   'kimi-web.onboarded': '1',
   'kimi-web.ui-font-size': '16',
   'kimi-web.font-scale': '16',
-  'kimi-web.liquid-glass': 'false',
   'kimi-web.server-credential': JSON.stringify({ version: 1, credential: 'mock-token', expiresAt: Date.now() + 864e5 }),
 };
 
@@ -61,7 +60,6 @@ const EXTRACT = `(() => {
   const codeHeader = head || (pre ? pre.firstElementChild : null);
   const codeHeaderHtml = codeHeader ? codeHeader.outerHTML.slice(0, 1200) : '';
   const codeHeaderStyle = codeHeader ? box(codeHeader) : null;
-  const glassAttr = document.documentElement.dataset.liquidGlass || '(unset)';
   const rootStyle = getComputedStyle(document.documentElement);
   const tokens = [];
   for (const sheet of Array.from(document.styleSheets)) {
@@ -85,7 +83,7 @@ const EXTRACT = `(() => {
     return e;
   })();
   const html = composerRoot ? composerRoot.outerHTML : '';
-  return { glassAttr, surfaces, chain, taStyle, tokens: tokenSet, codeChain, codeHeaderStyle, codeHeaderHtml, html, url: location.href };
+  return { surfaces, chain, taStyle, tokens: tokenSet, codeChain, codeHeaderStyle, codeHeaderHtml, html, url: location.href };
 })()`;
 
 const chrome = await launchChrome(9347);
@@ -99,7 +97,6 @@ try {
     await new Promise((r) => setTimeout(r, 4000));
     out[name] = await cdp.evaluate(EXTRACT);
     console.log(`\n########## ${name} (${url})`);
-    console.log('-- liquid-glass attr:', out[name].glassAttr);
     console.log('-- app-root children (surfaces):');
     for (const s of out[name].surfaces) if (s) console.log('   ', JSON.stringify(s));
     console.log('-- textarea -> up the chain:');
