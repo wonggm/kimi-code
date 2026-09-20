@@ -8,6 +8,7 @@ import { IAgentScopeContext, makeAgentScopeContext } from '#/agent/scopeContext/
 import { IAgentStateService } from '#/agent/state/agentState';
 import { AgentStateService } from '#/agent/state/agentStateService';
 import { AgentCacheProbeService } from '#/agent/usage/cacheProbeService';
+import { CACHE_RECENT_WINDOW } from '#/agent/usage/cacheRate';
 import {
   type UsageRecordedContext,
   type UsageStatus,
@@ -112,6 +113,96 @@ describe('SessionUsageService (wire-backed)', () => {
       },
       total: { inputOther: 111, output: 222, inputCacheRead: 333, inputCacheCreation: 444 },
       currentTurn: undefined,
+      cache: {
+        reporting: 'reads+writes',
+        lastRequestPercent: 37.5,
+        recentPercent: 37.5,
+        recentRequestCount: 3,
+        sessionPercent: 37.5,
+      },
+    });
+  });
+
+  it('scores cache writes as misses so a rebuilt prefix reads zero', async () => {
+    await svc.record(agent, 'model-a', {
+      inputOther: 0,
+      output: 10,
+      inputCacheRead: 0,
+      inputCacheCreation: 1000,
+    });
+
+    expect(svc.status(agent).cache).toEqual({
+      reporting: 'reads+writes',
+      lastRequestPercent: 0,
+      recentPercent: 0,
+      recentRequestCount: 1,
+      sessionPercent: 0,
+    });
+
+    await svc.record(agent, 'model-a', {
+      inputOther: 0,
+      output: 10,
+      inputCacheRead: 1000,
+      inputCacheCreation: 0,
+    });
+
+    expect(svc.status(agent).cache).toEqual({
+      reporting: 'reads+writes',
+      lastRequestPercent: 100,
+      recentPercent: 50,
+      recentRequestCount: 2,
+      sessionPercent: 50,
+    });
+  });
+
+  it('ages a rebuilt prefix out of the rolling window', async () => {
+    await svc.record(agent, 'model-a', {
+      inputOther: 0,
+      output: 1,
+      inputCacheRead: 0,
+      inputCacheCreation: 100,
+    });
+    for (let i = 0; i < CACHE_RECENT_WINDOW; i += 1) {
+      await svc.record(agent, 'model-a', {
+        inputOther: 0,
+        output: 1,
+        inputCacheRead: 100,
+        inputCacheCreation: 0,
+      });
+    }
+
+    expect(svc.status(agent).cache).toEqual({
+      reporting: 'reads+writes',
+      lastRequestPercent: 100,
+      recentPercent: 100,
+      recentRequestCount: CACHE_RECENT_WINDOW,
+      sessionPercent: (2000 / 2100) * 100,
+    });
+  });
+
+  it('separates a provider that reports no cache from one that reports reads only', async () => {
+    await svc.record(agent, 'model-a', {
+      inputOther: 400,
+      output: 10,
+      inputCacheRead: 0,
+      inputCacheCreation: 0,
+    });
+
+    expect(svc.status(agent).cache).toEqual({ reporting: 'none' });
+
+    await svc.record(agent, 'model-a', {
+      inputOther: 100,
+      output: 10,
+      inputCacheRead: 300,
+      inputCacheCreation: 0,
+    });
+
+    expect(svc.status(agent).cache).toEqual({
+      reporting: 'reads',
+      lastRequestPercent: 75,
+      recentPercent: 37.5,
+      recentRequestCount: 2,
+      sessionPercent: 37.5,
     });
   });
 
@@ -148,6 +239,13 @@ describe('SessionUsageService (wire-backed)', () => {
       byModel: { 'model-a': a1 },
       total: a1,
       currentTurn: undefined,
+      cache: {
+        reporting: 'reads+writes',
+        lastRequestPercent: 37.5,
+        recentPercent: 37.5,
+        recentRequestCount: 1,
+        sessionPercent: 37.5,
+      },
     });
   });
 
@@ -164,6 +262,13 @@ describe('SessionUsageService (wire-backed)', () => {
           byModel: { 'model-a': a1 },
           total: a1,
           currentTurn: undefined,
+          cache: {
+            reporting: 'reads+writes',
+            lastRequestPercent: 37.5,
+            recentPercent: 37.5,
+            recentRequestCount: 1,
+            sessionPercent: 37.5,
+          },
         } satisfies UsageStatus,
       }),
     ]);
@@ -310,6 +415,13 @@ describe('SessionUsageService (wire-backed)', () => {
       byModel: { 'model-a': a1 },
       total: a1,
       currentTurn: undefined,
+      cache: {
+        reporting: 'reads+writes',
+        lastRequestPercent: 37.5,
+        recentPercent: 37.5,
+        recentRequestCount: 1,
+        sessionPercent: 37.5,
+      },
     });
   });
 });

@@ -23,6 +23,16 @@ export interface StatusLinePayload {
   contextUsage: number;
   contextTokens: number;
   maxContextTokens: number;
+  /** Cache hit rate on the last model request, in percent; null when the
+   *  provider reports no cache information. */
+  cacheHitRateLast: number | null;
+  /** Cache hit rate over the rolling window of recent model requests, in
+   *  percent; null when unreported. This is the number the footer colours by. */
+  cacheHitRateRecent: number | null;
+  /** How many requests the rolling window covers. */
+  cacheRecentRequests: number | null;
+  /** Session-wide cache hit rate, in percent; null when unreported. */
+  cacheHitRateSession: number | null;
   sessionId: string;
   version: string;
 }

@@ -275,6 +275,7 @@ function createInitialAppState(input: KimiTUIStartupInput): AppState {
     contextTokens: 0,
     maxContextTokens: 0,
     cumulativeTokens: 0,
+    cache: { reporting: 'none' },
     isCompacting: false,
     isReplaying: false,
     streamingPhase: 'idle',
@@ -2414,17 +2415,9 @@ export class KimiTUI {
       sessionTitle: session.summary?.title ?? null,
       goal: goalResult.goal,
     };
-    // Extract cache hit rate from any available usage source
-    const usage = status.usage;
-    if (usage?.total) {
-      const { inputCacheRead, inputOther } = usage.total;
-      const total = inputCacheRead + inputOther;
-      if (total > 0) patch.cacheHitRate = (inputCacheRead / total) * 100;
-    } else if (usage?.currentTurn) {
-      const { inputCacheRead, inputOther } = usage.currentTurn;
-      const total = inputCacheRead + inputOther;
-      if (total > 0) patch.cacheHitRate = (inputCacheRead / total) * 100;
-    }
+    // A previous session's rate must never survive a switch: a session whose
+    // provider reports nothing reads as 'none', which the footer hides.
+    patch.cache = status.usage?.cache ?? { reporting: 'none' };
     this.setAppState(patch);
     this.syncAdditionalDirs(session);
   }
@@ -3808,6 +3801,17 @@ export class KimiTUI {
   /** Per-step usage for the client-side cache-break detector. */
   noteStepUsage(usage: TokenUsage | undefined): void {
     this.cacheHint.noteStepUsage(usage);
+  }
+
+  /** Explains a collapsed cache rate in place, beside the turn that caused it. */
+  appendCacheNotice(text: string): void {
+    this.appendTranscriptEntry({
+      id: nextTranscriptId(),
+      kind: 'status',
+      turnId: this.streamingUI.getTurnContext().turnId,
+      renderMode: 'plain',
+      content: text,
+    });
   }
 
   /** Compaction shrinks the cached prefix — reset the cache-break baseline. */

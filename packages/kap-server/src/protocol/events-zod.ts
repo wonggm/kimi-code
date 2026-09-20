@@ -68,6 +68,7 @@ import type {
   ToolProgressPayload,
   ToolResultEventPayload,
 } from '@moonshot-ai/agent-core-v2/agent/toolExecutor/toolExecutorEvents';
+import type { CacheStatus } from '@moonshot-ai/agent-core-v2/agent/usage/cacheRate';
 import type { UsageStatus } from '@moonshot-ai/agent-core-v2/agent/usage/usage';
 import type { FinishReason } from '@moonshot-ai/agent-core-v2/human/llm/finish-reason';
 import type { TokenUsage } from '@moonshot-ai/agent-core-v2/human/llm/usage';
@@ -83,7 +84,7 @@ import type { ToolUpdate } from '@moonshot-ai/agent-core-v2/tool/toolContract';
 
 import { ToolInputDisplaySchema } from './display';
 import { configResponseSchema } from './rest-config';
-import { sessionPendingInteractionSchema, sessionSchema } from './session';
+import { cacheReportingSchema, sessionPendingInteractionSchema, sessionSchema } from './session';
 import { workspaceSchema } from './workspace';
 
 export const tokenUsageSchema = z.object({
@@ -102,10 +103,19 @@ export const finishReasonSchema = z.enum([
   'other',
 ]) satisfies z.ZodType<FinishReason>;
 
+export const cacheStatusSchema = z.object({
+  reporting: cacheReportingSchema,
+  lastRequestPercent: z.number().optional(),
+  recentPercent: z.number().optional(),
+  recentRequestCount: z.number().optional(),
+  sessionPercent: z.number().optional(),
+}) satisfies z.ZodType<CacheStatus>;
+
 export const usageStatusSchema = z.object({
   byModel: z.record(z.string(), tokenUsageSchema).optional(),
   currentTurn: tokenUsageSchema.optional(),
   total: tokenUsageSchema.optional(),
+  cache: cacheStatusSchema.optional(),
 }) satisfies z.ZodType<UsageStatus>;
 
 export const permissionModeSchema = z.enum(['manual', 'yolo', 'auto']) satisfies z.ZodType<PermissionMode>;

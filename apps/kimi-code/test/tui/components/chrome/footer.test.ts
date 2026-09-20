@@ -44,6 +44,7 @@ const appState: AppState = {
   contextUsage: 0,
   contextTokens: 0,
   maxContextTokens: 0,
+  cache: { reporting: 'none' },
   isCompacting: false,
   isReplaying: false,
   streamingPhase: 'idle',
@@ -291,6 +292,132 @@ describe('FooterComponent ctrl+o hint with a status_line command', () => {
     expect(line1).not.toContain('ctrl+o');
     expect(line2).toContain('ctrl+o expand');
     expect(line2).toContain('context:');
+    footer.dispose();
+  });
+
+  const plainLines = (footer: FooterComponent): string[] =>
+    footer.render(120).map((line) => line.replaceAll(/\[[0-9;]*m/g, ''));
+
+  /** Truecolor is what the colour assertions read, and chalk drops to a lower
+   *  level inside this file's later blocks unless it is set here. At truecolor
+   *  level the escape sequences are real, so the plain-text assertions need the
+   *  leading ESC in the pattern — `plainLines` above assumes it is absent. */
+  function withTruecolor(run: () => void): void {
+    const previous = chalk.level;
+    chalk.level = 3;
+    try {
+      run();
+    } finally {
+      chalk.level = previous;
+    }
+  }
+
+  function stripAnsi(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replaceAll(/\u001B\[[0-9;]*m/g, '');
+  }
+
+  it('shows the cache rate in two decimals', () => {
+    const footer = new FooterComponent({
+      ...appState,
+      cache: { reporting: 'reads+writes', lastRequestPercent: 61.87, sessionPercent: 72.14 },
+    });
+
+    expect(plainLines(footer)[1]).toContain('cache: 61.87%');
+    footer.dispose();
+  });
+
+  it('shows a genuine zero rather than hiding it', () => {
+    const footer = new FooterComponent({
+      ...appState,
+      cache: { reporting: 'reads+writes', lastRequestPercent: 0, sessionPercent: 0 },
+    });
+
+    expect(plainLines(footer)[1]).toContain('cache: 0.00%');
+    footer.dispose();
+  });
+
+  it('omits the cache clause when the provider reports no cache', () => {
+    const footer = new FooterComponent({
+      ...appState,
+      cache: { reporting: 'none' },
+    });
+
+    const line2 = plainLines(footer)[1]!;
+    expect(line2).toContain('context:');
+    expect(line2).not.toContain('cache');
+    footer.dispose();
+  });
+
+  it('falls back to the session rate when no request has been scored yet', () => {
+    const footer = new FooterComponent({
+      ...appState,
+      cache: { reporting: 'reads', sessionPercent: 41.5 },
+    });
+
+    expect(plainLines(footer)[1]).toContain('cache: 41.50%');
+    footer.dispose();
+  });
+
+  it('shows the rolling window rather than the last request', () => {
+    const footer = new FooterComponent({
+      ...appState,
+      cache: {
+        reporting: 'reads+writes',
+        lastRequestPercent: 99.92,
+        recentPercent: 88.41,
+        recentRequestCount: 20,
+        sessionPercent: 99.13,
+      },
+    });
+
+    withTruecolor(() => {
+      const line2 = footer.render(120)[1]!;
+      expect(stripAnsi(line2)).toContain('cache: 88.41%');
+      expect(stripAnsi(line2)).not.toContain('cache: 99.92');
+      expect(truecolorCodes(line2).has('136,136,136')).toBe(true);
+    });
+    footer.dispose();
+  });
+
+  it('paints the rolling window in the warning colour below the mid band', () => {
+    const footer = new FooterComponent({
+      ...appState,
+      cache: {
+        reporting: 'reads+writes',
+        lastRequestPercent: 99.92,
+        recentPercent: 61.5,
+        recentRequestCount: 20,
+        sessionPercent: 99.13,
+      },
+    });
+
+    withTruecolor(() => {
+      const line2 = footer.render(120)[1]!;
+      expect(stripAnsi(line2)).toContain('cache: 61.50%');
+      expect(truecolorCodes(line2).has('232,168,56')).toBe(true);
+    });
+    footer.dispose();
+  });
+
+  it('leaves a healthy rolling window in the text colour', () => {
+    const footer = new FooterComponent({
+      ...appState,
+      cache: {
+        reporting: 'reads+writes',
+        lastRequestPercent: 99.92,
+        recentPercent: 99.5,
+        recentRequestCount: 20,
+        sessionPercent: 99.13,
+      },
+    });
+
+    withTruecolor(() => {
+      const line2 = footer.render(120)[1]!;
+      expect(stripAnsi(line2)).toContain('cache: 99.50%');
+      expect(stripAnsi(line2)).not.toContain('avg');
+      expect(truecolorCodes(line2).has('136,136,136')).toBe(false);
+    });
     footer.dispose();
   });
 });

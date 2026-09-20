@@ -57,6 +57,67 @@ describe('UsagePanelComponent', () => {
     }
   });
 
+  it('renders the cache section with both rates and the session split', () => {
+    const lines = buildUsageReportLines({
+      sessionUsage: {
+        byModel: {
+          kimi: { inputOther: 1000, inputCacheRead: 1500, inputCacheCreation: 500, output: 250 },
+        },
+        total: { inputOther: 1000, inputCacheRead: 1500, inputCacheCreation: 500, output: 250 },
+      },
+      contextUsage: 0,
+      contextTokens: 0,
+      maxContextTokens: 0,
+      cache: {
+        reporting: 'reads+writes',
+        lastRequestPercent: 61.87,
+        recentPercent: 99.13,
+        recentRequestCount: 20,
+        sessionPercent: 72.14,
+      },
+    }).map(strip);
+
+    expect(lines).toContain('Cache');
+    expect(lines.join('\n')).toContain('last 20 requests  99.13%');
+    expect(lines.join('\n')).toContain('last request      61.87%');
+    expect(lines.join('\n')).toContain('session           72.14%');
+    expect(lines.join('\n')).toContain('cached 1.5k · written 500');
+  });
+
+  it('reports a provider that sends no cache fields instead of scoring it zero', () => {
+    const lines = buildUsageReportLines({
+      sessionUsage: { byModel: {} },
+      contextUsage: 0,
+      contextTokens: 0,
+      maxContextTokens: 0,
+      cache: { reporting: 'none' },
+    }).map(strip);
+
+    expect(lines).toContain('Cache');
+    expect(lines).toContain('  not reported by this provider');
+    expect(lines.join('\n')).not.toContain('0.00%');
+  });
+
+  it('flags a reads-only provider so the rate is not read as a full one', () => {
+    const lines = buildUsageReportLines({
+      sessionUsage: { byModel: {} },
+      contextUsage: 0,
+      contextTokens: 0,
+      maxContextTokens: 0,
+      cache: {
+        reporting: 'reads',
+        lastRequestPercent: 80,
+        recentPercent: 75,
+        recentRequestCount: 4,
+        sessionPercent: 75,
+      },
+    }).map(strip);
+
+    expect(lines.join('\n')).toContain('last request      80.00%');
+    expect(lines.join('\n')).toContain('last 4 requests   75.00%');
+    expect(lines).toContain('  reads only; this provider reports no cache writes');
+  });
+
   it('renders plan usage rows with their names and the monthly breakdown line', () => {
     const lines = buildUsageReportLines({
       sessionUsage: { byModel: {} },

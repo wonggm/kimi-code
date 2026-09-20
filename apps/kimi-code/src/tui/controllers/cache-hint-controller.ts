@@ -10,6 +10,7 @@ import type { Component, Focusable } from '@moonshot-ai/pi-tui';
 import type { KimiHarness, Session, TokenUsage } from '@moonshot-ai/kimi-code-sdk';
 
 import { getCacheHintConfig, peekCacheHintConfig } from '#/utils/cache-hint-config';
+import { formatTokenCount } from '#/utils/usage/usage-format';
 import { currentTuiConfig } from '../commands/config';
 import {
   CacheHintDialogComponent,
@@ -46,6 +47,8 @@ export interface CacheHintHost {
   mountEditorReplacement(panel: Component & Focusable): void;
   restoreEditor(): void;
   restoreInputText(text: string): void;
+  /** One dim line in the transcript explaining a collapsed cache rate. */
+  appendCacheNotice(text: string): void;
   /**
    * A stashed submission going back to the editor releases its extraction's
    * staged media with queue-recall semantics (consume retains, retire staged
@@ -99,6 +102,8 @@ export class CacheHintController {
   private readonly resumedSessions = new Set<string>();
   /** Last measured main-loop step usage for cache-break detection. */
   private breakBaseline: CacheBreakBaseline | undefined;
+  /** One rebuilt-cache notice per turn — a tool loop can break several times. */
+  private noticeShownForTurn = false;
 
   constructor(private readonly host: CacheHintHost) {}
 
@@ -154,6 +159,21 @@ export class CacheHintController {
       cache_read_drop_ratio: (prevRead - currRead) / prevRead,
       interval_ms: now - prev.time,
     });
+    // The rate the footer shows just fell, so say what it cost. Once per turn:
+    // a long tool loop can break the cache on several consecutive steps.
+    if (!this.noticeShownForTurn) {
+      this.noticeShownForTurn = true;
+      const resent = usage.inputOther + usage.inputCacheCreation;
+      const cause =
+        prev.model !== model
+          ? ' after the model switch'
+          : prev.effort !== effort
+            ? ' after the thinking change'
+            : '';
+      this.host.appendCacheNotice(
+        `cache rebuilt${cause}: ${formatTokenCount(resent)} tokens re-sent`,
+      );
+    }
   }
 
   /** Compaction legitimately shrinks the cached prefix — reset the baseline.
@@ -177,6 +197,7 @@ export class CacheHintController {
     this.triggerFetchAttempted = false;
     this.lastDialogRestored = false;
     this.restoredTexts = [];
+    this.noticeShownForTurn = false;
   }
 
   /** Session switch / create: the new session has no in-process baseline. */
@@ -187,6 +208,7 @@ export class CacheHintController {
     this.lastDialogRestored = false;
     this.restoredTexts = [];
     this.breakBaseline = undefined;
+    this.noticeShownForTurn = false;
   }
 
   /** Background warm-up on session creation; never blocks, never throws. */

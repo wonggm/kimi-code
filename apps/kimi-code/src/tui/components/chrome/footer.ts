@@ -9,7 +9,7 @@
 import type { Component } from '@moonshot-ai/pi-tui';
 import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
 import chalk from 'chalk';
-import { effectiveModelAlias } from '@moonshot-ai/kimi-code-sdk';
+import { effectiveModelAlias, type CacheStatus } from '@moonshot-ai/kimi-code-sdk';
 
 import { ALL_TIPS, type ToolbarTip } from '#/tui/constant/tips';
 import { isRainbowDancing, renderDanceFooterModel } from '#/tui/easter-eggs/dance';
@@ -180,6 +180,28 @@ function formatContextStatus(usage: number, tokens?: number, maxTokens?: number)
     return `context: ${pct}% (${formatTokenCount(tokens)}/${formatTokenCount(maxTokens)})`;
   }
   return `context: ${String(usagePercentFromRatio(usage))}%`;
+}
+
+const CACHE_GOOD_PERCENT = 95;
+const CACHE_MID_PERCENT = 80;
+
+/** Cache hit rate readout for footer line 2. Hidden while the provider reports
+ *  no cache fields at all, so an unreported zero never renders as a failure.
+ *  The figure is the rolling window over the last requests, which is what says
+ *  whether the cache is healthy: one rebuilt prefix moves it by a few points
+ *  instead of flipping the readout. The last request and the session figure
+ *  live in the /usage panel. */
+export function formatFooterCache(cache: CacheStatus, colors: ColorPalette): string {
+  if (cache.reporting === 'none') return '';
+  const rate = cache.recentPercent ?? cache.lastRequestPercent ?? cache.sessionPercent;
+  if (rate === undefined) return '';
+  const paint =
+    rate >= CACHE_GOOD_PERCENT
+      ? colors.text
+      : rate >= CACHE_MID_PERCENT
+        ? colors.textDim
+        : colors.warning;
+  return ` · cache: ${chalk.hex(paint)(`${rate.toFixed(2)}%`)}`;
 }
 
 export function formatFooterGitBadge(status: GitStatus, colors: ColorPalette): string {
@@ -365,13 +387,7 @@ export class FooterComponent implements Component {
       state.contextTokens,
       state.maxContextTokens,
     );
-    let cacheText = '';
-    if (state.cacheHitRate !== undefined) {
-      cacheText = ` · cache: ${state.cacheHitRate.toFixed(2)}%`;
-    } else {
-      cacheText = ` · cache: --`;
-    }
-    const fullContextText = contextText + chalk.hex(colors.textDim)(cacheText);
+    const fullContextText = contextText + formatFooterCache(state.cache, colors);
     const contextWidth = visibleWidth(fullContextText);
     let line2: string;
     const hint = this.transientHint ?? this.warningHint;
@@ -517,6 +533,14 @@ export class FooterComponent implements Component {
       contextUsage: state.contextUsage,
       contextTokens: state.contextTokens,
       maxContextTokens: state.maxContextTokens,
+      cacheHitRateLast:
+        state.cache.reporting === 'none' ? null : (state.cache.lastRequestPercent ?? null),
+      cacheHitRateRecent:
+        state.cache.reporting === 'none' ? null : (state.cache.recentPercent ?? null),
+      cacheRecentRequests:
+        state.cache.reporting === 'none' ? null : (state.cache.recentRequestCount ?? null),
+      cacheHitRateSession:
+        state.cache.reporting === 'none' ? null : (state.cache.sessionPercent ?? null),
       sessionId: state.sessionId,
       version: state.version,
     };
