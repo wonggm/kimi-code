@@ -1321,10 +1321,48 @@ html[data-color-scheme="dark"][data-liquid-glass="on"] {
      so an opaque panel draws a seam down its own left edge: measured at the top
      of the window, the transcript beside that edge reads 26 and the panel reads
      18, and the step runs past 20 levels further left where the gradient is
-     lighter. The panel steps out of the way as the surfaces above do, and the
-     shell keeps the hairline that marks its edge. Not the mobile overlay: there
-     the panel covers the window, and nothing may read through it. */
+     lighter. The panel steps out of the way as the surfaces above do.
+     It floats, with the sidebar's own carrier: the same inset off the window's
+     edges, the same face, the same rim, the same band-limited lens on that rim.
+     The panel is the larger of the two surfaces (about 585x900 against the
+     sidebar's 254x884), so the lens's band is a smaller share of it and its
+     middle stays as it was; the ground it samples is the same field, which is
+     lighter at the top left and shaded at the foot, so the two panels read
+     alike without either of them being tinted.
+     The shell carries the inset, so the tab strip and the panes sit inside the
+     carrier's edges. Not the mobile overlay: there the panel covers the window,
+     and nothing may read through it. */
   html[data-liquid-glass="on"] .global-preview:not(.mobile) {
+    background-color: transparent;
+  }
+  html[data-liquid-glass="on"] .global-preview:not(.mobile) .pt-shell {
+    padding: var(--lg-sidebar-inset);
+    /* The seams the flat design drew belong to the flat design; the material's
+       edge is the rim. */
+    border-left: none;
+  }
+  html[data-liquid-glass="on"] .global-preview:not(.mobile) .pt-shell::before {
+    content: '';
+    position: absolute;
+    inset: var(--lg-sidebar-inset);
+    z-index: -1;
+    border: 1px solid transparent;
+    border-radius: var(--radius-2xl);
+    -webkit-backdrop-filter: var(--lg-blur);
+    backdrop-filter: var(--lg-blur);
+    background-color: color-mix(in srgb, var(--lg-face-panel) var(--lg-tint-panel), transparent);
+    box-shadow:
+      inset 0 1px 0 var(--lg-rim-top),
+      inset 0 0 0 1px var(--lg-rim-catch),
+      inset 0 0 0 1px var(--lg-rim-shade),
+      var(--lg-float-shadow);
+  }
+  /* The panes inside each paint the column's own --bg wash, which is upstream's
+     way of making the panel one surface. Here the surface is the carrier behind
+     them, so the wash steps aside as the panel's own did. What the panes draw
+     inside themselves stays: the diff's rows, the transcript's cards and wells,
+     the terminal's own screen. */
+  html[data-liquid-glass="on"] .global-preview:not(.mobile) .pt-body > * {
     background-color: transparent;
   }
 
@@ -1948,6 +1986,10 @@ html[data-color-scheme="dark"][data-liquid-glass="on"] {
       backdrop-filter: var(--lg-toc-blur) var(--lg-lens);
     }
     html[data-liquid-glass="on"] .side .col::before {
+      -webkit-backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
+      backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
+    }
+    html[data-liquid-glass="on"] .global-preview:not(.mobile) .pt-shell::before {
       -webkit-backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
       backdrop-filter: var(--lg-blur) var(--lg-bezel-lens);
     }
