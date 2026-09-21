@@ -94,9 +94,8 @@ function onHeadClick(): void {
         </template>
         <slot name="trailing" />
         <span v-if="time" class="tl-time">{{ time }}</span>
-        <span class="tl-status" :class="status === 'ok' ? 'ok' : status === 'error' ? 'err' : 'run'" role="status" :aria-label="status">
-          <Icon v-if="status === 'ok'" name="check" size="sm" />
-          <Icon v-else-if="status === 'error'" name="close" size="sm" />
+        <span v-if="status !== 'ok'" class="tl-status" :class="status" role="status" :aria-label="status">
+          <Icon v-if="status === 'error'" name="close" size="sm" />
           <StatusDot v-else-if="status === 'suspended'" status="suspended" />
           <StatusDot v-else status="running" />
         </span>
@@ -152,9 +151,7 @@ function onHeadClick(): void {
 .tl-tail { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); flex: none; }
 .tl-time { color: var(--color-text-faint); font-size: var(--text-xs); }
 .tl-status { display: inline-flex; align-items: center; flex: none; }
-.tl-status.ok { color: var(--color-success); }
-.tl-status.err { color: var(--color-danger); }
-.tl-status.run { color: var(--color-text-muted); }
+.tl-status.error { color: var(--color-danger); }
 /* The chevron's wrapper is a plain span, whose line box added a pixel over the
    16px button and made every tool row 25px where upstream's is 24px. */
 .tl-lead > .ui-tip {

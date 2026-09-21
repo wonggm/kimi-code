@@ -1980,7 +1980,7 @@ defineExpose({
               :loading-more="loadingMore"
               :loading-more-error="loadingMoreError"
               :is-following="following"
-              :tool-diff-panel="true"
+              :tool-diff-panel="false"
               :queued="queued"
               :skills="skills"
               @open-file="emit('openFile', $event)"
