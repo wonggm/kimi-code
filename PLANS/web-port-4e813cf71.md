@@ -25,12 +25,12 @@ reliable signal, so each row below is anchored on a class or a named function.
 
 | # | Upstream change (bundle evidence) | Verdict |
 |---|---|---|
-| 1 | Panel launcher is built from a shared kind-order list `const wJ=["diff","browser","term","btw"]`; the web launcher renders `wJ.filter(l=>l==="diff"\|\|l==="btw")`, the shell renders all four (`__name:"PanelLauncher"`) | |
-| 2 | `ViewToggles` (`.ch-toggles`) replaces the empty state's `.empty-panel-btn`: it holds the right-panel toggle (`.ch-panel`) and, in the shell, a `.ch-terminal` toggle — the hide rule becomes `.ch-toggles:not(:has(.ch-terminal))`. The focus helper's fallback list drops `.empty-panel-btn` | |
-| 3 | Side chat loses its own loading row (`sc-loading` gone from the JS) and passes `working: sending\|\|running` to the shared transcript; the rule hiding the transcript's `.sending-line` inside `.sc-body` is dropped | |
-| 4 | Sidebar label-fade states added: `.se.has-badge:hover .t { --sb-fade:0px }` and `.gh.menu-open .gh-name { --sb-fade:64px }` | |
-| 5 | `.working-indicator.idle .wi-eye,.wi-eyes { animation:none }` — the waiting mascot's idle frame | |
-| 6 | The legacy plain-text subagent-result markers (`"[summary]"`, `"subagent error: "`, `next_step`) are gone; only the XML form (`<summary>`, `<resume_hint>`, `<subagent …>`) remains | |
+| 1 | Panel launcher is built from a shared kind-order list `const wJ=["diff","browser","term","btw"]`; the web launcher renders `wJ.filter(l=>l==="diff"\|\|l==="btw")`, the shell renders all four (`__name:"PanelLauncher"`) | SKIPPED (nothing user-visible: the fork's launcher already renders the same two entries, so porting the shared list changes no surface) |
+| 2 | `ViewToggles` (`.ch-toggles`) replaces the empty state's `.empty-panel-btn`: it holds the right-panel toggle (`.ch-panel`) and, in the shell, a `.ch-terminal` toggle — the hide rule becomes `.ch-toggles:not(:has(.ch-terminal))`. The focus helper's fallback list drops `.empty-panel-btn` | SKIPPED (both bundles hide this control in the browser app on a non-mobile viewport, so it is desktop-shell parity rather than a surface the reader sees) |
+| 3 | Side chat loses its own loading row (`sc-loading` gone from the JS) and passes `working: sending\|\|running` to the shared transcript; the rule hiding the transcript's `.sending-line` inside `.sc-body` is dropped | SKIPPED (user decision, 2026-09-21: the fork keeps its own side-chat loading row) |
+| 4 | Sidebar label-fade states added: `.se.has-badge:hover .t { --sb-fade:0px }` and `.gh.menu-open .gh-name { --sb-fade:64px }` | SKIPPED (user decision: the fork keeps its `--pinned-fade-*` sidebar masks instead of introducing `--sb-fade`) |
+| 5 | `.working-indicator.idle .wi-eye,.wi-eyes { animation:none }` — the waiting mascot's idle frame | SKIPPED (the fork reserves the moon spinner for the waiting state, so the animated face is not ported) |
+| 6 | The legacy plain-text subagent-result markers (`"[summary]"`, `"subagent error: "`, `next_step`) are gone; only the XML form (`<summary>`, `<resume_hint>`, `<subagent …>`) remains | SKIPPED (nothing to change: the fork's `parseSwarmResult` is already XML-only and carries no legacy plain-text marker) |
 
 ## Pre-port reading (evidence gathered before the port; not verdicts)
 
