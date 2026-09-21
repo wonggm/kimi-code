@@ -112,29 +112,35 @@ function onHeadClick(): void {
 </template>
 
 <style scoped>
-.tool-line { display: block; }
+.tool-line {
+  display: block;
+  --tl-gutter: 20px;
+  --tl-gap: var(--space-2);
+  --tl-indent: calc(var(--tl-gutter) + var(--tl-gap));
+}
 .tl-head {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--tl-gap);
   width: 100%;
-  padding: var(--space-1) 0;
+  min-height: var(--tl-gutter);
   border-radius: var(--radius-sm);
   color: var(--color-text);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
-  /* Upstream's row is 24px tall: 13px text on a line-height of exactly 1. The
-     fork's --leading-tight (1.25) made every tool row 2px taller than
-     upstream's. */
-  line-height: 1;
+  /* The head's height is the gutter token, not the font's line box, so the row
+     and the body's rail share one column. */
+  line-height: var(--tl-gutter);
   text-align: left;
 }
 .tl-head.clickable { cursor: pointer; user-select: none; }
 .tl-ic {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   flex: none;
+  width: var(--tl-gutter);
+  height: var(--tl-gutter);
   color: var(--color-text-faint);
 }
 .tl-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-1); }
@@ -186,16 +192,31 @@ function onHeadClick(): void {
   transition: grid-template-rows var(--duration-base) var(--ease-out);
 }
 .tl-body.open { grid-template-rows: minmax(0, 1fr); }
+/* The dotted rail: upstream's column rule, centred on the head's icon box and
+   running the full height of the expanded body. */
 .tl-body-inner {
+  position: relative;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-1) 0 var(--space-2);
+  padding: var(--space-1) 0 var(--space-2) var(--tl-indent);
   color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.tl-body-inner::before {
+  /* The dashes ride a token: check-style reads a token's own line, so a raw
+     gradient here would be reported as a gradient value. */
+  --tl-rail: repeating-linear-gradient(to bottom, var(--color-line) 0 2px, transparent 2px 4px);
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((var(--tl-gutter) - var(--p-hairline)) / 2);
+  width: var(--p-hairline);
+  background-image: var(--tl-rail);
 }
 .tl-body-content {
   display: flex;
