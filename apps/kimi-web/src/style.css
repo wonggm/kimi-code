@@ -482,8 +482,8 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-user-bubble-bg: var(--color-surface-sunken);
   --color-inline-code-bg: var(--color-surface-sunken);
   --color-surface-overlay: var(--color-surface-raised);
-  --color-diff-add-bg: var(--color-success-soft);
-  --color-diff-del-bg: var(--color-danger-soft);
+  --color-diff-add-bg: rgba(22, 196, 86, 0.1);
+  --color-diff-del-bg: rgba(255, 77, 77, 0.1);
   --color-topbar-bg-frost: color-mix(in srgb, var(--color-surface) 78%, transparent);
   --color-text-strong: #000000;
   --color-text-on-scrim: #ffffff;
