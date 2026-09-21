@@ -68,9 +68,8 @@ const label = computed(() => toolLabel(props.tool.name));
 const glyph = computed(() => toolGlyph(props.tool.name));
 const summary = computed(() => toolSummary(props.tool.name, props.tool.arg));
 const head = computed(() => toolHeadParts(props.tool.name, props.tool.arg));
-// Which body shape this tool uses, per upstream: the path tools lead with the
-// resolved path, Run echoes the command, Search lists its matches, everything
-// else just shows the output well.
+// Which body shape this tool uses, per upstream: Search lists its matches and
+// everything else shows the output well.
 const fullPath = computed(() => toolSummary(props.tool.name, props.tool.arg, true));
 const isRead = computed(() => /^read$/i.test(props.tool.name));
 const isSearch = computed(() => /^(grep|search)$/i.test(props.tool.name));
@@ -79,15 +78,6 @@ const panelTitle = computed(() => {
   if (isRead.value) return head.value.file || fullPath.value;
   if (isBash.value) return props.tool.name;
   return '';
-});
-const command = computed(() => {
-  try {
-    const raw = JSON.parse(props.tool.arg) as Record<string, unknown>;
-    const cmd = raw['command'] ?? raw['cmd'] ?? raw['script'];
-    return typeof cmd === 'string' ? cmd : props.tool.arg;
-  } catch {
-    return props.tool.arg;
-  }
 });
 const chip = computed(() =>
   toolChip({
@@ -141,8 +131,6 @@ watch(
       </button>
     </template>
     <ToolPanel :title="panelTitle" :scroll="!isBash">
-      <button v-if="isRead && fullPath" type="button" class="path-link" @click="emit('openFile', { path: fullPath })">{{ fullPath }}</button>
-      <div v-if="!isRead && !isSearch && command" class="cmd-echo">{{ command }}</div>
       <div v-if="isSearch" class="match-list">
         <button v-for="(line, i) in tool.output ?? []" :key="i" type="button" class="match-row">
           <span class="mtext">{{ line }}</span>
@@ -155,34 +143,6 @@ watch(
 </template>
 
 <style scoped>
-.path-link {
-  display: block;
-  width: 100%;
-  border: none;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  padding: 0 0 var(--space-1);
-  font-family: var(--font-mono);
-  font-size: calc(var(--content-font-size) - 2px);
-  color: var(--color-text-muted);
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.path-link:hover { color: var(--color-text); }
-.path-link:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
-.cmd-echo {
-  font-family: var(--font-mono);
-  font-size: calc(var(--content-font-size) - 2px);
-  line-height: 1.6;
-  font-variant-ligatures: none;
-  color: var(--color-text-muted);
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin-bottom: var(--space-1);
-}
 .match-list {
   display: flex;
   flex-direction: column;
