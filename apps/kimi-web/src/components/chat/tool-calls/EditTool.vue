@@ -221,6 +221,9 @@ function toggle(): void {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.row-add { background: var(--color-diff-add-bg); }
+.row-del { background: var(--color-diff-del-bg); }
+.row-hunk { background: var(--color-surface-sunken); }
 .row-add .hl-sign { color: var(--color-success); }
 .row-del .hl-sign { color: var(--color-danger); }
 .row-hunk .hl-text { color: var(--color-text-muted); }

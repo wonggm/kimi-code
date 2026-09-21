@@ -158,6 +158,22 @@ export const BEHAVIOUR_SCENES = [
     },
   },
   {
+    // A tool row's head is a disclosure that only changes what is inside the
+    // row, so no discovered control ever left it open: the expanded card was
+    // never captured and its body's row classes and fills were never compared.
+    // Two surfaces cover the two body shapes, the plain output well and the
+    // Edit card's diff rows.
+    name: 'behaviour-tool-card-expanded',
+    steps: [PIN_TAIL, { action: 'click', selector: '.tool-line .tl-head', ms: 500 }],
+    requires: [{ name: 'tool-card-open', present: '.tool-line.open' }],
+  },
+  {
+    name: 'behaviour-edit-card-expanded',
+    enOnly: true,
+    steps: [PIN_TAIL, { action: 'clickText', text: 'Edit', ms: 500 }],
+    requires: [{ name: 'edit-card-open', present: '.tool-line.open .hl-code' }],
+  },
+  {
     name: 'behaviour-panel-launcher',
     desktopOnly: true,
     // The panel with no tab open shows its launcher: two rows. Upstream composes
