@@ -54,6 +54,11 @@ export const STORAGE = {
   // The two apps disagree on this key name; seeding the wrong one silently
   // drops the font-scale dimension from the comparison.
   fontScale: { upstream: 'kimi-web.font-scale', fork: 'kimi-web.ui-font-size' },
+  // Fork-only, and fork-only in the opposite direction: the fork's material is
+  // on unless the key reads 'false', so leaving it unset put a glassed fork
+  // beside a plain upstream and every style and structure diff carried the
+  // fork's own material. The report claimed forkLiquidGlass 'off' regardless.
+  liquidGlass: 'kimi-web.liquid-glass',
 };
 
 export const BOOT_KEYS = {
@@ -61,6 +66,7 @@ export const BOOT_KEYS = {
   colorScheme: STORAGE.colorScheme,
   fontScale: STORAGE.fontScale,
   onboarded: STORAGE.onboarded,
+  liquidGlass: STORAGE.liquidGlass,
 };
 
 export function buildSeed({ app, locale, theme, token }) {
@@ -75,6 +81,9 @@ export function buildSeed({ app, locale, theme, token }) {
     // 'large' is upstream's 16px step, which is what the fork's 16 means.
     [fontKey]: app === 'upstream' ? 'large' : '16',
     [STORAGE.onboarded]: '1',
+    // Upstream ignores this key; the fork reads it and paints the graded ground,
+    // the lens filters and the glass surfaces without it.
+    [STORAGE.liquidGlass]: 'false',
     [STORAGE.credential]: JSON.stringify({
       version: 1,
       credential: token,
