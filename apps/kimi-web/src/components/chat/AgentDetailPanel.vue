@@ -186,33 +186,95 @@ const transcriptItems = ref<TranscriptItem[] | null>(null);
 const transcriptLoading = ref(false);
 const transcriptError = ref(false);
 
+// The watermark and item count of the page the pane is showing. A background
+// read that brings back the same watermark and the same number of items has
+// nothing new to draw, so the ref keeps its identity and the pane does not
+// re-render once a second on an idle subagent.
+let shownSeq: number | undefined;
+let shownCount = -1;
+
+// The pane re-reads the transcript while a run is in flight, because the
+// server writes it and only a read brings it over — the main conversation
+// streams over the socket, this one does not. One second, the cadence the task
+// poller uses.
+const TRANSCRIPT_POLL_INTERVAL_MS = 1000;
+let transcriptPollTimer: ReturnType<typeof setInterval> | null = null;
+// A fetch still in flight makes the next tick a no-op, so a slow server does
+// not stack requests behind each other.
+let transcriptFetchInFlight = false;
+
 const hasTranscript = computed(() => (transcriptItems.value?.length ?? 0) > 0);
 
 let fetchToken = 0;
-async function fetchTranscript(): Promise<void> {
+/** `quiet` is the background refresh: it leaves the loading state alone, or the
+ *  poll would flash the spinner over a transcript that is already drawn. */
+async function fetchTranscript(quiet = false): Promise<void> {
   const sid = props.sessionId;
   const agentId = wireAgentId.value;
   const token = ++fetchToken;
   // Keep the previous page mounted while refreshing — nulling it here blanked
   // the pane (and reset its scroll) on every subagent event.
   transcriptError.value = false;
-  transcriptLoading.value = true;
+  if (!quiet) transcriptLoading.value = true;
   if (!sid) {
-    transcriptLoading.value = false;
+    if (!quiet) transcriptLoading.value = false;
     return;
   }
+  transcriptFetchInFlight = true;
   try {
     const page = await getKimiWebApi().getAgentTranscript(sid, agentId);
     if (token !== fetchToken) return;
+    if (typeof page.seq === 'number' && page.seq === shownSeq && page.items.length === shownCount) {
+      return;
+    }
+    shownSeq = typeof page.seq === 'number' ? page.seq : undefined;
+    shownCount = page.items.length;
     transcriptItems.value = page.items;
   } catch {
     if (token !== fetchToken) return;
     transcriptItems.value = null;
     transcriptError.value = true;
+    // The pane shows the error now, so the next read has to assign even if the
+    // server hands back the page it handed back before.
+    shownCount = -1;
   } finally {
-    if (token === fetchToken) transcriptLoading.value = false;
+    if (token === fetchToken) {
+      transcriptFetchInFlight = false;
+      if (!quiet) transcriptLoading.value = false;
+    }
   }
 }
+
+function stopTranscriptPolling(): void {
+  if (transcriptPollTimer === null) return;
+  clearInterval(transcriptPollTimer);
+  transcriptPollTimer = null;
+}
+
+// Poll only while a run is in flight, and read once more as it stops so the
+// run's last writes land. `immediate` covers a panel that opens on a subagent
+// that is already running, where the flag never changes.
+watch(
+  isWorking,
+  (working, wasWorking) => {
+    if (working) {
+      transcriptPollTimer ??= setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          return;
+        }
+        if (transcriptFetchInFlight) return;
+        void fetchTranscript(true);
+      }, TRANSCRIPT_POLL_INTERVAL_MS);
+      return;
+    }
+    stopTranscriptPolling();
+    // On the mount call the panel-open fetch is already on its way.
+    if (wasWorking === undefined) return;
+    void fetchTranscript(true);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(stopTranscriptPolling);
 
 // While no transcript exists the pane shows the fallback block: upstream gates
 // it on the turn list being empty and the load having settled, which for the
@@ -455,13 +517,19 @@ watch(
   { immediate: true },
 );
 
-// Fresh transcript lands at the top of the scroller (a new panel starts at the
-// subagent's first turn, or the live block while running).
+// Where a fresh page lands: a finished subagent opens at its first turn, a run
+// still in flight opens at its live block at the foot and follows the tail from
+// there, since the pane re-reads every second and the reader is watching it
+// work. A page that arrives mid-run moves the scroller only while the reader is
+// already at the foot, the same rule the fallback block above follows.
 watch(transcriptItems, (next, prev) => {
   if (!next || next.length === 0) return;
-  if (prev !== null) return;
+  const firstPage = prev === null;
+  if (!firstPage && !(isWorking.value && pinnedBottom.value)) return;
   void nextTick(() => {
-    if (bodyEl.value) bodyEl.value.scrollTop = 0;
+    const body = bodyEl.value;
+    if (!body) return;
+    body.scrollTop = isWorking.value ? body.scrollHeight : 0;
   });
 });
 
@@ -474,6 +542,9 @@ watch(
     openRuns.clear();
     runTick.value++;
     promptExpanded.value = false;
+    // The new agent's page must be assigned even when it happens to carry the
+    // watermark and the item count the previous agent's page carried.
+    shownCount = -1;
     void fetchTranscript();
   },
   { immediate: true },
