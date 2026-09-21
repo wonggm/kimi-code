@@ -159,21 +159,23 @@ function toggle(): void {
 
 <style scoped>
 .think {
+  --think-gutter: 20px;
+  --think-gap: var(--space-2);
   margin: 0;
 }
 .think-head {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--think-gap);
   width: 100%;
-  padding: var(--space-1) 0;
+  min-height: var(--think-gutter);
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-faint);
   font-family: var(--font-ui);
   font-size: var(--text-sm);
-  line-height: 1;
+  line-height: var(--think-gutter);
   text-align: left;
   cursor: pointer;
   user-select: none;
@@ -191,6 +193,8 @@ function toggle(): void {
   align-items: center;
   justify-content: center;
   flex: none;
+  width: var(--think-gutter);
+  height: var(--think-gutter);
 }
 .think-title {
   font-weight: var(--weight-medium);
@@ -233,8 +237,21 @@ function toggle(): void {
   transition: none;
 }
 .think-body-inner {
+  position: relative;
   min-height: 0;
   overflow: hidden;
+  padding-left: calc(var(--think-gutter) + var(--think-gap));
+}
+.think-body-inner::before {
+  /* Same token trick as the tool row's rail, for the same reason. */
+  --think-rail: repeating-linear-gradient(to bottom, var(--color-line) 0 2px, transparent 2px 4px);
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((var(--think-gutter) - var(--p-hairline)) / 2);
+  width: var(--p-hairline);
+  background-image: var(--think-rail);
 }
 .think-text {
   margin: 0;

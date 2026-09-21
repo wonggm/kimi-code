@@ -36,6 +36,9 @@ const filePath = computed(() =>
 const leadDir = computed(() => (head.value.dir ? `${head.value.dir}/` : ''));
 
 const editDiff = computed<DiffViewLine[] | null>(() => buildEditDiffLines(props.tool));
+function sign(line: DiffViewLine): string {
+  return line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' ';
+}
 // Upstream prints the pair twice from the same counts: as the row's trailing
 // pair (`tl-add` / `tl-del`) while the card is closed, and as the opened card's
 // `ed-stats`.
@@ -54,7 +57,9 @@ const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
 const expandKey = props.tool.id;
 const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
 const open = ref(persisted ?? false);
-const canExpand = computed(() => hasOutput.value && !props.toolDiffPanel);
+const canExpand = computed(
+  () => (hasOutput.value || (editDiff.value?.length ?? 0) > 0) && !props.toolDiffPanel,
+);
 
 function toggle(): void {
   if (props.toolDiffPanel) {
@@ -85,37 +90,40 @@ function toggle(): void {
   >
     <ToolPanel flush scroll>
       <template #head>
-        <span class="ed-head">
-          <span class="ed-path">
-            <span v-if="head.dir" class="ed-dir">{{ head.dir }}/</span>
-            <button
-              v-if="head.file"
-              type="button"
-              class="ed-file ed-open"
-              @click.stop="emit('openFile', { path: filePath })"
-            >{{ head.file }}</button>
-            <span v-else class="ed-file">{{ fullPath }}</span>
-          </span>
-          <span v-if="diffCounts" class="ed-stats">
-            <span v-if="diffCounts.add > 0" class="ed-add">+{{ diffCounts.add }}</span>
-            <span v-if="diffCounts.del > 0" class="ed-del">−{{ diffCounts.del }}</span>
-          </span>
+        <span class="ed-path">
+          <span v-if="head.dir" class="ed-dir">{{ head.dir }}/</span>
+          <button
+            v-if="head.file"
+            type="button"
+            class="ed-file ed-open"
+            @click.stop="emit('openFile', { path: filePath })"
+          >{{ head.file }}</button>
+          <span v-else class="ed-file">{{ fullPath }}</span>
+        </span>
+        <span v-if="diffCounts" class="ed-stats">
+          <span v-if="diffCounts.add > 0" class="ed-add">+{{ diffCounts.add }}</span>
+          <span v-if="diffCounts.del > 0" class="ed-del">−{{ diffCounts.del }}</span>
         </span>
       </template>
-      <ToolOutputBlock :lines="tool.output" empty-text="Waiting for output…" />
+      <div v-if="editDiff && editDiff.length > 0" class="hl-code" style="--gutter-ch: 4ch">
+        <div class="hl-body">
+          <div
+            v-for="(line, i) in editDiff"
+            :key="i"
+            class="hl-row"
+            :class="`row-${line.type}`"
+          >
+            <span class="hl-sign">{{ sign(line) }}</span>
+            <span class="hl-text">{{ line.text }}</span>
+          </div>
+        </div>
+      </div>
+      <ToolOutputBlock v-else :lines="tool.output" empty-text="Waiting for output…" />
     </ToolPanel>
   </ToolRow>
 </template>
 
 <style scoped>
-.ed-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: 1;
-  gap: var(--space-2);
-  min-width: 0;
-}
 .ed-path {
   min-width: 0;
   overflow: hidden;
@@ -142,4 +150,78 @@ function toggle(): void {
 }
 .ed-add { color: var(--color-success); }
 .ed-del { color: var(--color-danger); }
+
+/* The opened body is upstream's shared code renderer in its `lines` shape,
+   unframed (no well of its own over the panel body) and without line numbers,
+   so the rows carry the sign column only and the element keeps the renderer's
+   4ch gutter floor. Its tool panel raises the renderer's code size to the prose
+   size here, hence --content-font-size. */
+.hl-code {
+  border: var(--p-hairline) solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-well);
+  overflow: auto;
+  max-height: calc(24 * 1.5 * var(--ui-font-size));
+  overscroll-behavior: contain;
+  font-family: var(--font-mono);
+  font-size: var(--content-font-size);
+  line-height: 1.571;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+  font-variant-ligatures: none;
+}
+.hl-code:not(.framed) {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  max-height: none;
+  overflow: visible;
+}
+.hl-body {
+  width: max-content;
+  min-width: 100%;
+  padding: var(--space-1) 0 var(--space-2);
+}
+.hl-code.plain-pad .hl-body { padding-left: var(--space-3); }
+.hl-row {
+  display: flex;
+  align-items: flex-start;
+  min-height: calc(1em * var(--leading-normal));
+  white-space: pre;
+  width: 100%;
+}
+.hl-gutter {
+  flex: none;
+  box-sizing: content-box;
+  min-width: var(--gutter-ch, 4ch);
+  padding: 0 var(--space-2);
+  text-align: right;
+  color: var(--color-text-faint);
+  user-select: none;
+  border-right: var(--p-hairline) solid var(--color-line);
+  font-variant-numeric: tabular-nums;
+}
+.hl-sign {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--color-text-muted);
+  user-select: none;
+}
+.hl-text {
+  flex: none;
+  padding-right: 14px;
+  white-space: pre;
+  color: var(--color-text);
+}
+.hl-gutter + .hl-text { padding-left: var(--space-2); }
+.hl-code.wrap .hl-body { width: 100%; }
+.hl-code.wrap .hl-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.row-add .hl-sign { color: var(--color-success); }
+.row-del .hl-sign { color: var(--color-danger); }
+.row-hunk .hl-text { color: var(--color-text-muted); }
 </style>

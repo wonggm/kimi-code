@@ -11,13 +11,15 @@ withDefaults(
     title?: string;
     flush?: boolean;
     scroll?: boolean;
+    copy?: boolean;
   }>(),
-  { title: '', flush: false, scroll: false },
+  { title: '', flush: false, scroll: false, copy: true },
 );
 
 // Upstream's panel head carries a Copy control beside the title, and it copies
 // what the panel shows — the tool's own output. Reading the rendered body keeps
-// every tool card from having to thread the same text through a prop.
+// every tool card from having to thread the same text through a prop. A head
+// with no output behind it (the todo list) turns the control off.
 const bodyEl = ref<HTMLElement | null>(null);
 const copied = ref(false);
 let copiedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -46,7 +48,7 @@ async function copyBody(): Promise<void> {
           <span v-if="title" class="tp-title">{{ title }}</span>
         </slot>
       </span>
-      <IconButton size="sm" :class="{ copied }" :label="t('common.copy')" @click="copyBody">
+      <IconButton v-if="copy" size="sm" :class="{ copied }" :label="t('common.copy')" @click="copyBody">
         <Icon :name="copied ? 'check' : 'copy'" size="md" />
       </IconButton>
     </div>
