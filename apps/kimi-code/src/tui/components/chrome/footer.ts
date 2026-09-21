@@ -191,8 +191,8 @@ const CACHE_MID_PERCENT = 80;
  *  whether the cache is healthy: one rebuilt prefix moves it by a few points
  *  instead of flipping the readout. The last request and the session figure
  *  live in the /usage panel. */
-export function formatFooterCache(cache: CacheStatus, colors: ColorPalette): string {
-  if (cache.reporting === 'none') return '';
+export function formatFooterCache(cache: CacheStatus | undefined, colors: ColorPalette): string {
+  if (cache === undefined || cache.reporting === 'none') return '';
   const rate = cache.recentPercent ?? cache.lastRequestPercent ?? cache.sessionPercent;
   if (rate === undefined) return '';
   const paint =
