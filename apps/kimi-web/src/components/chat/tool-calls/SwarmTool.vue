@@ -308,7 +308,7 @@ function ordinal(index: number): string {
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
-  background: var(--color-subtle);
+  background: var(--color-fill-1);
   color: var(--color-text);
 }
 .sw-text {
@@ -344,7 +344,7 @@ function ordinal(index: number): string {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3);
-  border: 1px solid var(--color-subtle);
+  border: 1px solid var(--color-fill-1);
   border-radius: var(--radius-lg);
   max-height: 300px;
   overflow-y: auto;

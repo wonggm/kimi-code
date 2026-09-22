@@ -213,10 +213,6 @@ watch(
 .au-hdr {
   font: var(--text-xs) var(--font-mono);
   color: var(--color-text-muted);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-sm);
-  padding: 0 6px;
   flex: none;
 }
 .au-qtext {
@@ -233,13 +229,9 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
   color: var(--color-text-faint);
 }
 .au-opt.sel {
-  border-color: var(--color-accent-bd);
   background: var(--color-accent-soft);
   color: var(--color-text);
 }
@@ -266,12 +258,18 @@ watch(
 }
 
 .au-raw {
-  padding: 11px 13px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
-  font: var(--text-sm)/1.65 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: var(--content-font-size);
+  line-height: 1.571;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+  font-variant-ligatures: none;
+  color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-word;
+  text-autospace: no-autospace;
+  max-height: 12lh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 </style>

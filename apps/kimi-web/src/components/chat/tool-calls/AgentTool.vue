@@ -213,7 +213,7 @@ watch(
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
-  background: var(--color-subtle);
+  background: var(--color-fill-1);
   color: var(--color-text);
 }
 .ag-text {
