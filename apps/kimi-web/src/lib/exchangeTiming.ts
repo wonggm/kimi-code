@@ -67,20 +67,25 @@ export function saveExchangeStart(sessionId: string, start: ExchangeStart | null
 }
 
 /**
- * The start to count from, given what the client already remembers and the
- * turn a snapshot reports in flight (`turnId === undefined`: no exchange is
- * running, so the answer is null — clear it).
+ * The start to count from, given what the client already remembers and what a
+ * snapshot reports about the exchange: `turnActive` says whether one is
+ * running at all (no running exchange: null — clear it), and `turnId` is the
+ * daemon turn's name when the snapshot carries one.
  *
- * A remembered stamp is kept only when it belongs to that turn: one with no
+ * A running exchange the snapshot does not name yet keeps its remembered
+ * start, because a reload mid-exchange must not restart the count. A
+ * remembered stamp is kept only when it belongs to that turn: one with no
  * turn id yet is the same exchange before the daemon named its turn, and one
  * naming another turn belongs to an exchange this page never saw end.
  */
 export function reconcileExchangeStart(
   existing: ExchangeStart | undefined,
+  turnActive: boolean,
   turnId: number | undefined,
   now: number,
 ): ExchangeStart | null {
-  if (turnId === undefined) return null;
+  if (!turnActive) return null;
+  if (turnId === undefined) return existing ?? { at: now };
   if (existing === undefined || (existing.turnId !== undefined && existing.turnId !== turnId)) {
     return { at: now, turnId };
   }

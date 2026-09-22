@@ -1435,30 +1435,42 @@ describe('exchange timing', () => {
 
   describe('reconcileExchangeStart', () => {
     it('has nothing to count when no turn is in flight', () => {
-      expect(reconcileExchangeStart({ at: 1000, turnId: 3 }, undefined, 5000)).toBeNull();
-      expect(reconcileExchangeStart(undefined, undefined, 5000)).toBeNull();
+      expect(reconcileExchangeStart({ at: 1000, turnId: 3 }, false, undefined, 5000)).toBeNull();
+      expect(reconcileExchangeStart(undefined, false, undefined, 5000)).toBeNull();
     });
 
     it('starts the count now when nothing is remembered', () => {
-      expect(reconcileExchangeStart(undefined, 7, 5000)).toEqual({ at: 5000, turnId: 7 });
+      expect(reconcileExchangeStart(undefined, true, 7, 5000)).toEqual({ at: 5000, turnId: 7 });
     });
 
     it('keeps the remembered start of the same turn (reload / session switch)', () => {
-      expect(reconcileExchangeStart({ at: 1000, turnId: 7 }, 7, 5000)).toEqual({
+      expect(reconcileExchangeStart({ at: 1000, turnId: 7 }, true, 7, 5000)).toEqual({
         at: 1000,
         turnId: 7,
       });
     });
 
     it('adopts the turn id of a start stamped before the daemon named the turn', () => {
-      expect(reconcileExchangeStart({ at: 1000 }, 7, 5000)).toEqual({ at: 1000, turnId: 7 });
+      expect(reconcileExchangeStart({ at: 1000 }, true, 7, 5000)).toEqual({ at: 1000, turnId: 7 });
     });
 
     it('restarts for a turn the remembered start does not belong to', () => {
-      expect(reconcileExchangeStart({ at: 1000, turnId: 3 }, 7, 5000)).toEqual({
+      expect(reconcileExchangeStart({ at: 1000, turnId: 3 }, true, 7, 5000)).toEqual({
         at: 5000,
         turnId: 7,
       });
+    });
+
+    it('keeps the remembered start while a running turn is not named yet', () => {
+      expect(reconcileExchangeStart({ at: 1000 }, true, undefined, 5000)).toEqual({ at: 1000 });
+      expect(reconcileExchangeStart({ at: 1000, turnId: 3 }, true, undefined, 5000)).toEqual({
+        at: 1000,
+        turnId: 3,
+      });
+    });
+
+    it('starts the count now for an unnamed running turn with nothing remembered', () => {
+      expect(reconcileExchangeStart(undefined, true, undefined, 5000)).toEqual({ at: 5000 });
     });
   });
 

@@ -1653,14 +1653,18 @@ async function syncSessionFromSnapshot(sessionId: string): Promise<SyncSessionRe
       if (mainTurnActive) next[sessionId] = true;
       else delete next[sessionId];
       rawState.turnActiveBySession = next;
-      // The exchange clock follows the same fact: no turn in flight means no
-      // exchange to count, and a stamp naming another turn belongs to an
-      // exchange this client never saw end.
+      // The exchange clock follows the same fact plus the in-flight turn: no
+      // exchange to count means clear it, a turn the snapshot names restarts
+      // the count on a turn change, and a live exchange the snapshot does not
+      // name yet keeps the start it already had (a reload mid-exchange must
+      // not restart the count).
+      const turnLive = mainTurnActive || snap.inFlightTurn !== null;
       setExchangeStart(
         sessionId,
         reconcileExchangeStart(
           exchangeStarts.value[sessionId],
-          mainTurnActive ? snap.inFlightTurn?.turnId : undefined,
+          turnLive,
+          snap.inFlightTurn?.turnId,
           Date.now(),
         ),
       );
