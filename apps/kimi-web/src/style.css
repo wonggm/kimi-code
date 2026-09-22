@@ -953,12 +953,16 @@ html[data-liquid-glass="on"] {
      (`rim-lo` 0.28 against `rim-hi` 0.85), and that ratio is what makes a
      surface read as an object on a flat background: nothing crosses behind the
      left panel, the composer or the dock chips, so their blur has no contrast to
-     work on and the edge is the only place the material can show itself. Both
-     lines stand above that ratio here, by request, so the edge reads clearly: in
-     light the catch at 0.55 against the top line's 0.9, in dark 0.2 against
-     0.34. At the reference ratio the light edge was barely visible against a
-     white ground. Neither light value moved when dark's pair came up. */
-  --lg-rim-catch: rgba(255, 255, 255, 0.55);
+     work on and the edge is the only place the material can show itself. On the
+     panel carriers this ring and --lg-rim-shade below land on the same perimeter
+     pixel with this one painted over it, so a high white catch washes the dark
+     line out: measured on the left panel's right edge against a 251 face, the
+     line read 236 at a 0.55 catch over a 16% shade, and 241 once the catch came
+     up to 0.85 over the stronger 38% shade — the added darkness was undone by
+     the white painted over it, and the edge read lighter, not more pronounced.
+     Light therefore keeps the catch low and lets the dark line carry the edge.
+     Dark's shade is transparent and its catch stands alone, at 0.2 against 0.34. */
+  --lg-rim-catch: rgba(255, 255, 255, 0.35);
   /* The reference material's 1px inner line, drawn in CSS. Both rim tokens
      above are white, which is right for a face that is darker than its ground
      and invisible on one that is lighter: on this theme's near-white page a
@@ -972,7 +976,7 @@ html[data-liquid-glass="on"] {
      because it is painted on their border rather than inset over this ring:
      without that, the two rings would cover the same perimeter pixel and the
      catch would darken the lip instead of showing one. */
-  --lg-rim-shade: rgb(15 23 42 / 16%);
+  --lg-rim-shade: rgb(15 23 42 / 38%);
   /* The lighter fill: what a control that highlights on hover paints, and what
      the surfaces with nothing behind them use. */
   --lg-tint-a: 46%;
@@ -1021,7 +1025,7 @@ html[data-liquid-glass="on"] {
      card the dark theme wants. The two themes part company here on purpose. */
   --lg-toc-fill: color-mix(in srgb, var(--lg-face-menu) var(--lg-tint-dense), transparent);
   --lg-toc-blur: blur(30px) saturate(140%);
-  --lg-edge: color-mix(in srgb, var(--color-text) 9%, transparent);
+  --lg-edge: color-mix(in srgb, var(--color-text) 20%, transparent);
   --lg-shadow: var(--shadow-sm);
   /* The floating panel's own drop shadow, and the composer card's second one.
      The reference material separates a capsule from the page with a soft shadow
@@ -1148,7 +1152,7 @@ html[data-liquid-glass="on"] {
      across the bar's foot where the page reads 253, which is a hard edge on a
      surface that has no drop below it there, so the ring is white at 60% and
      the perimeter reads on the content behind the bar instead. */
-  --lg-head-shadow: inset 0 1px 0 rgb(255 255 255 / 95%), inset 0 0 0 1px rgb(255 255 255 / 60%), 0 6px 18px -8px rgb(16 24 40 / 16%);
+  --lg-head-shadow: inset 0 1px 0 rgb(255 255 255 / 95%), inset 0 0 0 1px rgb(255 255 255 / 60%), 0 6px 18px -8px rgb(16 24 40 / 27%);
   /* 18px, the material's own radius, not DeepSeek's 12px: the reader asked for
      this bar to read more glassy, and the transcript behind it now reads as
      clearly smeared rather than merely softened. This is the one value on the
@@ -1730,7 +1734,7 @@ html[data-color-scheme="dark"][data-liquid-glass="on"] {
      either: its whole-face specular would wash a bar this thin. Its edge is not
      a rim token
      either: neither `--lg-rim-top` (white at 90%) nor `--lg-rim-catch` (white at
-     55%) is visible on a near-white bar over a near-white page, so the light edge
+     85%) is visible on a near-white bar over a near-white page, so the light edge
      is the pair `--lg-head-shadow` insets — a 95% white lip at the head and a
      60% white ring just inside the perimeter, the reference's bright lip and the
      line it draws below it — over the
