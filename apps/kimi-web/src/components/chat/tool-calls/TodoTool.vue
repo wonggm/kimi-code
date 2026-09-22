@@ -67,9 +67,7 @@ function toggle(): void {
 }
 
 /** Row and glyph classes are upstream's vocabulary: a row is `s-done`,
- *  `s-in_progress` or `s-pending`, while the in-progress glyph is `s-run`.
- *  Upstream draws the pending glyph as a hollow ring from its own icon set;
- *  the registry here has no ring, so the SVG is inlined in the template. */
+ *  `s-in_progress` or `s-pending`, while the in-progress glyph is `s-run`. */
 function rowClass(todoStatus: string): string {
   if (todoStatus === 'completed') return 's-done';
   if (todoStatus === 'in_progress') return 's-in_progress';
@@ -79,7 +77,8 @@ function rowClass(todoStatus: string): string {
 function glyphClass(todoStatus: string): string {
   if (todoStatus === 'completed') return 's-done';
   if (todoStatus === 'in_progress') return 's-run';
-  return 's-pending';
+  if (todoStatus === 'pending') return 's-pending';
+  return 's-fail';
 }
 </script>
 
@@ -106,27 +105,10 @@ function glyphClass(todoStatus: string): string {
         <div class="todo-list">
           <div v-for="(todo, i) in todos" :key="i" class="todo-row" :class="rowClass(todo.status)">
             <span class="status-glyph" :class="glyphClass(todo.status)" aria-hidden="true">
-              <Icon v-if="todo.status === 'completed'" name="check" size="sm" />
+              <Icon v-if="todo.status === 'completed'" name="circle-check-filled" size="md" />
               <Spinner v-else-if="todo.status === 'in_progress'" size="md" />
-              <svg
-                v-else
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                class="kw-icon"
-                aria-hidden="true"
-              >
-                <g transform="scale(1.333333)">
-                  <path
-                    fill-rule="evenodd"
-                    clip-rule="evenodd"
-                    d="M1.575 9C1.575 4.89918 4.89918 1.575 9 1.575C13.1008 1.575 16.425 4.89918 16.425 9C16.425 13.1008 13.1008 16.425 9 16.425C4.89918 16.425 1.575 13.1008 1.575 9ZM9 2.925C5.64477 2.925 2.925 5.64477 2.925 9C2.925 12.3552 5.64477 15.075 9 15.075C12.3552 15.075 15.075 12.3552 15.075 9C15.075 5.64477 12.3552 2.925 9 2.925Z"
-                    fill="currentColor"
-                  />
-                </g>
-              </svg>
+              <Icon v-else-if="todo.status === 'pending'" name="circle-empty" size="md" />
+              <Icon v-else name="close" size="sm" />
             </span>
             <span class="todo-title">{{ todo.title }}</span>
           </div>
@@ -155,28 +137,21 @@ function glyphClass(todoStatus: string): string {
   flex: none;
   color: var(--color-text-faint);
 }
-.todo-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  border: 0.5px solid var(--color-line);
-  border-radius: var(--radius-md);
-  background: var(--color-well);
-  padding: var(--space-2) var(--space-3);
-  max-height: calc(12 * 1.6 * var(--content-font-size));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
+.todo-list { display: flex; flex-direction: column; gap: var(--space-1); }
 .todo-row {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 2px 0;
-  font-size: calc(var(--content-font-size) - 1px);
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  line-height: 20px;
   color: var(--color-text);
 }
 .todo-row.s-in_progress .todo-title {
+  color: var(--color-text);
   font-weight: var(--weight-medium);
+}
+.todo-row.s-done .todo-title {
+  color: var(--color-text-quaternary);
 }
 .status-glyph {
   flex: none;
@@ -187,15 +162,20 @@ function glyphClass(todoStatus: string): string {
   user-select: none;
 }
 .status-glyph.s-run {
-  color: var(--color-accent);
+  color: var(--color-text);
+}
+.status-glyph.s-done {
+  color: var(--color-fill-4);
 }
 .status-glyph.s-pending {
-  color: var(--color-text-faint);
+  color: var(--color-fill-4);
+}
+.status-glyph.s-fail {
+  color: var(--color-danger);
 }
 .todo-title {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
-  line-height: 1.4;
 }
 </style>

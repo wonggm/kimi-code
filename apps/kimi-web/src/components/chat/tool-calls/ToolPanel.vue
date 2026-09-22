@@ -62,12 +62,17 @@ async function copyBody(): Promise<void> {
 .tp {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 10px;
+  width: 100%;
   min-width: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-fill-1);
+  overflow: clip;
 }
 /* The edit card's head carries its own padding, so the panel adds none. */
-.tp.flush { gap: 0; }
-.tp.flush .tp-head { padding: 0 0 var(--space-2); }
+.tp.flush { gap: 0; padding: 0; }
+.tp.flush .tp-head { padding: var(--space-2) var(--space-3); }
 .tp-head {
   display: flex;
   align-items: center;
@@ -81,8 +86,8 @@ async function copyBody(): Promise<void> {
   gap: var(--space-2);
   min-width: 0;
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
-  line-height: var(--leading-solid);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
 }
 .tp-title {
   color: var(--color-text);
@@ -91,13 +96,10 @@ async function copyBody(): Promise<void> {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tp-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
+.tp-body { min-width: 0; min-height: 0; }
+.tp-body.scroll {
+  max-height: 13lh;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
-/* The body is the panel's scroll region; the block inside owns the scrolling
-   itself, so the panel only has to allow it to shrink. */
-.tp-body.scroll { min-height: 0; }
 </style>

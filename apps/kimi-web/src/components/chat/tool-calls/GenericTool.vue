@@ -143,17 +143,7 @@ watch(
 </template>
 
 <style scoped>
-.match-list {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-md);
-  background: var(--color-well);
-  padding: var(--space-1);
-  max-height: calc(12 * 1.6 * var(--content-font-size));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
+.match-list { display: flex; flex-direction: column; }
 .match-row {
   display: flex;
   align-items: baseline;
@@ -162,17 +152,19 @@ watch(
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  padding: 2px var(--space-2);
+  padding: 0;
   font-family: var(--font-mono);
-  font-size: calc(var(--content-font-size) - 2px);
-  line-height: 1.6;
+  font-size: var(--content-font-size);
+  line-height: 1.571;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+  font-variant-ligatures: none;
   color: var(--color-text);
   text-align: left;
-  cursor: pointer;
+  cursor: default;
 }
-.match-row:hover { background: var(--color-hover); }
+.match-row:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 .mtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.match-empty { color: var(--color-text-muted); font-size: var(--text-xs); padding: var(--space-1) var(--space-2); }
+.match-empty { color: var(--color-text-muted); font-size: var(--text-xs); }
 .chip {
   color: var(--color-text-muted);
   font-size: var(--text-xs);

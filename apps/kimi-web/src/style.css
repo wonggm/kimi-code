@@ -433,6 +433,7 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-text: rgba(0, 0, 0, 0.9);
   --color-text-muted: #6b7280;
   --color-text-faint: #9aa3af;
+  --color-text-quaternary: rgba(0, 0, 0, 0.3);
   --color-text-on-accent: #ffffff;
   --color-line: #e7eaee;
   --color-line-strong: #d4d9e0;
@@ -484,6 +485,8 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-surface-overlay: var(--color-surface-raised);
   --color-diff-add-bg: rgba(22, 196, 86, 0.1);
   --color-diff-del-bg: rgba(255, 77, 77, 0.1);
+  --color-diff-add-fg: #16c456;
+  --color-diff-del-fg: #ff4756;
   --color-topbar-bg-frost: color-mix(in srgb, var(--color-surface) 78%, transparent);
   --color-text-strong: #000000;
   --color-text-on-scrim: #ffffff;
@@ -501,6 +504,7 @@ html[data-color-scheme="dark"][data-accent="mono"] {
   --color-send-icon: #ffffff;
   --color-fill-1: rgba(0, 0, 0, 0.03);
   --color-fill-2: rgba(0, 0, 0, 0.05);
+  --color-fill-4: rgba(0, 0, 0, 0.25);
   --color-fill-on-inverted: rgba(255, 255, 255, 0.05);
   /* Disabled send glyph — upstream's light value. The dark blocks below carry
      upstream's measured rgba(255, 255, 255, 0.28). */
@@ -756,6 +760,8 @@ html[data-color-scheme="dark"] {
   --color-send-icon: #1f1f1f;
   --color-fill-1: rgba(255, 255, 255, 0.05);
   --color-fill-2: rgba(255, 255, 255, 0.1);
+  --color-fill-4: rgba(255, 255, 255, 0.25);
+  --color-text-quaternary: rgba(255, 255, 255, 0.26);
   --color-stop-glyph: color-mix(in srgb, var(--color-danger) 72%, transparent);
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
@@ -831,6 +837,8 @@ html[data-color-scheme="dark"] {
     --color-send-icon: #1f1f1f;
     --color-fill-1: rgba(255, 255, 255, 0.05);
     --color-fill-2: rgba(255, 255, 255, 0.1);
+    --color-fill-4: rgba(255, 255, 255, 0.25);
+    --color-text-quaternary: rgba(255, 255, 255, 0.26);
     --color-stop-glyph: color-mix(in srgb, var(--color-danger) 72%, transparent);
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);

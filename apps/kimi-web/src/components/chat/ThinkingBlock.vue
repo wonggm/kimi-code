@@ -169,12 +169,12 @@ function toggle(): void {
   gap: var(--think-gap);
   width: 100%;
   min-height: var(--think-gutter);
+  padding: 0;
   border: none;
-  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-text-faint);
+  color: var(--color-text-muted);
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   line-height: var(--think-gutter);
   text-align: left;
   cursor: pointer;
@@ -186,7 +186,8 @@ function toggle(): void {
 }
 .think-head:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 2px var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--p-focus-ring);
 }
 .think-ic {
   display: inline-flex;
@@ -195,9 +196,14 @@ function toggle(): void {
   flex: none;
   width: var(--think-gutter);
   height: var(--think-gutter);
+  color: var(--color-text-faint);
 }
+/* The bulb fills the gutter box at 18px, as upstream draws it: the rule beats
+   the width/height baked into the icon's own markup. */
+.think-ic :deep(.kw-icon) { width: 18px; height: 18px; }
 .think-title {
-  font-weight: var(--weight-medium);
+  flex: none;
+  font-weight: var(--weight-regular);
 }
 .think-time {
   flex: none;
@@ -206,6 +212,8 @@ function toggle(): void {
 }
 .think-car {
   flex: none;
+  width: 12px;
+  height: 12px;
   color: var(--color-text-faint);
   transition: transform var(--duration-base) var(--ease-out);
 }
@@ -255,8 +263,8 @@ function toggle(): void {
 }
 .think-text {
   margin: 0;
-  padding: var(--space-1) 0 var(--space-2);
-  font: var(--text-base)/var(--leading-relaxed) var(--font-ui);
+  padding: var(--space-1-5) 0 0;
+  font: var(--text-base)/var(--leading-normal) var(--font-ui);
   font-weight: var(--weight-regular);
   color: var(--color-text-muted);
   white-space: pre-wrap;
@@ -264,6 +272,5 @@ function toggle(): void {
 }
 .mob .think-text {
   color: var(--color-text-faint);
-  line-height: var(--leading-normal);
 }
 </style>

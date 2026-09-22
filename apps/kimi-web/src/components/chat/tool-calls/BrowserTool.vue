@@ -109,16 +109,15 @@ watch(
 .bt-open {
   flex: none;
   background: none;
-  border: 1px solid var(--color-line);
+  border: none;
   border-radius: var(--radius-xs);
   color: var(--color-text-muted);
   font: var(--text-xs) var(--font-ui);
-  padding: 1px 7px;
+  padding: 0;
   cursor: pointer;
 }
 .bt-open:hover {
   color: var(--color-text);
-  background: var(--color-surface-sunken);
 }
 .bt-open:focus-visible {
   outline: none;

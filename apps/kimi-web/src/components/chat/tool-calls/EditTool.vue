@@ -148,8 +148,8 @@ function toggle(): void {
   gap: var(--space-1);
   flex: none;
 }
-.ed-add { color: var(--color-success); }
-.ed-del { color: var(--color-danger); }
+.ed-add { color: var(--color-diff-add-fg); }
+.ed-del { color: var(--color-diff-del-fg); }
 
 /* The opened body is upstream's shared code renderer in its `lines` shape,
    unframed (no well of its own over the panel body) and without line numbers,

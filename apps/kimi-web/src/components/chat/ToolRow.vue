@@ -125,9 +125,9 @@ function onHeadClick(): void {
   width: 100%;
   min-height: var(--tl-gutter);
   border-radius: var(--radius-sm);
-  color: var(--color-text);
+  color: var(--color-text-muted);
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   /* The head's height is the gutter token, not the font's line box, so the row
      and the body's rail share one column. */
   line-height: var(--tl-gutter);
@@ -143,23 +143,26 @@ function onHeadClick(): void {
   height: var(--tl-gutter);
   color: var(--color-text-faint);
 }
+/* The glyph fills the gutter box at 18px, as upstream draws it: the rule beats
+   the width/height baked into the icon's own markup. */
+.tl-ic :deep(.kw-icon) { width: 18px; height: 18px; }
 .tl-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-1); }
-.tl-lead { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.tl-lead { display: flex; align-items: center; gap: var(--tl-gap); min-width: 0; }
 .tl-name { font-weight: var(--weight-regular); color: var(--color-text-muted); flex: none; }
 .tl-dim {
   color: var(--color-text-muted);
-  line-height: var(--leading-tight);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tl-tail { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); flex: none; }
-.tl-time { color: var(--color-text-faint); font-size: var(--text-xs); }
+.tl-tail { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.tl-time { color: var(--color-text-faint); font-size: var(--text-xs); flex: none; white-space: nowrap; }
 .tl-status { display: inline-flex; align-items: center; flex: none; }
 .tl-status.error { color: var(--color-danger); }
+.tl-status.cancelled { color: var(--color-text-faint); }
 /* The chevron's wrapper is a plain span, whose line box added a pixel over the
-   16px button and made every tool row 25px where upstream's is 24px. */
+   14px button and made every tool row taller than upstream's. */
 .tl-lead > .ui-tip {
   display: inline-flex;
   align-items: center;
@@ -169,8 +172,8 @@ function onHeadClick(): void {
   align-items: center;
   justify-content: center;
   align-self: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -201,7 +204,7 @@ function onHeadClick(): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-1) 0 var(--space-2) var(--tl-indent);
+  padding-left: var(--tl-indent);
   color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-word;
@@ -223,31 +226,32 @@ function onHeadClick(): void {
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+  padding-top: var(--space-1-5);
+  padding-bottom: var(--space-1);
 }
 
 /* Chip slot (line counts, result counts): upstream's tl-chip. */
 .tl-file {
   font-weight: var(--weight-regular);
-  color: var(--color-text);
-  line-height: var(--leading-tight);
+  color: var(--color-text-muted);
   flex: none;
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   background: transparent;
   padding: 0;
   font-family: inherit;
   font-size: inherit;
+  line-height: inherit;
   cursor: pointer;
 }
 .tl-file:hover { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
 .tl-file:focus-visible { outline: none; box-shadow: var(--p-focus-ring); }
 .tl-faint {
   color: var(--color-text-faint);
-  line-height: var(--leading-tight);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -255,10 +259,8 @@ function onHeadClick(): void {
 }
 .tl-mono {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
   font-variant-ligatures: none;
   color: var(--color-text-muted);
-  line-height: normal;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
