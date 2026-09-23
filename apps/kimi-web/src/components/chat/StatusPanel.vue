@@ -67,7 +67,10 @@ const swarmText = computed(() => (props.swarmMode ? t('status.swarmOn') : t('sta
 // The meter's own figure, so the panel reads the same number the toolbar shows.
 const tpsText = computed(() => {
   const tps = props.status.tps;
-  return tps === undefined ? t('status.statusNone') : `${formatTps(tps.value)} tok/s`;
+  if (tps === undefined) return t('status.statusNone');
+  return tps.kind === 'avg'
+    ? t('status.tpsAvgText', { value: formatTps(tps.value) })
+    : `${formatTps(tps.value)} tok/s`;
 });
 
 const showCost = computed(() => typeof props.costUsd === 'number' && props.costUsd > 0);

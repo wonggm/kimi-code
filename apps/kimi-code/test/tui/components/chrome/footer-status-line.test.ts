@@ -230,16 +230,27 @@ describe('FooterComponent tps payload', () => {
     expect((await payloadFor({ ...baseState, tpsLive: 42.3 })).tps).toEqual({
       value: 42.3,
       live: true,
+      avg: false,
     });
   });
 
-  it('reports the last step rate as not live', async () => {
+  it('reports the last step rate as neither live nor avg', async () => {
     const state: AppState = {
       ...baseState,
       tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() },
     };
 
-    expect((await payloadFor(state)).tps).toEqual({ value: 18.5, live: false });
+    expect((await payloadFor(state)).tps).toEqual({ value: 18.5, live: false, avg: false });
+  });
+
+  it('reports the session average as avg', async () => {
+    const state: AppState = {
+      ...baseState,
+      tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() - 31_000 },
+      tpsAvg: { tokens: 600, streamMs: 15_000 },
+    };
+
+    expect((await payloadFor(state)).tps).toEqual({ value: 40, live: false, avg: true });
   });
 
   it('reports null while the meter is hidden', async () => {

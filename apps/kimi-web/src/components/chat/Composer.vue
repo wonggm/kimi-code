@@ -1173,17 +1173,21 @@ const ctxGroupLabel = computed(() =>
 );
 
 // Decode rate. The toolbar shows the figure; the tooltip says which figure it
-// is, because the live one is an estimate from streamed characters and the
-// other is the step's measured rate.
+// is: a live estimate from streamed characters, the last step's measured rate,
+// or the session average the meter settles on once the step rate ages out.
 const tpsText = computed(() => {
   const tps = props.status?.tps;
-  return tps === undefined ? '' : `${formatTps(tps.value)} tok/s`;
+  if (tps === undefined) return '';
+  return tps.kind === 'avg'
+    ? t('status.tpsAvgText', { value: formatTps(tps.value) })
+    : `${formatTps(tps.value)} tok/s`;
 });
 const tpsTooltip = computed(() => {
   const tps = props.status?.tps;
   if (tps === undefined) return '';
   const value = formatTps(tps.value);
-  return tps.live
+  if (tps.kind === 'avg') return t('status.tpsAvgTooltip', { value });
+  return tps.kind === 'live'
     ? t('status.tpsLiveTooltip', { value })
     : t('status.tpsFinalTooltip', { value });
 });

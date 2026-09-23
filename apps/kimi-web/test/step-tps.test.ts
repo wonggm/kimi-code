@@ -3,6 +3,7 @@ import {
   computeStepTps,
   createLiveTpsWindow,
   formatTps,
+  resolveTpsDisplay,
   TPS_LIVE_WINDOW_MS,
 } from '../src/lib/stepTps';
 
@@ -66,5 +67,42 @@ describe('createLiveTpsWindow', () => {
     window.push(1400, 40);
     window.reset();
     expect(window.push(TPS_LIVE_WINDOW_MS + 4000, 40)).toBeUndefined();
+  });
+});
+
+describe('resolveTpsDisplay', () => {
+  const now = 1_000_000;
+  const freshFinal = { tps: 40, at: now - 5_000 };
+  const staleFinal = { tps: 40, at: now - 31_000 };
+  const avg = { tokens: 600, streamMs: 15_000 };
+
+  it('shows the live estimate while one exists', () => {
+    expect(
+      resolveTpsDisplay({ live: 55.5, final: freshFinal, avg, now }),
+    ).toEqual({ value: 55.5, kind: 'live' });
+  });
+
+  it('shows the step rate while it is fresh', () => {
+    expect(resolveTpsDisplay({ final: freshFinal, avg, now })).toEqual({
+      value: 40,
+      kind: 'step',
+    });
+  });
+
+  it('falls back to the session average once the step rate goes stale', () => {
+    expect(resolveTpsDisplay({ final: staleFinal, avg, now })).toEqual({
+      value: 40,
+      kind: 'avg',
+    });
+  });
+
+  it('keeps showing the average with no step rate at all', () => {
+    expect(resolveTpsDisplay({ avg, now })).toEqual({ value: 40, kind: 'avg' });
+  });
+
+  it('hides when nothing has been measured', () => {
+    expect(resolveTpsDisplay({ now })).toBeUndefined();
+    expect(resolveTpsDisplay({ avg: { tokens: 0, streamMs: 0 }, now })).toBeUndefined();
+    expect(resolveTpsDisplay({ final: staleFinal, now })).toBeUndefined();
   });
 });

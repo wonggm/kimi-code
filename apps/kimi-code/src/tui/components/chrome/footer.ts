@@ -208,25 +208,35 @@ export function formatFooterCache(cache: CacheStatus | undefined, colors: ColorP
 
 /**
  * The meter's current reading, or null while it is hidden: the live rolling
- * rate while text is streaming, otherwise the last step's exact rate until it
- * goes stale.
+ * rate while text is streaming, the last step's exact rate while it is fresh,
+ * and the session average from then on.
  */
-function currentTps(state: AppState): { value: number; live: boolean } | null {
-  if (state.tpsLive !== undefined) return { value: state.tpsLive, live: true };
+function currentTps(
+  state: AppState,
+): { value: number; kind: 'live' | 'step' | 'avg' } | null {
+  if (state.tpsLive !== undefined) return { value: state.tpsLive, kind: 'live' };
   const final = state.tpsFinal;
   if (final !== undefined && Date.now() - final.at < TPS_FINAL_TTL_MS) {
-    return { value: final.tps, live: false };
+    return { value: final.tps, kind: 'step' };
+  }
+  const avg = state.tpsAvg;
+  if (avg !== undefined && avg.streamMs > 0) {
+    return { value: avg.tokens / (avg.streamMs / 1000), kind: 'avg' };
   }
   return null;
 }
 
 /** Decode-rate readout for footer line 2, e.g. ` · 42.3 tok/s`. The live rate
- *  wins while text streams; afterwards the last step's exact rate stays for a
- *  short while. Hidden when neither applies. */
+ *  wins while text streams, then the last step's exact rate, then the session
+ *  average, which keeps the reading on screen. Hidden when none applies. */
 export function formatFooterTps(state: AppState, colors: ColorPalette): string {
   const current = currentTps(state);
   if (current === null) return '';
-  return ` · ${chalk.hex(colors.text)(`${formatTps(current.value)} tok/s`)}`;
+  const text =
+    current.kind === 'avg'
+      ? `avg${formatTps(current.value)} tok/s`
+      : `${formatTps(current.value)} tok/s`;
+  return ` · ${chalk.hex(colors.text)(text)}`;
 }
 
 export function formatFooterGitBadge(status: GitStatus, colors: ColorPalette): string {
@@ -558,6 +568,7 @@ export class FooterComponent implements Component {
 
   private statusLinePayload(): StatusLinePayload {
     const state = this.state;
+    const tps = currentTps(state);
     return {
       model: modelDisplayName(state),
       cwd: state.workDir,
@@ -575,7 +586,7 @@ export class FooterComponent implements Component {
         state.cache.reporting === 'none' ? null : (state.cache.recentRequestCount ?? null),
       cacheHitRateSession:
         state.cache.reporting === 'none' ? null : (state.cache.sessionPercent ?? null),
-      tps: currentTps(state),
+  tps: tps === null ? null : { value: tps.value, live: tps.kind === 'live', avg: tps.kind === 'avg' },
       sessionId: state.sessionId,
       version: state.version,
     };

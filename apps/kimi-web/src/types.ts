@@ -384,7 +384,7 @@ export interface ConversationStatus {
    *  taken from the streaming window; the exact rate of the last completed step
    *  is not live and disappears once it goes stale. Absent when neither
    *  applies, which hides the meter. */
-  tps?: { value: number; live: boolean };
+  tps?: { value: number; kind: 'live' | 'step' | 'avg' };
   permission: 'manual' | 'auto' | 'yolo';
   branch: string;
   /** Working directory of the active session */

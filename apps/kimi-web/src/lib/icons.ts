@@ -82,6 +82,7 @@ import KimiArchive from '~icons/kimi/archive';
 import TablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand';
 import TablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand';
 import TablerPaperclip from '~icons/tabler/paperclip';
+import TablerBolt from '~icons/tabler/bolt';
 import TablerListNumbers from '~icons/tabler/list-numbers';
 import TablerRefresh from '~icons/tabler/refresh';
 import TablerTextWrap from '~icons/tabler/text-wrap';
@@ -127,7 +128,6 @@ import RiPlayFill from '~icons/ri/play-fill';
 import RiPushpinFill from '~icons/ri/pushpin-fill';
 import RiPushpinLine from '~icons/ri/pushpin-line';
 import RiQuestionLine from '~icons/ri/question-line';
-import RiSpeedLine from '~icons/ri/speed-line';
 import RiSortDesc from '~icons/ri/sort-desc';
 import RiStarFill from '~icons/ri/star-fill';
 import RiStarLine from '~icons/ri/star-line';
@@ -196,6 +196,7 @@ import RawKimiArchive from '~icons/kimi/archive?raw';
 import RawTablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand?raw';
 import RawTablerSidebarRightExpand from '~icons/tabler/layout-sidebar-right-expand?raw';
 import RawTablerPaperclip from '~icons/tabler/paperclip?raw';
+import RawTablerBolt from '~icons/tabler/bolt?raw';
 import RawTablerListNumbers from '~icons/tabler/list-numbers?raw';
 import RawTablerRefresh from '~icons/tabler/refresh?raw';
 import RawTablerTextWrap from '~icons/tabler/text-wrap?raw';
@@ -241,7 +242,6 @@ import RawPlayFill from '~icons/ri/play-fill?raw';
 import RawPushpinFill from '~icons/ri/pushpin-fill?raw';
 import RawPushpinLine from '~icons/ri/pushpin-line?raw';
 import RawQuestionLine from '~icons/ri/question-line?raw';
-import RawSpeedLine from '~icons/ri/speed-line?raw';
 import RawSortDesc from '~icons/ri/sort-desc?raw';
 import RawStarFill from '~icons/ri/star-fill?raw';
 import RawStarLine from '~icons/ri/star-line?raw';
@@ -486,7 +486,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'kimi-download': entry(KimiDownload, RawKimiDownload),
   'kimi-archive': entry(KimiArchive, RawKimiArchive),
   clock: entry(RiTimeLine, RawTimeLine),
-  speed: entry(RiSpeedLine, RawSpeedLine),
+  speed: entry(TablerBolt, RawTablerBolt),
   sparkles: entry(KimiSparkles, RawKimiSparkles),
   target: entry(RiTargetLine, RawTargetLine),
   pause: entry(RiPauseFill, RawPauseFill),

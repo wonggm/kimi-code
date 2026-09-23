@@ -2430,6 +2430,7 @@ export class KimiTUI {
       // until this session streams something of its own.
       tpsLive: undefined,
       tpsFinal: undefined,
+      tpsAvg: undefined,
     };
     // A previous session's rate must never survive a switch: a session whose
     // provider reports nothing reads as 'none', which the footer hides.

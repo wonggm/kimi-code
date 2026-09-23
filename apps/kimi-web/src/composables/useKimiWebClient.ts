@@ -26,7 +26,13 @@ import { bareDuration } from '../lib/bareDuration';
 import { collectBrowserReferences, type BrowserReferenceEntry } from '../lib/browserReference';
 import { BROWSER_TOOL_NAME } from '../lib/browserTool';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
-import { createLiveTpsWindow, TPS_FINAL_TTL_MS, type LiveTpsWindow } from '../lib/stepTps';
+import {
+  createLiveTpsWindow,
+  resolveTpsDisplay,
+  TPS_FINAL_TTL_MS,
+  type LiveTpsWindow,
+  type TpsDisplayState,
+} from '../lib/stepTps';
 import {
   loadExchangeStarts,
   reconcileExchangeStart,
@@ -450,6 +456,9 @@ export interface ExtendedState extends KimiClientState {
   /** Exact decode rate of each session's last measurable step, which the meter
    *  shows until it goes stale. */
   tpsFinalBySession: Record<string, StepTpsState>;
+  /** Per-session decode average: summed output tokens over summed stream time
+   *  of every measurable step. What the meter shows once the exact rate ages. */
+  tpsAvgBySession: Record<string, { tokens: number; streamMs: number }>;
 }
 
 /** Exact decode rate of one completed step. `at` is when this client stored it,
@@ -510,6 +519,7 @@ const rawState: ExtendedState = reactive({
   sessionsFullyLoaded: false,
   tpsLiveBySession: {},
   tpsFinalBySession: {},
+  tpsAvgBySession: {},
 });
 
 // ---------------------------------------------------------------------------
@@ -707,6 +717,7 @@ function forgetSession(sessionId: string): void {
   delete rawState.turnActiveBySession[sessionId];
   clearLiveTps(sessionId);
   delete rawState.tpsFinalBySession[sessionId];
+  delete rawState.tpsAvgBySession[sessionId];
   // Drop per-session mode toggles and re-persist so a deleted session's entry
   // doesn't linger in localStorage.
   delete rawState.planModeBySession[sessionId];
@@ -2666,8 +2677,8 @@ function clearLiveTps(sessionId: string): void {
 }
 
 /** The step boundary arrived: the live estimate always drops there, matching
- *  the TUI. A measurable step also stores its exact rate, which then stands in
- *  until it goes stale; an unmeasurable one leaves the stored figure alone. */
+ *  the TUI. A measurable step stores its exact rate, which stands in until it
+ *  goes stale, and folds into the session average the meter falls back on. */
 function applyStepTps(
   sessionId: string,
   tps: number | null,
@@ -2680,23 +2691,30 @@ function applyStepTps(
     ...rawState.tpsFinalBySession,
     [sessionId]: { tps, tokens, streamMs, at: Date.now() },
   };
+  const prev = rawState.tpsAvgBySession[sessionId];
+  rawState.tpsAvgBySession = {
+    ...rawState.tpsAvgBySession,
+    [sessionId]: {
+      tokens: (prev?.tokens ?? 0) + tokens,
+      streamMs: (prev?.streamMs ?? 0) + streamMs,
+    },
+  };
   ensureTpsTick();
 }
 
-/** The rate to show for a session: the live estimate while it exists, else the
- *  last step's exact rate until it goes stale, else nothing. */
+/** The rate to show for a session: the live estimate while it exists, the last
+ *  step's exact rate while fresh, and the session average from then on. */
 function tpsFor(
   sessionId: string | undefined,
   now: number,
-): { value: number; live: boolean } | undefined {
+): TpsDisplayState | undefined {
   if (sessionId === undefined) return undefined;
-  const live = rawState.tpsLiveBySession[sessionId];
-  if (live !== undefined) return { value: live, live: true };
-  const final = rawState.tpsFinalBySession[sessionId];
-  if (final !== undefined && now - final.at < TPS_FINAL_TTL_MS) {
-    return { value: final.tps, live: false };
-  }
-  return undefined;
+  return resolveTpsDisplay({
+    live: rawState.tpsLiveBySession[sessionId],
+    final: rawState.tpsFinalBySession[sessionId],
+    avg: rawState.tpsAvgBySession[sessionId],
+    now,
+  });
 }
 
 /** Changed files for the active session, sorted by path */

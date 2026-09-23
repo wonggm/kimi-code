@@ -46,6 +46,36 @@ export function formatTps(tps: number): string {
   return (Math.round(tps * 10) / 10).toFixed(1);
 }
 
+export type TpsKind = 'live' | 'step' | 'avg';
+
+export interface TpsDisplayState {
+  value: number;
+  kind: TpsKind;
+}
+
+/**
+ * What the meter shows right now: the live estimate while text streams, the
+ * last step's exact rate while it is fresh, and the session average from then
+ * on, so the readout never goes blank once this session has measured anything.
+ */
+export function resolveTpsDisplay(input: {
+  live?: number;
+  final?: { tps: number; at: number };
+  avg?: { tokens: number; streamMs: number };
+  now: number;
+}): TpsDisplayState | undefined {
+  if (input.live !== undefined) return { value: input.live, kind: 'live' };
+  const final = input.final;
+  if (final !== undefined && input.now - final.at < TPS_FINAL_TTL_MS) {
+    return { value: final.tps, kind: 'step' };
+  }
+  const avg = input.avg;
+  if (avg !== undefined && avg.streamMs > 0) {
+    return { value: avg.tokens / (avg.streamMs / 1000), kind: 'avg' };
+  }
+  return undefined;
+}
+
 export interface LiveTpsWindow {
   /**
    * Add one streamed text chunk. Returns the rate to publish, or undefined when

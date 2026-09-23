@@ -56,6 +56,8 @@ export default {
   statusThroughput: '生成速度',
   tpsLiveTooltip: '生成中约 {value} tok/s（估算值）',
   tpsFinalTooltip: '上一步 {value} tok/s',
+  tpsAvgText: '平均 {value} tok/s',
+  tpsAvgTooltip: '会话平均 {value} tok/s',
   starredModels: '收藏',
   moreModels: '更多模型…',
   // 状态面板

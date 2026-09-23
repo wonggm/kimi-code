@@ -579,3 +579,47 @@ describe('FooterComponent tps hide timer', () => {
     footer.dispose();
   });
 });
+
+describe('FooterComponent tps session average', () => {
+  function stripAnsi(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replaceAll(/\u001B\[[0-9;]*m/g, '');
+  }
+
+  function line2(state: AppState): string {
+    const footer = new FooterComponent(state);
+    const rendered = stripAnsi(footer.render(120)[1] ?? '');
+    footer.dispose();
+    return rendered;
+  }
+
+  const avg = { tokens: 600, streamMs: 15_000 };
+  const staleFinal = { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() - 31_000 };
+
+  it('shows the session average once the step rate goes stale', () => {
+    const rendered = line2({ ...appState, tpsFinal: staleFinal, tpsAvg: avg });
+    expect(rendered).toContain('avg40.0 tok/s');
+  });
+
+  it('shows the session average with no step rate at all', () => {
+    expect(line2({ ...appState, tpsAvg: avg })).toContain('avg40.0 tok/s');
+  });
+
+  it('prefers the step rate while it is fresh over the average', () => {
+    const state: AppState = {
+      ...appState,
+      tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() },
+      tpsAvg: avg,
+    };
+    const rendered = line2(state);
+    expect(rendered).toContain('18.5 tok/s');
+    expect(rendered).not.toContain('avg');
+  });
+
+  it('prefers the live rate over the average', () => {
+    const state: AppState = { ...appState, tpsLive: 55.5, tpsAvg: avg };
+    const rendered = line2(state);
+    expect(rendered).toContain('55.5 tok/s');
+    expect(rendered).not.toContain('avg');
+  });
+});

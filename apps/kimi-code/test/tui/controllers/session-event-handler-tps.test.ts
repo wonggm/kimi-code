@@ -286,3 +286,33 @@ describe('SessionEventHandler tps meter', () => {
     expect(host.state.appState.tpsLive).toBe(800);
   });
 });
+
+describe('SessionEventHandler tps session average', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('folds every measurable step into the session average', () => {
+    const { host } = makeHost();
+    const handler = new SessionEventHandler(host);
+
+    handler.handleEvent(stepCompletedEvent({ output: 200 }, 5000), vi.fn());
+    expect(host.state.appState.tpsAvg).toEqual({ tokens: 200, streamMs: 5000 });
+
+    handler.handleEvent(stepCompletedEvent({ output: 100 }, 2500), vi.fn());
+    expect(host.state.appState.tpsAvg).toEqual({ tokens: 300, streamMs: 7500 });
+  });
+
+  it('leaves the average alone when a step has nothing measurable', () => {
+    const { host } = makeHost();
+    const handler = new SessionEventHandler(host);
+
+    handler.handleEvent(stepCompletedEvent({ output: 200 }, 5000), vi.fn());
+    handler.handleEvent(stepCompletedEvent({ output: 44 }, 1), vi.fn());
+
+    expect(host.state.appState.tpsAvg).toEqual({ tokens: 200, streamMs: 5000 });
+  });
+});

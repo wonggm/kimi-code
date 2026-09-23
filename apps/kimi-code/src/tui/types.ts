@@ -75,6 +75,10 @@ export interface AppState {
   /** Exact rate of the last completed step, which the meter shows until it goes
    *  stale; absent until a measurable step lands. */
   tpsFinal?: StepTpsState;
+  /** Session decode average: summed output tokens over summed stream time of
+   *  every measurable step. The meter falls back to it once the exact rate goes
+   *  stale, so a session that has measured anything keeps a reading. */
+  tpsAvg?: { tokens: number; streamMs: number };
   /** Pending step retry backoff (fed by `turn.step.retrying`); null when no retry is in flight. */
   stepRetry: StepRetryState | null;
   theme: ThemeName;

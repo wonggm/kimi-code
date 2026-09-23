@@ -548,6 +548,11 @@ export class SessionEventHandler {
     const patch: Partial<AppState> = { tpsLive: undefined };
     if (tps !== null && output !== undefined && streamMs !== undefined) {
       patch.tpsFinal = { tps, tokens: output, streamMs, at: Date.now() };
+      const prevAvg = this.host.state.appState.tpsAvg;
+      patch.tpsAvg = {
+        tokens: (prevAvg?.tokens ?? 0) + output,
+        streamMs: (prevAvg?.streamMs ?? 0) + streamMs,
+      };
     }
     this.host.setAppState(patch);
   }
