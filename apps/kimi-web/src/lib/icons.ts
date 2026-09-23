@@ -127,6 +127,7 @@ import RiPlayFill from '~icons/ri/play-fill';
 import RiPushpinFill from '~icons/ri/pushpin-fill';
 import RiPushpinLine from '~icons/ri/pushpin-line';
 import RiQuestionLine from '~icons/ri/question-line';
+import RiSpeedLine from '~icons/ri/speed-line';
 import RiSortDesc from '~icons/ri/sort-desc';
 import RiStarFill from '~icons/ri/star-fill';
 import RiStarLine from '~icons/ri/star-line';
@@ -240,6 +241,7 @@ import RawPlayFill from '~icons/ri/play-fill?raw';
 import RawPushpinFill from '~icons/ri/pushpin-fill?raw';
 import RawPushpinLine from '~icons/ri/pushpin-line?raw';
 import RawQuestionLine from '~icons/ri/question-line?raw';
+import RawSpeedLine from '~icons/ri/speed-line?raw';
 import RawSortDesc from '~icons/ri/sort-desc?raw';
 import RawStarFill from '~icons/ri/star-fill?raw';
 import RawStarLine from '~icons/ri/star-line?raw';
@@ -352,6 +354,7 @@ export type IconName =
   | 'kimi-download'
   | 'kimi-archive'
   | 'clock'
+  | 'speed'
   | 'sparkles'
   | 'target'
   | 'pencil-filled'
@@ -483,6 +486,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'kimi-download': entry(KimiDownload, RawKimiDownload),
   'kimi-archive': entry(KimiArchive, RawKimiArchive),
   clock: entry(RiTimeLine, RawTimeLine),
+  speed: entry(RiSpeedLine, RawSpeedLine),
   sparkles: entry(KimiSparkles, RawKimiSparkles),
   target: entry(RiTargetLine, RawTargetLine),
   pause: entry(RiPauseFill, RawPauseFill),
@@ -616,6 +620,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'shield-question',
       'shield-exclamation',
       'clock',
+      'speed',
       'sparkles',
       'pause',
       'play',

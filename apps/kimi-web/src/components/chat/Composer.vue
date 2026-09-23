@@ -1846,9 +1846,15 @@ function selectModel(modelId: string): void {
                the context group's, because the two figures it can show (the
                live estimate and the last step's exact rate) need saying apart.
                Focusable, like the context group, so keyboard users reach it. -->
-          <Tooltip v-if="status?.tps" :text="tpsTooltip">
-            <span class="tps-num" role="img" tabindex="0" :aria-label="tpsTooltip">{{ tpsText }}</span>
-          </Tooltip>
+          <template v-if="status?.tps">
+            <span class="ctx-sep" aria-hidden="true">|</span>
+            <Tooltip :text="tpsTooltip">
+              <span class="tps-num" role="img" tabindex="0" :aria-label="tpsTooltip">
+                <Icon name="speed" size="sm" :style="{ color: 'var(--color-text-faint)' }" />
+                {{ tpsText }}
+              </span>
+            </Tooltip>
+          </template>
 
           <!-- Model pill — click to open quick-switch dropdown. In narrow rows
                the label collapses to the chevron only (icon-only); the hover
@@ -2666,14 +2672,19 @@ function selectModel(modelId: string): void {
   line-height: 16px;
 }
 
-/* Decode rate. One voice with the token count it sits beside: same size, muted,
-   tabular so the figure keeps its width as it moves. */
+/* Decode rate. One voice with the cache badge beside it: the glyph pushed back
+   to faint so the figure leads, medium weight, tabular so the value keeps its
+   width as it moves. */
 .tps-num {
-  font-size: var(--ui-font-size);
-  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: calc(var(--ui-font-size) - 1px);
+  color: var(--color-text);
   font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  font-weight: var(--weight-medium);
   letter-spacing: 0;
   line-height: 16px;
   white-space: nowrap;
