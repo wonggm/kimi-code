@@ -250,6 +250,8 @@ export class FooterComponent implements Component {
   private goalSnapshotKey: string | null = null;
   private goalObservedAtMs = Date.now();
   private goalTimer: ReturnType<typeof setInterval> | null = null;
+  private tpsHideTimer: ReturnType<typeof setTimeout> | null = null;
+  private tpsHideAtMs: number | null = null;
   private statusLineRunner: StatusLineCommandRunner | null = null;
   /**
    * Non-terminal background-task counts split by kind so the footer can
@@ -270,6 +272,7 @@ export class FooterComponent implements Component {
     });
     this.syncGoalClock(state.goal);
     this.syncGoalTimer(state.goal);
+    this.syncTpsHideTimer(state);
     this.syncStatusLineRunner(state);
   }
 
@@ -282,6 +285,7 @@ export class FooterComponent implements Component {
     }
     this.syncGoalClock(state.goal);
     this.syncGoalTimer(state.goal);
+    this.syncTpsHideTimer(state);
     this.syncStatusLineRunner(state);
     this.state = state;
   }
@@ -600,11 +604,48 @@ export class FooterComponent implements Component {
     }
   }
 
+  /**
+   * The final tok/s value hides itself 30 s after the step, but the footer only
+   * re-renders on events, so schedule the refresh that drops it. One timeout
+   * keyed on the value's own deadline: a new value reschedules, the live rate
+   * taking over cancels, and the fired refresh re-enters here with the value
+   * stale and clears the schedule.
+   */
+  private syncTpsHideTimer(state: AppState): void {
+    const final = state.tpsFinal;
+    const freshFinal =
+      state.tpsLive === undefined && final !== undefined && Date.now() - final.at < TPS_FINAL_TTL_MS
+        ? final
+        : null;
+    const target = freshFinal !== null ? freshFinal.at + TPS_FINAL_TTL_MS : null;
+    if (target === this.tpsHideAtMs) return;
+    if (this.tpsHideTimer !== null) {
+      clearTimeout(this.tpsHideTimer);
+      this.tpsHideTimer = null;
+    }
+    this.tpsHideAtMs = target;
+    if (target === null) return;
+    this.tpsHideTimer = setTimeout(
+      () => {
+        this.tpsHideTimer = null;
+        this.tpsHideAtMs = null;
+        this.onRefresh();
+      },
+      Math.max(0, target - Date.now()),
+    );
+    this.tpsHideTimer.unref?.();
+  }
+
   dispose(): void {
     if (this.goalTimer !== null) {
       clearInterval(this.goalTimer);
       this.goalTimer = null;
     }
+    if (this.tpsHideTimer !== null) {
+      clearTimeout(this.tpsHideTimer);
+      this.tpsHideTimer = null;
+    }
+    this.tpsHideAtMs = null;
   }
 
   private goalWallClockMs(goal: AppState['goal']): number | undefined {

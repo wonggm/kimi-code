@@ -515,3 +515,67 @@ describe('FooterComponent tps clause', () => {
     expect(rendered).not.toContain('18.5');
   });
 });
+
+describe('FooterComponent tps hide timer', () => {
+  const previousChalkLevel = chalk.level;
+
+  beforeEach(() => {
+    chalk.level = 3;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    chalk.level = previousChalkLevel;
+  });
+
+  it('refreshes once when the final rate reaches its deadline', () => {
+    const refresh = vi.fn();
+    const footer = new FooterComponent(
+      { ...appState, tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() } },
+      refresh,
+    );
+
+    vi.advanceTimersByTime(30_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    footer.dispose();
+  });
+
+  it('holds the refresh back while a live rate is showing', () => {
+    const refresh = vi.fn();
+    const footer = new FooterComponent(
+      {
+        ...appState,
+        tpsLive: 42.3,
+        tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() },
+      },
+      refresh,
+    );
+
+    vi.advanceTimersByTime(60_000);
+    expect(refresh).not.toHaveBeenCalled();
+    footer.dispose();
+  });
+
+  it('reschedules when a new final value replaces the old one', () => {
+    const refresh = vi.fn();
+    const footer = new FooterComponent(
+      { ...appState, tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() } },
+      refresh,
+    );
+
+    vi.advanceTimersByTime(20_000);
+    footer.setState({
+      ...appState,
+      tpsFinal: { tps: 22.5, tokens: 80, streamMs: 3600, at: Date.now() },
+    });
+
+    vi.advanceTimersByTime(20_000);
+    expect(refresh).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(10_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    footer.dispose();
+  });
+});

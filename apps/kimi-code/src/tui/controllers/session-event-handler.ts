@@ -646,6 +646,7 @@ export class SessionEventHandler {
    * Together the two rules mean every patched rate spans at least one interval.
    */
   private recordTpsSample(chars: number): void {
+    if (chars <= 0) return;
     const now = Date.now();
     this.tpsSamples.push({ at: now, chars });
     const cutoff = now - TPS_LIVE_WINDOW_MS;

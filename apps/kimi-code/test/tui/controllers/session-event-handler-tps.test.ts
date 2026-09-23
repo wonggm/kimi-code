@@ -263,4 +263,26 @@ describe('SessionEventHandler tps meter', () => {
 
     expect(host.state.appState.tpsLive).toBeUndefined();
   });
+
+  it('ignores zero-length deltas', () => {
+    const { host } = makeHost();
+    const handler = new SessionEventHandler(host);
+
+    // An empty delta carries no tokens but would stretch the window as its
+    // oldest point, deflating the rate that follows.
+    handler.handleEvent(deltaEvent(0), vi.fn());
+    vi.advanceTimersByTime(250);
+    handler.handleEvent(deltaEvent(0), vi.fn());
+    expect(host.state.appState.tpsLive).toBeUndefined();
+
+    vi.advanceTimersByTime(250);
+    handler.handleEvent(deltaEvent(400), vi.fn());
+    // Only the non-empty deltas count, so this is still a lone sample.
+    expect(host.state.appState.tpsLive).toBeUndefined();
+
+    vi.advanceTimersByTime(250);
+    handler.handleEvent(deltaEvent(400), vi.fn());
+    // 800 characters ≈ 200 tokens over 250ms.
+    expect(host.state.appState.tpsLive).toBe(800);
+  });
 });
