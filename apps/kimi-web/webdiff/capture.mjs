@@ -51,9 +51,10 @@ export const STORAGE = {
   colorScheme: 'kimi-web.color-scheme',
   onboarded: 'kimi-web.onboarded',
   credential: 'kimi-web.server-credential',
-  // The two apps disagree on this key name; seeding the wrong one silently
-  // drops the font-scale dimension from the comparison.
-  fontScale: { upstream: 'kimi-web.font-scale', fork: 'kimi-web.ui-font-size' },
+  // Both apps read kimi-web.ui-font-size (px). Upstream used to keep a step
+  // name under kimi-web.font-scale; that key is gone from the bundle, and
+  // seeding it left upstream at the 14px default while the fork went to 16px.
+  fontScale: 'kimi-web.ui-font-size',
   // Fork-only, and fork-only in the opposite direction: the fork's material is
   // on unless the key reads 'false', so leaving it unset put a glassed fork
   // beside a plain upstream and every style and structure diff carried the
@@ -69,17 +70,12 @@ export const BOOT_KEYS = {
   liquidGlass: STORAGE.liquidGlass,
 };
 
-export function buildSeed({ app, locale, theme, token }) {
-  const fontKey = STORAGE.fontScale[app] ?? STORAGE.fontScale.fork;
+export function buildSeed({ locale, theme, token }) {
   const seed = {
     [STORAGE.locale]: locale,
     [STORAGE.colorScheme]: theme,
-    // The two apps store the same preference in different units: upstream keeps
-    // a step name (small|medium|large|xlarge, default medium = 14px) and the
-    // fork keeps a px size. Seeding one value for both left upstream at medium
-    // while the fork went to 16px, so every capture compared two type scales.
-    // 'large' is upstream's 16px step, which is what the fork's 16 means.
-    [fontKey]: app === 'upstream' ? 'large' : '16',
+    // Same px size on both sides (upstream clamps 12..20, default 14).
+    [STORAGE.fontScale]: '16',
     [STORAGE.onboarded]: '1',
     // Upstream ignores this key; the fork reads it and paints the graded ground,
     // the lens filters and the glass surfaces without it.

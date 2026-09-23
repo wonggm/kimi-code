@@ -129,10 +129,53 @@ const goalStatus = computed<string>(() => {
 });
 
 /** Panel head meta: the goal's wall-clock time in upstream's bare units
- *  ("12m34s"), straight off the snapshot — upstream does not tick it. */
-const goalElapsed = computed<string>(() =>
-  props.goal ? bareDuration(props.goal.wallClockMs / 1000) : '',
+ *  ("12m34s"). The snapshot's own number only moves when the daemon emits a
+ *  goal event (lifecycle transitions), so between them the display advances
+ *  from the moment the current goal object arrived: active goals tick once a
+ *  second, paused/blocked/complete goals show the snapshot's settled number. */
+const goalBase = ref<{ ms: number; at: number } | null>(null);
+watch(
+  () => props.goal,
+  (goal) => {
+    goalBase.value = goal ? { ms: goal.wallClockMs, at: Date.now() } : null;
+  },
+  { immediate: true },
 );
+const goalNow = ref(Date.now());
+let goalTickTimer: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => props.goal?.status,
+  (status) => {
+    if (status === 'active') {
+      goalTickTimer ??= setInterval(() => {
+        goalNow.value = Date.now();
+      }, 1000);
+      return;
+    }
+    if (goalTickTimer !== null) {
+      clearInterval(goalTickTimer);
+      goalTickTimer = null;
+    }
+  },
+  { immediate: true },
+);
+onUnmounted(() => {
+  if (goalTickTimer !== null) {
+    clearInterval(goalTickTimer);
+    goalTickTimer = null;
+  }
+});
+
+const goalElapsed = computed<string>(() => {
+  const goal = props.goal;
+  if (!goal) return '';
+  const base = goalBase.value;
+  const ms =
+    goal.status === 'active' && base !== null
+      ? base.ms + Math.max(0, goalNow.value - base.at)
+      : goal.wallClockMs;
+  return bareDuration(ms / 1000);
+});
 
 /** The goal pill's full label ("Goal Active") — upstream repeats this string in
  *  the aria-label, where the visible status word is the accessible name. */

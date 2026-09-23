@@ -2614,18 +2614,22 @@ const status = computed<ConversationStatus>(() => {
   const hasCacheRate =
     usage?.cacheReporting === 'reads' || usage?.cacheReporting === 'reads+writes';
 
-  // Per-session permission: active session's own pick wins, else the
-  // config's defaultPermissionMode (so a fresh session doesn't leak the user's
-  // last pick from a different session — upstream `default-permission-new-sessions`).
+  // Per-session permission: an active session's own pick wins, else the
+  // config's defaultPermissionMode (upstream `default-permission-new-sessions`
+  // scopes the pick per session so a toggle in one session never bleeds into
+  // another). With no active session — the new-session landing — the draft
+  // pre-pick shows and drives the pill, matching what createDraftSession will
+  // seed into the first session on send; falling back to the config default
+  // there froze the pill on a value the dropdown pick never updated.
   const configDefault = (() => {
     const mode = rawState.config?.defaultPermissionMode;
     return mode === 'auto' || mode === 'yolo' || mode === 'manual' ? mode : 'manual';
   })();
   const sid = activeSession?.id;
   const sessionPermission =
-    sid !== undefined && rawState.permissionBySession[sid] !== undefined
-      ? rawState.permissionBySession[sid]!
-      : configDefault;
+    sid !== undefined
+      ? rawState.permissionBySession[sid] ?? configDefault
+      : rawState.permission;
 
   return {
     model: displayModel,

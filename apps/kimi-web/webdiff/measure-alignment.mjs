@@ -19,7 +19,6 @@ const seed = {
   'kimi-web.color-scheme': 'dark',
   'kimi-web.onboarded': '1',
   'kimi-web.ui-font-size': '16',
-  'kimi-web.font-scale': '16',
   'kimi-web.server-credential': JSON.stringify({ version: 1, credential: 'mock-token', expiresAt: Date.now() + 864e5 }),
 };
 

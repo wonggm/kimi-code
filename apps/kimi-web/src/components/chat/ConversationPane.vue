@@ -367,7 +367,8 @@ const hasDockWork = computed(() =>
   (props.todos?.length ?? 0) > 0 ||
   (props.queued?.length ?? 0) > 0 ||
   props.planMode === true ||
-  (props.plans?.length ?? 0) > 0,
+  (props.plans?.length ?? 0) > 0 ||
+  !!props.goal,
 );
 /** Latest plan entry — the dock's plan viewer panel shows it. */
 const latestPlan = computed<AppPlanEntry | null>(() => {
@@ -2302,6 +2303,13 @@ defineExpose({
   box-sizing: border-box;
 }
 
+/* Upstream's empty-composer rule: drop the Composer root's top inset so the
+   mascot sits on the card's top edge (the peek) instead of floating 7px above
+   it. */
+.empty-composer {
+  padding-top: 0;
+}
+
 /* New-session input floor — upstream's rule: the empty composer's editor rests
    at three lines (3lh) instead of the one-line 36px floor a running
    conversation's editor uses, and the card shrinks back to one line the moment
@@ -2375,14 +2383,15 @@ defineExpose({
   display: flex;
   align-items: flex-end;
   height: 36px;
-  padding: 0 var(--space-2) 0 var(--space-8);
+  padding: 0 var(--dock-inline-right, 16px) 0 calc(var(--dock-inline-left, 16px) + var(--space-4));
   font-family: var(--font-ui);
 }
 .ws-pill-row .ws-mascot {
   flex: none;
   width: 65px;
   height: 36px;
-  margin-left: var(--space-4);
+  margin-left: auto;
+  margin-right: var(--space-8);
 }
 
 /* Empty-composer workspace picker */
