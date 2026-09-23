@@ -9,7 +9,7 @@ import ComposerAddMenu from './ComposerAddMenu.vue';
 import ComposerModelMenu from './ComposerModelMenu.vue';
 import { buildSlashItems, parseSlash, SKILL_COMMAND_PREFIX } from '../../lib/slashCommands';
 import { formatTokens } from '../../lib/formatTokens';
-import { formatTps } from '../../lib/stepTps';
+import { formatTps, liveTpsBand } from '../../lib/stepTps';
 import type { FileItem } from './MentionMenu.vue';
 import type { IconName } from '../../lib/icons';
 import type { ActivationBadges, ConversationStatus, PermissionMode, QueuedPromptView } from '../../types';
@@ -1173,14 +1173,19 @@ const ctxGroupLabel = computed(() =>
 );
 
 // Decode rate. The toolbar shows the figure; the tooltip says which figure it
-// is: a live estimate from streamed characters, the last step's measured rate,
-// or the session average the meter settles on once the step rate ages out.
+// is: a live estimate from streamed text and thinking, the last step's
+// measured rate, or the session average the meter settles on once the step
+// rate ages out. The live figure also carries a colour band by its value.
 const tpsText = computed(() => {
   const tps = props.status?.tps;
   if (tps === undefined) return '';
   return tps.kind === 'avg'
     ? t('status.tpsAvgText', { value: formatTps(tps.value) })
     : `${formatTps(tps.value)} tok/s`;
+});
+const tpsBandClass = computed(() => {
+  const tps = props.status?.tps;
+  return tps?.kind === 'live' ? `band-${liveTpsBand(tps.value)}` : '';
 });
 const tpsTooltip = computed(() => {
   const tps = props.status?.tps;
@@ -1853,7 +1858,13 @@ function selectModel(modelId: string): void {
           <template v-if="status?.tps">
             <span class="ctx-sep" aria-hidden="true">|</span>
             <Tooltip :text="tpsTooltip">
-              <span class="tps-num" role="img" tabindex="0" :aria-label="tpsTooltip">
+              <span
+                class="tps-num"
+                :class="tpsBandClass"
+                role="img"
+                tabindex="0"
+                :aria-label="tpsTooltip"
+              >
                 <Icon name="speed" size="sm" :style="{ color: 'var(--color-text-faint)' }" />
                 {{ tpsText }}
               </span>
@@ -2697,6 +2708,19 @@ function selectModel(modelId: string): void {
 .tps-num:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+/* Live-rate colour bands, same edges as the TUI footer: dim while slow, plain
+   text through the middle, accent once the stream runs fast. Settled readings
+   (no band class) keep the base colour. */
+.tps-num.band-slow {
+  color: var(--muted);
+}
+.tps-num.band-mid {
+  color: var(--color-text);
+}
+.tps-num.band-fast {
+  color: var(--color-accent);
 }
 
 /* Model pill — upstream's metrics, same capsule geometry as the permission

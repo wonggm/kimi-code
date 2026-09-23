@@ -3,8 +3,8 @@ import {
   computeStepTps,
   createLiveTpsWindow,
   formatTps,
+  liveTpsBand,
   resolveTpsDisplay,
-  TPS_LIVE_WINDOW_MS,
 } from '../src/lib/stepTps';
 
 describe('computeStepTps', () => {
@@ -38,35 +38,68 @@ describe('formatTps', () => {
 });
 
 describe('createLiveTpsWindow', () => {
-  it('publishes nothing until the window holds two samples', () => {
+  it('publishes nothing until the evidence gates pass', () => {
     const window = createLiveTpsWindow();
-    expect(window.push(1000, 40)).toBeUndefined();
+    expect(window.push(1000, 8)).toBeUndefined();
+    expect(window.push(1050, 8)).toBeUndefined();
+    expect(window.push(1100, 8)).toBeUndefined();
   });
 
-  it('publishes an estimate once the interval has passed', () => {
+  it('tracks a steady stream near its true rate', () => {
     const window = createLiveTpsWindow();
-    expect(window.push(1000, 40)).toBeUndefined();
-    // Inside the interval, so the figure waits for the next chunk.
-    expect(window.push(1200, 40)).toBeUndefined();
-    // 120 characters is an estimated 30 tokens over a 400ms span.
-    expect(window.push(1400, 40)).toBeCloseTo(75, 5);
+    // 8 characters per 50ms push is 40 tok/s with the chars/4 estimate.
+    let rate: number | undefined;
+    for (let i = 0; i < 60; i++) {
+      const value = window.push(1000 + i * 50, 8);
+      if (value !== undefined) rate = value;
+    }
+    expect(rate).toBeGreaterThan(30);
+    expect(rate).toBeLessThan(50);
   });
 
-  it('drops samples older than the window', () => {
+  it('publishes at most once per patch interval', () => {
     const window = createLiveTpsWindow();
-    expect(window.push(0, 400)).toBeUndefined();
-    // The 2000ms window prunes the first sample, leaving one and re-seeding.
-    expect(window.push(2500, 400)).toBeUndefined();
-    // 800 characters (not 1200) over 300ms: the pruned sample is gone.
-    expect(window.push(2800, 400)).toBeCloseTo(666.7, 1);
+    let published: number | undefined;
+    for (let i = 0; i < 40; i++) {
+      const value = window.push(1000 + i * 50, 8);
+      if (value !== undefined) {
+        published = value;
+        expect(window.push(1000 + i * 50 + 20, 8)).toBeUndefined();
+        break;
+      }
+    }
+    expect(published).toBeGreaterThan(0);
   });
 
-  it('starts a fresh window after a reset', () => {
+  it('holds the reading through a long pause instead of diluting it', () => {
     const window = createLiveTpsWindow();
-    window.push(1000, 40);
-    window.push(1400, 40);
+    let before: number | undefined;
+    for (let i = 0; i < 40; i++) {
+      const value = window.push(1000 + i * 50, 8);
+      if (value !== undefined) before = value;
+    }
+    expect(before).toBeDefined();
+    const after = window.push(1000 + 40 * 50 + 30_000, 8);
+    expect(after).toBeDefined();
+    expect(after!).toBeGreaterThan(before! * 0.4);
+  });
+
+  it('starts over after a reset', () => {
+    const window = createLiveTpsWindow();
+    for (let i = 0; i < 30; i++) window.push(1000 + i * 50, 8);
     window.reset();
-    expect(window.push(TPS_LIVE_WINDOW_MS + 4000, 40)).toBeUndefined();
+    expect(window.push(60_000, 8)).toBeUndefined();
+    expect(window.push(60_050, 8)).toBeUndefined();
+  });
+});
+
+describe('liveTpsBand', () => {
+  it('bands the rate for the colour ramp', () => {
+    expect(liveTpsBand(5)).toBe('slow');
+    expect(liveTpsBand(20)).toBe('mid');
+    expect(liveTpsBand(49)).toBe('mid');
+    expect(liveTpsBand(50)).toBe('fast');
+    expect(liveTpsBand(151)).toBe('fast');
   });
 });
 

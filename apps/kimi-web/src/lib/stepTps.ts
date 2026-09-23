@@ -11,10 +11,26 @@
 // like tens of thousands of tok/s.
 export const MIN_STREAM_MS_FOR_TPS = 50;
 
-// Rolling window of text-delta samples behind the live rate: older samples are
-// dropped so the figure tracks the current decode speed rather than the average
-// over the whole step.
-export const TPS_LIVE_WINDOW_MS = 2000;
+// Half-lives of the decayed sums behind the live rate. The summed scales act
+// as a kernel over recent stream time: the short scale moves with bursts, the
+// long ones carry inertia through pauses.
+export const TPS_HALF_LIVES_MS = [5_000, 20_000, 80_000];
+
+// A delta arriving after a longer pause (a tool ran, the model sat silent) may
+// credit at most this much stream time, so idle wall time never dilutes the
+// rate; with no deltas at all the sums simply hold their last reading.
+export const TPS_MAX_DELTA_GAP_MS = 1_000;
+
+// Nothing publishes until the window holds this much weighted stream time and
+// this many estimated tokens: a burst inside the first milliseconds of a step
+// would otherwise stamp an unrepresentative first reading.
+export const TPS_MIN_PUBLISH_TIME_MS = 1_000;
+export const TPS_MIN_PUBLISH_TOKENS = 25;
+
+// Live-rate colour bands: muted below the slow edge, plain text up to the fast
+// edge, the accent colour above it.
+export const TPS_BAND_SLOW_MAX = 20;
+export const TPS_BAND_FAST_MIN = 50;
 
 // The live rate moves with every delta, but the toolbar only needs it a few
 // times a second. One state write per interval keeps re-rendering cheap.
@@ -78,50 +94,75 @@ export function resolveTpsDisplay(input: {
 
 export interface LiveTpsWindow {
   /**
-   * Add one streamed text chunk. Returns the rate to publish, or undefined when
-   * this chunk is not a publish point.
+   * Add one streamed chunk (assistant text or thinking). Returns the rate to
+   * publish, or undefined when this chunk is not a publish point.
    */
   push(at: number, chars: number): number | undefined;
   /** Drop the window: the step ended, or an exact rate replaced the estimate. */
   reset(): void;
 }
 
+export type LiveTpsBand = 'slow' | 'mid' | 'fast';
+
+/** Colour band for the live reading, same edges as the TUI footer. */
+export function liveTpsBand(tps: number): LiveTpsBand {
+  if (tps < TPS_BAND_SLOW_MAX) return 'slow';
+  return tps < TPS_BAND_FAST_MIN ? 'mid' : 'fast';
+}
+
 /**
- * The window itself is pruned on every chunk, but a rate is published at most
- * once per interval: the toolbar reads whatever is current when it renders, so
- * publishing faster would only add renders.
+ * Live tok/s over exponentially decayed sums. Each scale ages tokens and an
+ * exact integral of the decay kernel over stream time; the rate is the summed
+ * tokens over the summed time, which weights recent chunks over older ones
+ * without the cliff of a fixed window. Stream time only advances on a delta,
+ * capped per gap, so tool pauses hold the reading instead of diluting it.
  *
- * A window holding fewer than two samples is never published, and the publish
- * clock is re-seeded to the incoming sample whenever that happens. One sample
- * has no elapsed span, so the rate would divide by the 1ms floor and read in
- * the thousands of tok/s. The re-seed is what keeps the clock honest after a
- * gap: a gap longer than the window prunes it down to the chunk that just
- * arrived, and a clock left over from before the gap would let a second chunk
- * in the same millisecond pass the throttle and publish that same 1ms span.
- * Together the two rules mean every published rate spans at least one interval.
+ * Publishing is gated on minimum weighted time and tokens, then throttled to
+ * one write per interval: the toolbar reads whatever is current when it
+ * renders, so faster writes would only add renders.
  */
 export function createLiveTpsWindow(): LiveTpsWindow {
-  let samples: { at: number; chars: number }[] = [];
+  const tokens = TPS_HALF_LIVES_MS.map(() => 0);
+  const times = TPS_HALF_LIVES_MS.map(() => 0);
+  let lastAt = 0;
   let publishedAt = 0;
+
+  function age(dtMs: number): void {
+    for (let i = 0; i < TPS_HALF_LIVES_MS.length; i++) {
+      const halfLife = TPS_HALF_LIVES_MS[i]!;
+      const kept = 2 ** (-dtMs / halfLife);
+      tokens[i]! *= kept;
+      times[i]! *= kept;
+      times[i]! += (halfLife / Math.LN2) * (1 - kept);
+    }
+  }
 
   return {
     push(at, chars) {
-      samples.push({ at, chars });
-      const cutoff = at - TPS_LIVE_WINDOW_MS;
-      while (samples.length > 0 && samples[0]!.at < cutoff) samples.shift();
-      if (samples.length < 2) {
-        publishedAt = at;
+      if (chars <= 0) return undefined;
+      const gap = lastAt === 0 ? 0 : Math.min(at - lastAt, TPS_MAX_DELTA_GAP_MS);
+      if (gap > 0) age(gap);
+      lastAt = at;
+      const estimated = Math.ceil(chars / CHARS_PER_TOKEN_ESTIMATE);
+      let totalTokens = 0;
+      let totalTime = 0;
+      for (let i = 0; i < TPS_HALF_LIVES_MS.length; i++) {
+        tokens[i]! += estimated;
+        totalTokens += tokens[i]!;
+        totalTime += times[i]!;
+      }
+      if (totalTime < TPS_MIN_PUBLISH_TIME_MS || totalTokens < TPS_MIN_PUBLISH_TOKENS) {
         return undefined;
       }
       if (at - publishedAt < TPS_LIVE_PATCH_INTERVAL_MS) return undefined;
       publishedAt = at;
-      let windowChars = 0;
-      for (const sample of samples) windowChars += sample.chars;
-      const spanMs = Math.max(1, at - samples[0]!.at);
-      return Math.ceil(windowChars / CHARS_PER_TOKEN_ESTIMATE) / (spanMs / 1000);
+      return totalTokens / (totalTime / 1000);
     },
     reset() {
-      samples = [];
+      tokens.fill(0);
+      times.fill(0);
+      lastAt = 0;
+      publishedAt = 0;
     },
   };
 }

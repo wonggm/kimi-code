@@ -1192,9 +1192,17 @@ function connectEventsIfNeeded(): void {
     onEvent(appEvent, meta) {
       // Sample the live decode rate here rather than in processEvent: this runs
       // once per incoming frame, before the batcher merges neighbouring deltas,
-      // so every chunk keeps its own arrival time and length.
-      if (appEvent.type === 'assistantDelta' && meta.stream?.kind === 'text') {
-        recordLiveTpsDelta(meta.sessionId, meta.stream.at, appEvent.delta.text?.length ?? 0);
+      // so every chunk keeps its own arrival time and length. Thinking counts
+      // too: reasoning-heavy steps would otherwise freeze the meter.
+      if (
+        appEvent.type === 'assistantDelta' &&
+        (meta.stream?.kind === 'text' || meta.stream?.kind === 'thinking')
+      ) {
+        const chars =
+          (meta.stream.kind === 'text'
+            ? appEvent.delta.text?.length
+            : appEvent.delta.thinking?.length) ?? 0;
+        recordLiveTpsDelta(meta.sessionId, meta.stream.at, chars);
       }
 
       // Workspace lifecycle events are global (not session-scoped) and update

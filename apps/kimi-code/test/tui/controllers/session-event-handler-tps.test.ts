@@ -37,6 +37,7 @@ function makeHost() {
       hasThinkingDraft: vi.fn(() => false),
       flushThinkingToTranscript: vi.fn(),
       appendAssistantDelta: vi.fn(),
+      appendThinkingDelta: vi.fn(),
       scheduleFlush: vi.fn(),
     },
     requireSession: vi.fn(),
@@ -103,124 +104,92 @@ describe('SessionEventHandler tps meter', () => {
     vi.useRealTimers();
   });
 
-  it('waits for a real window before reporting a rate', () => {
+  it('publishes a live rate only after the evidence gates pass', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    // A lone early delta has no elapsed span. Dividing its estimate by the 1ms
-    // floor would read thousands of tok/s, so nothing is reported yet.
+    handler.handleEvent(deltaEvent(10), vi.fn());
+    vi.advanceTimersByTime(250);
     handler.handleEvent(deltaEvent(10), vi.fn());
     expect(host.state.appState.tpsLive).toBeUndefined();
 
     vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
-
-    // The first rate comes from the window: 410 characters ≈ 103 tokens in 250ms.
-    expect(host.state.appState.tpsLive).toBe(412);
+    handler.handleEvent(deltaEvent(10), vi.fn());
+    const rate = host.state.appState.tpsLive;
+    expect(rate).toBeGreaterThan(0);
+    expect(rate).toBeLessThan(1000);
   });
 
-  it('leaves the rate alone when the prune leaves a single sample', () => {
+  it('tracks a steady stream near its true rate', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    // A gap longer than the window (thinking between text chunks, say) prunes
-    // the opening sample, so the delta that arrives has nothing to span.
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(2500);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    expect(host.state.appState.tpsLive).toBeUndefined();
-
-    // A second sample inside the window restores the span.
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    expect(host.state.appState.tpsLive).toBe(800);
+    // 10 characters every 250ms is about 12 tok/s with the chars/4 estimate.
+    for (let i = 0; i < 40; i++) {
+      handler.handleEvent(deltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
+    expect(host.state.appState.tpsLive).toBeGreaterThan(5);
+    expect(host.state.appState.tpsLive).toBeLessThan(25);
   });
 
-  it('does not patch two deltas that share a millisecond after a prune', () => {
+  it('counts thinking deltas into the window', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(2500);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    // Back-to-back chunks land in the same millisecond, so the window is two
-    // samples wide with a 1ms span. The clock was re-seeded by the push above,
-    // which keeps the throttle shut.
-    handler.handleEvent(deltaEvent(), vi.fn());
-    expect(host.state.appState.tpsLive).toBeUndefined();
-
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    // 1200 characters ≈ 300 tokens over 250ms.
-    expect(host.state.appState.tpsLive).toBe(1200);
-  });
-
-  it('reports the live rate over the rolling window', () => {
-    const { host } = makeHost();
-    const handler = new SessionEventHandler(host);
-
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
-
-    // 800 characters ≈ 200 tokens over 250ms.
-    expect(host.state.appState.tpsLive).toBe(800);
-  });
-
-  it('patches the live rate at most once per interval', () => {
-    const { host } = makeHost();
-    const handler = new SessionEventHandler(host);
-
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    expect(host.state.appState.tpsLive).toBe(800);
-
-    // Same instant: the window grows but state is left alone.
-    handler.handleEvent(deltaEvent(), vi.fn());
-    expect(host.state.appState.tpsLive).toBe(800);
-
-    // A small delta a full interval later moves the rate, and the patch lands.
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(4), vi.fn());
-    expect(host.state.appState.tpsLive).toBeCloseTo(602, 0);
-  });
-
-  it('drops samples that fell out of the window', () => {
-    const { host } = makeHost();
-    const handler = new SessionEventHandler(host);
-
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(1000);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(1001);
-    handler.handleEvent(deltaEvent(), vi.fn());
-
-    // The first sample aged out, so the rate spans 1001ms rather than 2001ms.
-    expect(host.state.appState.tpsLive).toBeCloseTo(199.8, 1);
+    for (let i = 0; i < 12; i++) {
+      handler.handleEvent(
+        {
+          type: 'thinking.delta',
+          sessionId: 's1',
+          agentId: 'main',
+          turnId: 1,
+          delta: 'x'.repeat(10),
+        },
+        vi.fn(),
+      );
+      vi.advanceTimersByTime(250);
+    }
+    const rate = host.state.appState.tpsLive;
+    expect(rate).toBeGreaterThan(0);
+    expect(rate).toBeLessThan(1000);
   });
 
   it('drops the window when runtime state resets', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    handler.handleEvent(deltaEvent(), vi.fn());
-    handler.resetRuntimeState();
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
+    for (let i = 0; i < 10; i++) {
+      handler.handleEvent(deltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
+    const before = host.state.appState.tpsLive;
+    expect(before).toBeGreaterThan(0);
 
-    expect(host.state.appState.tpsLive).toBe(800);
+    handler.resetRuntimeState();
+
+    // The fresh window is under the evidence gates again, so two pushes leave
+    // the last published figure untouched; a live window would republish here.
+    handler.handleEvent(deltaEvent(10), vi.fn());
+    vi.advanceTimersByTime(250);
+    handler.handleEvent(deltaEvent(10), vi.fn());
+    expect(host.state.appState.tpsLive).toBe(before);
+
+    for (let i = 0; i < 10; i++) {
+      handler.handleEvent(deltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
+    expect(host.state.appState.tpsLive).toBeGreaterThan(0);
   });
 
   it('replaces the live rate with the step exact rate', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
+    for (let i = 0; i < 8; i++) {
+      handler.handleEvent(deltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
     expect(host.state.appState.tpsLive).not.toBeUndefined();
 
     handler.handleEvent(stepCompletedEvent({ output: 200 }, 5000), vi.fn());
@@ -251,10 +220,11 @@ describe('SessionEventHandler tps meter', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    handler.handleEvent(deltaEvent(), vi.fn());
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(), vi.fn());
-    expect(host.state.appState.tpsLive).toBe(800);
+    for (let i = 0; i < 8; i++) {
+      handler.handleEvent(deltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
+    expect(host.state.appState.tpsLive).not.toBeUndefined();
 
     handler.handleEvent(
       { type: 'turn.ended', sessionId: 's1', agentId: 'main', turnId: 1, reason: 'completed' } as any,
@@ -268,22 +238,19 @@ describe('SessionEventHandler tps meter', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    // An empty delta carries no tokens but would stretch the window as its
-    // oldest point, deflating the rate that follows.
+    // An empty delta carries no tokens and must not advance the window.
+    handler.handleEvent(deltaEvent(0), vi.fn());
+    vi.advanceTimersByTime(250);
     handler.handleEvent(deltaEvent(0), vi.fn());
     vi.advanceTimersByTime(250);
     handler.handleEvent(deltaEvent(0), vi.fn());
     expect(host.state.appState.tpsLive).toBeUndefined();
 
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(400), vi.fn());
-    // Only the non-empty deltas count, so this is still a lone sample.
-    expect(host.state.appState.tpsLive).toBeUndefined();
-
-    vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(400), vi.fn());
-    // 800 characters ≈ 200 tokens over 250ms.
-    expect(host.state.appState.tpsLive).toBe(800);
+    for (let i = 0; i < 12; i++) {
+      handler.handleEvent(deltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
+    expect(host.state.appState.tpsLive).toBeGreaterThan(0);
   });
 });
 

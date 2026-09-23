@@ -9,10 +9,26 @@ export const STREAMING_ARGS_PREVIEW_MAX_CHARS = 64 * 1024;
 // Coalesces high-frequency model/tool deltas before rebuilding TUI components.
 export const STREAMING_UI_FLUSH_MS = 50;
 
-// Rolling window of assistant-delta samples behind the footer's live tok/s
-// meter: older samples are dropped so the rate tracks the current decode speed
-// rather than the average over the whole step.
-export const TPS_LIVE_WINDOW_MS = 2000;
+// Half-lives of the decayed sums behind the footer's live tok/s meter. The
+// summed scales act as a kernel over recent stream time: the short scale moves
+// with bursts, the long ones carry inertia through pauses.
+export const TPS_HALF_LIVES_MS = [5_000, 20_000, 80_000];
+
+// A delta arriving after a longer pause (a tool ran, the model sat silent) may
+// credit at most this much stream time, so idle wall time never dilutes the
+// rate; with no deltas at all the sums simply hold their last reading.
+export const TPS_MAX_DELTA_GAP_MS = 1_000;
+
+// Nothing publishes until the window holds this much weighted stream time and
+// this many estimated tokens: a burst inside the first milliseconds of a step
+// would otherwise stamp an unrepresentative first reading.
+export const TPS_MIN_PUBLISH_TIME_MS = 1_000;
+export const TPS_MIN_PUBLISH_TOKENS = 25;
+
+// Live-rate colour bands: the dim text colour below the slow edge, the plain
+// text colour up to the fast edge, the accent colour above it.
+export const TPS_BAND_SLOW_MAX = 20;
+export const TPS_BAND_FAST_MIN = 50;
 
 // The live rate moves with every delta, but the footer only needs it a few
 // times a second. One state patch per interval keeps rendering cheap.

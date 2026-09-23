@@ -11,7 +11,7 @@ import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
 import chalk from 'chalk';
 import { effectiveModelAlias, type CacheStatus } from '@moonshot-ai/kimi-code-sdk';
 
-import { TPS_FINAL_TTL_MS } from '#/tui/constant/streaming';
+import { TPS_BAND_FAST_MIN, TPS_BAND_SLOW_MAX, TPS_FINAL_TTL_MS } from '#/tui/constant/streaming';
 import { ALL_TIPS, type ToolbarTip } from '#/tui/constant/tips';
 import { isRainbowDancing, renderDanceFooterModel } from '#/tui/easter-eggs/dance';
 import { currentTheme } from '#/tui/theme';
@@ -228,7 +228,9 @@ function currentTps(
 
 /** Decode-rate readout for footer line 2, e.g. ` · 42.3 tok/s`. The live rate
  *  wins while text streams, then the last step's exact rate, then the session
- *  average, which keeps the reading on screen. Hidden when none applies. */
+ *  average, which keeps the reading on screen. The live figure takes a colour
+ *  band by its value; the settled readings stay plain. Hidden when none
+ *  applies. */
 export function formatFooterTps(state: AppState, colors: ColorPalette): string {
   const current = currentTps(state);
   if (current === null) return '';
@@ -236,7 +238,12 @@ export function formatFooterTps(state: AppState, colors: ColorPalette): string {
     current.kind === 'avg'
       ? `avg${formatTps(current.value)} tok/s`
       : `${formatTps(current.value)} tok/s`;
-  return ` · ${chalk.hex(colors.text)(text)}`;
+  let paint = colors.text;
+  if (current.kind === 'live') {
+    if (current.value < TPS_BAND_SLOW_MAX) paint = colors.textDim;
+    else if (current.value >= TPS_BAND_FAST_MIN) paint = colors.accent;
+  }
+  return ` · ${chalk.hex(paint)(text)}`;
 }
 
 export function formatFooterGitBadge(status: GitStatus, colors: ColorPalette): string {

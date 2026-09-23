@@ -623,3 +623,39 @@ describe('FooterComponent tps session average', () => {
     expect(rendered).not.toContain('avg');
   });
 });
+
+describe('FooterComponent tps live colour', () => {
+  const previousChalkLevel = chalk.level;
+
+  beforeEach(() => {
+    chalk.level = 3;
+  });
+
+  afterEach(() => {
+    chalk.level = previousChalkLevel;
+  });
+
+  const codes = (state: AppState): Set<string> => {
+    const footer = new FooterComponent(state);
+    const line = footer.render(120)[1] ?? '';
+    footer.dispose();
+    return truecolorCodes(line);
+  };
+
+  it('paints a fast live rate in the accent colour', () => {
+    expect(codes({ ...appState, tpsLive: 80 })).toContain('91,192,190');
+  });
+
+  it('keeps a slow live rate out of the accent colour', () => {
+    expect(codes({ ...appState, tpsLive: 5 })).not.toContain('91,192,190');
+  });
+
+  it('paints the settled readings plain', () => {
+    expect(
+      codes({
+        ...appState,
+        tpsFinal: { tps: 100, tokens: 400, streamMs: 4000, at: Date.now() },
+      }),
+    ).not.toContain('91,192,190');
+  });
+});
