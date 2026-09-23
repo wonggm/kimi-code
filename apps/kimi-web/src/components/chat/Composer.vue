@@ -9,6 +9,7 @@ import ComposerAddMenu from './ComposerAddMenu.vue';
 import ComposerModelMenu from './ComposerModelMenu.vue';
 import { buildSlashItems, parseSlash, SKILL_COMMAND_PREFIX } from '../../lib/slashCommands';
 import { formatTokens } from '../../lib/formatTokens';
+import { formatTps } from '../../lib/stepTps';
 import type { FileItem } from './MentionMenu.vue';
 import type { IconName } from '../../lib/icons';
 import type { ActivationBadges, ConversationStatus, PermissionMode, QueuedPromptView } from '../../types';
@@ -1171,6 +1172,22 @@ const ctxGroupLabel = computed(() =>
   showCacheMeter.value ? `${ctxTooltip.value} ${cacheTooltip.value}` : ctxTooltip.value,
 );
 
+// Decode rate. The toolbar shows the figure; the tooltip says which figure it
+// is, because the live one is an estimate from streamed characters and the
+// other is the step's measured rate.
+const tpsText = computed(() => {
+  const tps = props.status?.tps;
+  return tps === undefined ? '' : `${formatTps(tps.value)} tok/s`;
+});
+const tpsTooltip = computed(() => {
+  const tps = props.status?.tps;
+  if (tps === undefined) return '';
+  const value = formatTps(tps.value);
+  return tps.live
+    ? t('status.tpsLiveTooltip', { value })
+    : t('status.tpsFinalTooltip', { value });
+});
+
 const showCompact = computed(() => pct.value >= 80);
 
 // Thinking toggle
@@ -1823,6 +1840,14 @@ function selectModel(modelId: string): void {
                 {{ cacheText }}
               </span>
             </span>
+          </Tooltip>
+
+          <!-- Decode rate, beside the cache badge. Its own tooltip rather than
+               the context group's, because the two figures it can show (the
+               live estimate and the last step's exact rate) need saying apart.
+               Focusable, like the context group, so keyboard users reach it. -->
+          <Tooltip v-if="status?.tps" :text="tpsTooltip">
+            <span class="tps-num" role="img" tabindex="0" :aria-label="tpsTooltip">{{ tpsText }}</span>
           </Tooltip>
 
           <!-- Model pill — click to open quick-switch dropdown. In narrow rows
@@ -2639,6 +2664,24 @@ function selectModel(modelId: string): void {
   color: var(--muted);
   font-family: var(--font-mono);
   line-height: 16px;
+}
+
+/* Decode rate. One voice with the token count it sits beside: same size, muted,
+   tabular so the figure keeps its width as it moves. */
+.tps-num {
+  font-size: var(--ui-font-size);
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: 0;
+  line-height: 16px;
+  white-space: nowrap;
+  border-radius: var(--radius-xs);
+}
+.tps-num:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* Model pill — upstream's metrics, same capsule geometry as the permission

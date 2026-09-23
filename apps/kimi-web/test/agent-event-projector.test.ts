@@ -626,6 +626,35 @@ describe('prompt-level lifecycle projection', () => {
   });
 });
 
+describe('step decode rate', () => {
+  it('measures the rate from the step output tokens and streamed duration', () => {
+    const projector = createAgentProjector();
+    projector.project('turn.started', { turnId: 1 }, 's1');
+    projector.project('turn.step.started', { turnId: 1, step: 1 }, 's1');
+    const events = projector.project(
+      'turn.step.completed',
+      { turnId: 1, step: 1, usage: { output: 200, inputOther: 10 }, llmStreamDurationMs: 5000 },
+      's1',
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'stepTpsComputed', tps: 40, tokens: 200, streamMs: 5000 }),
+    );
+  });
+
+  it('reports no rate for a step with no measurable output', () => {
+    const projector = createAgentProjector();
+    projector.project('turn.started', { turnId: 1 }, 's1');
+    projector.project('turn.step.started', { turnId: 1, step: 1 }, 's1');
+    // A step that drained in 1ms has no measurable window.
+    const events = projector.project(
+      'turn.step.completed',
+      { turnId: 1, step: 1, usage: { output: 200 }, llmStreamDurationMs: 1 },
+      's1',
+    );
+    expect(events.some((e) => e.type === 'stepTpsComputed')).toBe(false);
+  });
+});
+
 describe('step-boundary delta alignment', () => {
   it('resets stream offsets at step boundaries — a post-step delta ahead of local state signals a gap', () => {
     const projector = createAgentProjector();

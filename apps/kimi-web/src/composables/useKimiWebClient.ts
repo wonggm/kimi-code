@@ -26,6 +26,7 @@ import { bareDuration } from '../lib/bareDuration';
 import { collectBrowserReferences, type BrowserReferenceEntry } from '../lib/browserReference';
 import { BROWSER_TOOL_NAME } from '../lib/browserTool';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
+import { createLiveTpsWindow, TPS_FINAL_TTL_MS, type LiveTpsWindow } from '../lib/stepTps';
 import {
   loadExchangeStarts,
   reconcileExchangeStart,
@@ -443,6 +444,21 @@ export interface ExtendedState extends KimiClientState {
   sessionsInitialCountByWorkspace: Record<string, number>;
   /** True once every session has been loaded (after a search-triggered full drain). */
   sessionsFullyLoaded: boolean;
+  /** Live decode rate per session, estimated from the streaming text window.
+   *  Present only while text is streaming; an exact step rate replaces it. */
+  tpsLiveBySession: Record<string, number>;
+  /** Exact decode rate of each session's last measurable step, which the meter
+   *  shows until it goes stale. */
+  tpsFinalBySession: Record<string, StepTpsState>;
+}
+
+/** Exact decode rate of one completed step. `at` is when this client stored it,
+ *  so the staleness window runs on the reader's own clock. */
+export interface StepTpsState {
+  tps: number;
+  tokens: number;
+  streamMs: number;
+  at: number;
 }
 
 const rawState: ExtendedState = reactive({
@@ -492,6 +508,8 @@ const rawState: ExtendedState = reactive({
   sessionsCursorByWorkspace: {},
   sessionsInitialCountByWorkspace: {},
   sessionsFullyLoaded: false,
+  tpsLiveBySession: {},
+  tpsFinalBySession: {},
 });
 
 // ---------------------------------------------------------------------------
@@ -687,6 +705,8 @@ function forgetSession(sessionId: string): void {
   delete rawState.promptIdBySession[sessionId];
   delete rawState.inFlightBySession[sessionId];
   delete rawState.turnActiveBySession[sessionId];
+  clearLiveTps(sessionId);
+  delete rawState.tpsFinalBySession[sessionId];
   // Drop per-session mode toggles and re-persist so a deleted session's entry
   // doesn't linger in localStorage.
   delete rawState.planModeBySession[sessionId];
@@ -950,6 +970,12 @@ function applyEvent(event: ReturnType<typeof toAppEvent>, sessionId: string, seq
     void modelProvider.loadProviders();
   }
 
+  // The step's exact decode rate, measured by the projector. Same per-session
+  // treatment as the mode toggles above: a background session keeps its own.
+  if (event.type === 'stepTpsComputed') {
+    applyStepTps(event.sessionId, event.tps, event.tokens, event.streamMs);
+  }
+
   // Reflect the agent's live plan/swarm state per session (e.g. it auto-entered
   // plan mode). Applied to the event's own session — not gated on the active
   // session — so a background session keeps its own independent toggle state.
@@ -1079,6 +1105,9 @@ function processEvent(appEvent: AppEvent, meta: KimiEventMeta): void {
       reason === 'cancelled' || reason === 'failed' || reason === 'blocked' ? 'aborted' : 'idle',
       wasMainTurnActive,
     );
+    // Output has stopped, so the live estimate stops with it; the last step's
+    // exact rate takes over until it goes stale.
+    clearLiveTps(appEvent.sessionId);
   }
 
   if (
@@ -1150,6 +1179,13 @@ function connectEventsIfNeeded(): void {
 
   eventConn = api.connectEvents({
     onEvent(appEvent, meta) {
+      // Sample the live decode rate here rather than in processEvent: this runs
+      // once per incoming frame, before the batcher merges neighbouring deltas,
+      // so every chunk keeps its own arrival time and length.
+      if (appEvent.type === 'assistantDelta' && meta.stream?.kind === 'text') {
+        recordLiveTpsDelta(meta.sessionId, meta.stream.at, appEvent.delta.text?.length ?? 0);
+      }
+
       // Workspace lifecycle events are global (not session-scoped) and update
       // rawState.workspaces directly — they bypass the reducer, which has no
       // workspace state.
@@ -2561,6 +2597,100 @@ const activePullRequest = computed<{ number: number; state: string; url: string 
   return rawState.gitStatusBySession[sid]?.pullRequest ?? null;
 });
 
+// ---------------------------------------------------------------------------
+// Tokens-per-second meter
+// ---------------------------------------------------------------------------
+//
+// Two figures feed one readout: a live estimate taken from the text streaming
+// right now, and the exact rate of the last completed step, which stands in
+// once streaming stops and drops off when it goes stale. The live estimate wins
+// while it exists.
+
+/** Live windows, one per session, holding the samples behind each estimate. */
+const liveTpsWindows = new Map<string, LiveTpsWindow>();
+
+/** How often the meter's clock advances while it has something to show. */
+const TPS_TICK_MS = 1000;
+/** The meter's own clock. `status.tps` reads it, so the staleness window
+ *  advances without waiting for another event. */
+const tpsNow = ref(Date.now());
+let tpsTickTimer: ReturnType<typeof setInterval> | null = null;
+
+function anyTpsVisible(now: number): boolean {
+  if (Object.keys(rawState.tpsLiveBySession).length > 0) return true;
+  return Object.values(rawState.tpsFinalBySession).some(
+    (entry) => now - entry.at < TPS_FINAL_TTL_MS,
+  );
+}
+
+/** Start the clock on the first figure that needs it; the tick stops itself
+ *  once nothing is left to show, so an idle page runs no timer for the meter. */
+function ensureTpsTick(): void {
+  if (tpsTickTimer !== null) return;
+  tpsTickTimer = setInterval(() => {
+    const now = Date.now();
+    tpsNow.value = now;
+    if (!anyTpsVisible(now)) stopTpsTick();
+  }, TPS_TICK_MS);
+}
+
+function stopTpsTick(): void {
+  if (tpsTickTimer === null) return;
+  clearInterval(tpsTickTimer);
+  tpsTickTimer = null;
+}
+
+/** Add one streamed text chunk to the session's live window, publishing the
+ *  estimate when the window says this chunk is a publish point. */
+function recordLiveTpsDelta(sessionId: string, at: number | undefined, chars: number): void {
+  if (chars <= 0) return;
+  let window = liveTpsWindows.get(sessionId);
+  if (window === undefined) {
+    window = createLiveTpsWindow();
+    liveTpsWindows.set(sessionId, window);
+  }
+  const value = window.push(at ?? Date.now(), chars);
+  if (value === undefined) return;
+  rawState.tpsLiveBySession = { ...rawState.tpsLiveBySession, [sessionId]: value };
+  ensureTpsTick();
+}
+
+/** Output stopped, or an exact rate arrived: the estimate no longer describes
+ *  anything on screen. */
+function clearLiveTps(sessionId: string): void {
+  liveTpsWindows.delete(sessionId);
+  if (rawState.tpsLiveBySession[sessionId] === undefined) return;
+  const next = { ...rawState.tpsLiveBySession };
+  delete next[sessionId];
+  rawState.tpsLiveBySession = next;
+}
+
+/** Store the step's exact rate, replacing that session's live estimate. */
+function applyStepTps(sessionId: string, tps: number, tokens: number, streamMs: number): void {
+  clearLiveTps(sessionId);
+  rawState.tpsFinalBySession = {
+    ...rawState.tpsFinalBySession,
+    [sessionId]: { tps, tokens, streamMs, at: Date.now() },
+  };
+  ensureTpsTick();
+}
+
+/** The rate to show for a session: the live estimate while it exists, else the
+ *  last step's exact rate until it goes stale, else nothing. */
+function tpsFor(
+  sessionId: string | undefined,
+  now: number,
+): { value: number; live: boolean } | undefined {
+  if (sessionId === undefined) return undefined;
+  const live = rawState.tpsLiveBySession[sessionId];
+  if (live !== undefined) return { value: live, live: true };
+  const final = rawState.tpsFinalBySession[sessionId];
+  if (final !== undefined && now - final.at < TPS_FINAL_TTL_MS) {
+    return { value: final.tps, live: false };
+  }
+  return undefined;
+}
+
 /** Changed files for the active session, sorted by path */
 const changes = computed<{ path: string; status: string }[]>(() => {
   const sid = rawState.activeSessionId;
@@ -2644,6 +2774,7 @@ const status = computed<ConversationStatus>(() => {
     cacheHitRateSession: hasCacheRate ? usage?.cacheHitRateSession : undefined,
     cacheReadTokens: usage?.cacheReadTokens,
     cacheCreationTokens: usage?.cacheCreationTokens,
+    tps: tpsFor(sid, tpsNow.value),
     permission: sessionPermission,
     branch,
     cwd: activeSession?.cwd ?? '',
@@ -3091,6 +3222,9 @@ function clearWorkingFlags(sid: string): void {
   if (rawState.inFlightBySession[sid]) {
     rawState.inFlightBySession = { ...rawState.inFlightBySession, [sid]: false };
   }
+  // The quiet signal means no turn is streaming, so the live estimate for this
+  // session cannot describe anything current.
+  clearLiveTps(sid);
   setExchangeStart(sid, null);
 }
 

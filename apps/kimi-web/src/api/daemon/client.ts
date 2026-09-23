@@ -1711,6 +1711,10 @@ export class DaemonKimiWebApi implements KimiWebApi {
       onRawAgentEvent: (frame) => {
         const { type, seq, session_id: sessionId, payload, offset } = frame;
         const appEvents = projector.project(type, payload, sessionId, { offset });
+        // The envelope's own time, for the streaming rate meter. The daemon
+        // stamps it from the engine's emission time, so it marks when the text
+        // was produced rather than when this client got around to reading it.
+        const emittedAt = Date.parse(frame.timestamp);
         for (const appEvent of appEvents) {
           const turnId = (payload as { turnId?: unknown } | null)?.turnId;
           const stream =
@@ -1722,6 +1726,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
                   turnId,
                   offset,
                   kind: type === 'assistant.delta' ? ('text' as const) : ('thinking' as const),
+                  at: Number.isFinite(emittedAt) ? emittedAt : undefined,
                 }
               : undefined;
           // historyCompacted from the projector is either a compaction signal

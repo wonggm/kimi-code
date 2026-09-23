@@ -380,6 +380,11 @@ export interface ConversationStatus {
   /** Session totals behind the rates, for the status panel breakdown. */
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /** Decode rate for the composer's tok/s meter. `live` marks the estimate
+   *  taken from the streaming window; the exact rate of the last completed step
+   *  is not live and disappears once it goes stale. Absent when neither
+   *  applies, which hides the meter. */
+  tps?: { value: number; live: boolean };
   permission: 'manual' | 'auto' | 'yolo';
   branch: string;
   /** Working directory of the active session */

@@ -27,6 +27,7 @@ import type {
 } from '../types';
 import { i18n } from '../../i18n';
 import { toolLabel, toolSummary } from '../../lib/toolMeta';
+import { computeStepTps } from '../../lib/stepTps';
 import { toAppMessageContent } from './mappers';
 import type { WireMessageContent } from './wire';
 
@@ -1070,6 +1071,17 @@ export function createAgentProjector(): AgentProjector {
         s.totalOutput += u.output;
         s.totalCacheRead += u.cacheRead;
         s.totalCacheCreate += u.cacheCreate;
+
+        // The step's exact decode rate — output tokens over the streamed window
+        // the engine timed. Steps with nothing measurable (no output, or a
+        // stream too short to time) emit nothing, so the meter keeps whatever
+        // the previous step reported until that goes stale.
+        const streamMs: number | undefined =
+          typeof p?.llmStreamDurationMs === 'number' ? p.llmStreamDurationMs : undefined;
+        const tps = computeStepTps(u.output, streamMs);
+        if (tps !== null && streamMs !== undefined) {
+          out.push({ type: 'stepTpsComputed', sessionId, tps, tokens: u.output, streamMs });
+        }
 
         if (msgId) {
           finishAssistantMessage(s, msgId);

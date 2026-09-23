@@ -55,6 +55,10 @@ export default {
   cacheReadsOnly:
     'This provider reports cache reads only, so the rate counts reads against uncached input.',
   cacheNotReported: 'This provider reports no cache information for this session.',
+  // Throughput meter (composer toolbar + status panel)
+  statusThroughput: 'Throughput',
+  tpsLiveTooltip: 'About {value} tok/s while generating (estimate)',
+  tpsFinalTooltip: '{value} tok/s over the last step',
   starredModels: 'Starred',
   moreModels: 'More models…',
   // Status panel

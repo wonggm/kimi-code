@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n';
 import type { ConversationStatus, PermissionMode } from '../../types';
 import type { ThinkingLevel } from '../../api/types';
 import { formatTokens } from '../../lib/formatTokens';
+import { formatTps } from '../../lib/stepTps';
 import Dialog from '../ui/Dialog.vue';
 
 const { t } = useI18n();
@@ -62,6 +63,12 @@ const permColor = computed(() => {
 
 const planText = computed(() => (props.planMode ? t('status.planOn') : t('status.planOff')));
 const swarmText = computed(() => (props.swarmMode ? t('status.swarmOn') : t('status.swarmOff')));
+
+// The meter's own figure, so the panel reads the same number the toolbar shows.
+const tpsText = computed(() => {
+  const tps = props.status.tps;
+  return tps === undefined ? t('status.statusNone') : `${formatTps(tps.value)} tok/s`;
+});
 
 const showCost = computed(() => typeof props.costUsd === 'number' && props.costUsd > 0);
 const costText = computed(() =>
@@ -139,6 +146,10 @@ const cacheNoteText = computed(() => {
           <span class="ctx-text">{{ contextValue }}</span>
           <span v-if="status.ctxMax > 0" class="bar"><i :style="{ width: pct + '%' }"></i></span>
         </dd>
+      </div>
+      <div class="row">
+        <dt>{{ t('status.statusThroughput') }}</dt>
+        <dd>{{ tpsText }}</dd>
       </div>
       <div class="row">
         <dt>{{ t('status.cacheLabel') }}</dt>

@@ -974,6 +974,11 @@ export function reduceAppEvent(
     case 'conversationFailureUpdated':
       break;
 
+    // The step's decode rate drives the web layer's tok/s meter (see
+    // useKimiWebClient.processEvent), not reducer state. Advance seq silently.
+    case 'stepTpsComputed':
+      break;
+
     default: {
       // TypeScript exhaustiveness guard — should not reach here
       const _exhaustive: never = event;

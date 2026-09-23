@@ -52,6 +52,10 @@ export default {
   cacheRates: '平均 {recent}%（最近 {count} 次请求）· 会话平均 {session}%',
   cacheReadsOnly: '该服务商只上报缓存读取量，因此命中率按「读取量 ÷ 未命中输入量」计算。',
   cacheNotReported: '该服务商未上报本会话的缓存信息。',
+  // 生成速度指示（输入框工具栏与会话状态面板）
+  statusThroughput: '生成速度',
+  tpsLiveTooltip: '生成中约 {value} tok/s（估算值）',
+  tpsFinalTooltip: '上一步 {value} tok/s',
   starredModels: '收藏',
   moreModels: '更多模型…',
   // 状态面板

@@ -415,8 +415,7 @@ describe('DaemonKimiWebApi.getSessionPlans', () => {
   it('requests the transcript plan endpoint with the query params', async () => {
     vi.mocked(fetch).mockResolvedValue(envelope({ agent_id: 'main', plans: [] }));
     await createApi().getSessionPlans('sess_9', { agentId: 'main', toolCallId: 'call_7' });
-    const url = vi.mocked(fetch).mock.calls[0]?.[0];
-    expect(String(url)).toBe(
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
       'http://daemon.test/api/v1/sessions/sess_9/transcript/plan?agent_id=main&tool_call_id=call_7',
     );
   });
@@ -489,7 +488,12 @@ describe('DaemonKimiWebApi.connectEvents', () => {
       meta: {
         sessionId: 'session-1',
         seq: 2,
-        stream: { turnId: 7, offset: 0, kind: 'text' },
+        stream: {
+          turnId: 7,
+          offset: 0,
+          kind: 'text',
+          at: Date.parse('2026-01-01T00:00:00.000Z'),
+        },
       },
     });
 
@@ -508,6 +512,53 @@ describe('DaemonKimiWebApi.connectEvents', () => {
         stream: { turnId: 7, offset: 0, kind: 'thinking' },
       },
     });
+  });
+
+  it('measures a completed step from its raw wire frame', () => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const received: AppEvent[] = [];
+    connection = createApi().connectEvents({
+      onEvent(event) {
+        received.push(event);
+      },
+      onResync() {},
+      onError() {},
+      onConnectionChange() {},
+    });
+    const socket = FakeWebSocket.instances[0]!;
+
+    socket.emit({ type: 'server_hello', payload: { protocol_version: 2 } });
+    socket.emit({
+      type: 'turn.started',
+      seq: 1,
+      session_id: 'session-1',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      payload: { agentId: 'main', turnId: 7 },
+    });
+    socket.emit({
+      type: 'turn.step.completed',
+      seq: 2,
+      session_id: 'session-1',
+      timestamp: '2026-01-01T00:00:04.000Z',
+      payload: {
+        agentId: 'main',
+        turnId: 7,
+        step: 1,
+        usage: { output: 120 },
+        llmStreamDurationMs: 4000,
+      },
+    });
+
+    expect(received).toContainEqual(
+      expect.objectContaining({
+        type: 'stepTpsComputed',
+        sessionId: 'session-1',
+        tps: 30,
+        tokens: 120,
+        streamMs: 4000,
+      }),
+    );
   });
 
   it('projects list-level work facts from the global session event', () => {
