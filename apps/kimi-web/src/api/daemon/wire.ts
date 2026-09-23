@@ -436,7 +436,7 @@ export interface WireTranscriptStep {
  *  panel reads. Text frames carry the subagent's assistant output, tool frames
  *  its tool calls. */
 export type WireTranscriptFrame =
-  | { kind: 'text'; role: 'assistant' | 'user'; text: string }
+  | { kind: 'text'; role: 'assistant' | 'user'; text: string; promptIds?: string[] }
   | { kind: 'thinking'; text: string }
   | { kind: 'tool'; toolCallId: string; name: string; input?: unknown; inputText?: string }
   | { kind: 'notice'; text?: string };

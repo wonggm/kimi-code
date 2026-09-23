@@ -410,7 +410,7 @@ export interface AppPlanEntry {
 // ---------------------------------------------------------------------------
 
 export type TranscriptFrame =
-  | { kind: 'text'; role: 'assistant' | 'user'; text: string }
+  | { kind: 'text'; role: 'assistant' | 'user'; text: string; promptIds?: string[] }
   | { kind: 'thinking'; text: string }
   | { kind: 'tool'; toolCallId: string; name: string; input?: unknown; inputText?: string }
   | { kind: 'notice'; text?: string };

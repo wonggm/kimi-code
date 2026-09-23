@@ -724,6 +724,19 @@ describe('mergeSnapshotMessages', () => {
     };
   }
 
+  it('keeps a promptId-stamped steer echo the snapshot never carries, at its own time', () => {
+    const echo = optimisticUser('msg_opt_s', '2026-01-03T12:00:00.000Z', 'steer it', 'pr_steered_1');
+    const snapshot = [
+      realUser('msg_9', '2026-01-03T00:00:00.000Z', 'original'),
+      msg('msg_a1', '2026-01-03T13:00:00.000Z'),
+    ];
+    expect(mergeSnapshotMessages([echo], snapshot).map((m) => m.id)).toEqual([
+      'msg_9',
+      'msg_opt_s',
+      'msg_a1',
+    ]);
+  });
+
   it('drops an optimistic user message when its promptId is the snapshot message id', () => {
     const loaded = [optimisticUser('msg_opt_1', '2026-01-02T23:59:59.000Z', 'hello', 'msg_9')];
     const snapshot = [realUser('msg_9', '2026-01-03T00:00:00.000Z', 'hello')];
@@ -746,6 +759,28 @@ describe('recoveredPromptMessages', () => {
 
   function queuedTurn(turnId: string, prompt: string, triggerPromptId?: string): TranscriptItem {
     return { kind: 'turn', turnId, ordinal: 0, state: 'queued', prompt, triggerPromptId, steps: [] };
+  }
+
+  function steerFrameTurn(
+    promptId: string,
+    text: string,
+    over: Partial<Extract<TranscriptItem, { kind: 'turn' }>> = {},
+  ): TranscriptItem {
+    return {
+      kind: 'turn',
+      turnId: 't1',
+      ordinal: 0,
+      state: 'running',
+      steps: [
+        {
+          kind: 'step',
+          stepId: 't1.8',
+          frames: [{ kind: 'text', role: 'user', text, promptIds: [promptId] }],
+          startedAt: NOW,
+        },
+      ],
+      ...over,
+    };
   }
 
   function prompt(over: Partial<TranscriptPrompt> & { promptId: string }): TranscriptPrompt {
@@ -819,6 +854,37 @@ describe('recoveredPromptMessages', () => {
       { key: 'pr_2', text: 'second', createdAt: NOW, placement: 'tail' },
       { key: 'pr_3', text: 'steered', createdAt: NOW, placement: 'chronological' },
     ]);
+  });
+
+  it("falls back to the turn's user frame when the steered prompt entry carries no content", () => {
+    const recovered = recoveredPromptMessages(
+      page({
+        items: [steerFrameTurn('pr_s2', 'steered via frame')],
+        prompts: [prompt({ promptId: 'pr_s2', steeredAt: NOW, finishedAt: NOW })],
+      }),
+      NOW,
+    );
+    expect(recovered).toEqual([
+      { key: 'pr_s2', text: 'steered via frame', createdAt: NOW, placement: 'chronological' },
+    ]);
+  });
+
+  it('recovers a steered prompt from frames alone when the page carries no prompt entries', () => {
+    const recovered = recoveredPromptMessages(
+      page({ items: [steerFrameTurn('pr_s3', 'cold steer')] }),
+      NOW,
+    );
+    expect(recovered).toEqual([
+      { key: 'pr_s3', text: 'cold steer', createdAt: NOW, placement: 'chronological' },
+    ]);
+  });
+
+  it("ignores a frame naming the turn's own opener", () => {
+    const recovered = recoveredPromptMessages(
+      page({ items: [steerFrameTurn('pr_open', 'the opener', { triggerPromptId: 'pr_open' })] }),
+      NOW,
+    );
+    expect(recovered).toEqual([]);
   });
 
   describe('applyRecoveredPromptMessages', () => {

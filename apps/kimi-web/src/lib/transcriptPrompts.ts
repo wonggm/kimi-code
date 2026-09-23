@@ -8,6 +8,12 @@
 //  - a prompt steered into the turn that was already running — it never opens a
 //    turn of its own, and the daemon marks it on its prompt entry with
 //    `finishedAt === steeredAt`.
+// A steered prompt's own entry can reach the page without its text (the
+// `prompt.submitted` event sometimes misses the transcript store), and a cold
+// or backfilled page rebuilds with no prompt entries at all. Both states still
+// carry the steered text as a user-role text frame whose `promptIds` name the
+// steered prompt, so the frame is the fallback text source, and a frame with no
+// prompt entry of its own (the cold page) yields the entry outright.
 // Upstream rebuilds a bubble from both (a queued turn renders like any other
 // turn; a steered prompt becomes an optimistic user message), so a reload does
 // not lose the message the user just sent. The two are placed differently: a
@@ -65,6 +71,32 @@ function isFoldedSteer(prompt: TranscriptPrompt): boolean {
   );
 }
 
+/** The steered text the turn items carry: a user-role text frame whose
+ *  `promptIds` name the steered prompt. Keyed by prompt id, first frame wins.
+ *  The frame sits in the step it landed in, so that step's start is the time
+ *  the user sent it (falling back to the turn's start). The turn's own opener
+ *  is excluded — it is the turn's prompt, not a steer. */
+function steeredFramesByPromptId(page: TranscriptPage): Map<string, { text: string; at?: string }> {
+  const out = new Map<string, { text: string; at?: string }>();
+  for (const item of page.items) {
+    if (item.kind !== 'turn') continue;
+    for (const step of item.steps) {
+      for (const frame of step.frames) {
+        if (frame.kind !== 'text' || frame.role !== 'user') continue;
+        const text = frame.text.trim();
+        if (text.length === 0) continue;
+        for (const promptId of frame.promptIds ?? []) {
+          if (promptId.length === 0 || promptId === item.triggerPromptId) continue;
+          if (!out.has(promptId)) {
+            out.set(promptId, { text, at: step.startedAt ?? item.startedAt });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
 /** The prompts a session snapshot cannot show: the prompts still waiting in the
  *  daemon's queue (queued turns, in transcript order), then the ones steered into
  *  a turn that has already run — the order upstream renders them in.
@@ -89,14 +121,24 @@ export function recoveredPromptMessages(
       placement: 'tail',
     });
   }
+  const frames = steeredFramesByPromptId(page);
   for (const prompt of page.prompts) {
     if (!isFoldedSteer(prompt)) continue;
-    const text = contentText(prompt.content);
+    const text = contentText(prompt.content) || frames.get(prompt.promptId)?.text || '';
     if (text.length === 0) continue;
     out.push({
       key: prompt.promptId,
       text,
       createdAt: prompt.createdAt,
+      placement: 'chronological',
+    });
+  }
+  for (const [promptId, frame] of frames) {
+    if (promptById.has(promptId)) continue;
+    out.push({
+      key: promptId,
+      text: frame.text,
+      createdAt: frame.at ?? fallbackCreatedAt,
       placement: 'chronological',
     });
   }
@@ -129,7 +171,7 @@ function recoveredMessage(sessionId: string, recovered: RecoveredPromptMessage):
  *  conversation the user sent it. Equal times keep the newcomer last, which is
  *  where a prompt sent just now belongs. An unparseable time means the end of
  *  the list, the only position that claims nothing. */
-function chronologicalIndex(messages: readonly AppMessage[], createdAt: string): number {
+export function chronologicalIndex(messages: readonly AppMessage[], createdAt: string): number {
   const at = Date.parse(createdAt);
   if (Number.isNaN(at)) return messages.length;
   let index = messages.length;
