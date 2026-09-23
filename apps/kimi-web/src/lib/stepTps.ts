@@ -30,7 +30,7 @@ export const TPS_FINAL_TTL_MS = 30_000;
 /**
  * Exact decode rate of one step: output tokens over the streamed window, or
  * null when the step has no measurable output. Input and cache tokens are never
- * counted — they are prompt cost, not decode speed.
+ * counted, since they are prompt cost, not decode speed.
  */
 export function computeStepTps(
   outputTokens: number | undefined,
@@ -52,7 +52,7 @@ export interface LiveTpsWindow {
    * this chunk is not a publish point.
    */
   push(at: number, chars: number): number | undefined;
-  /** Drop the window — the step ended, or an exact rate replaced the estimate. */
+  /** Drop the window: the step ended, or an exact rate replaced the estimate. */
   reset(): void;
 }
 

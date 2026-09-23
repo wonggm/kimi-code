@@ -584,10 +584,12 @@ export type AppEvent =
   | { type: 'messageCreated'; message: AppMessage }
   | { type: 'messageUpdated'; sessionId: string; messageId: string; content: AppMessageContent[]; status: 'pending' | 'completed' | 'error'; durationMs?: number }
   | { type: 'assistantDelta'; sessionId: string; messageId: string; contentIndex: number; delta: { text?: string; thinking?: string } }
-  // The step's exact decode rate, measured by the projector from the step's
-  // output tokens and streamed duration. Consumed by the web layer's tok/s
-  // meter, not by the reducer.
-  | { type: 'stepTpsComputed'; sessionId: string; tps: number; tokens: number; streamMs: number }
+  // The step's decode rate, measured by the projector from the step's output
+  // tokens and streamed duration. Emitted for every completed step; `tps` is
+  // null when the step had no measurable window, which tells the meter to drop
+  // its live estimate without replacing the stored figure. Consumed by the web
+  // layer's tok/s meter, not by the reducer.
+  | { type: 'stepTpsComputed'; sessionId: string; tps: number | null; tokens?: number; streamMs?: number }
   // Side-channel / non-main-agent streaming: carries text/thinking deltas for a
   // specific agent (e.g. a BTW side chat) without folding them into the parent
   // transcript. The web layer routes these to the side-chat panel.
@@ -712,8 +714,8 @@ export interface KimiEventMeta {
     turnId: number;
     offset: number;
     kind: 'text' | 'thinking';
-    /** The envelope's timestamp in epoch ms — when the daemon emitted the
-     *  chunk, which is the clock the streaming rate meter measures against.
+    /** The envelope's timestamp in epoch ms, when the daemon emitted the
+     *  chunk. It is the clock the streaming rate meter measures against.
      *  Absent when the envelope carried no parsable timestamp. */
     at?: number;
   };

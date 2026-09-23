@@ -2665,9 +2665,17 @@ function clearLiveTps(sessionId: string): void {
   rawState.tpsLiveBySession = next;
 }
 
-/** Store the step's exact rate, replacing that session's live estimate. */
-function applyStepTps(sessionId: string, tps: number, tokens: number, streamMs: number): void {
+/** The step boundary arrived: the live estimate always drops there, matching
+ *  the TUI. A measurable step also stores its exact rate, which then stands in
+ *  until it goes stale; an unmeasurable one leaves the stored figure alone. */
+function applyStepTps(
+  sessionId: string,
+  tps: number | null,
+  tokens?: number,
+  streamMs?: number,
+): void {
   clearLiveTps(sessionId);
+  if (tps === null || tokens === undefined || streamMs === undefined) return;
   rawState.tpsFinalBySession = {
     ...rawState.tpsFinalBySession,
     [sessionId]: { tps, tokens, streamMs, at: Date.now() },

@@ -641,17 +641,23 @@ describe('step decode rate', () => {
     );
   });
 
-  it('reports no rate for a step with no measurable output', () => {
+  it('reports a null rate for a step with no measurable output', () => {
     const projector = createAgentProjector();
     projector.project('turn.started', { turnId: 1 }, 's1');
     projector.project('turn.step.started', { turnId: 1, step: 1 }, 's1');
-    // A step that drained in 1ms has no measurable window.
+    // A step that drained in 1ms has no measurable window: the event still
+    // arrives so the meter clears its live estimate, but it carries no rate.
     const events = projector.project(
       'turn.step.completed',
       { turnId: 1, step: 1, usage: { output: 200 }, llmStreamDurationMs: 1 },
       's1',
     );
-    expect(events.some((e) => e.type === 'stepTpsComputed')).toBe(false);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'stepTpsComputed', tps: null }),
+    );
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: 'stepTpsComputed', tps: expect.any(Number) }),
+    );
   });
 });
 
