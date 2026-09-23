@@ -698,6 +698,8 @@ export interface AppSessionSnapshot {
 
 export interface KimiEventHandlers {
   onEvent(event: AppEvent, meta: KimiEventMeta): void;
+  onTpsDelta?(sessionId: string, at: number | undefined, chars: number): void;
+  onTpsReset?(sessionId: string): void;
   onResync(sessionId: string, currentSeq: number, epoch?: string): void;
   onError(code: number, msg: string, fatal: boolean): void;
   onConnectionChange(connected: boolean): void;

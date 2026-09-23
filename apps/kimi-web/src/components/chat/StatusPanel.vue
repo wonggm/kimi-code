@@ -70,7 +70,9 @@ const tpsText = computed(() => {
   if (tps === undefined) return t('status.statusNone');
   return tps.kind === 'avg'
     ? t('status.tpsAvgText', { value: formatTps(tps.value) })
-    : `${formatTps(tps.value)} tok/s`;
+    : tps.kind === 'live'
+      ? `~${formatTps(tps.value)} tok/s`
+      : `${formatTps(tps.value)} tok/s`;
 });
 
 const showCost = computed(() => typeof props.costUsd === 'number' && props.costUsd > 0);

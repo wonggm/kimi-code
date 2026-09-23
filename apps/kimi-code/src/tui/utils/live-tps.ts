@@ -9,8 +9,8 @@ import {
 
 export interface LiveTpsWindow {
   /**
-   * Add one streamed chunk (assistant text or thinking). Returns the rate to
-   * publish, or undefined when this chunk is not a publish point.
+   * Add one streamed chunk (assistant text, thinking, or tool-call arguments).
+   * Returns the rate to publish, or undefined when this chunk is not a publish point.
    */
   push(at: number, chars: number): number | undefined;
   /** Drop the window: the step ended, the turn ended, or the runtime reset. */

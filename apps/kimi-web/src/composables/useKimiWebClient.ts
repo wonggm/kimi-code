@@ -41,6 +41,9 @@ import {
 } from '../lib/exchangeTiming';
 import {
   loadUnread,
+  loadTpsBySession,
+  removeTpsSession,
+  saveTpsBySession,
   loadWorkspaceOrder,
   loadWorkspaceSort,
   safeGetString,
@@ -450,8 +453,8 @@ export interface ExtendedState extends KimiClientState {
   sessionsInitialCountByWorkspace: Record<string, number>;
   /** True once every session has been loaded (after a search-triggered full drain). */
   sessionsFullyLoaded: boolean;
-  /** Live decode rate per session, estimated from the streaming text window.
-   *  Present only while text is streaming; an exact step rate replaces it. */
+  /** Live decode rate per session, estimated from streamed output characters.
+   *  Present only while output is streaming; an exact step rate replaces it. */
   tpsLiveBySession: Record<string, number>;
   /** Exact decode rate of each session's last measurable step, which the meter
    *  shows until it goes stale. */
@@ -469,6 +472,8 @@ export interface StepTpsState {
   streamMs: number;
   at: number;
 }
+
+const persistedTps = loadTpsBySession();
 
 const rawState: ExtendedState = reactive({
   ...createInitialState(),
@@ -518,8 +523,8 @@ const rawState: ExtendedState = reactive({
   sessionsInitialCountByWorkspace: {},
   sessionsFullyLoaded: false,
   tpsLiveBySession: {},
-  tpsFinalBySession: {},
-  tpsAvgBySession: {},
+  tpsFinalBySession: persistedTps.final,
+  tpsAvgBySession: persistedTps.avg,
 });
 
 // ---------------------------------------------------------------------------
@@ -718,6 +723,7 @@ function forgetSession(sessionId: string): void {
   clearLiveTps(sessionId);
   delete rawState.tpsFinalBySession[sessionId];
   delete rawState.tpsAvgBySession[sessionId];
+  removeTpsSession(sessionId);
   // Drop per-session mode toggles and re-persist so a deleted session's entry
   // doesn't linger in localStorage.
   delete rawState.planModeBySession[sessionId];
@@ -1189,6 +1195,12 @@ function connectEventsIfNeeded(): void {
   const api = getKimiWebApi();
 
   eventConn = api.connectEvents({
+    onTpsReset(sessionId) {
+      clearLiveTps(sessionId);
+    },
+    onTpsDelta(sessionId, at, chars) {
+      recordLiveTpsDelta(sessionId, at, chars);
+    },
     onEvent(appEvent, meta) {
       // Sample the live decode rate here rather than in processEvent: this runs
       // once per incoming frame, before the batcher merges neighbouring deltas,
@@ -1812,6 +1824,7 @@ function retainWsSubscription(sessionId: string): void {
     const [victim] = wsSubscriptionOrder.splice(victimIdx, 1);
     if (victim === undefined) break;
     eventConn?.unsubscribe(victim);
+    clearLiveTps(victim);
     sessionsWithStaleCursor.add(victim);
   }
 }
@@ -2620,10 +2633,10 @@ const activePullRequest = computed<{ number: number; state: string; url: string 
 // Tokens-per-second meter
 // ---------------------------------------------------------------------------
 //
-// Two figures feed one readout: a live estimate taken from the text streaming
-// right now, and the exact rate of the last completed step, which stands in
-// once streaming stops and drops off when it goes stale. The live estimate wins
-// while it exists.
+// Two figures feed one readout: a live estimate taken from streamed output
+// characters right now, and the exact rate of the last completed step, which
+// stands in once streaming stops and drops off when it goes stale. The live
+// estimate wins while it exists.
 
 /** Live windows, one per session, holding the samples behind each estimate. */
 const liveTpsWindows = new Map<string, LiveTpsWindow>();
@@ -2707,6 +2720,10 @@ function applyStepTps(
       streamMs: (prev?.streamMs ?? 0) + streamMs,
     },
   };
+  saveTpsBySession({
+    final: rawState.tpsFinalBySession,
+    avg: rawState.tpsAvgBySession,
+  });
   ensureTpsTick();
 }
 

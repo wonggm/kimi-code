@@ -428,6 +428,8 @@ export class SessionEventHandler {
 
   private handleStepBegin(event: TurnStepStartedEvent): void {
     this.host.streamingUI.flushNow();
+    this.resetLiveTpsWindow();
+    this.host.setAppState({ tpsLive: undefined });
     this.host.streamingUI.setStep(event.step);
     this.host.streamingUI.resetToolUi();
     this.host.streamingUI.finalizeLiveTextBuffers('waiting');
@@ -632,10 +634,10 @@ export class SessionEventHandler {
   }
 
   /**
-   * Add one streamed chunk (assistant text or thinking) to the live window and
-   * patch state when the window publishes. The decayed sums and the evidence
-   * gates live in live-tps.ts; here state is written at most once per patch
-   * interval, which is all the footer needs.
+   * Add one streamed chunk (assistant text, thinking, or tool-call arguments)
+   * to the live window and patch state when the window publishes. The decayed
+   * sums and the evidence gates live in live-tps.ts; here state is written at
+   * most once per patch interval, which is all the footer needs.
    */
   private recordTpsSample(chars: number): void {
     if (chars <= 0) return;
@@ -707,6 +709,7 @@ export class SessionEventHandler {
     if (event.toolCallId.length === 0) return;
     const { state, streamingUI } = this.host;
     streamingUI.accumulateToolCallDelta(event.toolCallId, event.name, event.argumentsPart);
+    this.recordTpsSample(event.argumentsPart?.length ?? 0);
     const preview = streamingUI.getStreamingToolCallPreview(event.toolCallId);
     if (
       preview !== undefined &&

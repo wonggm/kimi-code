@@ -22,6 +22,7 @@ export const STORAGE_KEYS = {
   planArmed: 'kimi-web.plan-armed',
   swarmMode: 'kimi-web.swarm-mode',
   goalMode: 'kimi-web.goal-mode',
+  tpsBySession: 'kimi-web.tps-by-session',
   uiFontSize: 'kimi-web.ui-font-size',
   starredModels: 'kimi-web.starred-models',
   unread: 'kimi-web.unread',
@@ -169,6 +170,81 @@ export function safeSetJson(key: string, value: unknown): void {
   } catch {
     // ignore
   }
+}
+
+export interface PersistedTpsState {
+  final: Record<string, PersistedStepTps>;
+  avg: Record<string, PersistedTpsAverage>;
+}
+
+export interface PersistedStepTps {
+  tps: number;
+  tokens: number;
+  streamMs: number;
+  at: number;
+}
+
+export interface PersistedTpsAverage {
+  tokens: number;
+  streamMs: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isPositiveNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isPersistedStepTps(value: unknown): value is PersistedStepTps {
+  if (!isRecord(value)) return false;
+  return isNonNegativeNumber(value['tps'])
+    && isNonNegativeNumber(value['tokens'])
+    && isPositiveNumber(value['streamMs'])
+    && isNonNegativeNumber(value['at']);
+}
+
+function isPersistedTpsAverage(value: unknown): value is PersistedTpsAverage {
+  if (!isRecord(value)) return false;
+  return isNonNegativeNumber(value['tokens']) && isPositiveNumber(value['streamMs']);
+}
+
+export function loadTpsBySession(): PersistedTpsState {
+  const parsed = safeGetJson<unknown>(STORAGE_KEYS.tpsBySession);
+  if (!isRecord(parsed)) return { final: {}, avg: {} };
+  const final: Record<string, PersistedStepTps> = {};
+  const avg: Record<string, PersistedTpsAverage> = {};
+  if (isRecord(parsed['final'])) {
+    for (const [sessionId, value] of Object.entries(parsed['final'])) {
+      if (isPersistedStepTps(value)) final[sessionId] = value;
+    }
+  }
+  if (isRecord(parsed['avg'])) {
+    for (const [sessionId, value] of Object.entries(parsed['avg'])) {
+      if (isPersistedTpsAverage(value)) avg[sessionId] = value;
+    }
+  }
+  return { final, avg };
+}
+
+export function saveTpsBySession(state: PersistedTpsState): void {
+  safeSetJson(STORAGE_KEYS.tpsBySession, state);
+}
+
+export function removeTpsSession(sessionId: string): void {
+  const state = loadTpsBySession();
+  delete state.final[sessionId];
+  delete state.avg[sessionId];
+  if (Object.keys(state.final).length === 0 && Object.keys(state.avg).length === 0) {
+    safeRemove(STORAGE_KEYS.tpsBySession);
+    return;
+  }
+  saveTpsBySession(state);
 }
 
 /**

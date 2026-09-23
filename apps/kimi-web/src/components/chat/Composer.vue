@@ -1181,7 +1181,9 @@ const tpsText = computed(() => {
   if (tps === undefined) return '';
   return tps.kind === 'avg'
     ? t('status.tpsAvgText', { value: formatTps(tps.value) })
-    : `${formatTps(tps.value)} tok/s`;
+    : tps.kind === 'live'
+      ? `~${formatTps(tps.value)} tok/s`
+      : `${formatTps(tps.value)} tok/s`;
 });
 const tpsBandClass = computed(() => {
   const tps = props.status?.tps;

@@ -12,6 +12,9 @@ import {
   loadQuestionDraft,
   saveQuestionDraft,
   clearQuestionDraft,
+  loadTpsBySession,
+  saveTpsBySession,
+  removeTpsSession,
   safeGetJson,
   safeGetString,
   safeRemove,
@@ -284,5 +287,54 @@ describe('loadQuestionDraft / saveQuestionDraft / clearQuestionDraft', () => {
       JSON.stringify({ step: -3, answers: {}, otherTexts: {} }),
     );
     expect(loadQuestionDraft('s1', 'q1')!.step).toBe(0);
+  });
+});
+
+describe('loadTpsBySession / saveTpsBySession / removeTpsSession', () => {
+  const state = {
+    final: {
+      s1: { tps: 42, tokens: 210, streamMs: 5000, at: 1234 },
+    },
+    avg: {
+      s1: { tokens: 210, streamMs: 5000 },
+    },
+  };
+
+  it('returns empty maps when nothing was saved', () => {
+    expect(loadTpsBySession()).toEqual({ final: {}, avg: {} });
+  });
+
+  it('round-trips final rates and averages per session', () => {
+    saveTpsBySession(state);
+    expect(loadTpsBySession()).toEqual(state);
+  });
+
+  it('removes one session without changing the others', () => {
+    saveTpsBySession({
+      final: {
+        s1: state.final.s1,
+        s2: { tps: 80, tokens: 400, streamMs: 5000, at: 2345 },
+      },
+      avg: {
+        s1: state.avg.s1,
+        s2: { tokens: 400, streamMs: 5000 },
+      },
+    });
+    removeTpsSession('s1');
+    expect(loadTpsBySession()).toEqual({
+      final: { s2: { tps: 80, tokens: 400, streamMs: 5000, at: 2345 } },
+      avg: { s2: { tokens: 400, streamMs: 5000 } },
+    });
+  });
+
+  it('drops malformed entries', () => {
+    safeSetJson(STORAGE_KEYS.tpsBySession, {
+      final: { good: { tps: 42, tokens: 210, streamMs: 5000, at: 1234 }, bad: { tps: 'fast' } },
+      avg: { good: { tokens: 210, streamMs: 5000 }, bad: { tokens: -1, streamMs: 5000 } },
+    });
+    expect(loadTpsBySession()).toEqual({
+      final: { good: state.final.s1 },
+      avg: { good: state.avg.s1 },
+    });
   });
 });

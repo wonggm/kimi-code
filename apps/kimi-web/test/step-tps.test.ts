@@ -3,6 +3,7 @@ import {
   computeStepTps,
   createLiveTpsWindow,
   formatTps,
+  toolCallDeltaChars,
   liveTpsBand,
   resolveTpsDisplay,
 } from '../src/lib/stepTps';
@@ -90,6 +91,18 @@ describe('createLiveTpsWindow', () => {
     window.reset();
     expect(window.push(60_000, 8)).toBeUndefined();
     expect(window.push(60_050, 8)).toBeUndefined();
+  });
+});
+
+describe('toolCallDeltaChars', () => {
+  it('counts streamed tool-call argument characters', () => {
+    expect(toolCallDeltaChars({ argumentsPart: 'x'.repeat(12) })).toBe(12);
+  });
+
+  it('ignores malformed or missing argument payloads', () => {
+    expect(toolCallDeltaChars({ argumentsPart: 12 })).toBe(0);
+    expect(toolCallDeltaChars({})).toBe(0);
+    expect(toolCallDeltaChars(null)).toBe(0);
   });
 });
 

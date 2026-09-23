@@ -40,6 +40,7 @@ import type {
   QuestionResponse,
 } from '../types';
 import { createAgentProjector } from './agentEventProjector';
+import { toolCallDeltaChars } from '../../lib/stepTps';
 import { DaemonHttpClient, FORK_TIMEOUT_MS } from './http';
 import {
   toAppApprovalRequest,
@@ -1715,6 +1716,16 @@ export class DaemonKimiWebApi implements KimiWebApi {
         // stamps it from the engine's emission time, so it marks when the text
         // was produced rather than when this client got around to reading it.
         const emittedAt = Date.parse(frame.timestamp);
+        if (type === 'turn.step.started' || type === 'turn.step.interrupted' || type === 'turn.step.retrying') {
+          handlers.onTpsReset?.(sessionId);
+        }
+        if (type === 'tool.call.delta') {
+          const rawPayload = payload as { agentId?: unknown } | null;
+          const chars = toolCallDeltaChars(payload);
+          if (chars > 0 && (rawPayload?.agentId === undefined || rawPayload.agentId === 'main')) {
+            handlers.onTpsDelta?.(sessionId, Number.isFinite(emittedAt) ? emittedAt : undefined, chars);
+          }
+        }
         for (const appEvent of appEvents) {
           const turnId = (payload as { turnId?: unknown } | null)?.turnId;
           const stream =

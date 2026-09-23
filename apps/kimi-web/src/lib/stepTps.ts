@@ -36,8 +36,8 @@ export const TPS_BAND_FAST_MIN = 50;
 // times a second. One state write per interval keeps re-rendering cheap.
 export const TPS_LIVE_PATCH_INTERVAL_MS = 250;
 
-// Text deltas carry no token counts, so the live rate estimates them from the
-// streamed characters.
+// Streamed deltas carry no token counts, so the live rate estimates them from
+// the streamed characters.
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
 
 // How long the last step's exact rate stays on screen once streaming stops.
@@ -103,6 +103,13 @@ export interface LiveTpsWindow {
 }
 
 export type LiveTpsBand = 'slow' | 'mid' | 'fast';
+
+/** Character count from a raw tool-call argument delta. */
+export function toolCallDeltaChars(payload: unknown): number {
+  if (payload === null || typeof payload !== 'object') return 0;
+  const value = (payload as Record<string, unknown>)['argumentsPart'];
+  return typeof value === 'string' ? value.length : 0;
+}
 
 /** Colour band for the live reading, same edges as the TUI footer. */
 export function liveTpsBand(tps: number): LiveTpsBand {

@@ -481,8 +481,8 @@ describe('FooterComponent tps clause', () => {
     expect(line2(appState)).not.toContain('tok/s');
   });
 
-  it('shows the live rate while text streams', () => {
-    expect(line2({ ...appState, tpsLive: 42.34 })).toContain('42.3 tok/s');
+  it('shows the live rate as an estimate while text streams', () => {
+    expect(line2({ ...appState, tpsLive: 42.34 })).toContain('~42.3 tok/s');
   });
 
   it('shows the last step rate while it is fresh', () => {
@@ -511,7 +511,7 @@ describe('FooterComponent tps clause', () => {
     };
 
     const rendered = line2(state);
-    expect(rendered).toContain('55.5 tok/s');
+    expect(rendered).toContain('~55.5 tok/s');
     expect(rendered).not.toContain('18.5');
   });
 });

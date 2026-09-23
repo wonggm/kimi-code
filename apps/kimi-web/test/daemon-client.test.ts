@@ -561,6 +561,35 @@ describe('DaemonKimiWebApi.connectEvents', () => {
     );
   });
 
+  it('samples streamed tool-call arguments for the live meter', () => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const deltas: Array<{ sessionId: string; at: number | undefined; chars: number }> = [];
+    connection = createApi().connectEvents({
+      onEvent() {},
+      onTpsDelta(sessionId, at, chars) {
+        deltas.push({ sessionId, at, chars });
+      },
+      onResync() {},
+      onError() {},
+      onConnectionChange() {},
+    });
+    const socket = FakeWebSocket.instances[0]!;
+
+    socket.emit({ type: 'server_hello', payload: { protocol_version: 2 } });
+    socket.emit({
+      type: 'tool.call.delta',
+      seq: 1,
+      session_id: 'session-1',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      payload: { agentId: 'main', turnId: 7, argumentsPart: 'x'.repeat(12) },
+    });
+
+    expect(deltas).toEqual([
+      { sessionId: 'session-1', at: Date.parse('2026-01-01T00:00:00.000Z'), chars: 12 },
+    ]);
+  });
+
   it('projects list-level work facts from the global session event', () => {
     FakeWebSocket.instances = [];
     vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);

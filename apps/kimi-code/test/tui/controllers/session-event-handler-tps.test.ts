@@ -38,6 +38,8 @@ function makeHost() {
       flushThinkingToTranscript: vi.fn(),
       appendAssistantDelta: vi.fn(),
       appendThinkingDelta: vi.fn(),
+      accumulateToolCallDelta: vi.fn(),
+      getStreamingToolCallPreview: vi.fn(),
       scheduleFlush: vi.fn(),
     },
     requireSession: vi.fn(),
@@ -81,6 +83,19 @@ function deltaEvent(chars = 400) {
     turnId: 1,
     step: 1,
     delta: 'x'.repeat(chars),
+  } as const;
+}
+
+function toolCallDeltaEvent(chars = 8) {
+  return {
+    type: 'tool.call.delta',
+    sessionId: 's1',
+    agentId: 'main',
+    turnId: 1,
+    step: 1,
+    toolCallId: 'tool-1',
+    name: 'read',
+    argumentsPart: 'x'.repeat(chars),
   } as const;
 }
 
@@ -153,6 +168,37 @@ describe('SessionEventHandler tps meter', () => {
     const rate = host.state.appState.tpsLive;
     expect(rate).toBeGreaterThan(0);
     expect(rate).toBeLessThan(1000);
+  });
+
+  it('counts tool-call argument deltas into the window', () => {
+    const { host } = makeHost();
+    const handler = new SessionEventHandler(host);
+
+    for (let i = 0; i < 12; i++) {
+      handler.handleEvent(toolCallDeltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
+
+    expect(host.state.appState.tpsLive).toBeGreaterThan(0);
+    expect(host.state.appState.tpsLive).toBeLessThan(1000);
+  });
+
+  it('starts a fresh live window at each step boundary', () => {
+    const { host } = makeHost();
+    const handler = new SessionEventHandler(host);
+
+    for (let i = 0; i < 10; i++) {
+      handler.handleEvent(deltaEvent(10), vi.fn());
+      vi.advanceTimersByTime(250);
+    }
+    expect(host.state.appState.tpsLive).toBeGreaterThan(0);
+
+    handler.handleEvent(
+      { type: 'turn.step.started', sessionId: 's1', agentId: 'main', turnId: 1, step: 2 },
+      vi.fn(),
+    );
+
+    expect(host.state.appState.tpsLive).toBeUndefined();
   });
 
   it('drops the window when runtime state resets', () => {

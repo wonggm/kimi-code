@@ -34,7 +34,7 @@ export const TPS_BAND_FAST_MIN = 50;
 // times a second. One state patch per interval keeps rendering cheap.
 export const TPS_LIVE_PATCH_INTERVAL_MS = 250;
 
-// Assistant deltas carry no token counts, so the live rate estimates them from
+// Streamed deltas carry no token counts, so the live rate estimates them from
 // the streamed characters.
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
 
