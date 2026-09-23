@@ -11,6 +11,7 @@ import { truncateToWidth, visibleWidth } from '@moonshot-ai/pi-tui';
 import chalk from 'chalk';
 import { effectiveModelAlias, type CacheStatus } from '@moonshot-ai/kimi-code-sdk';
 
+import { TPS_FINAL_TTL_MS } from '#/tui/constant/streaming';
 import { ALL_TIPS, type ToolbarTip } from '#/tui/constant/tips';
 import { isRainbowDancing, renderDanceFooterModel } from '#/tui/easter-eggs/dance';
 import { currentTheme } from '#/tui/theme';
@@ -28,6 +29,7 @@ import {
   type GitStatus,
   type GitStatusCache,
 } from '#/utils/git/git-status';
+import { formatTps } from '#/utils/usage/step-tps';
 import {
   formatTokenCount,
   usagePercent,
@@ -202,6 +204,29 @@ export function formatFooterCache(cache: CacheStatus | undefined, colors: ColorP
         ? colors.textDim
         : colors.warning;
   return ` · cache: ${chalk.hex(paint)(`${rate.toFixed(2)}%`)}`;
+}
+
+/**
+ * The meter's current reading, or null while it is hidden: the live rolling
+ * rate while text is streaming, otherwise the last step's exact rate until it
+ * goes stale.
+ */
+function currentTps(state: AppState): { value: number; live: boolean } | null {
+  if (state.tpsLive !== undefined) return { value: state.tpsLive, live: true };
+  const final = state.tpsFinal;
+  if (final !== undefined && Date.now() - final.at < TPS_FINAL_TTL_MS) {
+    return { value: final.tps, live: false };
+  }
+  return null;
+}
+
+/** Decode-rate readout for footer line 2, e.g. ` · 42.3 tok/s`. The live rate
+ *  wins while text streams; afterwards the last step's exact rate stays for a
+ *  short while. Hidden when neither applies. */
+export function formatFooterTps(state: AppState, colors: ColorPalette): string {
+  const current = currentTps(state);
+  if (current === null) return '';
+  return ` · ${chalk.hex(colors.text)(`${formatTps(current.value)} tok/s`)}`;
 }
 
 export function formatFooterGitBadge(status: GitStatus, colors: ColorPalette): string {
@@ -391,7 +416,8 @@ export class FooterComponent implements Component {
       state.contextTokens,
       state.maxContextTokens,
     );
-    const fullContextText = contextText + formatFooterCache(state.cache, colors);
+    const fullContextText =
+      contextText + formatFooterTps(state, colors) + formatFooterCache(state.cache, colors);
     const contextWidth = visibleWidth(fullContextText);
     let line2: string;
     const hint = this.transientHint ?? this.warningHint;
@@ -545,6 +571,7 @@ export class FooterComponent implements Component {
         state.cache.reporting === 'none' ? null : (state.cache.recentRequestCount ?? null),
       cacheHitRateSession:
         state.cache.reporting === 'none' ? null : (state.cache.sessionPercent ?? null),
+      tps: currentTps(state),
       sessionId: state.sessionId,
       version: state.version,
     };

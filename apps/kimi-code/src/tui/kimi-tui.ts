@@ -2426,6 +2426,10 @@ export class KimiTUI {
         status.usage?.total === undefined ? 0 : sumTokenUsage(status.usage.total),
       sessionTitle: session.summary?.title ?? null,
       goal: goalResult.goal,
+      // Neither rate may survive a session switch: the meter starts hidden
+      // until this session streams something of its own.
+      tpsLive: undefined,
+      tpsFinal: undefined,
     };
     // A previous session's rate must never survive a switch: a session whose
     // provider reports nothing reads as 'none', which the footer hides.

@@ -72,7 +72,13 @@ import { openUrl } from '#/utils/open-url';
 import { currentTheme } from '#/tui/theme';
 import type { ColorToken } from '#/tui/theme';
 import { errorReportHintLine } from '../constant/feedback';
+import {
+  CHARS_PER_TOKEN_ESTIMATE,
+  TPS_LIVE_PATCH_INTERVAL_MS,
+  TPS_LIVE_WINDOW_MS,
+} from '../constant/streaming';
 import { formatStepDebugTiming } from '#/utils/usage/debug-timing';
+import { computeStepTps } from '#/utils/usage/step-tps';
 import { nextTranscriptId } from '../utils/transcript-id';
 import type { BtwPanelController } from './btw-panel';
 import { isPluginMcpToolName, PluginUpdateNotifier } from './plugin-update-notifier';
@@ -176,6 +182,11 @@ export class SessionEventHandler {
   private queuedGoalPromotionInFlight = false;
   private queuedGoalPromotionTimer: ReturnType<typeof setTimeout> | undefined;
   private stepRetryAttemptTimer: ReturnType<typeof setTimeout> | undefined;
+  // Live TPS window: one (timestamp, streamed chars) sample per assistant
+  // delta, pruned to the rolling window so the footer reads the current decode
+  // rate rather than the average over the whole step.
+  private tpsSamples: { at: number; chars: number }[] = [];
+  private tpsLivePatchedAt = 0;
 
   resetRuntimeState(): void {
     this.backgroundTasks.clear();
@@ -194,6 +205,7 @@ export class SessionEventHandler {
     this.pendingModelBlockedFallback = undefined;
     this.queuedGoalPromotionPending = false;
     this.queuedGoalPromotionInFlight = false;
+    this.resetLiveTpsWindow();
     this.clearQueuedGoalPromotionTimer();
     this.clearStepRetryAttemptTimer();
     this.stopAllMcpServerStatusSpinners();
@@ -373,6 +385,10 @@ export class SessionEventHandler {
     this.host.handleTurnEnded?.(event);
     this.host.streamingUI.flushNow();
     this.clearStepRetry();
+    // Output has stopped, so the live window ends here; the last step's exact
+    // rate takes over until it goes stale.
+    this.resetLiveTpsWindow();
+    this.host.setAppState({ tpsLive: undefined });
     if (event.reason === 'cancelled') {
       this.markActiveAgentSwarmsCancelled();
     }
@@ -436,6 +452,7 @@ export class SessionEventHandler {
     this.clearStepRetry();
     this.host.noteStepUsage(event.usage);
     this.maybeShowDebugTiming(event);
+    this.applyStepTps(event);
 
     if (event.providerFinishReason === 'filtered') {
       this.host.showNotice(
@@ -517,6 +534,24 @@ export class SessionEventHandler {
     });
   }
 
+  /**
+   * Fold the step's exact decode rate into state, replacing the live estimate.
+   * A step with nothing measurable (no output, or a stream too short to time)
+   * leaves the previous rate in place. An unmeasurable step says nothing about
+   * decode speed, so the meter keeps the last real reading until it goes stale.
+   */
+  private applyStepTps(event: TurnStepCompletedEvent): void {
+    this.resetLiveTpsWindow();
+    const output = event.usage?.output;
+    const streamMs = event.llmStreamDurationMs;
+    const tps = computeStepTps(output, streamMs);
+    const patch: Partial<AppState> = { tpsLive: undefined };
+    if (tps !== null && output !== undefined && streamMs !== undefined) {
+      patch.tpsFinal = { tps, tokens: output, streamMs, at: Date.now() };
+    }
+    this.host.setAppState(patch);
+  }
+
   private markActiveAgentSwarmsCancelled(): void {
     this.subAgentEventHandler.markActiveAgentSwarmsCancelled();
   }
@@ -591,7 +626,60 @@ export class SessionEventHandler {
     if (state.appState.streamingPhase !== 'composing') {
       this.host.setAppState({ streamingPhase: 'composing', streamingStartTime: Date.now() });
     }
+    this.recordTpsSample(event.delta.length);
     streamingUI.scheduleFlush();
+  }
+
+  /**
+   * Add one assistant delta to the live window. The window itself is pruned on
+   * every delta, but state is patched at most once per interval: the footer
+   * reads whatever is current when it renders, so a faster patch rate would
+   * only add renders.
+   *
+   * A window holding fewer than two samples is never patched, and the patch
+   * clock is re-seeded to the incoming sample whenever that happens. One sample
+   * has no elapsed span, so the rate would divide by the 1ms floor and read in
+   * the thousands of tok/s. The re-seed is what keeps the clock honest after a
+   * gap: a gap longer than the window prunes it down to the delta that just
+   * arrived, and a clock left over from before the gap would let a second delta
+   * in the same millisecond pass the throttle and patch that same 1ms span.
+   * Together the two rules mean every patched rate spans at least one interval.
+   */
+  private recordTpsSample(chars: number): void {
+    const now = Date.now();
+    this.tpsSamples.push({ at: now, chars });
+    const cutoff = now - TPS_LIVE_WINDOW_MS;
+    while (this.tpsSamples.length > 0 && this.tpsSamples[0]!.at < cutoff) {
+      this.tpsSamples.shift();
+    }
+    if (this.tpsSamples.length < 2) {
+      this.tpsLivePatchedAt = now;
+      return;
+    }
+    if (now - this.tpsLivePatchedAt < TPS_LIVE_PATCH_INTERVAL_MS) return;
+    this.tpsLivePatchedAt = now;
+    this.host.setAppState({ tpsLive: this.liveTps(now) });
+  }
+
+  /** Rate over the window's samples: estimated tokens over the elapsed span. */
+  private liveTps(now: number): number | undefined {
+    const oldest = this.tpsSamples[0];
+    if (oldest === undefined) return undefined;
+    let chars = 0;
+    for (const sample of this.tpsSamples) {
+      chars += sample.chars;
+    }
+    const windowSpanMs = Math.max(1, now - oldest.at);
+    return Math.ceil(chars / CHARS_PER_TOKEN_ESTIMATE) / (windowSpanMs / 1000);
+  }
+
+  /**
+   * Drop the window. The patch clock needs no reset here: the next push that
+   * leaves the window thin re-seeds it, so a stale timestamp can never reach
+   * the throttle.
+   */
+  private resetLiveTpsWindow(): void {
+    this.tpsSamples.length = 0;
   }
 
   private handleHookResult(event: HookResultEvent): void {

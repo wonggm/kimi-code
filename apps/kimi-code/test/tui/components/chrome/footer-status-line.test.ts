@@ -57,6 +57,7 @@ const payload: StatusLinePayload = {
   cacheHitRateRecent: 88.41,
   cacheRecentRequests: 20,
   cacheHitRateSession: 72.14,
+  tps: null,
   sessionId: 'ses-1',
   version: '1.2.3',
 };
@@ -207,6 +208,42 @@ describe('FooterComponent status_line command', () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     expect(plain(footer.render(120)[0]!)).toContain('kimi-k2');
+  });
+});
+
+describe('FooterComponent tps payload', () => {
+  /** The footer's own snapshot: `cat` echoes the payload JSON back as line 1,
+   *  so a wide render hands back exactly what the command received. */
+  async function payloadFor(state: AppState): Promise<StatusLinePayload> {
+    const footer = new FooterComponent({
+      ...state,
+      statusLine: { items: null, command: 'cat' },
+    });
+    footer.render(2000);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const parsed = JSON.parse(plain(footer.render(2000)[0]!)) as StatusLinePayload;
+    footer.dispose();
+    return parsed;
+  }
+
+  it('reports the live rate as live', async () => {
+    expect((await payloadFor({ ...baseState, tpsLive: 42.3 })).tps).toEqual({
+      value: 42.3,
+      live: true,
+    });
+  });
+
+  it('reports the last step rate as not live', async () => {
+    const state: AppState = {
+      ...baseState,
+      tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() },
+    };
+
+    expect((await payloadFor(state)).tps).toEqual({ value: 18.5, live: false });
+  });
+
+  it('reports null while the meter is hidden', async () => {
+    expect((await payloadFor(baseState)).tps).toBeNull();
   });
 });
 

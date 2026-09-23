@@ -69,6 +69,12 @@ export interface AppState {
   isReplaying: boolean;
   streamingPhase: 'idle' | 'waiting' | 'thinking' | 'composing' | 'shell';
   streamingStartTime: number;
+  /** Live decode rate over the rolling streaming window; absent when no text is
+   *  streaming, which hides the footer's tok/s meter. */
+  tpsLive?: number;
+  /** Exact rate of the last completed step, which the meter shows until it goes
+   *  stale; absent until a measurable step lands. */
+  tpsFinal?: StepTpsState;
   /** Pending step retry backoff (fed by `turn.step.retrying`); null when no retry is in flight. */
   stepRetry: StepRetryState | null;
   theme: ThemeName;
@@ -99,6 +105,15 @@ export interface AppState {
 
 export function sumTokenUsage(total: TokenUsage): number {
   return total.inputOther + total.output + total.inputCacheRead + total.inputCacheCreation;
+}
+
+/** Exact decode rate of one completed step, kept so the meter can show it after
+ *  the step ends. `at` is when the step completed. */
+export interface StepTpsState {
+  tps: number;
+  tokens: number;
+  streamMs: number;
+  at: number;
 }
 
 export interface StepRetryState {

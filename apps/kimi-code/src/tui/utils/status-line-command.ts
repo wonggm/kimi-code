@@ -33,6 +33,10 @@ export interface StatusLinePayload {
   cacheRecentRequests: number | null;
   /** Session-wide cache hit rate, in percent; null when unreported. */
   cacheHitRateSession: number | null;
+  /** Decode rate on the footer's tok/s meter; null while the meter is hidden.
+   *  `live` marks the rolling rate while text streams, as opposed to the last
+   *  completed step's exact rate. */
+  tps: { value: number; live: boolean } | null;
   sessionId: string;
   version: string;
 }

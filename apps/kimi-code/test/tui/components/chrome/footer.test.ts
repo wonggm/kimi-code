@@ -463,3 +463,55 @@ describe('FooterComponent ctrl+o hint beside an inline tips slot', () => {
     footer.dispose();
   });
 });
+
+describe('FooterComponent tps clause', () => {
+  function stripAnsi(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replaceAll(/\u001B\[[0-9;]*m/g, '');
+  }
+
+  function line2(state: AppState): string {
+    const footer = new FooterComponent(state);
+    const rendered = stripAnsi(footer.render(120)[1] ?? '');
+    footer.dispose();
+    return rendered;
+  }
+
+  it('hides the meter when neither reading is set', () => {
+    expect(line2(appState)).not.toContain('tok/s');
+  });
+
+  it('shows the live rate while text streams', () => {
+    expect(line2({ ...appState, tpsLive: 42.34 })).toContain('42.3 tok/s');
+  });
+
+  it('shows the last step rate while it is fresh', () => {
+    const state: AppState = {
+      ...appState,
+      tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() - 29_000 },
+    };
+
+    expect(line2(state)).toContain('18.5 tok/s');
+  });
+
+  it('hides the last step rate once it goes stale', () => {
+    const state: AppState = {
+      ...appState,
+      tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() - 30_000 },
+    };
+
+    expect(line2(state)).not.toContain('tok/s');
+  });
+
+  it('prefers the live rate while both readings are set', () => {
+    const state: AppState = {
+      ...appState,
+      tpsLive: 55.5,
+      tpsFinal: { tps: 18.5, tokens: 100, streamMs: 5400, at: Date.now() },
+    };
+
+    const rendered = line2(state);
+    expect(rendered).toContain('55.5 tok/s');
+    expect(rendered).not.toContain('18.5');
+  });
+});
