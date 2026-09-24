@@ -123,13 +123,13 @@ describe('SessionEventHandler tps meter', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    handler.handleEvent(deltaEvent(10), vi.fn());
+    handler.handleEvent(deltaEvent(12), vi.fn());
     vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(10), vi.fn());
+    handler.handleEvent(deltaEvent(12), vi.fn());
     expect(host.state.appState.tpsLive).toBeUndefined();
 
     vi.advanceTimersByTime(250);
-    handler.handleEvent(deltaEvent(10), vi.fn());
+    handler.handleEvent(deltaEvent(12), vi.fn());
     const rate = host.state.appState.tpsLive;
     expect(rate).toBeGreaterThan(0);
     expect(rate).toBeLessThan(1000);
@@ -139,7 +139,7 @@ describe('SessionEventHandler tps meter', () => {
     const { host } = makeHost();
     const handler = new SessionEventHandler(host);
 
-    // 10 characters every 250ms is about 12 tok/s with the chars/4 estimate.
+    // 10 characters every 250ms is about 10 tok/s with the chars/4 estimate.
     for (let i = 0; i < 40; i++) {
       handler.handleEvent(deltaEvent(10), vi.fn());
       vi.advanceTimersByTime(250);

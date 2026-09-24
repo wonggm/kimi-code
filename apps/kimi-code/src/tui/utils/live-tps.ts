@@ -50,7 +50,7 @@ export function createLiveTpsWindow(): LiveTpsWindow {
       const gap = lastAt === 0 ? 0 : Math.min(at - lastAt, TPS_MAX_DELTA_GAP_MS);
       if (gap > 0) age(gap);
       lastAt = at;
-      const estimated = Math.ceil(chars / CHARS_PER_TOKEN_ESTIMATE);
+      const estimated = chars / CHARS_PER_TOKEN_ESTIMATE;
       let totalTokens = 0;
       let totalTime = 0;
       for (let i = 0; i < TPS_HALF_LIVES_MS.length; i++) {

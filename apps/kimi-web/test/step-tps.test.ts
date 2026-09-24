@@ -60,6 +60,18 @@ describe('createLiveTpsWindow', () => {
     expect(rate).toBeLessThan(50);
   });
 
+  it('does not round each one-character delta up to a token', () => {
+    // 1 character per 50ms is 20 characters/s, or 5 tok/s with the chars/4 estimate.
+    const window = createLiveTpsWindow();
+    let rate: number | undefined;
+    for (let i = 0; i < 60; i++) {
+      const value = window.push(1000 + i * 50, 1);
+      if (value !== undefined) rate = value;
+    }
+    expect(rate).toBeGreaterThan(4);
+    expect(rate).toBeLessThan(6);
+  });
+
   it('publishes at most once per patch interval', () => {
     const window = createLiveTpsWindow();
     let published: number | undefined;
