@@ -59,7 +59,7 @@ export default {
   statusThroughput: 'Throughput',
   tpsLiveTooltip: 'About {value} tok/s while generating (estimate)',
   tpsFinalTooltip: '{value} tok/s over the last step',
-  tpsAvgText: 'avg {value} tok/s',
+  tpsAvgText: '{value} tok/s',
   tpsAvgTooltip: 'Session average {value} tok/s',
   starredModels: 'Starred',
   moreModels: 'More models…',

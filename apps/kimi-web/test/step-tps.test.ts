@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import enStatus from '../src/i18n/locales/en/status';
+import zhStatus from '../src/i18n/locales/zh/status';
 import {
   computeStepTps,
   createLiveTpsWindow,
@@ -113,6 +115,13 @@ describe('liveTpsBand', () => {
     expect(liveTpsBand(49)).toBe('mid');
     expect(liveTpsBand(50)).toBe('fast');
     expect(liveTpsBand(151)).toBe('fast');
+  });
+});
+
+describe('session average label', () => {
+  it('shows the rate without an average prefix', () => {
+    expect(enStatus.tpsAvgText).toBe('{value} tok/s');
+    expect(zhStatus.tpsAvgText).toBe('{value} tok/s');
   });
 });
 

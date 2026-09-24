@@ -598,11 +598,14 @@ describe('FooterComponent tps session average', () => {
 
   it('shows the session average once the step rate goes stale', () => {
     const rendered = line2({ ...appState, tpsFinal: staleFinal, tpsAvg: avg });
-    expect(rendered).toContain('avg40.0 tok/s');
+    expect(rendered).toContain('40.0 tok/s');
+    expect(rendered).not.toContain('avg');
   });
 
   it('shows the session average with no step rate at all', () => {
-    expect(line2({ ...appState, tpsAvg: avg })).toContain('avg40.0 tok/s');
+    const rendered = line2({ ...appState, tpsAvg: avg });
+    expect(rendered).toContain('40.0 tok/s');
+    expect(rendered).not.toContain('avg');
   });
 
   it('prefers the step rate while it is fresh over the average', () => {

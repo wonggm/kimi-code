@@ -235,11 +235,9 @@ export function formatFooterTps(state: AppState, colors: ColorPalette): string {
   const current = currentTps(state);
   if (current === null) return '';
   const text =
-    current.kind === 'avg'
-      ? `avg${formatTps(current.value)} tok/s`
-      : current.kind === 'live'
-        ? `~${formatTps(current.value)} tok/s`
-        : `${formatTps(current.value)} tok/s`;
+    current.kind === 'live'
+      ? `~${formatTps(current.value)} tok/s`
+      : `${formatTps(current.value)} tok/s`;
   let paint = colors.text;
   if (current.kind === 'live') {
     if (current.value < TPS_BAND_SLOW_MAX) paint = colors.textDim;
