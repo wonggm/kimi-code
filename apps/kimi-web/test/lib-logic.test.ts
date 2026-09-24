@@ -18,6 +18,7 @@ import {
 } from '../src/lib/transcriptPrompts';
 import {
   applyTranscriptTimings,
+  durationMsBetween,
   pageTurnTimings,
 } from '../src/lib/transcriptTiming';
 import { keepLiveSubagents, mergeSnapshotSubagents } from '../src/lib/taskMerge';
@@ -1000,6 +1001,18 @@ describe('transcriptTiming', () => {
   function step(startedAt?: string, endedAt?: string) {
     return { kind: 'step' as const, stepId: 's1', frames: [], startedAt, endedAt };
   }
+
+  describe('durationMsBetween', () => {
+    it('returns a positive timestamp span for transcript timing', () => {
+      expect(durationMsBetween(iso(0), iso(3000))).toBe(3000);
+    });
+
+    it('rejects missing, invalid, and zero spans', () => {
+      expect(durationMsBetween(undefined, iso(3000))).toBeUndefined();
+      expect(durationMsBetween('invalid', iso(3000))).toBeUndefined();
+      expect(durationMsBetween(iso(3000), iso(3000))).toBeUndefined();
+    });
+  });
 
   function message(over: Partial<AppMessage> & { id: string; role: AppMessage['role'] }): AppMessage {
     return { sessionId: 's1', content: [], createdAt: iso(0), ...over };

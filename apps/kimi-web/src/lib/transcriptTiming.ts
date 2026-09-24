@@ -35,7 +35,10 @@ export interface TurnTiming {
 
 /** A span between two ISO stamps, or undefined when either is missing, does not
  *  parse, or the span is not positive. */
-function spanMs(startedAt: string | undefined, endedAt: string | undefined): number | undefined {
+export function durationMsBetween(
+  startedAt: string | undefined,
+  endedAt: string | undefined,
+): number | undefined {
   if (startedAt === undefined || endedAt === undefined) return undefined;
   const start = Date.parse(startedAt);
   const end = Date.parse(endedAt);
@@ -48,7 +51,7 @@ function turnTiming(turn: TranscriptTurn): TurnTiming | null {
   const durationMs = typeof turn.durationMs === 'number' && turn.durationMs > 0
     ? turn.durationMs
     : undefined;
-  const stepDurationsMs = turn.steps.map((step) => spanMs(step.startedAt, step.endedAt));
+  const stepDurationsMs = turn.steps.map((step) => durationMsBetween(step.startedAt, step.endedAt));
   if (durationMs === undefined && stepDurationsMs.every((ms) => ms === undefined)) return null;
   return { durationMs, stepDurationsMs };
 }

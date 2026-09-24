@@ -37,6 +37,8 @@ import { foldRenderBlocks, TOOL_FOLD_KEY_PREFIX, type FoldedRenderBlock } from '
 import { activityRunFolding } from '../../lib/conversationPrefs';
 import { modelDisplay } from '../../lib/modelDisplay';
 import { effortLabel } from '../../lib/modelThinking';
+import { bareDuration } from '../../lib/bareDuration';
+import { durationMsBetween } from '../../lib/transcriptTiming';
 
 const props = defineProps<{
   member: AgentMember;
@@ -274,7 +276,10 @@ watch(
   },
   { immediate: true },
 );
-onBeforeUnmount(stopTranscriptPolling);
+onBeforeUnmount(() => {
+  stopTranscriptPolling();
+  stopWorkingElapsedTimer();
+});
 
 // While no transcript exists the pane shows the fallback block: upstream gates
 // it on the turn list being empty and the load having settled, which for the
@@ -291,6 +296,50 @@ const workingLabel = computed(() =>
     ? t('conversation.working')
     : t('conversation.requesting'),
 );
+
+const workingNow = ref(Date.now());
+let workingElapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopWorkingElapsedTimer(): void {
+  if (workingElapsedTimer === null) return;
+  clearInterval(workingElapsedTimer);
+  workingElapsedTimer = null;
+}
+
+function activeTranscriptStartedAt(): number | undefined {
+  const items = transcriptItems.value;
+  if (items === null) return undefined;
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index];
+    if (item?.kind !== 'turn' || item.startedAt === undefined) continue;
+    const startedAt = Date.parse(item.startedAt);
+    if (Number.isFinite(startedAt)) return startedAt;
+  }
+  return undefined;
+}
+
+watch(
+  isWorking,
+  (working) => {
+    if (!working) {
+      stopWorkingElapsedTimer();
+      return;
+    }
+    workingNow.value = Date.now();
+    workingElapsedTimer ??= setInterval(() => {
+      workingNow.value = Date.now();
+    }, 1000);
+  },
+  { immediate: true },
+);
+
+const workingElapsedLabel = computed(() => {
+  if (!isWorking.value) return '';
+  const startedAt = activeTranscriptStartedAt();
+  if (startedAt === undefined) return '';
+  const duration = bareDuration((workingNow.value - startedAt) / 1000);
+  return duration ? t('conversation.workingElapsed', { duration }) : '';
+});
 
 // ---------------------------------------------------------------------------
 // Transcript → ChatTurn mapping. The pane renders the subagent's turns with the
@@ -354,10 +403,13 @@ const transcriptTurns = computed<ChatTurn[]>(() => {
     }
     const blocks: TurnBlock[] = [];
     for (const step of item.steps) {
+      const stepDurationMs = durationMsBetween(step.startedAt, step.endedAt);
       for (const frame of step.frames) {
         switch (frame.kind) {
           case 'thinking':
-            if (frame.text.trim().length > 0) blocks.push({ kind: 'thinking', thinking: frame.text });
+            if (frame.text.trim().length > 0) {
+              blocks.push({ kind: 'thinking', thinking: frame.text, durationMs: stepDurationMs });
+            }
             break;
           case 'tool':
             blocks.push({ kind: 'tool', tool: toToolCall(frame as WireToolFrame) });
@@ -385,10 +437,18 @@ const transcriptTurns = computed<ChatTurn[]>(() => {
       text: blocks.flatMap((blk) => (blk.kind === 'text' ? [blk.text] : [])).join('\n\n'),
       blocks,
       createdAt: item.startedAt,
+      durationMs: item.durationMs,
     });
   }
   return turns;
 });
+
+function workedForLabel(turn: ChatTurn): string {
+  const duration = typeof turn.durationMs === 'number' && turn.durationMs > 0
+    ? bareDuration(turn.durationMs / 1000)
+    : '';
+  return duration ? t('conversation.workedFor', { duration }) : '';
+}
 
 const READ_MEDIA_RE = /^read[_-]?media(?:file)?$/i;
 const FILE_STORE_ID_RE =
@@ -601,7 +661,7 @@ watch(
             </div>
             <div v-else class="a-msg turn-anchor" :data-turn-id="turn.id">
               <template v-for="(blk, bi) in renderBlocksFor(turn)" :key="renderBlockKeyFor(blk, bi)">
-                <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile />
+                <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :duration-ms="blk.durationMs" mobile />
                 <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :open-file="forwardOpenFile" /></div>
                 <ToolCallCard
                   v-else-if="blk.kind === 'tool'"
@@ -632,6 +692,7 @@ watch(
                   </template>
                 </ActivityRun>
               </template>
+              <div v-if="workedForLabel(turn)" class="worked-for">{{ workedForLabel(turn) }}</div>
             </div>
           </template>
         </div>
@@ -654,7 +715,7 @@ watch(
              transcript already shows. -->
         <div v-if="isWorking" class="working-indicator" role="status">
           <MoonSpinner />
-          <span class="wi-label">{{ workingLabel }}</span>
+          <span class="wi-label">{{ workingElapsedLabel || workingLabel }}</span>
         </div>
       </div>
     </div>
@@ -868,6 +929,12 @@ watch(
 }
 .a-msg .msg :deep(p) { margin: 0; }
 .a-msg .msg :deep(p + p) { margin-top: var(--space-2); }
+
+.worked-for {
+  color: var(--color-text-faint);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
 
 /* User turn — right-aligned bubble, the shape the main conversation gives the
    same prompt echo. */
