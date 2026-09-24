@@ -3,16 +3,17 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   lines?: string[];
   emptyText?: string;
-}>();
+  wrap?: boolean;
+}>(), { wrap: true });
 
 const outputLines = computed(() => props.lines ?? []);
 </script>
 
 <template>
-  <div class="op">
+  <div class="op" :class="{ nowrap: !wrap }">
     <div v-if="outputLines.length === 0 && emptyText" class="bb-empty">{{ emptyText }}</div>
     <div v-for="(line, i) in outputLines" :key="i">{{ line }}</div>
   </div>
@@ -33,6 +34,16 @@ const outputLines = computed(() => props.lines ?? []);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+.op.nowrap {
+  white-space: pre;
+  word-break: normal;
+}
+.op.nowrap > div {
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  padding-right: var(--space-3);
 }
 .bb-empty {
   color: var(--color-text-faint);

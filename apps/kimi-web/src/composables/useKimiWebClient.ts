@@ -19,6 +19,7 @@ import { mergeSnapshotMessages } from '../lib/snapshotMessages';
 import {
   applyRecoveredPromptMessages,
   recoveredPromptMessages,
+  type RecoveredPromptMessage,
 } from '../lib/transcriptPrompts';
 import { applyTranscriptTimings, pageTurnTimings } from '../lib/transcriptTiming';
 import { mergeSnapshotSubagents } from '../lib/taskMerge';
@@ -708,6 +709,7 @@ function forgetSession(sessionId: string): void {
   delete rawState.messagesHasMoreBySession[sessionId];
   delete rawState.messagesLoadMoreErrorBySession[sessionId];
   delete epochBySession[sessionId];
+  recoveredPromptsBySession.delete(sessionId);
   sessionsRequiringSnapshot.delete(sessionId);
   sessionsRetryingStaleSnapshot.delete(sessionId);
   sessionsKnownEmpty.delete(sessionId);
@@ -1566,6 +1568,15 @@ async function pullSessionWarnings(sessionId: string): Promise<void> {
  *  snapshot window holds — so a page covering the same window is enough, and one
  *  read per sync keeps the cost off the render path. */
 const TRANSCRIPT_PAGE_SIZE = 50;
+const recoveredPromptsBySession = new Map<string, RecoveredPromptMessage[]>();
+
+function reapplyRecoveredPrompts(sessionId: string, allowUnanchoredFallback = false): void {
+  const recovered = recoveredPromptsBySession.get(sessionId);
+  if (!recovered) return;
+  updateSessionMessages(sessionId, (messages) =>
+    applyRecoveredPromptMessages(messages, recovered, sessionId, { allowUnanchoredFallback }),
+  );
+}
 
 async function rehydrateFromTranscriptPage(sessionId: string): Promise<void> {
   // Two things the snapshot cannot carry, read off the agent's transcript page
@@ -1583,6 +1594,7 @@ async function rehydrateFromTranscriptPage(sessionId: string): Promise<void> {
     });
     if (!rawState.sessions.some((session) => session.id === sessionId)) return;
     const recovered = recoveredPromptMessages(page, new Date().toISOString());
+    recoveredPromptsBySession.set(sessionId, recovered);
     const timings = pageTurnTimings(page);
     updateSessionMessages(sessionId, (messages) =>
       applyTranscriptTimings(
@@ -3196,6 +3208,7 @@ const workspaceState = useWorkspaceState(rawState, {
   forgetSession,
   setActiveSessionId,
   updateSessionMessages,
+  reapplyRecoveredPrompts,
   nextOptimisticMsgId,
   getEventConn: () => eventConn,
   syncSessionFromSnapshot,

@@ -26,13 +26,19 @@
 import type {
   AppMessage,
   AppMessageContent,
+  TranscriptFrame,
   TranscriptPage,
   TranscriptPrompt,
+  TranscriptStep,
 } from '../api/types';
 
 /** Metadata key marking a bubble this module rebuilt. The daemon never sends
  *  it, so a later rebuild replaces the bubble instead of duplicating it. */
 export const RECOVERED_PROMPT_METADATA_KEY = 'kimiWeb.recoveredPrompt';
+
+export type RecoveredPromptAnchor =
+  | { kind: 'text'; text: string; afterPromptId?: string }
+  | { kind: 'tool'; toolCallId: string; afterPromptId?: string };
 
 export interface RecoveredPromptMessage {
   /** Stable identity of the prompt (its id, or the turn that holds it). */
@@ -43,6 +49,7 @@ export interface RecoveredPromptMessage {
    *  runs after everything already transcribed), `chronological` for one folded
    *  into a running turn (the user sent it mid-conversation). */
   placement: 'tail' | 'chronological';
+  anchor?: RecoveredPromptAnchor;
 }
 
 /** The plain text of a prompt's content parts. Wire content is a list of typed
@@ -71,24 +78,54 @@ function isFoldedSteer(prompt: TranscriptPrompt): boolean {
   );
 }
 
+interface SteeredFrame {
+  text: string;
+  at?: string;
+  anchor?: RecoveredPromptAnchor;
+}
+
+function outputAnchorAfter(
+  steps: readonly TranscriptStep[],
+  stepIndex: number,
+  frameIndex: number,
+  afterPromptId: string | undefined,
+): RecoveredPromptAnchor | undefined {
+  for (let i = stepIndex; i < steps.length; i += 1) {
+    const frames = steps[i]!.frames;
+    for (let j = i === stepIndex ? frameIndex + 1 : 0; j < frames.length; j += 1) {
+      const frame: TranscriptFrame = frames[j]!;
+      if (frame.kind === 'text' && frame.role === 'user') return undefined;
+      if (frame.kind === 'text' && frame.role === 'assistant') {
+        const text = frame.text.trim();
+        if (text.length > 0) return { kind: 'text', text, afterPromptId };
+      }
+      if (frame.kind === 'tool') {
+        return { kind: 'tool', toolCallId: frame.toolCallId, afterPromptId };
+      }
+    }
+  }
+  return undefined;
+}
+
 /** The steered text the turn items carry: a user-role text frame whose
  *  `promptIds` name the steered prompt. Keyed by prompt id, first frame wins.
  *  The frame sits in the step it landed in, so that step's start is the time
  *  the user sent it (falling back to the turn's start). The turn's own opener
  *  is excluded — it is the turn's prompt, not a steer. */
-function steeredFramesByPromptId(page: TranscriptPage): Map<string, { text: string; at?: string }> {
-  const out = new Map<string, { text: string; at?: string }>();
+function steeredFramesByPromptId(page: TranscriptPage): Map<string, SteeredFrame> {
+  const out = new Map<string, SteeredFrame>();
   for (const item of page.items) {
     if (item.kind !== 'turn') continue;
-    for (const step of item.steps) {
-      for (const frame of step.frames) {
+    for (const [stepIndex, step] of item.steps.entries()) {
+      for (const [frameIndex, frame] of step.frames.entries()) {
         if (frame.kind !== 'text' || frame.role !== 'user') continue;
         const text = frame.text.trim();
         if (text.length === 0) continue;
+        const anchor = outputAnchorAfter(item.steps, stepIndex, frameIndex, item.triggerPromptId);
         for (const promptId of frame.promptIds ?? []) {
           if (promptId.length === 0 || promptId === item.triggerPromptId) continue;
           if (!out.has(promptId)) {
-            out.set(promptId, { text, at: step.startedAt ?? item.startedAt });
+            out.set(promptId, { text, at: step.startedAt ?? item.startedAt, anchor });
           }
         }
       }
@@ -124,13 +161,15 @@ export function recoveredPromptMessages(
   const frames = steeredFramesByPromptId(page);
   for (const prompt of page.prompts) {
     if (!isFoldedSteer(prompt)) continue;
-    const text = contentText(prompt.content) || frames.get(prompt.promptId)?.text || '';
+    const frame = frames.get(prompt.promptId);
+    const text = contentText(prompt.content) || frame?.text || '';
     if (text.length === 0) continue;
     out.push({
       key: prompt.promptId,
       text,
       createdAt: prompt.createdAt,
       placement: 'chronological',
+      ...(frame?.anchor ? { anchor: frame.anchor } : {}),
     });
   }
   for (const [promptId, frame] of frames) {
@@ -140,6 +179,7 @@ export function recoveredPromptMessages(
       text: frame.text,
       createdAt: frame.at ?? fallbackCreatedAt,
       placement: 'chronological',
+      ...(frame.anchor ? { anchor: frame.anchor } : {}),
     });
   }
   return out;
@@ -183,6 +223,36 @@ export function chronologicalIndex(messages: readonly AppMessage[], createdAt: s
   return index;
 }
 
+function recoveredPromptIndex(
+  messages: readonly AppMessage[],
+  recovered: RecoveredPromptMessage,
+): number | undefined {
+  const anchor = recovered.anchor;
+  if (!anchor) return chronologicalIndex(messages, recovered.createdAt);
+  let start = 0;
+  if (anchor.afterPromptId) {
+    const triggerIndex = messages.findIndex((message) => message.promptId === anchor.afterPromptId);
+    if (triggerIndex >= 0) start = triggerIndex + 1;
+  }
+  for (let index = start; index < messages.length; index += 1) {
+    const message = messages[index]!;
+    if (message.role !== 'assistant') continue;
+    if (anchor.kind === 'tool') {
+      const matches = message.content.some(
+        (part) => part.type === 'toolUse' && part.toolCallId === anchor.toolCallId,
+      );
+      if (matches) return index;
+      continue;
+    }
+    const text = message.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
+    if (text.includes(anchor.text)) return index;
+  }
+  return undefined;
+}
+
 /**
  * Replace this session's rebuilt bubbles with the ones the page reports now. A
  * prompt the daemon has meanwhile started (or drained) leaves the list, and a
@@ -190,27 +260,40 @@ export function chronologicalIndex(messages: readonly AppMessage[], createdAt: s
  * steered prompt is put back at its own place in the conversation; a queued one
  * is appended, because it runs after everything already transcribed.
  */
+export interface RecoveredPromptApplyOptions {
+  allowUnanchoredFallback?: boolean;
+}
+
 export function applyRecoveredPromptMessages(
   messages: readonly AppMessage[],
   recovered: readonly RecoveredPromptMessage[],
   sessionId: string,
+  options: RecoveredPromptApplyOptions = {},
 ): AppMessage[] {
   const hadRebuilt = messages.some(isRecoveredPromptMessage);
   if (recovered.length === 0 && !hadRebuilt) return [...messages];
 
   const kept = messages.filter((message) => !isRecoveredPromptMessage(message));
-  const knownPromptIds = new Set(
-    kept.map((message) => message.promptId).filter((id): id is string => id !== undefined),
+  const persistedUserIds = new Set(
+    kept.flatMap((message) => {
+      if (message.role !== 'user') return [];
+      return [message.id, message.promptId].filter((id): id is string => id !== undefined);
+    }),
   );
-  const rebuilt = recovered.filter((entry) => !knownPromptIds.has(entry.key));
+  const rebuilt = recovered.filter((entry) => !persistedUserIds.has(entry.key));
   if (rebuilt.length === 0) return kept;
 
   const merged = [...kept];
   const tail: AppMessage[] = [];
   for (const entry of rebuilt) {
     const message = recoveredMessage(sessionId, entry);
-    if (entry.placement === 'tail') tail.push(message);
-    else merged.splice(chronologicalIndex(merged, entry.createdAt), 0, message);
+    if (entry.placement === 'tail') {
+      tail.push(message);
+      continue;
+    }
+    const index = recoveredPromptIndex(merged, entry)
+      ?? (options.allowUnanchoredFallback ? chronologicalIndex(merged, entry.createdAt) : undefined);
+    if (index !== undefined) merged.splice(index, 0, message);
   }
   return [...merged, ...tail];
 }

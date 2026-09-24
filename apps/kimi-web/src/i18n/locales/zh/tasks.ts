@@ -3,6 +3,7 @@ export default {
   summary: '{run} 运行中 · {done} 完成',
   stop: 'stop',
   sendToBackground: 'Send to background',
+  fieldOutput: '输出',
   defaultDescription: '后台任务',
   dockTasks: '后台任务',
   dockBash: '后台 Bash',

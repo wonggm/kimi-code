@@ -20,39 +20,15 @@ const props = withDefaults(
   { mobile: false, toolDiffPanel: false },
 );
 
-const emit = defineEmits<{
+defineEmits<{
   openMedia: [media: ToolMedia];
   openFile: [target: FilePreviewRequest];
   openToolDiff: [id: string];
-  /** Send this running foreground bash command to the background (ctrl+b parity). */
   detachTask: [target: DetachTaskTarget];
 }>();
 
-const isRunningBash = computed(
-  () => props.tool.status === 'running' && /^bash$/i.test(props.tool.name),
-);
-// Parsed bash args: the detach button needs the exact command (the engine task
-// is resolved by matching it against REST /tasks) and skips already-background
-// launches.
-interface BashInput {
-  command?: string;
-  runInBackground?: boolean;
-}
-const bashInput = computed<BashInput>(() => {
-  if (!isRunningBash.value) return {};
-  try {
-    const obj = JSON.parse(props.tool.arg) as Record<string, unknown>;
-    return {
-      command: typeof obj['command'] === 'string' ? obj['command'] : undefined,
-      runInBackground: obj['run_in_background'] === true,
-    };
-  } catch {
-    return {};
-  }
-});
-const canDetach = computed(() => isRunningBash.value && bashInput.value.runInBackground !== true);
 const hasOutput = computed(() => !!props.tool.output && props.tool.output.length > 0);
-const canExpand = computed(() => hasOutput.value || isRunningBash.value);
+const canExpand = computed(() => hasOutput.value);
 // Persist the user's manual open/closed choice across row eviction (see
 // ChatPane's toolExpandState): a re-mounted card would otherwise re-render in
 // its default state, changing the row's height. Keyed by tool id (unique per
@@ -73,12 +49,7 @@ const head = computed(() => toolHeadParts(props.tool.name, props.tool.arg));
 const fullPath = computed(() => toolSummary(props.tool.name, props.tool.arg, true));
 const isRead = computed(() => /^read$/i.test(props.tool.name));
 const isSearch = computed(() => /^(grep|search)$/i.test(props.tool.name));
-const isBash = computed(() => /^bash$/i.test(props.tool.name));
-const panelTitle = computed(() => {
-  if (isRead.value) return head.value.file || fullPath.value;
-  if (isBash.value) return props.tool.name;
-  return '';
-});
+const panelTitle = computed(() => isRead.value ? head.value.file || fullPath.value : '');
 const chip = computed(() =>
   toolChip({
     name: props.tool.name,
@@ -119,18 +90,15 @@ watch(
     :mono="head.mono"
     :faint="leadFaint"
     :arg="!open ? summary : ''"
-    :time="tool.name !== 'bash' ? tool.timing : ''"
+    :time="tool.timing"
     :open="open"
     :expandable="canExpand"
     @toggle="toggle"
   >
     <template #trailing>
       <span v-if="chip && !leadFaint" class="chip tl-chip">{{ chip }}</span>
-      <button v-if="canDetach" type="button" class="gt-detach" @click.stop="emit('detachTask', { toolCallId: tool.id, command: bashInput.command })">
-        {{ t('tasks.sendToBackground') }}
-      </button>
     </template>
-    <ToolPanel :title="panelTitle" :scroll="!isBash">
+    <ToolPanel :title="panelTitle" scroll>
       <div v-if="isSearch" class="match-list">
         <button v-for="(line, i) in tool.output ?? []" :key="i" type="button" class="match-row">
           <span class="mtext">{{ line }}</span>
@@ -169,19 +137,5 @@ watch(
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   flex: none;
-}
-.gt-detach {
-  flex: none;
-  background: none;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-xs);
-  color: var(--color-text-muted);
-  font: var(--text-xs) var(--font-ui);
-  padding: 1px 7px;
-  cursor: pointer;
-}
-.gt-detach:hover {
-  color: var(--color-text);
-  background: var(--color-surface-sunken);
 }
 </style>

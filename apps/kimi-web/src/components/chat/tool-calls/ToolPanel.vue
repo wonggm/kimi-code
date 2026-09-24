@@ -9,11 +9,12 @@ const { t } = useI18n();
 withDefaults(
   defineProps<{
     title?: string;
+    meta?: string;
     flush?: boolean;
     scroll?: boolean;
     copy?: boolean;
   }>(),
-  { title: '', flush: false, scroll: false, copy: true },
+  { title: '', meta: '', flush: false, scroll: false, copy: true },
 );
 
 // Upstream's panel head carries a Copy control beside the title, and it copies
@@ -42,11 +43,15 @@ async function copyBody(): Promise<void> {
 
 <template>
   <div class="tp" :class="{ flush }">
-    <div v-if="title || $slots.head" class="tp-head">
+    <div v-if="title || meta || $slots.head" class="tp-head">
       <span class="tp-titles">
         <slot name="head">
           <span v-if="title" class="tp-title">{{ title }}</span>
+          <span v-if="meta" class="tp-meta">{{ meta }}</span>
         </slot>
+      </span>
+      <span v-if="$slots.actions" class="tp-actions">
+        <slot name="actions" />
       </span>
       <IconButton v-if="copy" size="sm" :class="{ copied }" :label="t('common.copy')" @click="copyBody">
         <Icon :name="copied ? 'check' : 'copy'" size="md" />
@@ -95,6 +100,21 @@ async function copyBody(): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.tp-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tp-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
 }
 .tp-body { min-width: 0; min-height: 0; }
 .tp-body.scroll {

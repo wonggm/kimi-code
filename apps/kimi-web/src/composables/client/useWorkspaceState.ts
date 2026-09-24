@@ -281,6 +281,7 @@ export interface UseWorkspaceStateDeps {
     sessionId: string,
     update: (messages: AppMessage[]) => AppMessage[],
   ) => void;
+  reapplyRecoveredPrompts: (sessionId: string, allowUnanchoredFallback?: boolean) => void;
   nextOptimisticMsgId: () => string;
   getEventConn: () => KimiEventConnection | null;
   syncSessionFromSnapshot: (sessionId: string) => Promise<SyncSessionResult>;
@@ -338,6 +339,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     forgetSession,
     setActiveSessionId,
     updateSessionMessages,
+    reapplyRecoveredPrompts,
     nextOptimisticMsgId,
     getEventConn,
     syncSessionFromSnapshot,
@@ -402,6 +404,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
       // Live events may have appended messages while the request was in flight;
       // the updater receives the latest array so those messages are not overwritten.
       updateSessionMessages(sessionId, (latest) => [...older, ...latest]);
+      reapplyRecoveredPrompts(sessionId, !page.hasMore);
       rawState.messagesHasMoreBySession = {
         ...rawState.messagesHasMoreBySession,
         [sessionId]: page.hasMore,

@@ -3,6 +3,7 @@ export default {
   summary: '{run} running · {done} done',
   stop: 'stop',
   sendToBackground: 'Send to background',
+  fieldOutput: 'Output',
   defaultDescription: 'Background task',
   dockTasks: 'Background tasks',
   dockBash: 'Bash',

@@ -5,7 +5,7 @@
 
 import { computed, ref, type Ref } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppApprovalRequest, AppQuestionRequest, AppSession, AppTask } from '../src/api/types';
+import type { AppApprovalRequest, AppMessage, AppQuestionRequest, AppSession, AppTask } from '../src/api/types';
 import { DaemonApiError } from '../src/api/errors';
 import { createInitialState } from '../src/api/daemon/eventReducer';
 import { mergeWorkspaces } from '../src/lib/mergeWorkspaces';
@@ -43,6 +43,7 @@ const apiMock = vi.hoisted(() => ({
   getFsHome: vi.fn(),
   getHealth: vi.fn(),
   getMeta: vi.fn(),
+  listMessages: vi.fn(),
   listSessions: vi.fn(),
   listWorkspaces: vi.fn(),
 }));
@@ -1641,6 +1642,35 @@ describe('useWorkspaceState — session list loading', () => {
 
     expect(state.sessions.map((session) => session.id)).toEqual(['sess_1', 'sess_older']);
     expect(deps.pushOperationFailure).toHaveBeenCalledOnce();
+  });
+});
+
+describe('useWorkspaceState — loadOlderMessages', () => {
+  it('re-anchors recovered prompts after prepending an older page', async () => {
+    const state = createState();
+    const current: AppMessage = {
+      id: 'msg_current',
+      sessionId: 'sess_1',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'newer' }],
+      createdAt: '2026-01-02T00:00:00.000Z',
+    };
+    const older: AppMessage = {
+      id: 'msg_older',
+      sessionId: 'sess_1',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'reply after steer' }],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    state.messagesBySession = { sess_1: [current] };
+    apiMock.listMessages.mockResolvedValue({ items: [older], hasMore: false });
+    const reapplyRecoveredPrompts = vi.fn();
+    const deps = Object.assign(createDeps(), { reapplyRecoveredPrompts });
+    const workspaceState = useWorkspaceState(state, deps);
+
+    await workspaceState.loadOlderMessages('sess_1');
+
+    expect(reapplyRecoveredPrompts).toHaveBeenCalledWith('sess_1', true);
   });
 });
 

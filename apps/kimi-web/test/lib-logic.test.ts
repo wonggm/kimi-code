@@ -431,8 +431,14 @@ describe('resolveToolRenderer', () => {
     expect(resolveToolRenderer(tool('multi_edit'))).toBe(EditTool);
   });
 
+  it('routes Bash aliases away from the Generic renderer', () => {
+    const renderer = resolveToolRenderer(tool('bash'));
+    expect(renderer).not.toBe(GenericTool);
+    expect(resolveToolRenderer(tool('Run'))).toBe(renderer);
+    expect(resolveToolRenderer(tool('shell'))).toBe(renderer);
+  });
+
   it('falls back to the Generic renderer for unknown tools', () => {
-    expect(resolveToolRenderer(tool('bash'))).toBe(GenericTool);
     expect(resolveToolRenderer(tool('read'))).toBe(GenericTool);
   });
 });
@@ -929,6 +935,21 @@ describe('recoveredPromptMessages', () => {
       expect(applyRecoveredPromptMessages(messages, held, 's1').map((m) => m.id)).toEqual(['um_1']);
     });
 
+    it('does not rebuild a persisted steer whose message id is the prompt id', () => {
+      const rebuilt = recoveredPromptMessages(
+        page({
+          prompts: [
+            prompt({ promptId: 'msg_pr_s1', steeredAt: NOW, finishedAt: NOW, content: [{ type: 'text', text: 'steered' }] }),
+          ],
+        }),
+        NOW,
+      );
+      const persisted = userMessage('msg_pr_s1', 'steered');
+      expect(applyRecoveredPromptMessages([persisted], rebuilt, 's1').map((m) => m.id)).toEqual([
+        'msg_pr_s1',
+      ]);
+    });
+
     it('puts a steered prompt back where it was sent, not under every later turn', () => {
       const steered = recoveredPromptMessages(
         page({
@@ -943,6 +964,142 @@ describe('recoveredPromptMessages', () => {
       expect(
         applyRecoveredPromptMessages([earlier, later], steered, 's1').map((m) => m.id),
       ).toEqual(['m1', 'msg_opt_prompt_pr_s1', 'm2']);
+    });
+
+    it('anchors a frame-only steer before the assistant output that followed it', () => {
+      const steered = recoveredPromptMessages(
+        page({
+          items: [{
+            kind: 'turn',
+            turnId: 't1',
+            ordinal: 0,
+            state: 'completed',
+            triggerPromptId: 'pr_open',
+            steps: [{
+              kind: 'step',
+              stepId: 't1.1',
+              frames: [
+                { kind: 'text', role: 'user', text: 'steered', promptIds: ['pr_s1'] },
+                { kind: 'text', role: 'assistant', text: 'reply after steer' },
+              ],
+            }],
+          }],
+        }),
+        NOW,
+      );
+      const opener = userMessage('m1', 'original', {
+        promptId: 'pr_open',
+        createdAt: '2026-01-01T00:08:00.000Z',
+      });
+      const reply = userMessage('m2', 'reply after steer', {
+        role: 'assistant',
+        createdAt: '2026-01-01T00:09:00.000Z',
+      });
+      expect(applyRecoveredPromptMessages([opener, reply], steered, 's1').map((m) => m.id)).toEqual([
+        'm1',
+        'msg_opt_prompt_pr_s1',
+        'm2',
+      ]);
+    });
+
+    it('anchors a frame-only steer before the tool call that followed it', () => {
+      const steered = recoveredPromptMessages(
+        page({
+          items: [{
+            kind: 'turn',
+            turnId: 't1',
+            ordinal: 0,
+            state: 'completed',
+            triggerPromptId: 'pr_open',
+            steps: [{
+              kind: 'step',
+              stepId: 't1.1',
+              frames: [
+                { kind: 'text', role: 'user', text: 'steered', promptIds: ['pr_s1'] },
+                { kind: 'tool', toolCallId: 'call_1', name: 'Read' },
+              ],
+            }],
+          }],
+        }),
+        NOW,
+      );
+      const opener = userMessage('m1', 'original', {
+        promptId: 'pr_open',
+        createdAt: '2026-01-01T00:08:00.000Z',
+      });
+      const call = userMessage('m2', '', {
+        role: 'assistant',
+        content: [{ type: 'toolUse', toolCallId: 'call_1', toolName: 'Read', input: {} }],
+        createdAt: '2026-01-01T00:09:00.000Z',
+      });
+      expect(applyRecoveredPromptMessages([opener, call], steered, 's1').map((m) => m.id)).toEqual([
+        'm1',
+        'msg_opt_prompt_pr_s1',
+        'm2',
+      ]);
+    });
+
+    it('withholds an anchored steer until its older assistant output is loaded', () => {
+      const steered = recoveredPromptMessages(
+        page({
+          items: [{
+            kind: 'turn',
+            turnId: 't1',
+            ordinal: 0,
+            state: 'completed',
+            triggerPromptId: 'pr_open',
+            steps: [{
+              kind: 'step',
+              stepId: 't1.1',
+              frames: [
+                { kind: 'text', role: 'user', text: 'steered', promptIds: ['pr_s1'] },
+                { kind: 'text', role: 'assistant', text: 'reply after steer' },
+              ],
+            }],
+          }],
+        }),
+        NOW,
+      );
+      const opener = userMessage('m1', 'original', {
+        promptId: 'pr_open',
+        createdAt: '2026-01-01T00:08:00.000Z',
+      });
+      const latest = userMessage('m3', 'latest', { createdAt: '2026-01-01T00:12:00.000Z' });
+      expect(applyRecoveredPromptMessages([opener, latest], steered, 's1').map((m) => m.id)).toEqual([
+        'm1',
+        'm3',
+      ]);
+    });
+
+    it('falls back to time when the final older page has no matching anchor', () => {
+      const steered = recoveredPromptMessages(
+        page({
+          items: [{
+            kind: 'turn',
+            turnId: 't1',
+            ordinal: 0,
+            state: 'completed',
+            triggerPromptId: 'pr_open',
+            steps: [{
+              kind: 'step',
+              stepId: 't1.1',
+              frames: [
+                { kind: 'text', role: 'user', text: 'steered', promptIds: ['pr_s1'] },
+                { kind: 'text', role: 'assistant', text: 'missing reply' },
+              ],
+            }],
+          }],
+        }),
+        NOW,
+      );
+      const opener = userMessage('m1', 'original', {
+        promptId: 'pr_open',
+        createdAt: '2026-01-01T00:09:00.000Z',
+      });
+      const latest = userMessage('m3', 'latest', { createdAt: '2026-01-01T00:12:00.000Z' });
+      expect(
+        applyRecoveredPromptMessages([opener, latest], steered, 's1', { allowUnanchoredFallback: true }).map((m) => m.id),
+      ).toEqual(['m1', 'msg_opt_prompt_pr_s1', 'm3']);
     });
 
     it('leaves a steer sent after everything else at the end', () => {
