@@ -1211,6 +1211,11 @@ describe('transcriptTiming', () => {
       );
       expect(timings.size).toBe(0);
     });
+
+    it('keeps a turn that carries only its own end, so its steps stay measurable', () => {
+      const timings = pageTurnTimings(page([turn('pr_1', { endedAt: iso(9000), steps: [step(), step()] })]));
+      expect(timings.get('pr_1')).toEqual({ endedAt: iso(9000), stepDurationsMs: [undefined, undefined] });
+    });
   });
 
   describe('applyTranscriptTimings', () => {
@@ -1306,6 +1311,78 @@ describe('transcriptTiming', () => {
       const stamped = applyTranscriptTimings(messages, new Map());
       expect(stamped).toEqual(messages);
       expect(stamped[1]).toBe(messages[1]);
+    });
+
+    it('measures a step the page carries no span for from the replies around it', () => {
+      // A turn the server rebuilt from history keeps the turn's own end but drops
+      // every per-step span, so "Thought for" loses its number on a reload. A
+      // step runs until the next one starts: the next reply's own timestamp ends
+      // it, and the turn's end closes the last one.
+      const cold = pageTurnTimings(
+        page([turn('msg_prompt_1', { durationMs: 9000, endedAt: iso(9000), steps: [step(), step()] })]),
+      );
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'msg_prompt_1', role: 'user', createdAt: iso(0) }),
+          message({ id: 'm2', role: 'assistant', createdAt: iso(0) }),
+          message({ id: 'm3', role: 'assistant', createdAt: iso(4000) }),
+        ],
+        cold,
+      );
+      expect(stamped.filter((m) => m.role === 'assistant').map((m) => m.stepDurationMs)).toEqual([
+        4000, 5000,
+      ]);
+    });
+
+    it('keeps the page span where it has one and measures only the rest', () => {
+      const mixed = pageTurnTimings(
+        page([
+          turn('msg_prompt_1', { durationMs: 9000, endedAt: iso(9000), steps: [step(iso(0), iso(2500)), step()] }),
+        ]),
+      );
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'msg_prompt_1', role: 'user', createdAt: iso(0) }),
+          message({ id: 'm2', role: 'assistant', createdAt: iso(0) }),
+          message({ id: 'm3', role: 'assistant', createdAt: iso(4000) }),
+        ],
+        mixed,
+      );
+      expect(stamped.filter((m) => m.role === 'assistant').map((m) => m.stepDurationMs)).toEqual([
+        2500, 5000,
+      ]);
+    });
+
+    it('leaves the last reply unmeasured when the page counts steps the replies do not cover', () => {
+      const truncated = pageTurnTimings(
+        page([turn('msg_prompt_1', { durationMs: 9000, endedAt: iso(9000), steps: [step(), step(), step()] })]),
+      );
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'msg_prompt_1', role: 'user', createdAt: iso(0) }),
+          message({ id: 'm2', role: 'assistant', createdAt: iso(0) }),
+          message({ id: 'm3', role: 'assistant', createdAt: iso(4000) }),
+        ],
+        truncated,
+      );
+      expect(stamped.filter((m) => m.role === 'assistant').map((m) => m.stepDurationMs)).toEqual([
+        4000, undefined,
+      ]);
+    });
+
+    it('times a run the page never names from the run\'s own replies', () => {
+      // The page can fail to reach the run at all: the reply carries no prompt
+      // id and the window that reached the browser left the prompt message out,
+      // so there is no key to join on. The replies still date each other.
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'm2', role: 'assistant', createdAt: iso(0) }),
+          message({ id: 'm3', role: 'tool', createdAt: iso(2000) }),
+          message({ id: 'm4', role: 'assistant', createdAt: iso(4000) }),
+        ],
+        new Map(),
+      );
+      expect(stamped.map((m) => m.stepDurationMs)).toEqual([4000, undefined, undefined]);
     });
   });
 });

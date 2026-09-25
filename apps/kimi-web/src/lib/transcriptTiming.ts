@@ -27,9 +27,13 @@ export interface TurnTiming {
   /** The turn's own duration in ms — the engine's number off the event that
    *  closed it. Absent when the page carries none. */
   durationMs?: number;
+  /** When the turn closed, for the step that has no successor to measure it
+   *  against. */
+  endedAt?: string;
   /** Step k's span in ms, in step order. `undefined` where the page carries no
-   *  span for that step (a step still running, or one whose own span is zero —
-   *  a zero span is not a duration and must not print as one). */
+   *  span for that step (a step still running, one whose own span is zero —
+   *  a zero span is not a duration and must not print as one — or a turn the
+   *  server rebuilt from history, which keeps no per-step time at all). */
   stepDurationsMs: (number | undefined)[];
 }
 
@@ -52,14 +56,18 @@ function turnTiming(turn: TranscriptTurn): TurnTiming | null {
     ? turn.durationMs
     : undefined;
   const stepDurationsMs = turn.steps.map((step) => durationMsBetween(step.startedAt, step.endedAt));
-  if (durationMs === undefined && stepDurationsMs.every((ms) => ms === undefined)) return null;
-  return { durationMs, stepDurationsMs };
+  if (
+    durationMs === undefined &&
+    turn.endedAt === undefined &&
+    stepDurationsMs.every((ms) => ms === undefined)
+  ) return null;
+  return { durationMs, endedAt: turn.endedAt, stepDurationsMs };
 }
 
 /** What the page carries per turn, keyed by the prompt that opened it. A turn
- *  with neither a duration nor a step span is left out entirely — the caller
- *  then stamps nothing, and the labels stay off rather than showing a made-up
- *  number. */
+ *  with neither a duration, an end, nor a step span is left out entirely — the
+ *  caller then stamps nothing, and the labels stay off rather than showing a
+ *  made-up number. */
 export function pageTurnTimings(page: TranscriptPage): Map<string, TurnTiming> {
   const out = new Map<string, TurnTiming>();
   for (const item of page.items) {
@@ -76,22 +84,60 @@ export function pageTurnTimings(page: TranscriptPage): Map<string, TurnTiming> {
  *  duration onto every reply of the turn, the step's span onto the reply that
  *  step produced (the k-th reply of the turn is its k-th step — the page builds
  *  one step per assistant message). Nothing else about a message is touched, and
- *  a message that already carries the value keeps its identity. */
+ *  a message that already carries the value keeps its identity.
+ *
+ *  A turn the server rebuilt from history carries the turn's own end but no
+ *  per-step span, so a reply the page cannot time is measured from the replies
+ *  around it: a step runs until the next one starts, which is the next reply's
+ *  timestamp, and the turn's end closes the last step of a run the page counts
+ *  in full. The page's own span always wins; a measured one only fills a gap.
+ *
+ *  The measurement needs no page at all, which matters because the association
+ *  is not reliable: the snapshot stamps no prompt id on the reply and the
+ *  window that reaches the browser can leave the prompt message out, so a run
+ *  is timed from its own replies wherever the page cannot reach it. Only the
+ *  closing step of a run stays unmeasured then, since the time that ends it is
+ *  the page's alone and none of the run's replies come after it. */
 export function applyTranscriptTimings(
   messages: readonly AppMessage[],
   timings: ReadonlyMap<string, TurnTiming>,
 ): AppMessage[] {
-  if (timings.size === 0) return [...messages];
   const out: AppMessage[] = [];
   /** The page turn the current assistant run belongs to. */
   let key: string | undefined;
   /** How many replies of that turn have been walked — the run's step index. */
   let stepIndex = 0;
+  /** The run's last timed reply, held back so the next reply's timestamp can
+   *  measure it once the run ends. */
+  let pending: { index: number; createdAt: string } | undefined;
+  let pendingTiming: TurnTiming | undefined;
+  let runReplies = 0;
+
+  const measure = (index: number, startedAt: string, endedAt: string | undefined): void => {
+    const stamped = out[index];
+    if (stamped === undefined || stamped.stepDurationMs !== undefined) return;
+    const span = durationMsBetween(startedAt, endedAt);
+    if (span === undefined) return;
+    out[index] = { ...stamped, stepDurationMs: span };
+  };
+
+  /** Close the run: the last reply has no successor, so only the turn's own end
+   *  can measure it, and only when the page counts the steps the replies cover. */
+  const closeRun = (): void => {
+    if (pending !== undefined && pendingTiming !== undefined
+      && pendingTiming.stepDurationsMs.length === runReplies) {
+      measure(pending.index, pending.createdAt, pendingTiming.endedAt);
+    }
+    pending = undefined;
+    pendingTiming = undefined;
+    runReplies = 0;
+  };
 
   for (const message of messages) {
     if (message.role === 'user') {
       // A prompt message names its own turn: the daemon stamps the prompt id as
       // the user message's id too.
+      closeRun();
       key = timings.has(message.id) ? message.id : undefined;
       stepIndex = 0;
       out.push(message);
@@ -99,6 +145,7 @@ export function applyTranscriptTimings(
     }
     if (message.role === 'system') {
       // Not part of a run the page describes.
+      closeRun();
       key = undefined;
       stepIndex = 0;
       out.push(message);
@@ -115,30 +162,41 @@ export function applyTranscriptTimings(
       ? message.promptId
       : undefined;
     if (own !== undefined && own !== key) {
+      closeRun();
       key = own;
       stepIndex = 0;
     }
     const timing = key === undefined ? undefined : timings.get(key);
     if (timing === undefined) {
+      // The page names no turn for this run, so it has no number of its own to
+      // stamp — but the run still measures itself, one reply ending the step the
+      // reply before it opened.
       out.push(message);
-      continue;
-    }
-    const stepDurationMs = timing.stepDurationsMs[stepIndex] ?? message.stepDurationMs;
-    stepIndex += 1;
+    } else {
+      const stepDurationMs = timing.stepDurationsMs[stepIndex] ?? message.stepDurationMs;
+      stepIndex += 1;
 
-    // The page's own number wins over a duration this client measured itself;
-    // where the page carries none, whatever the message already has stays.
-    const durationMs = timing.durationMs ?? message.durationMs;
-    if (durationMs === message.durationMs && stepDurationMs === message.stepDurationMs) {
-      out.push(message);
-      continue;
+      // The page's own number wins over a duration this client measured itself;
+      // where the page carries none, whatever the message already has stays.
+      const durationMs = timing.durationMs ?? message.durationMs;
+      out.push(
+        durationMs === message.durationMs && stepDurationMs === message.stepDurationMs
+          ? message
+          : {
+              ...message,
+              ...(durationMs === undefined ? undefined : { durationMs }),
+              ...(stepDurationMs === undefined ? undefined : { stepDurationMs }),
+            },
+      );
     }
-    out.push({
-      ...message,
-      ...(durationMs === undefined ? undefined : { durationMs }),
-      ...(stepDurationMs === undefined ? undefined : { stepDurationMs }),
-    });
+
+    // This reply starts the step that follows, so it ends the previous one.
+    if (pending !== undefined) measure(pending.index, pending.createdAt, message.createdAt);
+    pending = { index: out.length - 1, createdAt: message.createdAt };
+    pendingTiming = timing;
+    runReplies += 1;
   }
+  closeRun();
 
   return out;
 }
