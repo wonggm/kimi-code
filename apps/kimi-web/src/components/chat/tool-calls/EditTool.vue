@@ -1,6 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/EditTool.vue -->
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { DiffViewLine, FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { diffStats } from '../../../lib/diffLines';
 import { buildEditDiffLines } from '../../../lib/toolDiff';
@@ -8,6 +9,10 @@ import { toolGlyph, toolHeadParts, toolLabel, toolSummary } from '../../../lib/t
 import ToolRow from '../ToolRow.vue';
 import ToolOutputBlock from './ToolOutputBlock.vue';
 import ToolPanel from './ToolPanel.vue';
+import IconButton from '../../ui/IconButton.vue';
+import Icon from '../../ui/Icon.vue';
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -57,6 +62,7 @@ const toolExpandState = inject<Map<string, boolean>>('toolExpandState');
 const expandKey = props.tool.id;
 const persisted = expandKey ? toolExpandState?.get(expandKey) : undefined;
 const open = ref(persisted ?? false);
+const wrap = ref(false);
 const canExpand = computed(
   () => (hasOutput.value || (editDiff.value?.length ?? 0) > 0) && !props.toolDiffPanel,
 );
@@ -105,7 +111,18 @@ function toggle(): void {
           <span v-if="diffCounts.del > 0" class="ed-del">−{{ diffCounts.del }}</span>
         </span>
       </template>
-      <div v-if="editDiff && editDiff.length > 0" class="hl-code" style="--gutter-ch: 4ch">
+      <template #actions>
+        <IconButton
+          v-if="editDiff && editDiff.length > 0 && !toolDiffPanel"
+          :size="mobile ? 'md' : 'sm'"
+          :label="wrap ? t('conversation.codeBlock.unwrapCode') : t('conversation.codeBlock.wrapCode')"
+          :pressed="wrap"
+          @click="wrap = !wrap"
+        >
+          <Icon :name="wrap ? 'text-wrap-disabled' : 'text-wrap'" size="md" />
+        </IconButton>
+      </template>
+      <div v-if="editDiff && editDiff.length > 0" class="hl-code" :class="{ wrap }" style="--gutter-ch: 4ch">
         <div class="hl-body">
           <div
             v-for="(line, i) in editDiff"

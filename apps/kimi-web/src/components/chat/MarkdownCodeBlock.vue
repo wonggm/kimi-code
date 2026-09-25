@@ -498,6 +498,12 @@ const ACTION_BTN_CLASS =
   outline-offset: -2px;
 }
 
+@media (max-width: 640px) {
+  .md-code-wrap-toggle {
+    --markdown-code-action-size: 32px;
+  }
+}
+
 /* HTML preview runner overlay. Teleported to body; the backdrop is a plain
    translucent layer and the frame sits on top of it. */
 .mdcb-preview-backdrop {

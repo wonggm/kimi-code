@@ -110,7 +110,7 @@ watch(
       <ToolPanel v-if="command" :title="tool.name.trim() || 'Bash'" :meta="input.cwd">
         <template #actions>
           <IconButton
-            size="sm"
+            :size="mobile ? 'md' : 'sm'"
             :pressed="commandWrap"
             :label="commandWrap ? t('conversation.codeBlock.unwrapCode') : t('conversation.codeBlock.wrapCode')"
             @click="commandWrap = !commandWrap"
@@ -126,7 +126,7 @@ watch(
         <template #actions>
           <IconButton
             v-if="hasOutput"
-            size="sm"
+            :size="mobile ? 'md' : 'sm'"
             :pressed="outputWrap"
             :label="outputWrap ? t('conversation.codeBlock.unwrapCode') : t('conversation.codeBlock.wrapCode')"
             @click="outputWrap = !outputWrap"
