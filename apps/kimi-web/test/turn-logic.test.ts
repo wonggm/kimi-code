@@ -784,6 +784,46 @@ describe('messagesToTurns', () => {
 
     expect(turns.map((turn) => turn.goalContinuation)).toEqual([true, undefined, undefined]);
   });
+
+  it('keeps a reminder the engine fed the run inside that run', () => {
+    // A todo reminder lands between two steps of the same exchange. It is not
+    // rendered, and it must not split the run either: the exchange keeps one
+    // block, so its single "Worked for …" line has one place to sit.
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [{ type: 'text', text: 'go' }]),
+        message('a1', 'assistant', [{ type: 'text', text: 'first step' }]),
+        message('u2', 'user', [{ type: 'text', text: '<system-reminder>todo</system-reminder>' }], {
+          metadata: { origin: { kind: 'injection', variant: 'todo_list_reminder' } },
+        }),
+        message('a2', 'assistant', [{ type: 'text', text: 'second step' }]),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns.map((turn) => turn.role)).toEqual(['user', 'assistant']);
+    expect(turns[1]?.text).toBe('first step\nsecond step');
+  });
+
+  it('still ends a run on a system trigger that opens a turn of its own', () => {
+    const turns = messagesToTurns(
+      [
+        message('u1', 'user', [{ type: 'text', text: 'go' }]),
+        message('a1', 'assistant', [{ type: 'text', text: 'first step' }]),
+        message('u2', 'user', [{ type: 'text', text: 'next job' }], {
+          metadata: { origin: { kind: 'system_trigger', name: 'goal_continuation' } },
+        }),
+        message('a2', 'assistant', [{ type: 'text', text: 'second step' }]),
+      ],
+      [],
+      undefined,
+      false,
+    );
+
+    expect(turns.map((turn) => turn.role)).toEqual(['user', 'assistant', 'assistant']);
+  });
 });
 
 describe('messagesToTurns resync dedup', () => {

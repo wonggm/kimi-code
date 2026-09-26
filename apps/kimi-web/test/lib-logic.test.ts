@@ -1176,11 +1176,16 @@ describe('transcriptTiming', () => {
   }
 
   describe('pageTurnTimings', () => {
+    function timingOf(timings: ReturnType<typeof pageTurnTimings>, promptId: string) {
+      const index = timings.byPrompt.get(promptId);
+      return index === undefined ? undefined : timings.ordered[index]?.timing;
+    }
+
     it('reads the turn duration and the span of each of its steps', () => {
       const timings = pageTurnTimings(
         page([turn('pr_1', { durationMs: 80_000, steps: [step(iso(0), iso(3000))] })]),
       );
-      expect(timings.get('pr_1')).toEqual({ durationMs: 80_000, stepDurationsMs: [3000] });
+      expect(timingOf(timings, 'pr_1')).toEqual({ durationMs: 80_000, stepDurationsMs: [3000] });
     });
 
     it('leaves out a turn the page carries no timing for', () => {
@@ -1192,29 +1197,42 @@ describe('transcriptTiming', () => {
           turn('pr_2', { durationMs: 0, steps: [] }),
         ]),
       );
-      expect(timings.size).toBe(0);
+      expect(timings.ordered).toEqual([]);
     });
 
     it('keeps the steps it can time and leaves the others out', () => {
       const timings = pageTurnTimings(
         page([turn('pr_1', { steps: [step(iso(0), iso(3000)), step(iso(4000)), step(undefined, iso(9000))] })]),
       );
-      expect(timings.get('pr_1')?.stepDurationsMs).toEqual([3000, undefined, undefined]);
+      expect(timingOf(timings, 'pr_1')?.stepDurationsMs).toEqual([3000, undefined, undefined]);
     });
 
-    it('ignores turns the page carries no opening prompt for, and non-turns', () => {
+    it('keeps a turn no prompt opens, which the window can still place', () => {
       const timings = pageTurnTimings(
         page([
-          turn(undefined, { durationMs: 5000 }),
+          turn(undefined, { durationMs: 5000, endedAt: iso(9000) }),
           { kind: 'marker', markerId: 'm1', marker: 'skill' },
         ]),
       );
-      expect(timings.size).toBe(0);
+      expect(timings.byPrompt.size).toBe(0);
+      expect(timings.ordered[0]).toMatchObject({ startMs: NOW + 4000, endMs: NOW + 9000 });
+    });
+
+    it('reads the window off the turn\'s own start where the page carries one', () => {
+      const timings = pageTurnTimings(
+        page([turn('pr_1', { startedAt: iso(1000), endedAt: iso(9000), durationMs: 8000 })]),
+      );
+      expect(timings.ordered[0]).toMatchObject({ startMs: NOW + 1000, endMs: NOW + 9000 });
+    });
+
+    it('leaves out the window of a turn it times only one end of', () => {
+      const timings = pageTurnTimings(page([turn('pr_1', { endedAt: iso(9000) })]));
+      expect(timings.ordered[0]?.startMs).toBeUndefined();
     });
 
     it('keeps a turn that carries only its own end, so its steps stay measurable', () => {
       const timings = pageTurnTimings(page([turn('pr_1', { endedAt: iso(9000), steps: [step(), step()] })]));
-      expect(timings.get('pr_1')).toEqual({ endedAt: iso(9000), stepDurationsMs: [undefined, undefined] });
+      expect(timingOf(timings, 'pr_1')).toEqual({ endedAt: iso(9000), stepDurationsMs: [undefined, undefined] });
     });
   });
 
@@ -1308,7 +1326,7 @@ describe('transcriptTiming', () => {
 
     it('returns the messages untouched when the page carries no timing at all', () => {
       const messages = [message({ id: 'm1', role: 'user' }), message({ id: 'm2', role: 'assistant' })];
-      const stamped = applyTranscriptTimings(messages, new Map());
+      const stamped = applyTranscriptTimings(messages, { byPrompt: new Map(), ordered: [] });
       expect(stamped).toEqual(messages);
       expect(stamped[1]).toBe(messages[1]);
     });
@@ -1380,9 +1398,81 @@ describe('transcriptTiming', () => {
           message({ id: 'm3', role: 'tool', createdAt: iso(2000) }),
           message({ id: 'm4', role: 'assistant', createdAt: iso(4000) }),
         ],
-        new Map(),
+        { byPrompt: new Map(), ordered: [] },
       );
       expect(stamped.map((m) => m.stepDurationMs)).toEqual([4000, undefined, undefined]);
+    });
+
+    it('carries the turn across a reminder the engine fed the run', () => {
+      // A todo reminder or a hook result arrives between two steps of the same
+      // exchange. It opens no turn, so the replies after it belong to the turn
+      // the prompt named, and its last step closes on the turn's own end.
+      const cold = pageTurnTimings(
+        page([turn('msg_prompt_1', { durationMs: 9000, endedAt: iso(9000), steps: [step(), step()] })]),
+      );
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'msg_prompt_1', role: 'user', createdAt: iso(0) }),
+          message({ id: 'm2', role: 'assistant', createdAt: iso(0) }),
+          message({
+            id: 'inj',
+            role: 'user',
+            createdAt: iso(1000),
+            metadata: { origin: { kind: 'injection', variant: 'todo_list_reminder' } },
+          }),
+          message({ id: 'm3', role: 'assistant', createdAt: iso(4000) }),
+        ],
+        cold,
+      );
+      expect(stamped.filter((m) => m.role === 'assistant').map((m) => m.durationMs)).toEqual([9000, 9000]);
+      expect(stamped.filter((m) => m.role === 'assistant').map((m) => m.stepDurationMs)).toEqual([
+        4000, 5000,
+      ]);
+    });
+
+    it('takes the turn of a run whose prompt is older than the window', () => {
+      // After a reload the snapshot holds the last hundred messages, and one
+      // long turn fills them on its own, so the visible tail of the exchange has
+      // no prompt above it. The page still says when that turn ran.
+      const windowed = pageTurnTimings(
+        page([turn('old_prompt', { durationMs: 9000, endedAt: iso(9000), steps: [step(), step()] })]),
+      );
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'm2', role: 'assistant', createdAt: iso(0) }),
+          message({ id: 'm3', role: 'assistant', createdAt: iso(4000) }),
+        ],
+        windowed,
+      );
+      expect(stamped.map((m) => m.durationMs)).toEqual([9000, 9000]);
+      expect(stamped.map((m) => m.stepDurationMs)).toEqual([4000, 5000]);
+    });
+
+    it('leaves a run alone when it falls in no turn\'s window', () => {
+      const windowed = pageTurnTimings(
+        page([turn('old_prompt', { durationMs: 9000, endedAt: iso(9000), steps: [step()] })]),
+      );
+      const stamped = applyTranscriptTimings(
+        [message({ id: 'm2', role: 'assistant', createdAt: iso(12000) })],
+        windowed,
+      );
+      expect(stamped[0]).toMatchObject({ id: 'm2' });
+      expect(stamped[0]?.durationMs).toBeUndefined();
+    });
+
+    it('gives a turn to one run only', () => {
+      const windowed = pageTurnTimings(
+        page([turn('old_prompt', { durationMs: 9000, endedAt: iso(9000), steps: [step()] })]),
+      );
+      const stamped = applyTranscriptTimings(
+        [
+          message({ id: 'm2', role: 'assistant', createdAt: iso(1000) }),
+          message({ id: 'm3', role: 'user', createdAt: iso(2000) }),
+          message({ id: 'm4', role: 'assistant', createdAt: iso(3000) }),
+        ],
+        windowed,
+      );
+      expect(stamped.filter((m) => m.role === 'assistant').map((m) => m.durationMs)).toEqual([9000, undefined]);
     });
   });
 });

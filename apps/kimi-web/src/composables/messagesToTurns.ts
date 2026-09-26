@@ -595,6 +595,21 @@ function isTaskNotificationMessage(msg: AppMessage): boolean {
 }
 
 /**
+ * Whether a USER-role message is a system injection that lands *inside* a run
+ * the agent is already making: a todo-list reminder ('injection'), the result of
+ * a submit hook ('hook_result'), or a background-task notice. None of them opens
+ * a turn — the engine feeds them to the model mid-run — and none of them is
+ * rendered. They still end the run for anything that measures per turn: the
+ * "Worked for …" line belongs to the exchange, and an exchange the engine split
+ * in half by its own reminder would carry two lines, or none.
+ */
+export function isMidRunInjection(msg: AppMessage): boolean {
+  const origin = msg.metadata?.['origin'] as { kind?: string } | undefined;
+  const kind = origin?.kind;
+  return kind === 'injection' || kind === 'hook_result' || isTaskNotificationMessage(msg);
+}
+
+/**
  * The engine's own prompt for continuing an active goal: a system trigger named
  * `goal_continuation`. The fork renders no user bubble for it; the assistant
  * reply it produces carries upstream's "Goal continuation" marker instead.
@@ -971,6 +986,11 @@ export function messagesToTurns(
         turns.push({ id: msg.id, role: 'task', no: no++, text, createdAt: msg.createdAt });
         continue;
       }
+      // A hidden reminder or hook result that arrives while a run is open stays
+      // inside it: the engine fed it to the model between two steps, so it
+      // neither renders nor ends the exchange. Splitting the run here would put
+      // the exchange's single "Worked for …" line at an arbitrary step.
+      if (pendingGroup !== null && isMidRunInjection(msg)) continue;
       // A cron injection always renders as its own standalone turn: agent-core
       // buffers steer input while a turn is in flight and only injects it at the
       // turn boundary, so the cron message does not land between a tool use and
