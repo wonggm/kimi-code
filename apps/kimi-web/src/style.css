@@ -1602,15 +1602,19 @@ html[data-color-scheme="dark"][data-liquid-glass="on"] {
      removing the lens now moves the card 0.01 of a level on average, where the
      old 4% black face let it move 3.65 levels — a face that opaque leaves the
      filter nowhere to show, and the lens paints no contour in either theme. What
-     draws this card's edge in light is its own 1px ring (--lg-rim-shade), the
-     reference material's thin dark line. Dark is unchanged at 23.4. */
+     draws this card's edge in light is its own 1px border (--color-line), the
+     same one `.ui-menu` keeps: the card used to add a second 1px ring
+     (--lg-rim-shade) on top of that border, so in glass the two stacked into a
+     2px rim that read far heavier than the topbar menu's single hairline —
+     measured at 164,167,174 just inside a 231,234,238 border, against the
+     menu's one line. The ring is dropped so the card's edge matches the menu's.
+     Dark is unchanged: its --lg-rim-shade is fully transparent, so the ring drew
+     nothing there. */
   html[data-liquid-glass="on"] .toc-card {
     -webkit-backdrop-filter: var(--lg-toc-blur);
     backdrop-filter: var(--lg-toc-blur);
     background-color: var(--lg-toc-fill);
-    box-shadow:
-      inset 0 0 0 1px var(--lg-rim-shade),
-      var(--lg-shadow);
+    box-shadow: var(--lg-shadow);
   }
 
   /* The menus and popovers that open over live text take the same dense face,
