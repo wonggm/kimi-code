@@ -13,6 +13,8 @@ import {
   type ServicesAccessor,
 } from '#/_base/di/instantiation';
 import { ISessionTokenCountingService } from '#/session/tokenCounting/sessionTokenCounting';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
+import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
 import { IAgentGoalService } from '#/features/goal/goalService';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
 import { IAgentPlanService } from '#/features/plan/plan';
@@ -72,12 +74,15 @@ export class SessionLegacyService implements ISessionLegacyService {
     sessionId: string,
     agent: IAgentScopeHandle,
   ): Promise<SessionStatusResponse> {
+    const sessionCompaction = agent.accessor.get(ISessionCompactionConfig);
+    await sessionCompaction.ready;
     const profile = agent.accessor.get(IAgentProfileService);
     const tokenCounting = agent.accessor.get(ISessionTokenCountingService);
     const permission = agent.accessor.get(IAgentPermissionModeService);
     const plan = agent.accessor.get(IAgentPlanService);
     const swarm = agent.accessor.get(IAgentSwarmService);
     const tower = agent.accessor.get(IAgentTowerService);
+    const sessionToolPolicy = agent.accessor.get(ISessionToolPolicy);
 
     const model = profile.getModel();
     const capabilities = profile.getModelCapabilities();
@@ -87,6 +92,8 @@ export class SessionLegacyService implements ISessionLegacyService {
     }
     const tokens = tokenCounting.statusSize(agentContextOf(agent));
     const planData = await plan.status();
+    const compactionTriggerRatio = profile.resolveCompactionTriggerRatio() ?? 0.85;
+    const compactionTriggerRatioOverride = sessionCompaction.triggerRatio();
 
     return {
       busy: this.readBusy(sessionId),
@@ -99,6 +106,9 @@ export class SessionLegacyService implements ISessionLegacyService {
       context_tokens: tokens,
       max_context_tokens: maxTokens > 0 ? maxTokens : undefined,
       context_usage: maxTokens > 0 ? Math.min(1, tokens / maxTokens) : undefined,
+      compaction_trigger_ratio: compactionTriggerRatio,
+      compaction_trigger_ratio_override: compactionTriggerRatioOverride,
+      disabled_tools: [...sessionToolPolicy.disabledTools()],
     };
   }
 

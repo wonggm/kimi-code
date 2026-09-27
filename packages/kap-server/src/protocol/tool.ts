@@ -10,6 +10,7 @@ export const toolDescriptorSchema = z.object({
   source: toolSourceSchema,
   mcp_server_id: z.string().min(1).optional(),
   active: z.boolean().optional(),
+  estimated_tokens: z.number().int().nonnegative().optional(),
 });
 export type ToolDescriptor = z.infer<typeof toolDescriptorSchema>;
 

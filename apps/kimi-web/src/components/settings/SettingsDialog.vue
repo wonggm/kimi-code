@@ -11,6 +11,7 @@ import { useDialogFocus } from '../../composables/useDialogFocus';
 import LanguageSwitcher from './LanguageSwitcher.vue';
 import PluginsPanel from './PluginsPanel.vue';
 import ProvidersPanel from './ProvidersPanel.vue';
+import ToolsPanel from './ToolsPanel.vue';
 import { serverEndpointLabel } from '../../api/config';
 import { downloadTraceLog, isTraceEnabled } from '../../debug/trace';
 import type { Accent, ColorScheme } from '../../composables/useKimiWebClient';
@@ -27,6 +28,7 @@ import Tooltip from '../ui/Tooltip.vue';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
 import type { IconName } from '../../lib/icons';
+import { steerInterruptEnabled, withSteerInterrupt } from '../../lib/experimentalFlags';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import { activityRunFolding, setActivityRunFolding, setTurnFolding, turnFolding } from '../../lib/conversationPrefs';
 import AccountPlanUsage, { type AccountPlanUsage as AccountPlanUsageData } from './AccountPlanUsage.vue';
@@ -68,6 +70,13 @@ const props = defineProps<{
   models?: AppModel[];
   /** True while POST /api/v1/config is saving. */
   configSaving?: boolean;
+  sessionId?: string;
+  sessionCompactionThresholdPercent?: number;
+  sessionCompactionOverridePercent?: number;
+  sessionCompactionSaving?: boolean;
+  /** The selected session's tool denylist, from GET /sessions/{id}/status. */
+  sessionDisabledTools?: string[];
+  sessionToolsSaving?: boolean;
   /** Server version reported by GET /api/v1/meta. */
   serverVersion?: string;
   /** Backend engine generation from GET /api/v1/meta ('v1' legacy, 'v2' kap-server). */
@@ -91,17 +100,22 @@ const emit = defineEmits<{
   openOnboarding: [];
   openProviders: [];
   updateConfig: [patch: Partial<AppConfig>];
+  updateSessionCompaction: [sessionId: string, value: number | null];
+  updateSessionTools: [sessionId: string, names: string[]];
   close: [];
 }>();
 
-type SettingsTab = 'general' | 'agent' | 'account' | 'providers' | 'plugins' | 'advanced' | 'lab' | 'archived';
+type SettingsTab = 'general' | 'agent' | 'tools' | 'account' | 'providers' | 'plugins' | 'advanced' | 'lab' | 'archived';
 
 const activeTab = ref<SettingsTab>('general');
+
+const steerInterrupt = computed(() => steerInterruptEnabled(props.config));
 
 const tabs: { id: SettingsTab; labelKey: string; icon: IconName }[] = [
   { id: 'general', labelKey: 'settings.tabs.general', icon: 'sliders' },
   { id: 'account', labelKey: 'settings.tabs.account', icon: 'user' },
   { id: 'agent', labelKey: 'settings.tabs.agent', icon: 'robot' },
+  { id: 'tools', labelKey: 'settings.tabs.tools', icon: 'tool' },
   { id: 'providers', labelKey: 'settings.tabs.providers', icon: 'bolt' },
   { id: 'plugins', labelKey: 'settings.tabs.plugins', icon: 'sparkles' },
   { id: 'advanced', labelKey: 'settings.tabs.advanced', icon: 'info' },
@@ -152,6 +166,10 @@ const {
   toggleConfigBoolean,
   compactionThresholdPercent,
   setCompactionThreshold,
+  sessionCompactionThresholdPercent,
+  sessionCompactionHasOverride,
+  setSessionCompactionThreshold,
+  clearSessionCompactionThreshold,
   thinkingEnabled,
   toggleDefaultThinking,
   agentProfiles,
@@ -161,6 +179,13 @@ const {
   models: () => props.models,
   backend: () => props.backend,
   updateConfig: (patch) => emit('updateConfig', patch),
+  sessionId: () => props.sessionId,
+  sessionCompactionThresholdPercent: () => props.sessionCompactionThresholdPercent,
+  sessionCompactionOverridePercent: () => props.sessionCompactionOverridePercent,
+  updateSessionCompaction: (sessionId, value) => {
+    emit('updateSessionCompaction', sessionId, value);
+    return Promise.resolve(true);
+  },
 });
 
 // Modal focus: move focus into the dialog on open, restore it to the opener on
@@ -604,6 +629,20 @@ function archiveTime(iso: string): string {
           <ProvidersPanel :config="config" :config-saving="configSaving" @update-config="emit('updateConfig', $event)" />
         </section>
 
+        <!-- Tools -->
+        <section v-show="activeTab === 'tools'" class="panel">
+          <ToolsPanel
+            :config="config"
+            :config-saving="configSaving"
+            :session-id="sessionId"
+            :session-disabled-tools="sessionDisabledTools"
+            :session-tools-saving="sessionToolsSaving"
+            :active="activeTab === 'tools'"
+            @update-config="emit('updateConfig', $event)"
+            @update-session-tools="(id, names) => emit('updateSessionTools', id, names)"
+          />
+        </section>
+
         <!-- Plugins -->
         <section v-show="activeTab === 'plugins'" class="panel">
           <PluginsPanel />
@@ -707,6 +746,36 @@ function archiveTime(iso: string): string {
                     />
                     <span class="num-unit">%</span>
                   </label>
+                </div>
+
+                <div class="row">
+                  <span class="rlabel">
+                    {{ t('settings.sessionCompactionThreshold') }}
+                    <span class="hint">{{ t('settings.sessionCompactionThresholdHint') }}</span>
+                  </span>
+                  <label class="num-field">
+                    <input
+                      class="num-input"
+                      type="number"
+                      min="50"
+                      max="99"
+                      step="1"
+                      :value="sessionCompactionThresholdPercent"
+                      :disabled="!sessionId || sessionCompactionSaving"
+                      :aria-label="t('settings.sessionCompactionThreshold')"
+                      @change="setSessionCompactionThreshold(($event.target as HTMLInputElement).value)"
+                    />
+                    <span class="num-unit">%</span>
+                  </label>
+                  <Button
+                    v-if="sessionCompactionHasOverride"
+                    variant="secondary"
+                    size="sm"
+                    :disabled="!sessionId || sessionCompactionSaving"
+                    @click="clearSessionCompactionThreshold()"
+                  >
+                    {{ t('settings.clearSessionCompactionThreshold') }}
+                  </Button>
                 </div>
               </div>
             </template>
@@ -1005,6 +1074,18 @@ function archiveTime(iso: string): string {
                   :model-value="labSidebarTabs ?? false"
                   :label="t('settings.lab.sidebarTabs')"
                   @update:model-value="emit('setLabSidebarTabs', $event)"
+                />
+              </div>
+              <div v-if="config" class="row">
+                <span class="rlabel">
+                  {{ t('settings.lab.steerInterrupt') }}
+                  <span class="hint">{{ t('settings.lab.steerInterruptHint') }}</span>
+                </span>
+                <Switch
+                  :model-value="steerInterrupt"
+                  :disabled="configSaving"
+                  :label="t('settings.lab.steerInterrupt')"
+                  @update:model-value="emit('updateConfig', withSteerInterrupt(config, $event))"
                 />
               </div>
             </div>

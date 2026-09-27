@@ -714,6 +714,8 @@ function testSessionStatus(): SessionStatusResponse {
     context_tokens: 0,
     max_context_tokens: 100,
     context_usage: 0,
+    compaction_trigger_ratio: 0.7,
+    disabled_tools: [],
   };
 }
 

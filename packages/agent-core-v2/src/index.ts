@@ -124,6 +124,7 @@ export * from '#/agent/state/agentState';
 import '#/agent/state/agentStateService';
 export * from '#/llm-adapter/contract/capability';
 export * from '#/llm-adapter/contract/errors';
+export * from '#/llm-adapter/contract/tokens';
 export {
   createAssistantMessage,
   createToolMessage,
@@ -181,6 +182,8 @@ export * from '#/session/sessionTitle/sessionTitle';
 export * from '#/session/sessionTitle/sessionTitleService';
 export * from '#/session/sessionToolPolicy/sessionToolPolicy';
 export * from '#/session/sessionToolPolicy/sessionToolPolicyService';
+export * from '#/session/sessionCompaction/sessionCompaction';
+export * from '#/session/sessionCompaction/sessionCompactionService';
 export * from '#/app/config/config';
 export * from '#/app/config/configEvents';
 export type { ConfigChangedEvent } from '#/app/config/configEvents';
@@ -744,6 +747,8 @@ export * from '#/features/notify/notifyUserAvailability';
 export * from '#/features/notify/tools/notify-user/notify-user';
 import '#/features/notify/notifyFeature';
 export * from '#/tool/toolContract';
+export * from '#/agent/toolExecutor/flag';
+import '#/agent/toolExecutor/flag';
 export * from '#/agent/toolExecutor/toolHooks';
 export * from '#/agent/toolExecutor/toolExecutor';
 export * from '#/agent/toolExecutor/toolExecutorService';

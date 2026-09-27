@@ -41,6 +41,8 @@ export const sessionAgentConfigSchema = z.object({
   tower_base: z.string().min(1).optional(),
   goal_objective: z.string().optional(),
   goal_control: z.enum(['pause', 'resume', 'cancel']).optional(),
+  compaction_trigger_ratio: z.number().min(0.5).max(0.99).nullable().optional(),
+  disabled_tools: z.array(z.string()).optional(),
 });
 export type SessionAgentConfig = z.infer<typeof sessionAgentConfigSchema>;
 
@@ -82,6 +84,9 @@ export const sessionStatusResponseSchema = z.object({
   context_tokens: z.number().int().nonnegative(),
   max_context_tokens: z.number().int().nonnegative().optional(),
   context_usage: z.number().min(0).max(1).optional(),
+  compaction_trigger_ratio: z.number().min(0.5).max(0.99),
+  compaction_trigger_ratio_override: z.number().min(0.5).max(0.99).optional(),
+  disabled_tools: z.array(z.string()),
 });
 export type SessionStatusResponse = z.infer<typeof sessionStatusResponseSchema>;
 

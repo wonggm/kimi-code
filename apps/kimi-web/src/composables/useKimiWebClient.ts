@@ -395,6 +395,9 @@ export interface ExtendedState extends KimiClientState {
   swarmModeBySession: Record<string, boolean>;
   /** Goal-mode (one-shot "next send creates a goal") toggle per session. */
   goalModeBySession: Record<string, boolean>;
+  compactionTriggerRatioBySession: Record<string, number>;
+  compactionTriggerRatioOverrideBySession: Record<string, number | undefined>;
+  disabledToolsBySession: Record<string, string[]>;
   loading: boolean;
   sessionLoading: boolean;
   queuedBySession: Record<string, QueuedPrompt[]>;
@@ -495,6 +498,9 @@ const rawState: ExtendedState = reactive({
   planArmedBySession: loadModeMapFromStorage(PLAN_ARMED_STORAGE_KEY),
   swarmModeBySession: loadModeMapFromStorage(SWARM_MODE_STORAGE_KEY),
   goalModeBySession: loadModeMapFromStorage(GOAL_MODE_STORAGE_KEY),
+  compactionTriggerRatioBySession: {},
+  compactionTriggerRatioOverrideBySession: {},
+  disabledToolsBySession: {},
   loading: false,
   sessionLoading: false,
   queuedBySession: {},
@@ -734,6 +740,9 @@ function forgetSession(sessionId: string): void {
   delete rawState.goalModeBySession[sessionId];
   delete rawState.thinkingBySession[sessionId];
   delete rawState.permissionBySession[sessionId];
+  delete rawState.compactionTriggerRatioBySession[sessionId];
+  delete rawState.compactionTriggerRatioOverrideBySession[sessionId];
+  delete rawState.disabledToolsBySession[sessionId];
   // Drop the session's side-chat binding and the hidden user-message ids it
   // contributed — the agent-keyed transcript is freed by clearSideChatForSession.
   sideChat.clearSideChatForSession(sessionId);
@@ -787,6 +796,18 @@ async function refreshSessionStatus(sessionId: string): Promise<void> {
   }));
   rawState.swarmModeBySession = { ...rawState.swarmModeBySession, [sessionId]: st.swarmMode };
   rawState.planModeBySession = { ...rawState.planModeBySession, [sessionId]: st.planMode };
+  rawState.compactionTriggerRatioBySession = {
+    ...rawState.compactionTriggerRatioBySession,
+    [sessionId]: st.compactionTriggerRatio,
+  };
+  rawState.compactionTriggerRatioOverrideBySession = {
+    ...rawState.compactionTriggerRatioOverrideBySession,
+    [sessionId]: st.compactionTriggerRatioOverride,
+  };
+  rawState.disabledToolsBySession = {
+    ...rawState.disabledToolsBySession,
+    [sessionId]: st.disabledTools,
+  };
   // Fold the session's own permission mode (daemon is the source of truth for
   // what this session actually runs at). Only persisted when the daemon
   // reports a recognized value; an unknown / empty mode leaves the existing
@@ -808,6 +829,35 @@ async function refreshSessionStatus(sessionId: string): Promise<void> {
       ...rawState.thinkingBySession,
       [sessionId]: st.thinkingEffort as ThinkingLevel,
     };
+  }
+}
+
+async function setSessionCompactionThreshold(
+  sessionId: string,
+  value: number | null,
+): Promise<boolean> {
+  try {
+    await getKimiWebApi().updateSession(sessionId, { compactionTriggerRatio: value });
+    await refreshSessionStatus(sessionId);
+    return true;
+  } catch (error) {
+    pushOperationFailure('setSessionCompactionThreshold', error, { sessionId });
+    return false;
+  }
+}
+
+/**
+ * Replace a session's tool denylist. The engine reads the list on every tool
+ * check, so the new list applies to the next call without a restart.
+ */
+async function setSessionDisabledTools(sessionId: string, names: string[]): Promise<boolean> {
+  try {
+    await getKimiWebApi().updateSession(sessionId, { disabledTools: names });
+    await refreshSessionStatus(sessionId);
+    return true;
+  } catch (error) {
+    pushOperationFailure('setSessionDisabledTools', error, { sessionId });
+    return false;
   }
 }
 
@@ -2859,6 +2909,20 @@ const defaultModel = computed<string | null>(() => rawState.defaultModel);
 const managedProviderStatus = computed<string | null>(() => rawState.managedProviderStatus);
 const config = computed<AppConfig | null>(() => rawState.config);
 
+const selectedSessionCompaction = computed(() => {
+  const sid = rawState.activeSessionId;
+  return {
+    sessionId: sid || undefined,
+    effective: sid ? rawState.compactionTriggerRatioBySession[sid] : undefined,
+    override: sid ? rawState.compactionTriggerRatioOverrideBySession[sid] : undefined,
+  };
+});
+
+const selectedSessionDisabledTools = computed<string[]>(() => {
+  const sid = rawState.activeSessionId;
+  return sid ? (rawState.disabledToolsBySession[sid] ?? []) : [];
+});
+
 /** path → status map for quick badge lookup in the file tree */
 const changesByPath = computed<Record<string, string>>(() => {
   const sid = rawState.activeSessionId;
@@ -3487,6 +3551,8 @@ export function useKimiWebClient() {
     workspace,
     sessions,
     activeSessionId,
+    selectedSessionCompaction,
+    selectedSessionDisabledTools,
 
     // Workspace view props
     workspacesView,
@@ -3626,6 +3692,7 @@ export function useKimiWebClient() {
     // Side chat (BTW side-channel agent)
     sideChatVisible: sideChat.sideChatVisible,
     sideChatSessionId: sideChat.sideChatSessionId,
+    sideChatAgentId: sideChat.sideChatAgentId,
     sideChatTurns: sideChat.sideChatTurns,
     sideChatRunning: sideChat.sideChatRunning,
     sideChatSending: sideChat.sideChatSending,
@@ -3654,6 +3721,8 @@ export function useKimiWebClient() {
     toggleSwarmMode: workspaceState.toggleSwarmMode,
     setGoalMode: workspaceState.setGoalMode,
     toggleGoalMode: workspaceState.toggleGoalMode,
+    setSessionCompactionThreshold,
+    setSessionDisabledTools,
     createGoal: workspaceState.createGoal,
     controlGoal: workspaceState.controlGoal,
     enqueue: workspaceState.enqueue,

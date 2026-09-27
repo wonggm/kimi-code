@@ -6,6 +6,7 @@ import {
   IAgentToolPolicyService,
   getLiveSessionById,
   Error2,
+  estimateTokensForTools,
   type Scope,
   type ToolInfo,
   type ToolSource,
@@ -202,6 +203,13 @@ function toProtocolTool(info: ToolInfo, active: boolean): ToolDescriptor {
     input_schema: null,
     source,
     active,
+    estimated_tokens: estimateTokensForTools([
+      {
+        name: info.name,
+        description: info.description,
+        parameters: info.parameters ?? {},
+      },
+    ]),
   };
   if (source === 'mcp') {
     const serverId = parseMcpServerId(info.name);

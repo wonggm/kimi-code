@@ -419,6 +419,8 @@ const modelsUnavailable = ref(false);
 const providersLoading = ref(false);
 const providersUnavailable = ref(false);
 const configSaving = ref(false);
+const sessionCompactionSaving = ref(false);
+const sessionToolsSaving = ref(false);
 
 async function openModelPicker(): Promise<void> {
   modelsLoading.value = true;
@@ -551,6 +553,26 @@ async function handleUpdateConfig(patch: Partial<AppConfig>): Promise<void> {
     }
   } finally {
     configSaving.value = false;
+  }
+}
+
+async function handleUpdateSessionCompaction(sessionId: string, value: number | null): Promise<void> {
+  if (!sessionId) return;
+  sessionCompactionSaving.value = true;
+  try {
+    await client.setSessionCompactionThreshold(sessionId, value);
+  } finally {
+    sessionCompactionSaving.value = false;
+  }
+}
+
+async function handleUpdateSessionTools(sessionId: string, names: string[]): Promise<void> {
+  if (!sessionId) return;
+  sessionToolsSaving.value = true;
+  try {
+    await client.setSessionDisabledTools(sessionId, names);
+  } finally {
+    sessionToolsSaving.value = false;
   }
 }
 
@@ -1174,6 +1196,12 @@ function openPr(url: string): void {
       :config="client.config.value"
       :models="client.models.value"
       :config-saving="configSaving"
+      :session-id="client.selectedSessionCompaction.value.sessionId"
+      :session-compaction-threshold-percent="client.selectedSessionCompaction.value.effective"
+      :session-compaction-override-percent="client.selectedSessionCompaction.value.override"
+      :session-compaction-saving="sessionCompactionSaving"
+      :session-disabled-tools="client.selectedSessionDisabledTools.value"
+      :session-tools-saving="sessionToolsSaving"
       :server-version="client.serverVersion.value"
       :backend="client.backend.value"
       @set-color-scheme="client.setColorScheme($event)"
@@ -1188,6 +1216,8 @@ function openPr(url: string): void {
       @set-wide-mode="client.setWideMode($event)"
       @set-lab-sidebar-tabs="client.setLabSidebarTabs"
       @update-config="handleUpdateConfig($event)"
+      @update-session-compaction="handleUpdateSessionCompaction"
+      @update-session-tools="handleUpdateSessionTools"
       @login="() => { showSettings = false; openLogin(); }"
       @logout="client.logout"
       @open-onboarding="() => { showSettings = false; openOnboarding(); }"
@@ -1317,6 +1347,12 @@ function openPr(url: string): void {
       :server-version="client.serverVersion.value"
       :config="client.config.value"
       :config-saving="configSaving"
+      :session-id="client.selectedSessionCompaction.value.sessionId"
+      :session-compaction-threshold-percent="client.selectedSessionCompaction.value.effective"
+      :session-compaction-override-percent="client.selectedSessionCompaction.value.override"
+      :session-compaction-saving="sessionCompactionSaving"
+      :session-disabled-tools="client.selectedSessionDisabledTools.value"
+      :session-tools-saving="sessionToolsSaving"
       :backend="client.backend.value"
       @pick-model="openModelPicker()"
       @set-thinking="client.setThinking($event)"
@@ -1329,6 +1365,8 @@ function openPr(url: string): void {
       @set-conversation-toc="client.setConversationToc($event)"
       @set-liquid-glass="client.setLiquidGlass($event)"
       @update-config="handleUpdateConfig($event)"
+      @update-session-compaction="handleUpdateSessionCompaction"
+      @update-session-tools="handleUpdateSessionTools"
       @login="() => { showMobileSettings = false; openLogin(); }"
       @logout="client.logout"
     />

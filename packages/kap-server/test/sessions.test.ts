@@ -22,11 +22,13 @@ import {
   IAgentConversationUndoService,
   IAgentCronService,
   IAgentLifecycleService,
+  IAgentToolPolicyService,
   IEventBus,
   IEventDispatcher,
   IEventService,
   ISessionManager,
   ISessionMetadata,
+  ISessionToolPolicy,
   IWireService,
   IWorkspaceService,
   MAIN_AGENT_ID,
@@ -45,6 +47,7 @@ import { sessionWarningsResponseSchema } from '@moonshot-ai/agent-core-v2/app/se
 import { encodeWorkDirKey } from '@moonshot-ai/agent-core-v2/_base/utils/workdir-slug';
 
 import { type RunningServer, startServer } from '../src/start';
+import { ensureMainAgent } from '../src/transport/mainAgent';
 import { TEST_HOST_IDENTITY } from './helpers/hostIdentity';
 import { authHeaders } from './helpers/auth';
 
@@ -2074,6 +2077,117 @@ describe('server-v2 /api/v1/sessions', () => {
     expect(second.body.data.metadata['foo']).toBeUndefined();
     expect(second.body.data.metadata['baz']).toBe(1);
     expect(second.body.data.metadata.cwd).toBe(cwd);
+  });
+
+  it('applies and clears a per-session compaction threshold through profile status', async () => {
+    const cwd = home as string;
+    const first = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
+    const second = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
+    const firstId = first.body.data.id;
+    const secondId = second.body.data.id;
+
+    const firstUpdate = await postJson<SessionWire>(`/api/v1/sessions/${firstId}/profile`, {
+      agent_config: { compaction_trigger_ratio: 0.7 },
+    });
+    expect(firstUpdate.body.code).toBe(0);
+
+    const firstStatus = await getJson<{
+      compaction_trigger_ratio: number;
+      compaction_trigger_ratio_override?: number;
+    }>(`/api/v1/sessions/${firstId}/status`);
+    expect(firstStatus.body.data).toMatchObject({
+      compaction_trigger_ratio: 0.7,
+      compaction_trigger_ratio_override: 0.7,
+    });
+
+    const secondUpdate = await postJson<SessionWire>(`/api/v1/sessions/${secondId}/profile`, {
+      agent_config: { compaction_trigger_ratio: 0.8 },
+    });
+    expect(secondUpdate.body.code).toBe(0);
+    const secondStatus = await getJson<{ compaction_trigger_ratio: number }>(
+      `/api/v1/sessions/${secondId}/status`,
+    );
+    expect(secondStatus.body.data.compaction_trigger_ratio).toBe(0.8);
+
+    const firstAfterSecondUpdate = await getJson<{ compaction_trigger_ratio: number }>(
+      `/api/v1/sessions/${firstId}/status`,
+    );
+    expect(firstAfterSecondUpdate.body.data.compaction_trigger_ratio).toBe(0.7);
+
+    const clear = await postJson<SessionWire>(`/api/v1/sessions/${firstId}/profile`, {
+      agent_config: { compaction_trigger_ratio: null },
+    });
+    expect(clear.body.code).toBe(0);
+    const clearedStatus = await getJson<{
+      compaction_trigger_ratio: number;
+      compaction_trigger_ratio_override?: number;
+    }>(`/api/v1/sessions/${firstId}/status`);
+    expect(clearedStatus.body.data.compaction_trigger_ratio).toBe(0.85);
+    expect(clearedStatus.body.data.compaction_trigger_ratio_override).toBeUndefined();
+  });
+
+  it('applies and clears a per-session tool denylist through profile status', async () => {
+    const cwd = home as string;
+    const first = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
+    const second = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
+    const firstId = first.body.data.id;
+    const secondId = second.body.data.id;
+
+    const firstUpdate = await postJson<SessionWire>(`/api/v1/sessions/${firstId}/profile`, {
+      agent_config: { disabled_tools: ['Bash'] },
+    });
+    expect(firstUpdate.body.code).toBe(0);
+
+    const firstStatus = await getJson<{ disabled_tools: string[] }>(
+      `/api/v1/sessions/${firstId}/status`,
+    );
+    expect(firstStatus.body.data.disabled_tools).toEqual(['Bash']);
+
+    const secondStatus = await getJson<{ disabled_tools: string[] }>(
+      `/api/v1/sessions/${secondId}/status`,
+    );
+    expect(secondStatus.body.data.disabled_tools).toEqual([]);
+
+    const clear = await postJson<SessionWire>(`/api/v1/sessions/${firstId}/profile`, {
+      agent_config: { disabled_tools: [] },
+    });
+    expect(clear.body.code).toBe(0);
+    const clearedStatus = await getJson<{ disabled_tools: string[] }>(
+      `/api/v1/sessions/${firstId}/status`,
+    );
+    expect(clearedStatus.body.data.disabled_tools).toEqual([]);
+  });
+
+  it('refuses a session-disabled tool while another session keeps it', async () => {
+    const cwd = home as string;
+    const first = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
+    const second = await postJson<SessionWire>('/api/v1/sessions', { metadata: { cwd } });
+
+    const firstSession = await resumeSessionById(server!.core.accessor, first.body.data.id);
+    if (firstSession === undefined) throw new Error('first session not found');
+    await firstSession.accessor.get(ISessionToolPolicy).setDisabledTools(['Bash']);
+
+    const firstAgent = await ensureMainAgent(firstSession);
+    expect(firstAgent.accessor.get(IAgentToolPolicyService).isToolActive('Bash')).toBe(false);
+
+    const secondSession = await resumeSessionById(server!.core.accessor, second.body.data.id);
+    if (secondSession === undefined) throw new Error('second session not found');
+    const secondAgent = await ensureMainAgent(secondSession);
+    expect(secondAgent.accessor.get(IAgentToolPolicyService).isToolActive('Bash')).toBe(true);
+  });
+
+  it('rejects invalid per-session compaction thresholds', async () => {
+    const created = await postJson<SessionWire>('/api/v1/sessions', {
+      metadata: { cwd: home as string },
+    });
+    const id = created.body.data.id;
+
+    for (const value of [0.49, 1, 'invalid']) {
+      const response = await postJson<SessionWire>(`/api/v1/sessions/${id}/profile`, {
+        agent_config: { compaction_trigger_ratio: value },
+      });
+      expect(response.body.code).toBe(40001);
+    }
   });
 
   it('applies agent_config.permission_mode via profile idempotently', async () => {

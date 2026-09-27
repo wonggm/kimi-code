@@ -28,7 +28,7 @@ export function estimateTokensForTools(tools: readonly Tool[]): number {
   for (const tool of tools) {
     total += estimateTokens(tool.name);
     total += estimateTokens(tool.description);
-    total += estimateTokens(JSON.stringify(tool.parameters));
+    total += estimateTokens(JSON.stringify(tool.parameters ?? {}));
   }
   return total;
 }

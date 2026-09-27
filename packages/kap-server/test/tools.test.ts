@@ -7,6 +7,7 @@ import {
   IAgentToolRegistryService,
   getLiveSessionById,
   ISessionToolPolicy,
+  ISessionTokenCountingService,
   IModelCatalog,
   type ExecutableTool,
 } from '@moonshot-ai/agent-core-v2';
@@ -34,6 +35,7 @@ interface ToolWire {
   source: string;
   mcp_server_id?: string;
   active?: boolean;
+  estimated_tokens?: number;
 }
 
 describe('server-v2 /api/v1 tools + mcp', () => {
@@ -206,6 +208,29 @@ describe('server-v2 /api/v1 tools + mcp', () => {
     it('rejects an empty session_id with 40001', async () => {
       const { body } = await getJson<null>('/api/v1/tools?session_id=');
       expect(body.code).toBe(40001);
+    });
+
+    it('reports a per-tool token estimate that sums to the whole-list estimate', async () => {
+      const id = await createSession();
+      const agent = await ensureMainAgent(id);
+      const registered = agent.accessor.get(IAgentToolRegistryService).list();
+      const wholeList = agent.accessor.get(ISessionTokenCountingService).estimateTools(
+        registered.map((info) => ({
+          name: info.name,
+          description: info.description,
+          parameters: info.parameters ?? {},
+        })),
+      );
+
+      const { body } = await getJson<{ tools: ToolWire[] }>(`/api/v1/tools?session_id=${id}`);
+      const tools = listToolsResponseSchema.parse(body.data).tools;
+
+      expect(tools.length).toBe(registered.length);
+      for (const tool of tools) {
+        expect(tool.estimated_tokens).toBeGreaterThan(0);
+      }
+      const sum = tools.reduce((acc, t) => acc + (t.estimated_tokens ?? 0), 0);
+      expect(sum).toBe(wholeList);
     });
   });
 

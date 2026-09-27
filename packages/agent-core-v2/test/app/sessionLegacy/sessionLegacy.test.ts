@@ -7,6 +7,8 @@ import { LifecycleScope } from '#/app/scopes';
 import { type IAgentScopeHandle, type ISessionScopeHandle } from '#/_base/di/scope';
 import { TestInstantiationService } from '#/_base/di/test';
 import { ISessionTokenCountingService } from '#/session/tokenCounting/sessionTokenCounting';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
+import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
 import {
   IAgentScopeContext,
   makeAgentScopeContext,
@@ -122,6 +124,7 @@ describe('Session legacy status (best-effort runtime state)', () => {
       getModel: () => 'removed-model',
       getModelCapabilities: () => UNKNOWN_CAPABILITY,
       getEffectiveThinkingLevel: () => 'high',
+      resolveCompactionTriggerRatio: () => undefined,
       resolveModelContext: () => {
         throw new Error('removed-model cannot be resolved');
       },
@@ -144,6 +147,8 @@ describe('Session legacy status (best-effort runtime state)', () => {
         [IAgentLoopService, { snapshot: () => ({ state: 'idle' }) }],
         [IAgentTaskService, { list: () => [] }],
         [IAgentFullCompactionService, { compacting: null }],
+        [ISessionCompactionConfig, { ready: Promise.resolve(), triggerRatio: () => undefined }],
+        [ISessionToolPolicy, { disabledTools: () => [] }],
       ]),
       dispose: () => {},
     };
@@ -186,6 +191,7 @@ describe('Session legacy status (best-effort runtime state)', () => {
       getModel: () => '',
       getModelCapabilities: () => UNKNOWN_CAPABILITY,
       getEffectiveThinkingLevel: () => 'off',
+      resolveCompactionTriggerRatio: () => undefined,
     } as unknown as IAgentProfileService;
     const agent: IAgentScopeHandle = {
       id: 'main',
@@ -206,6 +212,8 @@ describe('Session legacy status (best-effort runtime state)', () => {
         [IAgentLoopService, { snapshot: () => ({ state: 'idle' }) }],
         [IAgentTaskService, { list: () => [] }],
         [IAgentFullCompactionService, { compacting: null }],
+        [ISessionCompactionConfig, { ready: Promise.resolve(), triggerRatio: () => undefined }],
+        [ISessionToolPolicy, { disabledTools: () => [] }],
       ]),
       dispose: () => {},
     };
@@ -248,6 +256,7 @@ describe('Session legacy status (best-effort runtime state)', () => {
       getModel: () => '',
       getModelCapabilities: () => UNKNOWN_CAPABILITY,
       getEffectiveThinkingLevel: () => 'off',
+      resolveCompactionTriggerRatio: () => undefined,
     } as unknown as IAgentProfileService;
     const agent: IAgentScopeHandle = {
       id: 'main',
@@ -277,6 +286,8 @@ describe('Session legacy status (best-effort runtime state)', () => {
         [IAgentLoopService, { snapshot: () => ({ state: 'idle' }) }],
         [IAgentTaskService, { list: () => [] }],
         [IAgentFullCompactionService, { compacting: null }],
+        [ISessionCompactionConfig, { ready: Promise.resolve(), triggerRatio: () => undefined }],
+        [ISessionToolPolicy, { disabledTools: () => [] }],
       ]),
       dispose: () => {},
     };
@@ -335,6 +346,7 @@ describe('Session legacy status (best-effort runtime state)', () => {
         dynamically_loaded_tools: false,
       }),
       getEffectiveThinkingLevel: () => 'medium',
+      resolveCompactionTriggerRatio: () => undefined,
     } as unknown as IAgentProfileService;
     const agent: IAgentScopeHandle = {
       id: 'main',
@@ -354,6 +366,8 @@ describe('Session legacy status (best-effort runtime state)', () => {
         [IAgentLoopService, { snapshot: () => ({ state: 'idle' }) }],
         [IAgentTaskService, { list: () => [] }],
         [IAgentFullCompactionService, { compacting: null }],
+        [ISessionCompactionConfig, { ready: Promise.resolve(), triggerRatio: () => undefined }],
+        [ISessionToolPolicy, { disabledTools: () => [] }],
       ]),
       dispose: () => {},
     };

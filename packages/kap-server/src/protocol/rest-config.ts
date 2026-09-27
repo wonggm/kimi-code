@@ -35,6 +35,12 @@ export const configResponseSchema = z
     secondary_model: z.unknown().optional(),
     experimental: z.record(z.string(), z.boolean()).optional(),
     telemetry: z.boolean().optional(),
+    tools: z
+      .object({
+        enabled: z.array(z.string()).optional(),
+        disabled: z.array(z.string()).optional(),
+      })
+      .optional(),
     raw: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
@@ -65,5 +71,11 @@ export const patchConfigRequestSchema = z.object({
   secondary_model: z.unknown().optional(),
   experimental: z.record(z.string(), z.boolean()).optional(),
   telemetry: z.boolean().optional(),
+  tools: z
+    .object({
+      enabled: z.array(z.string()).optional(),
+      disabled: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 export type PatchConfigRequest = z.infer<typeof patchConfigRequestSchema>;

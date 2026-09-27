@@ -26,6 +26,7 @@ import {
 } from '../../lib/modelThinking';
 import BottomSheet from '../dialogs/BottomSheet.vue';
 import LanguageSwitcher from '../settings/LanguageSwitcher.vue';
+import ToolsPanel from '../settings/ToolsPanel.vue';
 import { formatTokens } from '../../lib/formatTokens';
 import Button from '../ui/Button.vue';
 import Input from '../ui/Input.vue';
@@ -63,6 +64,13 @@ const props = withDefaults(
     config?: AppConfig | null;
     /** True while POST /api/v1/config is saving. */
     configSaving?: boolean;
+    sessionId?: string;
+    sessionCompactionThresholdPercent?: number;
+    sessionCompactionOverridePercent?: number;
+    sessionCompactionSaving?: boolean;
+    /** The selected session's tool denylist, from GET /sessions/{id}/status. */
+    sessionDisabledTools?: string[];
+    sessionToolsSaving?: boolean;
     /** Backend engine generation ('v2' enables the subagent-model pins). */
     backend?: 'v1' | 'v2';
   }>(),
@@ -90,6 +98,8 @@ const emit = defineEmits<{
   setLiquidGlass: [on: boolean];
   setConversationToc: [on: boolean];
   updateConfig: [patch: Partial<AppConfig>];
+  updateSessionCompaction: [sessionId: string, value: number | null];
+  updateSessionTools: [sessionId: string, names: string[]];
   login: [];
   logout: [];
 }>();
@@ -181,7 +191,7 @@ function onLogout(): void {
 // search + sort run client-side over the full set.
 // ---------------------------------------------------------------------------
 const client = useKimiWebClient();
-type SheetView = 'main' | 'archived' | 'agent' | 'providers';
+type SheetView = 'main' | 'archived' | 'agent' | 'tools' | 'providers';
 const view = ref<SheetView>('main');
 
 const archivedItems = ref<AppSession[]>([]);
@@ -286,6 +296,10 @@ const {
   toggleConfigBoolean,
   compactionThresholdPercent,
   setCompactionThreshold,
+  sessionCompactionThresholdPercent,
+  sessionCompactionHasOverride,
+  setSessionCompactionThreshold,
+  clearSessionCompactionThreshold,
   thinkingEnabled,
   toggleDefaultThinking,
   agentProfiles,
@@ -295,6 +309,13 @@ const {
   models: () => props.models,
   backend: () => props.backend,
   updateConfig: (patch) => emit('updateConfig', patch),
+  sessionId: () => props.sessionId,
+  sessionCompactionThresholdPercent: () => props.sessionCompactionThresholdPercent,
+  sessionCompactionOverridePercent: () => props.sessionCompactionOverridePercent,
+  updateSessionCompaction: (sessionId, value) => {
+    emit('updateSessionCompaction', sessionId, value);
+    return Promise.resolve(true);
+  },
 });
 
 const agentPermModes = PERMISSION_MODES;
@@ -311,6 +332,10 @@ function openAgent(): void {
 function openProviders(): void {
   view.value = 'providers';
   customProviders.cancel();
+}
+
+function openTools(): void {
+  view.value = 'tools';
 }
 </script>
 
@@ -426,6 +451,14 @@ function openProviders(): void {
       <span class="srow-main">
         <span class="srow-label">{{ t('settings.agentDefaults') }}</span>
         <span class="srow-sub">{{ t('mobile.agentDefaultsSub') }}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+
+    <button type="button" class="srow" @click="openTools">
+      <span class="srow-main">
+        <span class="srow-label">{{ t('settings.tools.allSessions') }}</span>
+        <span class="srow-sub">{{ t('settings.tabs.tools') }}</span>
       </span>
       <span class="chev">›</span>
     </button>
@@ -705,11 +738,61 @@ function openProviders(): void {
             <span class="num-unit">%</span>
           </label>
         </div>
+
+        <div class="srow pref agent">
+          <span class="srow-main">
+            <span class="srow-label">{{ t('settings.sessionCompactionThreshold') }}</span>
+            <span class="srow-sub">{{ t('settings.sessionCompactionThresholdHint') }}</span>
+          </span>
+          <label class="num-field">
+            <input
+              class="num-input"
+              type="number"
+              min="50"
+              max="99"
+              step="1"
+              :value="sessionCompactionThresholdPercent"
+              :disabled="!sessionId || sessionCompactionSaving"
+              :aria-label="t('settings.sessionCompactionThreshold')"
+              @change="setSessionCompactionThreshold(($event.target as HTMLInputElement).value)"
+            />
+            <span class="num-unit">%</span>
+          </label>
+          <Button
+            v-if="sessionCompactionHasOverride"
+            variant="secondary"
+            size="sm"
+            :disabled="!sessionId || sessionCompactionSaving"
+            @click="clearSessionCompactionThreshold()"
+          >
+            {{ t('settings.clearSessionCompactionThreshold') }}
+          </Button>
+        </div>
       </template>
 
       <div v-else class="arch-empty">
         {{ t('settings.configUnavailable') }}
       </div>
+    </template>
+
+    <template v-else-if="view === 'tools'">
+      <div class="arch-subhead">
+        <button type="button" class="arch-back" @click="backToMain">
+          <span class="chev back">‹</span> {{ t('mobile.archivedBack') }}
+        </button>
+        <span v-if="configSaving" class="arch-count">{{ t('settings.saving') }}</span>
+      </div>
+
+      <ToolsPanel
+        :config="config"
+        :config-saving="configSaving"
+        :session-id="sessionId"
+        :session-disabled-tools="sessionDisabledTools"
+        :session-tools-saving="sessionToolsSaving"
+        :active="view === 'tools'"
+        @update-config="emit('updateConfig', $event)"
+        @update-session-tools="(id, names) => emit('updateSessionTools', id, names)"
+      />
     </template>
 
     <template v-else-if="view === 'providers'">

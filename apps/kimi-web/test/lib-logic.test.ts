@@ -10,6 +10,7 @@ import { parseDiff } from '../src/lib/parseDiff';
 import { extractFrontmatter } from '../src/lib/frontmatter';
 import { buildDiffLines } from '../src/lib/diffLines';
 import { buildEditDiffLines } from '../src/lib/toolDiff';
+import { steerInterruptEnabled, withSteerInterrupt } from '../src/lib/experimentalFlags';
 import { createCoalescedAsyncRunner } from '../src/lib/snapshotSync';
 import { mergeSnapshotMessages } from '../src/lib/snapshotMessages';
 import {
@@ -1914,5 +1915,27 @@ describe('exchange timing', () => {
       localStorage.setItem(STORAGE_KEYS.exchangeStart, '{not json');
       expect(loadExchangeStarts()).toEqual({});
     });
+  });
+});
+
+describe('experimental flag switch', () => {
+  it('reads the switch as off when the daemon sent no config', () => {
+    expect(steerInterruptEnabled(null)).toBe(false);
+    expect(steerInterruptEnabled(undefined)).toBe(false);
+    expect(steerInterruptEnabled({ experimental: {} })).toBe(false);
+    expect(steerInterruptEnabled({ experimental: { steer_interrupt: false } })).toBe(false);
+  });
+
+  it('reads the switch as on only when the key is true', () => {
+    expect(steerInterruptEnabled({ experimental: { steer_interrupt: true } })).toBe(true);
+  });
+
+  it('sends the whole experimental table back so other flags survive', () => {
+    const config = { experimental: { wait_for: true, steer_interrupt: false } };
+
+    expect(withSteerInterrupt(config, true)).toEqual({
+      experimental: { wait_for: true, steer_interrupt: true },
+    });
+    expect(withSteerInterrupt(undefined, true)).toEqual({ experimental: { steer_interrupt: true } });
   });
 });

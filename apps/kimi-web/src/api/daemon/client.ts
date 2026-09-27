@@ -18,6 +18,8 @@ import type {
   AppSkillAttachment,
   AppSessionCursor,
   AppSessionRuntimeStatus,
+  AppToolDescriptor,
+  AppMcpServer,
   AppSessionSnapshot,
   AppTask,
   AppTaskStatus,
@@ -91,6 +93,8 @@ import type {
   WireSessionWarningsResponse,
   WireSessionRuntimeStatus,
   WireSessionSnapshot,
+  WireMcpServersResponse,
+  WireToolsResponse,
   WireWorkspace,
   WirePluginSummary,
   WirePluginMarketplaceEntry,
@@ -448,6 +452,8 @@ export class DaemonKimiWebApi implements KimiWebApi {
       thinking?: string;
       emoji?: string;
       pinned?: boolean;
+      compactionTriggerRatio?: number | null;
+      disabledTools?: string[];
     },
   ): Promise<AppSession> {
     const body: Record<string, unknown> = {};
@@ -465,6 +471,12 @@ export class DaemonKimiWebApi implements KimiWebApi {
     if (input.goalObjective !== undefined) agentConfig['goal_objective'] = input.goalObjective;
     if (input.goalControl !== undefined) agentConfig['goal_control'] = input.goalControl;
     if (input.thinking !== undefined) agentConfig['thinking'] = input.thinking;
+    if (input.compactionTriggerRatio !== undefined) {
+      agentConfig['compaction_trigger_ratio'] = input.compactionTriggerRatio;
+    }
+    if (input.disabledTools !== undefined) {
+      agentConfig['disabled_tools'] = input.disabledTools;
+    }
     if (Object.keys(agentConfig).length > 0) body['agent_config'] = agentConfig;
     const data = await this.http.post<WireSession>(
       `/sessions/${encodeURIComponent(sessionId)}/profile`,
@@ -492,7 +504,41 @@ export class DaemonKimiWebApi implements KimiWebApi {
       contextTokens: data.context_tokens ?? 0,
       maxContextTokens: data.max_context_tokens ?? 0,
       contextUsage: data.context_usage ?? 0,
+      compactionTriggerRatio: data.compaction_trigger_ratio,
+      compactionTriggerRatioOverride: data.compaction_trigger_ratio_override,
+      disabledTools: data.disabled_tools ?? [],
     };
+  }
+
+  /**
+   * GET /tools — every tool the agent may call, with the server-computed token
+   * estimate for its declaration. `sessionId` picks the session whose effective
+   * policy decides the `active` flag.
+   */
+  async listTools(sessionId?: string): Promise<AppToolDescriptor[]> {
+    const query = sessionId === undefined ? '' : `?session_id=${encodeURIComponent(sessionId)}`;
+    const data = await this.http.get<WireToolsResponse>(`/tools${query}`);
+    return data.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      source: tool.source,
+      mcpServerId: tool.mcp_server_id,
+      active: tool.active === true,
+      estimatedTokens: tool.estimated_tokens,
+    }));
+  }
+
+  /** GET /mcp/servers — configured servers and their connection state. */
+  async listMcpServers(): Promise<AppMcpServer[]> {
+    const data = await this.http.get<WireMcpServersResponse>('/mcp/servers');
+    return data.servers.map((server) => ({
+      id: server.id,
+      name: server.name,
+      transport: server.transport,
+      status: server.status,
+      lastError: server.last_error,
+      toolCount: server.tool_count,
+    }));
   }
 
   /**
@@ -1544,6 +1590,7 @@ export class DaemonKimiWebApi implements KimiWebApi {
       background: 'background',
       experimental: 'experimental',
       telemetry: 'telemetry',
+      tools: 'tools',
       raw: 'raw',
     };
     for (const [key, value] of Object.entries(patch)) {

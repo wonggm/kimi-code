@@ -125,6 +125,39 @@ export interface WireSessionRuntimeStatus {
   context_tokens: number;
   max_context_tokens: number;
   context_usage: number;
+  compaction_trigger_ratio: number;
+  compaction_trigger_ratio_override?: number;
+  disabled_tools?: string[];
+}
+
+// GET /tools — every tool the agent may call, with the server-computed token
+// estimate for its declaration.
+export interface WireToolDescriptor {
+  name: string;
+  description: string;
+  input_schema: unknown;
+  source: 'builtin' | 'skill' | 'mcp';
+  mcp_server_id?: string;
+  active?: boolean;
+  estimated_tokens?: number;
+}
+
+export interface WireToolsResponse {
+  tools: WireToolDescriptor[];
+}
+
+// GET /mcp/servers — configured MCP servers and whether each one is connected.
+export interface WireMcpServer {
+  id: string;
+  name: string;
+  transport: 'stdio' | 'http' | 'sse';
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  last_error?: string;
+  tool_count: number;
+}
+
+export interface WireMcpServersResponse {
+  servers: WireMcpServer[];
 }
 
 // GET /sessions/{id}/goal — camelCase, same shape as the `goal.updated` event
@@ -597,6 +630,7 @@ export interface WireConfig {
   background?: unknown;
   experimental?: Record<string, boolean>;
   telemetry?: boolean;
+  tools?: { enabled?: string[]; disabled?: string[] };
   raw?: Record<string, unknown>;
 }
 

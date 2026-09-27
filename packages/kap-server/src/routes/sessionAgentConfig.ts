@@ -7,6 +7,8 @@ import {
   IAgentProfileService,
   IAgentSwarmService,
   IAgentTowerService,
+  ISessionCompactionConfig,
+  ISessionToolPolicy,
   resumeSessionById,
   towerEnterFailureMessage,
   type PermissionMode,
@@ -24,6 +26,14 @@ export async function applySessionAgentConfig(
   const session = await resumeSessionById(core.accessor, sessionId);
   if (session === undefined) {
     throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${sessionId} does not exist`);
+  }
+  if (agentConfig.compaction_trigger_ratio !== undefined) {
+    await session.accessor
+      .get(ISessionCompactionConfig)
+      .setTriggerRatio(agentConfig.compaction_trigger_ratio ?? undefined);
+  }
+  if (agentConfig.disabled_tools !== undefined) {
+    await session.accessor.get(ISessionToolPolicy).setDisabledTools(agentConfig.disabled_tools);
   }
   const agent = await ensureMainAgent(session);
 

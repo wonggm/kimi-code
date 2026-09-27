@@ -25,6 +25,10 @@ export interface UseAgentDefaultsOptions {
   models: MaybeRefOrGetter<AppModel[] | undefined>;
   backend: MaybeRefOrGetter<'v1' | 'v2' | undefined>;
   updateConfig: (patch: Partial<AppConfig>) => void;
+  sessionId: MaybeRefOrGetter<string | undefined>;
+  sessionCompactionThresholdPercent: MaybeRefOrGetter<number | undefined>;
+  sessionCompactionOverridePercent: MaybeRefOrGetter<number | undefined>;
+  updateSessionCompaction: (sessionId: string, value: number | null) => Promise<boolean>;
 }
 
 export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
@@ -219,14 +223,14 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
   // the key — the backend Zod schema rejects null values, so an unpinned profile
   // is an absent key, and the full updated table (possibly {}) is sent.
   function setSubagentModel(profileName: string, alias: string | null): void {
-    const table = { ...(config.value?.subagentModels ?? {}) };
+    const table = { ...config.value?.subagentModels };
     if (alias === null || alias === '') delete table[profileName];
     else table[profileName] = alias;
     opts.updateConfig({ subagentModels: table });
   }
 
   function setSubagentEffort(profileName: string, effort: string | null): void {
-    const table = { ...(config.value?.subagentEfforts ?? {}) };
+    const table = { ...config.value?.subagentEfforts };
     if (effort === null || effort === '') delete table[profileName];
     else table[profileName] = effort;
     opts.updateConfig({ subagentEfforts: table });
@@ -240,11 +244,11 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
     profileName: string,
     value: Partial<AppSubagentCompactionEntry> | null,
   ): void {
-    const table = { ...(config.value?.subagentCompaction ?? {}) };
+    const table = { ...config.value?.subagentCompaction };
     if (value === null) {
       delete table[profileName];
     } else {
-      const merged: AppSubagentCompactionEntry = { ...(table[profileName] ?? {}) };
+      const merged: AppSubagentCompactionEntry = { ...table[profileName] };
       if (value.triggerRatio === undefined) delete merged.triggerRatio;
       else merged.triggerRatio = value.triggerRatio;
       if (value.reservedContextSize === undefined) delete merged.reservedContextSize;
@@ -324,6 +328,38 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
     opts.updateConfig({ loopControl: { compactionTriggerRatio: clamped / 100 } });
   }
 
+  const sessionId = computed(() => {
+    const id = toValue(opts.sessionId);
+    return id ? id : undefined;
+  });
+  const sessionCompactionThresholdPercent = computed(() => {
+    const ratio = toValue(opts.sessionCompactionThresholdPercent);
+    return ratio === undefined ? undefined : Math.min(99, Math.max(50, Math.round(ratio * 100)));
+  });
+  const sessionCompactionOverridePercent = computed(() => {
+    const ratio = toValue(opts.sessionCompactionOverridePercent);
+    return ratio === undefined ? undefined : Math.min(99, Math.max(50, Math.round(ratio * 100)));
+  });
+  const sessionCompactionHasOverride = computed(() => toValue(opts.sessionCompactionOverridePercent) !== undefined);
+
+  async function setSessionCompactionThreshold(raw: string): Promise<boolean> {
+    const sid = sessionId.value;
+    if (!sid) return false;
+    const trimmed = raw.trim();
+    if (trimmed === '') return false;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return false;
+    const clamped = Math.min(99, Math.max(50, Math.round(parsed)));
+    if (clamped === sessionCompactionThresholdPercent.value) return false;
+    return opts.updateSessionCompaction(sid, clamped / 100);
+  }
+
+  async function clearSessionCompactionThreshold(): Promise<boolean> {
+    const sid = sessionId.value;
+    if (!sid || !sessionCompactionHasOverride.value) return false;
+    return opts.updateSessionCompaction(sid, null);
+  }
+
   // "Default thinking" lives at config.thinking.enabled on the daemon — the legacy
   // top-level defaultThinking field was removed. Read/write it there so the toggle
   // actually persists (the old field was silently stripped by the server).
@@ -353,8 +389,8 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
     agentProfilesLoaded = true;
     try {
       agentProfiles.value = await getKimiWebApi().listAgentProfiles();
-    } catch (err) {
-      console.warn('loadAgentProfiles failed', err);
+    } catch (error) {
+      console.warn('loadAgentProfiles failed', error);
     }
   }
 
@@ -385,6 +421,11 @@ export function useAgentDefaults(opts: UseAgentDefaultsOptions) {
     toggleConfigBoolean,
     compactionThresholdPercent,
     setCompactionThreshold,
+    sessionCompactionThresholdPercent,
+    sessionCompactionOverridePercent,
+    sessionCompactionHasOverride,
+    setSessionCompactionThreshold,
+    clearSessionCompactionThreshold,
     thinkingEnabled,
     toggleDefaultThinking,
     agentProfiles,

@@ -325,6 +325,30 @@ describe('server-v2 /api/v1/config', () => {
     expect(body.code).toBe(0);
     expect(body.data?.id).toBeTruthy();
   });
+
+  it('round-trips the tools section and normalizes it to one list per save', async () => {
+    await boot('');
+
+    const allow = await patchConfig({ tools: { enabled: ['Read'], disabled: [] } });
+    expect(allow.tools).toEqual({ enabled: ['Read'], disabled: [] });
+
+    const deny = await patchConfig({ tools: { enabled: [], disabled: ['Bash'] } });
+    expect(deny.tools).toEqual({ enabled: [], disabled: ['Bash'] });
+
+    const none = await patchConfig({ tools: { enabled: [], disabled: [] } });
+    expect(none.tools).toEqual({ enabled: [], disabled: [] });
+  });
+
+  it('rejects a tools entry that is not a list of strings', async () => {
+    await boot('');
+    const res = await authedFetch(server as RunningServer, base, '/api/v1/config', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tools: { enabled: 'Read' } }),
+    });
+    const body = (await res.json()) as Envelope<null>;
+    expect(body.code).toBe(40001);
+  });
 });
 
 describe('server-v2 config changed WS notifications', () => {

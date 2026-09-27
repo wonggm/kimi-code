@@ -123,6 +123,35 @@ export interface AppSessionRuntimeStatus {
   contextTokens: number;
   maxContextTokens: number;
   contextUsage: number;
+  compactionTriggerRatio: number;
+  compactionTriggerRatioOverride?: number;
+  disabledTools: string[];
+}
+
+/** A `[tools]` section from config.toml: an allowlist, a denylist, or both. */
+export interface AppToolsConfig {
+  enabled?: string[];
+  disabled?: string[];
+}
+
+/** One tool the agent may call, with its approximate declaration cost. */
+export interface AppToolDescriptor {
+  name: string;
+  description: string;
+  source: 'builtin' | 'skill' | 'mcp';
+  mcpServerId?: string;
+  active: boolean;
+  estimatedTokens?: number;
+}
+
+/** A configured MCP server and whether its tools are reachable right now. */
+export interface AppMcpServer {
+  id: string;
+  name: string;
+  transport: 'stdio' | 'http' | 'sse';
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  lastError?: string;
+  toolCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -623,6 +652,7 @@ export type AppEvent =
    *  so it never clobbers or duplicates content already streaming live. */
   | { type: 'taskSeeded'; sessionId: string; taskId: string; text?: string; outputLines?: string[] }
   | { type: 'retryProgressUpdated'; sessionId: string; attempt: number; maxAttempts: number }
+  | { type: 'retryProgressCleared'; sessionId: string }
   | { type: 'conversationFailureUpdated'; sessionId: string; message?: string; promptId?: string }
   // Prompt-level lifecycle (distinct from turn-level): a prompt that never
   // produced a turn — blocked by a pre-submit hook, or aborted while queued —
@@ -876,6 +906,7 @@ export interface AppConfig {
   background?: unknown;
   experimental?: Record<string, boolean>;
   telemetry?: boolean;
+  tools?: AppToolsConfig;
   raw?: Record<string, unknown>;
 }
 
@@ -974,7 +1005,13 @@ export interface KimiWebApi {
   createSession(input: { title?: string; cwd?: string; model?: string; workspaceId?: string }): Promise<AppSession>;
   /** Fetch one session by id (deep links beyond the first listSessions page). */
   getSession(sessionId: string): Promise<AppSession>;
-  updateSession(sessionId: string, input: { title?: string; cwd?: string; model?: string; permissionMode?: string; planMode?: boolean; swarmMode?: boolean; goalObjective?: string; goalControl?: 'pause' | 'resume' | 'cancel'; thinking?: string; emoji?: string; pinned?: boolean }): Promise<AppSession>;
+  updateSession(sessionId: string, input: { title?: string; cwd?: string; model?: string; permissionMode?: string; planMode?: boolean; swarmMode?: boolean; goalObjective?: string; goalControl?: 'pause' | 'resume' | 'cancel'; thinking?: string; emoji?: string; pinned?: boolean; compactionTriggerRatio?: number | null; disabledTools?: string[] }): Promise<AppSession>;
+  /** Every tool the agent may call, with the server-computed token estimate for
+   *  its declaration. `sessionId` picks the session whose policy decides `active`. */
+  listTools(sessionId?: string): Promise<AppToolDescriptor[]>;
+  /** Configured MCP servers, so the Tools tab can show a server that dropped
+   *  out instead of letting the tool list shrink without explanation. */
+  listMcpServers(): Promise<AppMcpServer[]>;
   getManagedUsage(provider?: string): Promise<ManagedUsageResult>;
   getSessionStatus(sessionId: string): Promise<AppSessionRuntimeStatus>;
   /** Current goal snapshot, or null when the session has no active goal. */

@@ -8,6 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DaemonKimiWebApi } from '../src/api/daemon/client';
 import { FORK_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from '../src/api/daemon/http';
+import {
+  globalModeOf,
+  knownToolNames,
+  missingToolNames,
+  splitToolPatterns,
+  toolPatch,
+  validateToolPattern,
+} from '../src/composables/useToolSettings';
 import { DaemonApiError, DaemonNetworkError } from '../src/api/errors';
 import { clearTrace, traceToJsonl } from '../src/debug/trace';
 import type { AppEvent, KimiEventConnection, KimiEventMeta } from '../src/api/types';
@@ -694,5 +702,212 @@ describe('DaemonKimiWebApi request timeouts', () => {
 
     expect(caught).toBeInstanceOf(DaemonNetworkError);
     expect(caught).toMatchObject({ phase: 'fetch', timedOut: false });
+  });
+});
+
+describe('DaemonKimiWebApi session compaction settings', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps the session compaction threshold from status', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        model: '',
+        thinking_level: '',
+        permission: '',
+        plan_mode: false,
+        swarm_mode: false,
+        context_tokens: 0,
+        max_context_tokens: 0,
+        context_usage: 0,
+        compaction_trigger_ratio: 0.7,
+        compaction_trigger_ratio_override: 0.7,
+      }),
+    );
+
+    const status = await createApi().getSessionStatus('session-1');
+
+    expect(status.compactionTriggerRatio).toBe(0.7);
+    expect(status.compactionTriggerRatioOverride).toBe(0.7);
+  });
+
+  it('sends a session threshold and a null clear value', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockRejectedValue(new Error('stop after request capture'));
+
+    const api = createApi();
+    await expect(api.updateSession('session-1', { compactionTriggerRatio: 0.7 })).rejects.toThrow();
+    await expect(api.updateSession('session-1', { compactionTriggerRatio: null })).rejects.toThrow();
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      body: JSON.stringify({ agent_config: { compaction_trigger_ratio: 0.7 } }),
+    });
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({ agent_config: { compaction_trigger_ratio: null } }),
+    });
+  });
+});
+
+describe('DaemonKimiWebApi tool policy', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('maps a tools section out of the config response', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({ providers: {}, tools: { enabled: ['Read'], disabled: [] } }),
+    );
+
+    const config = await createApi().getConfig();
+
+    expect(config.tools).toEqual({ enabled: ['Read'], disabled: [] });
+  });
+
+  it('sends both tool list keys on a config write', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockRejectedValue(new Error('stop after request capture'));
+
+    await expect(
+      createApi().setConfig({ tools: { enabled: [], disabled: ['Bash'] } }),
+    ).rejects.toThrow();
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      body: JSON.stringify({ tools: { enabled: [], disabled: ['Bash'] } }),
+    });
+  });
+
+  it('maps a session denylist out of the status response', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        model: '',
+        thinking_level: '',
+        permission: '',
+        plan_mode: false,
+        swarm_mode: false,
+        context_tokens: 0,
+        max_context_tokens: 0,
+        context_usage: 0,
+        compaction_trigger_ratio: 0.85,
+        disabled_tools: ['Bash'],
+      }),
+    );
+
+    const status = await createApi().getSessionStatus('session-1');
+
+    expect(status.disabledTools).toEqual(['Bash']);
+  });
+
+  it('sends a session denylist as agent_config.disabled_tools', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockRejectedValue(new Error('stop after request capture'));
+
+    await expect(
+      createApi().updateSession('session-1', { disabledTools: ['Bash'] }),
+    ).rejects.toThrow();
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      body: JSON.stringify({ agent_config: { disabled_tools: ['Bash'] } }),
+    });
+  });
+
+  it('maps the tool list, including the per-tool token estimate', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      envelope({
+        tools: [
+          {
+            name: 'Read',
+            description: 'read a file',
+            input_schema: null,
+            source: 'builtin',
+            active: true,
+            estimated_tokens: 120,
+          },
+          {
+            name: 'mcp__github__search',
+            description: 'search github',
+            input_schema: null,
+            source: 'mcp',
+            mcp_server_id: 'github',
+            active: false,
+            estimated_tokens: 80,
+          },
+        ],
+      }),
+    );
+
+    const tools = await createApi().listTools('session-1');
+
+    expect(tools).toEqual([
+      {
+        name: 'Read',
+        description: 'read a file',
+        source: 'builtin',
+        mcpServerId: undefined,
+        active: true,
+        estimatedTokens: 120,
+      },
+      {
+        name: 'mcp__github__search',
+        description: 'search github',
+        source: 'mcp',
+        mcpServerId: 'github',
+        active: false,
+        estimatedTokens: 80,
+      },
+    ]);
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain('/tools?session_id=session-1');
+  });
+});
+
+describe('tool policy helpers', () => {
+  it('derives the global mode from the config section', () => {
+    expect(globalModeOf(undefined)).toBe('unrestricted');
+    expect(globalModeOf({})).toBe('unrestricted');
+    expect(globalModeOf({ enabled: [] })).toBe('unrestricted');
+    expect(globalModeOf({ disabled: [] })).toBe('unrestricted');
+    expect(globalModeOf({ enabled: ['Read'] })).toBe('allowlist');
+    expect(globalModeOf({ disabled: ['Bash'] })).toBe('denylist');
+    expect(globalModeOf({ enabled: ['Read'], disabled: ['Bash'] })).toBe('allowlist');
+  });
+
+  it('refuses a bare star and an mcp name with no tool segment', () => {
+    expect(validateToolPattern('*').ok).toBe(false);
+    expect(validateToolPattern('mcp__github').ok).toBe(false);
+    expect(validateToolPattern('mcp__github__*').ok).toBe(true);
+    expect(validateToolPattern('mcp__github__search').ok).toBe(true);
+    expect(validateToolPattern('Read').ok).toBe(true);
+    expect(validateToolPattern('').ok).toBe(false);
+  });
+
+  it('lets a mode switch clear the list it leaves behind', () => {
+    expect(toolPatch('allowlist', ['Read'], [])).toEqual({
+      enabled: ['Read'],
+      disabled: [],
+    });
+    expect(toolPatch('denylist', [], ['Bash'])).toEqual({ enabled: [], disabled: ['Bash'] });
+    expect(toolPatch('unrestricted', [], [])).toEqual({ enabled: [], disabled: [] });
+  });
+
+  it('splits a pattern field into entries, dropping blanks and duplicates', () => {
+    expect(splitToolPatterns(' mcp__github__* ,, Read \n mcp__github__* ')).toEqual([
+      'mcp__github__*',
+      'Read',
+    ]);
+  });
+
+  it('keeps a saved name that no longer exists in the list', () => {
+    const known = [{ name: 'Read' }, { name: 'Bash' }];
+    expect(knownToolNames(known)).toEqual(['Bash', 'Read']);
+    expect(missingToolNames(['Read', 'Gone'], known)).toEqual(['Gone']);
+    expect(missingToolNames(['Read', 'mcp__github__*'], known)).toEqual([]);
   });
 });
