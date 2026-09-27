@@ -5,3 +5,4 @@
 bench/results/*.json
 !bench/results/baseline.json
 bench/pixel/current/
+bench/pixel/floor/

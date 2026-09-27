@@ -1,8 +1,9 @@
 // apps/kimi-web/src/bench/sampler.ts
-// In-page frame-time + longtask sampler. Runs a requestAnimationFrame loop that
-// records inter-frame intervals and a PerformanceObserver('longtask') that
-// counts main-thread stalls. Dev-only — imported solely from BenchView, which
-// is behind the `import.meta.env.DEV` guard in main.ts.
+// In-page frame-time + longtask + memory sampler. Runs a requestAnimationFrame
+// loop that records inter-frame intervals, a PerformanceObserver('longtask') that
+// counts main-thread stalls, and a timer that samples JS heap and element count.
+// Dev-only — imported solely from BenchView, which is behind the
+// `import.meta.env.DEV` guard in main.ts.
 //
 // Contract with the CDP driver (bench/run.mjs):
 //   window.__benchReady  — set when the scene is laid out and sampling starts
@@ -10,13 +11,16 @@
 //   window.__benchStop   — set BY THE DRIVER to end a driver-assisted scenario
 //   window.__benchDone   — set when the scenario finished and __bench is final
 //   window.__bench       — the final BenchMetrics
+//   window.__benchMemory — the final BenchMemory (the driver merges its own
+//                         detached-node and listener counts into this record)
 //   window.__benchError  — set when a scenario threw (driver reports failure)
 
-import { computeMetrics, type BenchMetrics } from './metrics';
+import { computeMemory, computeMetrics, type BenchMemory, type BenchMetrics } from './metrics';
 
 declare global {
   interface Window {
     __bench?: BenchMetrics;
+    __benchMemory?: BenchMemory;
     __benchDone?: boolean;
     __benchReady?: boolean;
     __benchPhase?: string;
@@ -25,10 +29,29 @@ declare global {
   }
 }
 
+/** How often the heap and element count are read while a scenario runs. */
+const MEMORY_SAMPLE_MS = 500;
+
+interface HeapInfo {
+  usedJSHeapSize: number;
+}
+
+function readHeapMb(): number {
+  const mem = (performance as Performance & { memory?: HeapInfo }).memory;
+  return mem ? mem.usedJSHeapSize / (1024 * 1024) : 0;
+}
+
+function readElementCount(): number {
+  return document.querySelectorAll('*').length;
+}
+
 export class Sampler {
   private frameTimes: number[] = [];
   private longtaskCount = 0;
   private longtaskMs = 0;
+  private heapMb: number[] = [];
+  private domNodes: number[] = [];
+  private memoryTimer = 0;
   private rafId = 0;
   private lastTs = -1;
   private observer: PerformanceObserver | null = null;
@@ -40,10 +63,14 @@ export class Sampler {
     this.frameTimes = [];
     this.longtaskCount = 0;
     this.longtaskMs = 0;
+    this.heapMb = [];
+    this.domNodes = [];
     this.lastTs = -1;
     window.__benchDone = false;
     window.__benchStop = false;
     window.__benchError = undefined;
+    this.sampleMemory();
+    this.memoryTimer = window.setInterval(() => this.sampleMemory(), MEMORY_SAMPLE_MS);
     try {
       this.observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
@@ -69,21 +96,34 @@ export class Sampler {
     this.rafId = requestAnimationFrame(loop);
   }
 
+  /** Read the heap and element count once. Cheap, but not free: off the frame loop. */
+  private sampleMemory(): void {
+    this.heapMb.push(readHeapMb());
+    this.domNodes.push(readElementCount());
+  }
+
   /** Stop sampling and publish the final metrics to `window.__bench`. */
   stop(): BenchMetrics {
     if (this.running) {
       this.running = false;
       cancelAnimationFrame(this.rafId);
+      window.clearInterval(this.memoryTimer);
       this.observer?.disconnect();
       this.observer = null;
     }
+    this.sampleMemory();
     const m = this.metrics();
     window.__bench = m;
+    window.__benchMemory = this.memory();
     return m;
   }
 
   metrics(): BenchMetrics {
     return computeMetrics(this.frameTimes, this.longtaskCount, this.longtaskMs);
+  }
+
+  memory(): BenchMemory {
+    return computeMemory(this.heapMb, this.domNodes);
   }
 }
 

@@ -7,6 +7,10 @@
 
 import { sleep } from './util.mjs';
 
+// The composer's "+" button: a Tooltip-wrapped IconButton inside `.add`. The
+// menu it opens is teleported to the body, so only the trigger lives in `.add`.
+const ADD_MENU_TRIGGER = '.add .composer-attach';
+
 export const SCENES = [
   {
     name: 'conversation-math-code-dark',
@@ -48,8 +52,8 @@ export const SCENES = [
     query: 'scene=composer&theme=dark&glass=on',
     settleMs: 500,
     interact: async (cdp) => {
-      const btn = await cdp.elementCenter('.add-btn');
-      if (!btn) throw new Error('add button not found (is `status` passed to the dock?)');
+      const btn = await cdp.elementCenter(ADD_MENU_TRIGGER);
+      if (!btn) throw new Error(`add button not found (is \`status\` passed to the dock?): ${ADD_MENU_TRIGGER}`);
       await cdp.click(btn.x, btn.y);
     },
   },
@@ -61,8 +65,8 @@ export const SCENES = [
     query: 'scene=composer&theme=dark&glass=on',
     settleMs: 500,
     interact: async (cdp) => {
-      const btn = await cdp.elementCenter('.add-btn');
-      if (!btn) throw new Error('add button not found (is `status` passed to the dock?)');
+      const btn = await cdp.elementCenter(ADD_MENU_TRIGGER);
+      if (!btn) throw new Error(`add button not found (is \`status\` passed to the dock?): ${ADD_MENU_TRIGGER}`);
       await cdp.click(btn.x, btn.y);
       await sleep(300);
       await cdp.evaluate(`(() => {

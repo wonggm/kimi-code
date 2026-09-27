@@ -4,20 +4,57 @@
 // exposes promise-based `send`/`evaluate`/`waitFor`/`screenshot` plus mouse and
 // media-emulation helpers used by run.mjs and capture.mjs.
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { httpGetJson, sleep } from './util.mjs';
 
-export const CHROME_BIN =
-  process.env.CHROME_BIN ||
-  '/home/m/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome';
+function resolveChromeBin() {
+  if (process.env.CHROME_BIN) return process.env.CHROME_BIN;
+  const cache = path.join(os.homedir(), '.cache', 'ms-playwright');
+  if (!fs.existsSync(cache)) return '';
+  const candidates = fs
+    .readdirSync(cache)
+    .filter((name) => name.startsWith('chromium-'))
+    .map((name) => path.join(cache, name, 'chrome-linux64', 'chrome'))
+    .filter((bin) => fs.existsSync(bin))
+    .toSorted();
+  return candidates.at(-1) ?? '';
+}
+
+export const CHROME_BIN = resolveChromeBin();
 
 export const VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 1 };
 
 /** Launch headless Chromium with a remote-debugging port; returns the child. */
+/**
+ * Kill any Chrome process still carrying this run's profile directory. Chrome
+ * puts some of its children (zygote, renderers) in their own process groups, so
+ * killing the leader's group leaves them running: they hold ~100 MB each, and a
+ * leaked browser both steals memory from the next measurement and can keep the
+ * next launch from opening its debug port in time.
+ */
+function sweepProfile(userDataDir) {
+  let listing;
+  try {
+    listing = execFileSync('ps', ['-eo', 'pid,args'], { encoding: 'utf8' });
+  } catch {
+    return;
+  }
+  for (const line of listing.split('\n')) {
+    if (!line.includes(userDataDir)) continue;
+    const pid = Number(line.trim().split(/\s+/)[0]);
+    if (!Number.isInteger(pid) || pid === process.pid) continue;
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
 /** Kill a `detached` child's entire process group (leader + descendants). */
 function killGroup(child) {
   try {
@@ -92,6 +129,7 @@ export async function launchChrome(port = 9333) {
 export function killChrome(handle) {
   if (!handle) return;
   killGroup(handle.child);
+  sweepProfile(handle.userDataDir);
   try {
     fs.rmSync(handle.userDataDir, { recursive: true, force: true });
   } catch {
@@ -314,4 +352,44 @@ export class CdpClient {
       // ignore
     }
   }
+}
+
+/** Begin a V8 CPU profile. `intervalUs` is the sampling period: the default
+ *  1000 µs misses short bursts, 100 µs costs the page a little overhead but
+ *  still resolves a 5 ms task. */
+export async function startCpuProfile(cdp, intervalUs = 100) {
+  await cdp.send('Profiler.enable');
+  await cdp.send('Profiler.setSamplingInterval', { interval: intervalUs });
+  await cdp.send('Profiler.start');
+}
+
+/** End the profile started above and return the raw V8 profile. */
+export async function stopCpuProfile(cdp) {
+  const res = await cdp.send('Profiler.stop');
+  return res.profile;
+}
+
+/**
+ * Total, busy and idle main-thread time from a V8 CPU profile, in ms.
+ *
+ * This is the measure the performance work is judged on. Frame times cannot be:
+ * two of the bench scenarios lose frames to compositing the app's translucent
+ * surfaces, which no code change reaches, and a third already sits at the
+ * display's refresh rate. Busy time has no such floor and repeats to about 3%
+ * between passes, so a real change stands out of the spread.
+ */
+export function summarizeCpu(profile) {
+  const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+  let totalUs = 0;
+  let idleUs = 0;
+  for (let i = 0; i < profile.samples.length; i++) {
+    const us = profile.timeDeltas[i] ?? 0;
+    totalUs += us;
+    // V8 labels a sample taken with no JS on the stack `(idle)`: the main
+    // thread waiting on rAF, layout, paint or compositing. Everything else,
+    // `(program)` included, is work the browser did.
+    if (byId.get(profile.samples[i])?.callFrame?.functionName === '(idle)') idleUs += us;
+  }
+  const ms = (us) => Math.round((us / 1000) * 10) / 10;
+  return { totalMs: ms(totalUs), busyMs: ms(totalUs - idleUs), idleMs: ms(idleUs) };
 }

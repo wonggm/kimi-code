@@ -3,7 +3,7 @@
 // reference set with pixelmatch (threshold 0.1) and fails if more than 0.01%
 // of pixels differ. Writes a <scene>.diff.png next to failures for inspection.
 //
-// Usage: node bench/diff.mjs   (run bench:capture first to produce `current`)
+// Usage: node bench/diff.mjs [reference-dir]   (run bench:capture first to produce `current`)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,13 +12,37 @@ import { PNG } from 'pngjs';
 import { SCENE_NAMES } from './scenes.mjs';
 import { APP_DIR } from './util.mjs';
 
-const REF_DIR = path.join(APP_DIR, 'bench', 'pixel', 'reference');
+const named = process.argv.slice(2).find((a) => !a.startsWith('--'));
+if (named && !/^[\w.-]+$/.test(named)) throw new Error(`bad reference directory: ${named}`);
+const REF_DIR = path.join(APP_DIR, 'bench', 'pixel', named ?? 'reference');
 const CUR_DIR = path.join(APP_DIR, 'bench', 'pixel', 'current');
 const THRESHOLD = 0.1; // pixelmatch color-distance threshold
 const MAX_MISMATCH_PCT = 0.01; // fail above this fraction of differing pixels
 
 function readPng(file) {
   return PNG.sync.read(fs.readFileSync(file));
+}
+
+/**
+ * Newest edit under src/ and when it happened, so a failure that arrived with
+ * someone else's change says so. More than one session can be working in this
+ * tree at once, and a pixel difference of unknown parentage is the hardest kind
+ * to act on.
+ */
+function newestSourceEdit() {
+  let newest = null;
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(vue|ts|css)$/.test(entry.name)) {
+        const { mtimeMs } = fs.statSync(full);
+        if (!newest || mtimeMs > newest.mtimeMs) newest = { mtimeMs, file: path.relative(APP_DIR, full) };
+      }
+    }
+  };
+  walk(path.join(APP_DIR, 'src'));
+  return newest;
 }
 
 let failures = 0;
@@ -55,6 +79,12 @@ for (const name of SCENE_NAMES) {
 }
 
 if (failures > 0) {
+  const newest = newestSourceEdit();
+  if (newest) {
+    console.error(
+      `[diff] newest source edit: ${newest.file} at ${new Date(newest.mtimeMs).toISOString()}`,
+    );
+  }
   console.error(`[diff] ${failures} scene(s) failed the pixel gate`);
   process.exit(1);
 }

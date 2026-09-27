@@ -21,6 +21,37 @@ export interface BenchMetrics {
 }
 
 /**
+ * One bench run's memory readings. The in-page sampler supplies the heap and
+ * element series; the renderer-side counters come from CDP, which the driver
+ * merges in after reading `window.__benchMemory` (so they arrive as 0 in the page).
+ */
+export interface BenchMemory {
+  /** JS heap in use when the scenario finished (MB). */
+  heapEndMb: number;
+  /** Highest JS heap seen during the scenario (MB). */
+  heapPeakMb: number;
+  /** Elements in the document when the scenario finished. */
+  domNodesEnd: number;
+  /** Highest element count seen during the scenario. */
+  domNodesPeak: number;
+  /** Every node the renderer holds, text and shadow nodes included. */
+  rendererNodes: number;
+  /** Live event listeners the renderer reports. */
+  eventListeners: number;
+  /** Nodes held with no path to a document, or -1 when no snapshot was taken. */
+  detachedNodes: number;
+  /** Bytes held by those detached nodes, or -1 when no snapshot was taken. */
+  detachedBytes: number;
+  /**
+   * JS heap still held after the driver forces a collection. The gap between
+   * this and `heapEndMb` is what the run left behind; a value close to
+   * `heapEndMb` means the memory is still reachable, not waiting to be swept.
+   * -1 when the collection could not be run.
+   */
+  heapAfterGcMb: number;
+}
+
+/**
  * A frame interval longer than this counts as "dropped": it missed a 60 Hz
  * deadline by more than 2× (i.e. the compositor delivered ≤30 fps for that
  * frame). Used for `droppedPct`.
@@ -61,7 +92,7 @@ export function computeMetrics(
       frames: 0,
     };
   }
-  const sorted = [...frameTimes].sort((a, b) => a - b);
+  const sorted = [...frameTimes].toSorted((a, b) => a - b);
   const mean = sorted.reduce((sum, x) => sum + x, 0) / sorted.length;
   const dropped = sorted.filter((x) => x > droppedThresholdMs).length;
   return {
@@ -78,4 +109,24 @@ export function computeMetrics(
 
 function round(x: number): number {
   return Math.round(x * 100) / 100;
+}
+
+/**
+ * Fold the sampler's heap (MB) and element-count series into a `BenchMemory`.
+ * Empty series read as 0 rather than NaN, so an unsupported `performance.memory`
+ * still produces a comparable record. The renderer counters default to -1, which
+ * reads as "not measured" and never as a real zero.
+ */
+export function computeMemory(heapMb: readonly number[], domNodes: readonly number[]): BenchMemory {
+  return {
+    heapEndMb: heapMb.length === 0 ? 0 : round(heapMb.at(-1)!),
+    heapPeakMb: heapMb.length === 0 ? 0 : round(Math.max(...heapMb)),
+    domNodesEnd: domNodes.length === 0 ? 0 : domNodes.at(-1)!,
+    domNodesPeak: domNodes.length === 0 ? 0 : Math.max(...domNodes),
+    rendererNodes: -1,
+    eventListeners: -1,
+    detachedNodes: -1,
+    detachedBytes: -1,
+    heapAfterGcMb: -1,
+  };
 }

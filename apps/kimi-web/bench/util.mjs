@@ -6,10 +6,9 @@
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 /** apps/kimi-web — the package these scripts belong to. */
-export const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const APP_DIR = path.resolve(import.meta.dirname, '..');
 
 export const DEV_PORT = Number(process.env.WEB_PORT) || 5175;
 export const DEV_URL = `http://127.0.0.1:${DEV_PORT}`;
@@ -41,8 +40,8 @@ export function httpGetJson(url, timeoutMs = 3000) {
       res.on('end', () => {
         try {
           resolve(JSON.parse(raw));
-        } catch (err) {
-          reject(err);
+        } catch (error) {
+          reject(error);
         }
       });
     });
@@ -95,9 +94,11 @@ export async function ensureDevServer() {
 
   const start = Date.now();
   while (!(await reachable(DEV_URL))) {
-    if (Date.now() - start > 120_000) {
+    // A cold Vite dep cache (mermaid, monaco, shiki, katex) can take minutes to
+    // optimize on a large heap, so the wait is generous by design.
+    if (Date.now() - start > 300_000) {
       killDev();
-      throw new Error('dev server did not become reachable within 120s');
+      throw new Error('dev server did not become reachable within 300s');
     }
     await sleep(500);
   }

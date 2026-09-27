@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-02T21:05:55.380Z",
+  "generatedAt": "2026-09-26T18:48:04.970Z",
   "viewport": {
     "width": 1440,
     "height": 900,
@@ -7,44 +7,112 @@
   },
   "scenarios": {
     "streaming-replay": {
-      "mean": 17.06,
+      "mean": 17.3,
       "p50": 16.7,
       "p95": 16.8,
-      "p99": 16.8,
-      "droppedPct": 0.41,
-      "longtaskCount": 2,
-      "longtaskMs": 605,
-      "frames": 1973
+      "p99": 33.4,
+      "droppedPct": 1.23,
+      "longtaskCount": 4,
+      "longtaskMs": 456,
+      "frames": 2119
     },
     "scroll-long": {
-      "mean": 22.49,
-      "p50": 16.7,
-      "p95": 33.44,
-      "p99": 66.7,
-      "droppedPct": 9.93,
-      "longtaskCount": 11,
-      "longtaskMs": 4176,
-      "frames": 1138
+      "mean": 170.94,
+      "p50": 166.7,
+      "p95": 250.03,
+      "p99": 448.11,
+      "droppedPct": 97.3,
+      "longtaskCount": 117,
+      "longtaskMs": 20405,
+      "frames": 74
     },
     "dialog-storm": {
-      "mean": 43.03,
-      "p50": 16.7,
-      "p95": 133.3,
-      "p99": 137.38,
-      "droppedPct": 33.33,
-      "longtaskCount": 3,
-      "longtaskMs": 716,
-      "frames": 177
+      "mean": 58.46,
+      "p50": 41.7,
+      "p95": 159.13,
+      "p99": 183.4,
+      "droppedPct": 50,
+      "longtaskCount": 5,
+      "longtaskMs": 2040,
+      "frames": 130
     },
     "dock-toc": {
-      "mean": 22.8,
+      "mean": 19.61,
       "p50": 16.7,
-      "p95": 49.9,
-      "p99": 50,
-      "droppedPct": 16.01,
-      "longtaskCount": 3,
-      "longtaskMs": 692,
-      "frames": 356
+      "p95": 33.3,
+      "p99": 78.46,
+      "droppedPct": 4.42,
+      "longtaskCount": 7,
+      "longtaskMs": 2296,
+      "frames": 430
+    }
+  },
+  "memory": {
+    "streaming-replay": {
+      "heapEndMb": 54.15,
+      "heapPeakMb": 104.65,
+      "domNodesEnd": 3078,
+      "domNodesPeak": 3078,
+      "rendererNodes": 6778,
+      "eventListeners": 419,
+      "detachedNodes": -1,
+      "detachedBytes": -1,
+      "heapAfterGcMb": 30.82
+    },
+    "scroll-long": {
+      "heapEndMb": 133.39,
+      "heapPeakMb": 243.68,
+      "domNodesEnd": 15351,
+      "domNodesPeak": 17717,
+      "rendererNodes": 68552,
+      "eventListeners": 7275,
+      "detachedNodes": -1,
+      "detachedBytes": -1,
+      "heapAfterGcMb": 70.32
+    },
+    "dialog-storm": {
+      "heapEndMb": 152.52,
+      "heapPeakMb": 152.52,
+      "domNodesEnd": 3337,
+      "domNodesPeak": 3348,
+      "rendererNodes": 48218,
+      "eventListeners": 1195,
+      "detachedNodes": -1,
+      "detachedBytes": -1,
+      "heapAfterGcMb": 40.07
+    },
+    "dock-toc": {
+      "heapEndMb": 128.41,
+      "heapPeakMb": 128.41,
+      "domNodesEnd": 3709,
+      "domNodesPeak": 3759,
+      "rendererNodes": 18602,
+      "eventListeners": 1332,
+      "detachedNodes": -1,
+      "detachedBytes": -1,
+      "heapAfterGcMb": 41.18
+    }
+  },
+  "cpu": {
+    "streaming-replay": {
+      "totalMs": 39919.6,
+      "busyMs": 19065.6,
+      "idleMs": 20854.1
+    },
+    "scroll-long": {
+      "totalMs": 26510.6,
+      "busyMs": 24699.2,
+      "idleMs": 1811.4
+    },
+    "dialog-storm": {
+      "totalMs": 12058.8,
+      "busyMs": 4138.8,
+      "idleMs": 7920
+    },
+    "dock-toc": {
+      "totalMs": 13255,
+      "busyMs": 4525.7,
+      "idleMs": 8729.2
     }
   }
 }

@@ -7,11 +7,14 @@
 // Usage:
 //   node bench/capture.mjs          → bench/pixel/current/<scene>.png
 //   node bench/capture.mjs --ref    → bench/pixel/reference/<scene>.png
-//   BENCH_SCENES=a,b node bench/capture.mjs [--ref]   → only the named scenes
+//   node bench/capture.mjs floor    → bench/pixel/floor/<scene>.png
+//   BENCH_SCENES=a,b node bench/capture.mjs [--ref|floor]   → only the named scenes
 //     (useful when the flaky __benchReady timeout kills one scene of a run)
 //
 // The reference set (captured BEFORE any perf change) is the pixel gate's
-// baseline; diff.mjs compares a fresh `current` capture against it.
+// baseline; diff.mjs compares a fresh `current` capture against it. A bare
+// directory name writes anywhere under bench/pixel/, which is how a `floor` set
+// is taken when the committed reference no longer matches the tree.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +22,8 @@ import { connectPage, killChrome, launchChrome } from './cdp.mjs';
 import { SCENES } from './scenes.mjs';
 import { APP_DIR, ensureDevServer, sleep } from './util.mjs';
 
-const CHROME_PORT = 9444;
+// Overridable so two sessions measuring at once cannot fight over one port.
+const CHROME_PORT = Number(process.env.BENCH_CHROME_PORT) || 9444;
 
 let _chrome;
 let _server;
@@ -51,9 +55,11 @@ process.on('SIGTERM', () => {
 
 async function main() {
   const useRef = process.argv.includes('--ref');
+  const named = process.argv.slice(2).find((a) => !a.startsWith('--'));
+  if (named && !/^[\w.-]+$/.test(named)) throw new Error(`bad output directory: ${named}`);
   const filter = process.env.BENCH_SCENES?.split(',').filter(Boolean);
   const scenes = filter ? SCENES.filter((s) => filter.includes(s.name)) : SCENES;
-  const outDir = path.join(APP_DIR, 'bench', 'pixel', useRef ? 'reference' : 'current');
+  const outDir = path.join(APP_DIR, 'bench', 'pixel', useRef ? 'reference' : (named ?? 'current'));
 
   const server = await ensureDevServer();
   _server = server;
@@ -70,6 +76,9 @@ async function main() {
 
     for (const scene of scenes) {
       process.stdout.write(`[capture] ${scene.name} … `);
+      // Drop any earlier file first: a scene that fails now must read as a
+      // missing capture, not as a pass against a stale PNG from a past run.
+      fs.rmSync(path.join(outDir, `${scene.name}.png`), { force: true });
       try {
         // Wipe per-origin storage (notably the composer draft, which persists
         // the text typed by an earlier scene — e.g. the `/` from slash-menu —
@@ -91,9 +100,9 @@ async function main() {
         const png = await cdp.screenshot();
         fs.writeFileSync(path.join(outDir, `${scene.name}.png`), png);
         console.log('ok');
-      } catch (err) {
+      } catch (error) {
         exitCode = 1;
-        console.log(`FAILED: ${err.message}`);
+        console.log(`FAILED: ${error.message}`);
       }
     }
     console.log(`[capture] wrote ${scenes.length} scenes → ${path.relative(APP_DIR, outDir)}/`);
@@ -105,7 +114,7 @@ async function main() {
   process.exit(exitCode);
 }
 
-main().catch((err) => {
-  console.error('[capture] fatal:', err);
+main().catch((error) => {
+  console.error('[capture] fatal:', error);
   process.exit(1);
 });

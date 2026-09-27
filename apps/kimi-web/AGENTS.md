@@ -51,6 +51,8 @@ All via `pnpm --filter @moonshot-ai/kimi-web …`:
 - `check:style` — design-system §06 anti-pattern guard (`scripts/check-style.mjs`).
 - There is **no `lint` script** in this package; linting runs at the repo root via oxlint.
 
+**Refresh the served bundle after every change.** `kimi web` serves `apps/kimi-code/dist-web`. After a completed change, run `build`, then `node apps/kimi-code/scripts/copy-web-assets.mjs` from the repo root. Without that copy, the server keeps serving the old bundle and the change stays invisible outside the Vite dev server. The script deletes and replaces `dist-web`; that directory is gitignored in this checkout.
+
 Debugging against kap-server instances: start one from the repo root with `pnpm dev:server` (port 58627), optionally a second with `pnpm dev:v2` (port 58628 — instances share the home dir via the registry, so both can run at once). The dev server proxies `/api/v1` to the `default` preset; the Sidebar brand row carries a dev-only backend pill (engine generation `v1`/`v2` from `GET /api/v1/meta`'s `backend` field + endpoint) whose menu repoints the proxy at runtime — no Vite restart. Presets default to `http://127.0.0.1:58627` / `:58628`, overridable via `KIMI_BACKEND_DEFAULT_URL` / `KIMI_BACKEND_MULTI_URL`; the switcher endpoints (`GET/POST /__kimi-dev/backend`, dev-only, see `backendSwitcherPlugin` in `vite.config.ts`) drive the menu.
 
 ## Gotchas / hard rules
