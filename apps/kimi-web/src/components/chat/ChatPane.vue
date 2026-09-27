@@ -265,13 +265,21 @@ function foldKeyForBlock(block: { items: RunItem[]; sourceIndex?: number }): str
   return `${TOOL_FOLD_KEY_PREFIX}${first?.tool.id ?? `idx-${first?.sourceIndex ?? block.sourceIndex}`}`;
 }
 
-/** Fold a turn's render blocks at the render layer. Pure pass-through to
- *  the lib helper; lives here so the row template can call it inline without
- *  re-importing. */
+// Folding a turn's blocks is a pass over every block it holds, and the row
+// template asks for the result more than once per render. The cache lives on the
+// turn object, which the store rebuilds on every update, so an edited turn
+// misses the cache by construction. The activity-run setting changes what the
+// pass produces, so the cached entry records the setting it was built with.
+const renderBlocksCache = new WeakMap<ChatTurn, { activityRunFolding: boolean; blocks: FoldedRenderBlock[] }>();
+
 function renderBlocksFor(turn: ChatTurn) {
+  const cached = renderBlocksCache.get(turn);
+  if (cached !== undefined && cached.activityRunFolding === activityRunFolding.value) return cached.blocks;
   // No expandedFolds here: the run's rows render inside ActivityRun, so the
   // fold helper must not also emit a follow-up tool-stack for an open run.
-  return foldRenderBlocks(assistantRenderBlocks(turn), new Set(), activityRunFolding.value);
+  const blocks = foldRenderBlocks(assistantRenderBlocks(turn), new Set(), activityRunFolding.value);
+  renderBlocksCache.set(turn, { activityRunFolding: activityRunFolding.value, blocks });
+  return blocks;
 }
 
 function renderBlockKeyFor(block: ReturnType<typeof renderBlocksFor>[number], index: number): string {
@@ -352,16 +360,37 @@ function handleMountEntries(entries: IntersectionObserverEntry[]): void {
   }
 }
 
+// Eviction asks "which turn is this row?" for every row the observers report,
+// and the pending queue asks again on every settle tick. Scanning `turns` for
+// each of those is a linear walk over a transcript that can hold hundreds of
+// turns, so the ids go in a map that is rebuilt only when the list changes.
+const turnsById = computed(() => {
+  const map = new Map<string, ChatTurn>();
+  for (const turn of props.turns) map.set(turn.id, turn);
+  return map;
+});
+
 function handleEvictEntries(entries: IntersectionObserverEntry[]): void {
   for (const entry of entries) {
     if (entry.isIntersecting) continue; // back inside the 1600px window — mounting is the mount observer's job
     const node = entry.target as HTMLElement;
     const turnId = node.dataset.turnId;
     if (!turnId) continue;
-    const turn = props.turns.find((candidate) => candidate.id === turnId);
+    const turn = turnsById.value.get(turnId);
     // Never evict the active stream or non-assistant rows.
     if (!turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) continue;
     if (evictedTurnIds.value.has(turnId)) continue;
+    // A row measured once evicts on sight. The recorded height is what its
+    // placeholder is set to either way, so reading it again would force a
+    // layout for a number already in hand — and a sweep over a long transcript
+    // re-evicts the same rows on every pass. The settle gate below is for a
+    // row's FIRST eviction, where KaTeX and shiki may still be committing and
+    // the height is not yet final.
+    const known = measuredTurnHeights.get(turnId);
+    if (known !== undefined) {
+      if (known > 0) setEvicted(turnId, true);
+      continue;
+    }
     // Settle-gated eviction: evict only once two measurements ~100ms apart
     // agree (within 1px), so a transient height while KaTeX/shiki is
     // mid-commit is never recorded as the row's locked height.
@@ -400,9 +429,17 @@ function flushPendingEvictions(): void {
       continue;
     }
     const node = turnAnchors.get(turnId);
-    const turn = props.turns.find((candidate) => candidate.id === turnId);
+    const turn = turnsById.value.get(turnId);
     if (!node || !turn || turn.role !== 'assistant' || turn.id === streamingTurnId.value) {
       pendingHeights.delete(turnId);
+      continue;
+    }
+    // Measured since this row was queued: evict on the recorded height, the
+    // same short-circuit the observer's own path takes.
+    const known = measuredTurnHeights.get(turnId);
+    if (known !== undefined) {
+      pendingHeights.delete(turnId);
+      if (known > 0) setEvicted(turnId, true);
       continue;
     }
     // The row scrolled back inside the 1600px window: drop it from the queue —

@@ -300,14 +300,24 @@ function processMarkdownLinks(): void {
   }
 }
 
+let fileLinkPassQueued = false;
+
 function scheduleFileLinkProcessing(): void {
+  // The text watcher, the streaming watcher and the MutationObserver all land
+  // here, and during a stream they fire several times per token. One pass per
+  // tick is enough: every step below is idempotent, so a second pass in the
+  // same tick would redo the same walk and find nothing new.
+  if (fileLinkPassQueued) return;
+  fileLinkPassQueued = true;
   void nextTick().then(() => {
-    if (!mdRef.value) return;
-    // Swap the protected inline-code dollar sentinel back (always; idempotent).
-    restoreInlineCodeDollars(mdRef.value);
+    fileLinkPassQueued = false;
+    const root = mdRef.value;
+    if (!root) return;
     if (props.streaming) return;
+    // Swap the protected inline-code dollar sentinel back.
+    restoreInlineCodeDollars(root);
     // Repair auto-linked URLs that swallowed trailing CJK text.
-    fixLinkifyCjkBoundary(mdRef.value);
+    fixLinkifyCjkBoundary(root);
     processFileLinks();
     processMarkdownLinks();
   });
