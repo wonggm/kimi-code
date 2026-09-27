@@ -154,21 +154,34 @@ watch(
 .bash-cmd {
   max-height: calc(8 * 1lh + var(--space-2));
   overflow: auto;
-  overscroll-behavior: contain;
+  /* Upstream's own `.bash-cmd` rule, scoped to the card: the command's
+     horizontal scroll chains onward instead of being trapped, so a long
+     one-line command scrolls the transcript with it. */
+  overscroll-behavior: auto;
   font-family: var(--font-mono);
   font-size: var(--content-font-size);
   line-height: 1.571;
   font-variant-ligatures: none;
 }
+.bash-boxes :deep(.op) {
+  overscroll-behavior: auto;
+}
 .bash-cmd pre {
   margin: 0;
   font: inherit;
 }
-.bash-cmd.wrap {
+/* The wrap has to land on the <pre> itself. `white-space` inherits, but the
+   UA stylesheet declares `pre { white-space: pre }` on the element, so a value
+   set on the wrapper never reaches the text and the command stays one long
+   line. Upstream puts the same pair of declarations on its own text element
+   (`.hl-text`), for the same reason. */
+.bash-cmd.wrap pre,
+.bash-cmd.wrap code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.bash-cmd:not(.wrap) {
+.bash-cmd:not(.wrap) pre,
+.bash-cmd:not(.wrap) code {
   white-space: pre;
 }
 .bt-detach {
