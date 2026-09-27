@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { type IHostProcess, IHostProcessService } from '#/os/interface/hostProcess';
 
-import type { HookResult } from './types';
+import type { HookDelivery, HookResult } from './types';
 
 export interface RunHookOptions {
   readonly timeout: number;
@@ -52,6 +52,7 @@ const HookSpecificOutputSchema = z.preprocess(
 );
 const HookJsonOutputSchema = z.looseObject({
   message: OptionalStringSchema,
+  deliverAs: z.enum(['steer', 'notify', 'nextTurn']).optional(),
   hookSpecificOutput: HookSpecificOutputSchema,
 });
 
@@ -156,6 +157,7 @@ function resultFromExitCode(exitCode: number, stdout: string, stderr: string): H
       action: 'block',
       message: structured.message ?? structured.reason,
       reason: structured.reason,
+      deliverAs: structured.deliverAs,
       stdout,
       stderr,
       exitCode,
@@ -165,6 +167,7 @@ function resultFromExitCode(exitCode: number, stdout: string, stderr: string): H
 
   return allowResult({
     message: structured?.message,
+    deliverAs: structured?.deliverAs,
     stdout,
     stderr,
     exitCode,
@@ -174,7 +177,15 @@ function resultFromExitCode(exitCode: number, stdout: string, stderr: string): H
 
 function structuredOutput(
   stdout: string,
-): { action?: 'block'; reason?: string; message?: string; structuredOutput: true } | undefined {
+):
+  | {
+      action?: 'block';
+      reason?: string;
+      message?: string;
+      deliverAs?: HookDelivery;
+      structuredOutput: true;
+    }
+  | undefined {
   const text = stdout.trim();
   if (text.length === 0) return undefined;
 
@@ -183,9 +194,10 @@ function structuredOutput(
     const output = HookJsonOutputSchema.safeParse(parsed);
     if (!output.success) return undefined;
 
-    const { message, hookSpecificOutput } = output.data;
+    const { message, deliverAs, hookSpecificOutput } = output.data;
     const result = {
       message: message ?? hookSpecificOutput?.message,
+      deliverAs,
       structuredOutput: true as const,
     };
     if (hookSpecificOutput?.permissionDecision !== 'deny') {
@@ -198,6 +210,7 @@ function structuredOutput(
         typeof hookSpecificOutput.permissionDecisionReason === 'string'
           ? hookSpecificOutput.permissionDecisionReason
           : undefined,
+      deliverAs,
       structuredOutput: true as const,
     };
   } catch {
@@ -207,6 +220,7 @@ function structuredOutput(
 
 function allowResult(input: {
   readonly message?: string;
+  readonly deliverAs?: HookDelivery;
   readonly stdout?: string;
   readonly stderr?: string;
   readonly exitCode?: number;
@@ -217,6 +231,7 @@ function allowResult(input: {
   return {
     action: 'allow',
     message: input.message,
+    deliverAs: input.deliverAs,
     stdout: input.stdout,
     stderr: input.stderr,
     exitCode: input.exitCode,

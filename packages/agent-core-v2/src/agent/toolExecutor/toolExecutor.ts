@@ -23,6 +23,7 @@ export interface ToolCallStartedPayload {
 export interface ToolExecutorExecuteOptions {
   readonly signal: AbortSignal;
   readonly steerSignal?: AbortSignal;
+  readonly steerInterrupt?: boolean;
   readonly turnId: number;
   readonly trace?: LLMRequestTrace;
   readonly onToolCall?: (payload: ToolCallStartedPayload) => void;

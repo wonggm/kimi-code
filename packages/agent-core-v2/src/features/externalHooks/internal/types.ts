@@ -34,10 +34,13 @@ export interface HookDef {
   readonly env?: Record<string, string>;
 }
 
+export type HookDelivery = 'steer' | 'notify' | 'nextTurn';
+
 export interface HookResult {
   readonly action: 'allow' | 'block';
   readonly message?: string;
   readonly reason?: string;
+  readonly deliverAs?: HookDelivery;
   readonly stdout?: string;
   readonly stderr?: string;
   readonly exitCode?: number;

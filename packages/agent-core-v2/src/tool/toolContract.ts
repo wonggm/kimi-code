@@ -82,6 +82,7 @@ export interface RunnableToolExecution {
   readonly display?: ToolInputDisplay | undefined;
   readonly description?: string;
   readonly stopBatchAfterThis?: boolean | undefined;
+  readonly cuttableOnSteer?: boolean | ((args: Record<string, unknown>) => boolean) | undefined;
   readonly approvalRule: string;
   readonly matchesRule?: ((ruleArgs: string) => boolean) | undefined;
   readonly execute: (ctx: ExecutableToolContext) => Promise<ExecutableToolResult>;

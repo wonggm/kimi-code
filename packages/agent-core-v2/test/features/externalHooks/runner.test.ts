@@ -6,7 +6,7 @@ import { HostProcessService } from '#/os/backends/node-local/hostProcessService'
 const hostProcess = new HostProcessService();
 
 function nodeCommand(source: string): string {
-  return `node -e ${JSON.stringify(source.replace(/\s*\n\s*/g, ' '))}`;
+  return `node -e ${JSON.stringify(source.replaceAll(/\s*\n\s*/g, ' '))}`;
 }
 
 describe('runHook process runner', () => {
@@ -55,6 +55,33 @@ describe('runHook process runner', () => {
     expect(emptyHookSpecificOutput.action).toBe('allow');
     expect(emptyHookSpecificOutput.message).toBeUndefined();
     expect(emptyHookSpecificOutput.structuredOutput).toBe(true);
+  });
+
+  it('parses deliverAs from structured stdout JSON', async () => {
+    const result = await runHook(
+      hostProcess,
+      nodeCommand(
+        'process.stdout.write(JSON.stringify({ message: "stop that", deliverAs: "steer" }));',
+      ),
+      {},
+      { timeout: 5 },
+    );
+
+    expect(result.action).toBe('allow');
+    expect(result.message).toBe('stop that');
+    expect(result.deliverAs).toBe('steer');
+  });
+
+  it('drops an unknown deliverAs value', async () => {
+    const result = await runHook(
+      hostProcess,
+      nodeCommand('process.stdout.write(JSON.stringify({ message: "hi", deliverAs: "nope" }));'),
+      {},
+      { timeout: 5 },
+    );
+
+    expect(result.message).toBeUndefined();
+    expect(result.deliverAs).toBeUndefined();
   });
 
   it('returns block when the hook exits 2 and captures stderr as the reason', async () => {

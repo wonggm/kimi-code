@@ -751,6 +751,98 @@ describe('AgentToolExecutorService', () => {
     );
   });
 
+  it('ends a running cuttable call and skips a queued cuttable call when a steer arrives', async () => {
+    const steer = new AbortController();
+    const first = new ControlledTool('first', ToolAccesses.writeFile('/repo/a.ts'), true);
+    const second = new ControlledTool('second', ToolAccesses.writeFile('/repo/a.ts'), true);
+    const third = new TestTool('third', { accesses: ToolAccesses.readFile('/repo/b.ts') });
+    registry.register(first);
+    registry.register(second);
+    registry.register(third);
+
+    const execution = executeWithSteer(
+      [
+        toolCall('call_first', 'first', {}),
+        toolCall('call_second', 'second', {}),
+        toolCall('call_third', 'third', {}),
+      ],
+      steer.signal,
+      true,
+    );
+    await first.started;
+    steer.abort();
+    const results = await execution;
+
+    expect(second.calls).toHaveLength(0);
+    expect(third.calls).toHaveLength(1);
+    expect(results).toHaveLength(3);
+    expect(resultOutputs(results)).toEqual(
+      expect.arrayContaining([
+        'Tool "first" was aborted',
+        expect.stringContaining('skipped'),
+        'third result',
+      ]),
+    );
+  });
+
+  it('skips a cuttable call waiting behind a conflicting access that the steer does not cut', async () => {
+    const steer = new AbortController();
+    const first = new ControlledTool('first', ToolAccesses.writeFile('/repo/a.ts'));
+    const second = new ControlledTool('second', ToolAccesses.writeFile('/repo/a.ts'), true);
+    registry.register(first);
+    registry.register(second);
+
+    const execution = executeWithSteer(
+      [toolCall('call_first', 'first', {}), toolCall('call_second', 'second', {})],
+      steer.signal,
+      true,
+    );
+    await first.started;
+    steer.abort();
+    const results = await execution;
+
+    expect(first.calls).toHaveLength(1);
+    expect(second.calls).toHaveLength(0);
+    expect(resultOutputs(results)).toEqual(
+      expect.arrayContaining(['first result', expect.stringContaining('skipped')]),
+    );
+  });
+
+  it('leaves the batch alone when the steer interrupt flag is off', async () => {
+    const steer = new AbortController();
+    const first = new ControlledTool('first', ToolAccesses.writeFile('/repo/a.ts'), true);
+    const second = new ControlledTool('second', ToolAccesses.writeFile('/repo/a.ts'), true);
+    registry.register(first);
+    registry.register(second);
+
+    const execution = executeWithSteer(
+      [toolCall('call_first', 'first', {}), toolCall('call_second', 'second', {})],
+      steer.signal,
+      false,
+    );
+    await first.started;
+    steer.abort();
+    const results = await execution;
+
+    expect(first.calls).toHaveLength(1);
+    expect(second.calls).toHaveLength(1);
+    expect(resultOutputs(results)).toEqual(['first result', 'second result']);
+  });
+
+  it('does not skip a cuttable call that starts before the steer arrives', async () => {
+    const steer = new AbortController();
+    const first = new ControlledTool('first', ToolAccesses.writeFile('/repo/a.ts'), true);
+    registry.register(first);
+
+    const execution = executeWithSteer([toolCall('call_first', 'first', {})], steer.signal, true);
+    await first.started;
+    const results = await execution;
+    steer.abort();
+
+    expect(first.calls).toHaveLength(1);
+    expect(resultOutputs(results)).toEqual(['first result']);
+  });
+
   it('preserves media-only image output with a text companion', async () => {
     const tool = new TestTool('image', {
       result: {
@@ -1615,12 +1707,32 @@ async function execute(
   signal?: AbortSignal,
   trace?: LLMRequestTrace,
 ): Promise<ToolResult[]> {
-  const results: ToolResult[] = [];
-  for await (const item of executor.execute(calls, {
+  return collect(calls, {
     turnId: 0,
     signal: signal ?? new AbortController().signal,
     trace,
-  })) {
+  });
+}
+
+async function executeWithSteer(
+  calls: ToolCall[],
+  steer: AbortSignal,
+  steerInterrupt: boolean,
+): Promise<ToolResult[]> {
+  return collect(calls, {
+    turnId: 0,
+    signal: new AbortController().signal,
+    steerSignal: steer,
+    steerInterrupt,
+  });
+}
+
+async function collect(
+  calls: ToolCall[],
+  options: Parameters<IAgentToolExecutorService['execute']>[1],
+): Promise<ToolResult[]> {
+  const results: ToolResult[] = [];
+  for await (const item of executor.execute(calls, options)) {
     results.push(item.result);
     durations.push(item.durationMs);
     events.push({ type: 'tool.result', toolCallId: item.toolCallId, result: item.result });
@@ -1635,6 +1747,10 @@ function toolCall(id: string, name: string, args: unknown): ToolCall {
     name,
     arguments: JSON.stringify(args),
   };
+}
+
+function resultOutputs(results: readonly ToolResult[]): unknown[] {
+  return results.map((result) => result.output);
 }
 
 function eventTypes(): ToolExecutorEvent['type'][] {
@@ -1687,6 +1803,7 @@ class TestTool implements ExecutableTool<Record<string, unknown>> {
       readonly parameters?: Record<string, unknown>;
       readonly accesses?: ToolAccesses;
       readonly stopBatchAfterThis?: boolean;
+      readonly cuttableOnSteer?: boolean | ((args: Record<string, unknown>) => boolean);
       readonly description?: string;
       readonly display?: ToolInputDisplay;
       readonly result?: ExecutableToolResult;
@@ -1704,6 +1821,7 @@ class TestTool implements ExecutableTool<Record<string, unknown>> {
       approvalRule: this.name,
       accesses: this.options.accesses,
       stopBatchAfterThis: this.options.stopBatchAfterThis,
+      cuttableOnSteer: this.options.cuttableOnSteer,
       description: this.options.description,
       display: this.options.display,
       execute: async (ctx) => {
@@ -1729,6 +1847,7 @@ class ControlledTool implements ExecutableTool<Record<string, unknown>> {
   constructor(
     readonly name: string,
     private readonly accesses: ToolAccesses,
+    private readonly cuttableOnSteer = false,
   ) {
     this.started = new Promise((resolve) => {
       this.resolveStarted = resolve;
@@ -1739,6 +1858,7 @@ class ControlledTool implements ExecutableTool<Record<string, unknown>> {
     return {
       approvalRule: this.name,
       accesses: this.accesses,
+      cuttableOnSteer: this.cuttableOnSteer,
       execute: async (ctx) => {
         this.calls.push(ctx);
         this.resolveStarted();

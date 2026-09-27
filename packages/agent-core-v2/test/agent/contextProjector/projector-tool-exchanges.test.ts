@@ -7,6 +7,7 @@ import { ILogService, type ILogger } from '#/_base/log/log';
 import type { ContextMessage } from '#/agent/contextMemory/types';
 import { IAgentContextProjectorService } from '#/agent/contextProjector/contextProjector';
 import { AgentContextProjectorService } from '#/agent/contextProjector/contextProjectorService';
+import { project } from '#/agent/contextProjector/projection';
 import { IAgentScopeContext, makeAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentStateService } from '#/agent/state/agentState';
 import { AgentStateService } from '#/agent/state/agentStateService';
@@ -895,5 +896,83 @@ describe('projector tool-exchange normalization', () => {
         .find((part) => part.type === 'image_url');
       expect(image).toMatchObject({ imageUrl: { url, id: 'new-id' } });
     });
+  });
+});
+
+describe('context projector steering envelope', () => {
+  const userMessage = (text: string, inTurn: boolean): ContextMessage =>
+    ({
+      role: 'user',
+      content: [{ type: 'text', text }],
+      toolCalls: [],
+      origin: inTurn
+        ? { kind: 'system_trigger', name: 'steer', inTurn: true }
+        : { kind: 'user' },
+    }) as ContextMessage;
+
+  const textOf = (message: Message | undefined): string =>
+    (message?.content ?? [])
+      .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+      .map((part) => part.text)
+      .join('');
+
+  it('wraps a message the user sent during the turn', () => {
+    const projected = project([userMessage('stop doing that', true)]);
+
+    expect(textOf(projected[0])).toContain('<system-notice>');
+    expect(textOf(projected[0])).toContain('stop doing that');
+  });
+
+  it('leaves an ordinary user message alone', () => {
+    const projected = project([userMessage('do the thing', false)]);
+
+    expect(textOf(projected[0])).toBe('do the thing');
+  });
+
+  it('produces the same bytes whatever follows the message', () => {
+    const steered = userMessage('stop doing that', true);
+    const alone = project([steered]);
+    const buried = project([
+      steered,
+      { role: 'assistant', content: [{ type: 'text', text: 'ok' }], toolCalls: [] } as ContextMessage,
+      steered,
+    ]);
+
+    expect(textOf(buried[0])).toBe(textOf(alone[0]));
+    expect(textOf(buried[2])).toBe(textOf(alone[0]));
+  });
+
+  it('keeps non-text parts and wraps only the first text part', () => {
+    const message = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look at this' },
+        { type: 'image_url', imageUrl: { url: 'ms://image-1', id: 'image-1' } },
+      ],
+      toolCalls: [],
+      origin: { kind: 'user', inTurn: true },
+    } as unknown as ContextMessage;
+
+    const projected = project([message]);
+
+    expect(projected[0]?.content).toHaveLength(2);
+    expect(textOf(projected[0])).toContain('<system-notice>');
+    expect(projected[0]?.content[1]).toEqual({
+      type: 'image_url',
+      imageUrl: { url: 'ms://image-1', id: 'image-1' },
+    });
+  });
+
+  it('leaves a steered message with no text part alone', () => {
+    const message = {
+      role: 'user',
+      content: [{ type: 'image_url', imageUrl: { url: 'ms://image-1' } }],
+      toolCalls: [],
+      origin: { kind: 'user', inTurn: true },
+    } as unknown as ContextMessage;
+
+    expect(project([message])[0]?.content).toEqual([
+      { type: 'image_url', imageUrl: { url: 'ms://image-1' } },
+    ]);
   });
 });

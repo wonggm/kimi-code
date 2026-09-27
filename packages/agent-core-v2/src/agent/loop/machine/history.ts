@@ -12,7 +12,7 @@ export function historyEntryFromContext(message: ContextMessage): HistoryMessage
     case 'system':
       return { message: converted, meta: {} };
     case 'user':
-      return { message: converted, meta: {} };
+      return { message: converted, meta: { origin: message.origin } };
     case 'assistant':
       return { message: converted, meta: { usage: emptyUsage() } };
     case 'tool':

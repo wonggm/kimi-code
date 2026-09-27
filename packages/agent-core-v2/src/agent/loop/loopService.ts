@@ -29,11 +29,17 @@ import { emptyUsage, type TokenUsage } from '#human/llm/usage';
 import { BugIndicatingError, ErrorCodes, Error2, isError2, toKimiErrorPayload } from '#/errors';
 import { OrderedHookSlot } from '#/hooks';
 
+import { IFlagService } from '#/app/flag/flag';
+import { STEER_INTERRUPT_FLAG_ID } from '#/agent/toolExecutor/flag';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
 import { isVacuousContentPart } from '#/agent/contextMemory/vacuousContent';
 import { markInTurnOrigin } from '#/agent/contextMemory/conversationTime';
 import { newMessageId } from '#/agent/contextMemory/messageId';
-import { type ContextMessage, type PromptOrigin } from '#/agent/contextMemory/types';
+import {
+  type ContextMessage,
+  type PromptOrigin,
+  type SystemTriggerOrigin,
+} from '#/agent/contextMemory/types';
 import { gateImageFormatParts } from '#/agent/media/image-compress';
 import { daemonFileRefFromPart } from '#/agent/media/mediaRef';
 import { materializePromptDaemonRefs } from '#/agent/media/promptMediaIntake';
@@ -168,6 +174,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     @IInstantiationService private readonly instantiation: IInstantiationService,
     @IAgentProfileService private readonly profile: IAgentProfileService,
     @IPluginService private readonly plugins: IPluginService,
+    @IFlagService private readonly flags: IFlagService,
   ) {
     super();
     this.states.contributeState(turnKey);
@@ -207,6 +214,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
       trace: () => this.activeRequestTrace,
       toolTurnId: () => this.active?.id,
       steerSignal: () => this.active?.steerController.signal,
+      steerInterrupt: () => this.flags.enabled(STEER_INTERRUPT_FLAG_ID),
       source: () =>
         this.active === undefined
           ? undefined
@@ -360,6 +368,23 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     return { id };
   }
 
+  injectSteer(message: ContextMessage): void {
+    if (this.disposing) throw abortError('Agent loop disposed');
+    const origin = markInTurnOrigin<SystemTriggerOrigin>({
+      kind: 'system_trigger',
+      name: 'steer',
+    });
+    const steered: ContextMessage = { ...message, origin };
+    const active = this.active;
+    if (active === undefined) {
+      this.context.append(steered);
+      this.notify({ turnScoped: false });
+      return;
+    }
+    active.steerController.abort(abortError('Steered by a hook'));
+    this.notify({ message: steered, turnScoped: false });
+  }
+
   async steer(promptIds: readonly string[]): Promise<void> {
     if (this.disposing) throw abortError('Agent loop disposed');
     if (promptIds.length === 0) {
@@ -446,7 +471,11 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     this.nudges.push(nudge);
     if (this.quiescenceDepth === 0 && this.engine !== undefined) {
       nudge.sentToMachine = true;
-      this.machineEngine().notify(createUserEntry(machineUserMessage(note.message)));
+      this.machineEngine().notify(
+        createUserEntry(machineUserMessage(note.message), {
+          origin: note.message?.origin,
+        }),
+      );
     }
     return {
       get dropped() {
@@ -798,7 +827,11 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     for (const nudge of this.nudges.slice(this.nudgeCursor)) {
       if (!nudge.dropped && !nudge.sentToMachine) {
         nudge.sentToMachine = true;
-        this.machineEngine().notify(createUserEntry(machineUserMessage(nudge.contextMessage)));
+        this.machineEngine().notify(
+          createUserEntry(machineUserMessage(nudge.contextMessage), {
+            origin: nudge.contextMessage?.origin,
+          }),
+        );
       }
     }
   }

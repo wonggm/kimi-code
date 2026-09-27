@@ -163,6 +163,7 @@ export function stubLoopWithHooks(options: StubLoopOptions = {}): StubLoop {
       return { id };
     },
     steer: async () => {},
+    injectSteer: () => {},
     notify(note: LoopNotify = {}): LoopNotifyHandle {
       const entry: PendingEntry = {
         kind: note.bypassMaxSteps === true ? 'handoff' : note.message !== undefined ? 'message' : 'continuation',

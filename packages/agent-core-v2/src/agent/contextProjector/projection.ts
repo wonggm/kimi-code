@@ -5,6 +5,10 @@ import { isVacuousContentPart } from '#/agent/contextMemory/vacuousContent';
 import type { Message } from '#/llm-adapter/contract/message';
 import type { ContentPart } from '#human/llm/message';
 
+import STEERING_ENVELOPE_TEXT from './steering-envelope.md?raw';
+
+const STEERING_ENVELOPE_NOTICE = `<system-notice>\n${STEERING_ENVELOPE_TEXT.trim()}\n</system-notice>`;
+
 export type ProjectionAnomaly =
   | { readonly kind: 'tool_result_reordered'; readonly toolCallId: string }
   | { readonly kind: 'tool_result_synthesized'; readonly toolCallId: string; readonly trailing: boolean }
@@ -59,8 +63,42 @@ export function summarizeProjectionRepairs(
 }
 
 export function project(history: readonly ContextMessage[], onAnomaly?: OnAnomaly): Message[] {
-  const layout = sliceLayout(history);
-  return flattenBlocks(pairBlocks(history, layout, onAnomaly), layout, onAnomaly);
+  const wrapped = withSteeringEnvelopes(history);
+  const layout = sliceLayout(wrapped);
+  return flattenBlocks(pairBlocks(wrapped, layout, onAnomaly), layout, onAnomaly);
+}
+
+function withSteeringEnvelopes(history: readonly ContextMessage[]): readonly ContextMessage[] {
+  let wrapped: ContextMessage[] | undefined;
+  for (let index = 0; index < history.length; index += 1) {
+    const message = history[index]!;
+    if (message.role !== 'user' || !isInTurnOrigin(message.origin)) continue;
+    wrapped ??= [...history];
+    wrapped[index] = { ...message, content: wrapSteeringContent(message.content) };
+  }
+  return wrapped ?? history;
+}
+
+function isInTurnOrigin(origin: ContextMessage['origin']): boolean {
+  return origin !== undefined && 'inTurn' in origin && origin.inTurn === true;
+}
+
+function wrapSteeringContent(content: readonly ContentPart[]): ContentPart[] {
+  const parts: ContentPart[] = [];
+  let first = true;
+  for (const part of content) {
+    if (part.type !== 'text') {
+      parts.push(part);
+      continue;
+    }
+    if (first) {
+      parts.push({ type: 'text', text: `${STEERING_ENVELOPE_NOTICE}\n${part.text}` });
+      first = false;
+      continue;
+    }
+    parts.push(part);
+  }
+  return first ? [...content] : parts;
 }
 
 export function projectStrict(

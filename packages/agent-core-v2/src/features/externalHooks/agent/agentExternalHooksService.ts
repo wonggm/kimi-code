@@ -7,7 +7,7 @@ import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentStateService } from '#/agent/state/agentState';
 import { IAgentTaskService, type AgentTaskInfo, type AgentTaskNotificationContext } from '#/agent/task/task';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
-import { USER_PROMPT_ORIGIN } from '#/agent/contextMemory/types';
+import { USER_PROMPT_ORIGIN, type ContextMessage } from '#/agent/contextMemory/types';
 import {
   IAgentFullCompactionService,
   type FullCompactionTask,
@@ -36,7 +36,7 @@ import { IEventDispatcher } from '#/state/eventDispatcher';
 
 import { IAgentExternalHooksService } from './agentExternalHooks';
 import { IExternalHooksRunnerService } from '../app/externalHooksRunner';
-import type { HookMatcherValue } from '../internal/types';
+import type { HookMatcherValue, HookResult as ExternalHookResult } from '../internal/types';
 import {
   renderUserPromptHookBlockResult,
   renderUserPromptHookResult,
@@ -103,6 +103,37 @@ export class AgentExternalHooksService extends Service implements IAgentExternal
 
   private sessionTitle: string | undefined;
 
+  private loop: IAgentLoopService | undefined;
+
+  private hookMessage(event: string, text: string): ContextMessage {
+    return {
+      role: 'user',
+      content: [{ type: 'text', text }],
+      toolCalls: [],
+      origin: { kind: 'hook_result', event },
+    };
+  }
+
+  private async deliverHookMessage(
+    event: string,
+    result: ExternalHookResult,
+  ): Promise<void> {
+    const loop = this.loop;
+    if (loop === undefined || result.deliverAs === undefined) return;
+    const text = result.message?.trim();
+    if (text === undefined || text.length === 0) return;
+    const message = this.hookMessage(event, text);
+    if (result.deliverAs === 'nextTurn') {
+      this.context.append(message);
+      return;
+    }
+    if (result.deliverAs === 'steer') {
+      loop.injectSteer(message);
+      return;
+    }
+    loop.notify({ message, turnScoped: false });
+  }
+
   private withSessionFacts(inputData: Record<string, unknown>): Record<string, unknown> {
     return { sessionTitle: this.sessionTitle, ...inputData };
   }
@@ -168,7 +199,7 @@ export class AgentExternalHooksService extends Service implements IAgentExternal
     );
     this._register(
       toolExecutor.hooks.onDidExecuteTool.register('externalHooks', async (ctx, next) => {
-        this.notifyPostToolUse(ctx);
+        await this.notifyPostToolUse(ctx);
         await next();
       }),
     );
@@ -233,6 +264,7 @@ export class AgentExternalHooksService extends Service implements IAgentExternal
   }
 
   private registerLoopHooks(loop: IAgentLoopService): void {
+    this.loop = loop;
     this._register(
       loop.hooks.onDidFinishStep.register('externalHooks', async (ctx, next) => {
         await next();
@@ -315,21 +347,30 @@ export class AgentExternalHooksService extends Service implements IAgentExternal
     return block?.reason;
   }
 
-  private notifyPostToolUse(ctx: ToolDidExecuteContext): void {
+  private async notifyPostToolUse(ctx: ToolDidExecuteContext): Promise<void> {
     const output = toolOutputText(ctx.result.output);
     const isError = ctx.result.isError === true;
-    this.fireAndForget(
-      isError ? 'PostToolUseFailure' : 'PostToolUse',
-      {
-        toolName: ctx.toolCall.name,
-        toolInput: isPlainRecord(ctx.args) ? ctx.args : {},
-        toolCallId: ctx.toolCall.id,
-        error: isError ? toKimiErrorPayload(output) : undefined,
-        toolOutput: isError ? undefined : output.slice(0, 2000),
-      },
-      ctx.toolCall.name,
-      ctx.signal,
-    );
+    const event = isError ? 'PostToolUseFailure' : 'PostToolUse';
+    const inputData = {
+      toolName: ctx.toolCall.name,
+      toolInput: isPlainRecord(ctx.args) ? ctx.args : {},
+      toolCallId: ctx.toolCall.id,
+      error: isError ? toKimiErrorPayload(output) : undefined,
+      toolOutput: isError ? undefined : output.slice(0, 2000),
+    };
+    if (this.loop === undefined || !this.runner.hasHooksFor(event)) {
+      this.fireAndForget(event, inputData, ctx.toolCall.name, ctx.signal);
+      return;
+    }
+    const results = await this.runner.trigger(event, {
+      matcherValue: ctx.toolCall.name,
+      signal: ctx.signal,
+      sessionId: this.sessionContext.sessionId,
+      inputData: this.withSessionFacts(inputData),
+    });
+    for (const result of results) {
+      await this.deliverHookMessage(event, result);
+    }
   }
 
   private async runPromptSubmitHook(
@@ -367,7 +408,14 @@ export class AgentExternalHooksService extends Service implements IAgentExternal
       return true;
     }
 
-    const append = renderUserPromptHookResult(results);
+    for (const result of results) {
+      if (result.deliverAs === undefined) continue;
+      await this.deliverHookMessage('UserPromptSubmit', result);
+    }
+
+    const append = renderUserPromptHookResult(
+      results.filter((result) => result.deliverAs === undefined),
+    );
     if (append !== undefined) {
       this.context.append({
         role: 'user',

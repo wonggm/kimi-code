@@ -15,6 +15,7 @@ import type { LoopRecordedEvent } from '#/agent/contextMemory/loopEventFold';
 import { IAgentGoalService } from '#/features/goal/goalService';
 import { IAgentFullCompactionService } from '#/agent/fullCompaction/fullCompaction';
 import { IAgentLoopService, type Turn } from '#/agent/loop/loop';
+import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
 import { createActor } from '#human/xstate2';
 import { createAgentMachine } from '#human/agent/machine';
 import { agentContextOf } from '#/agent/scopeContext/scopeContext';
@@ -669,6 +670,72 @@ describe('Agent loop', () => {
     }
   });
 
+
+  it('injects a steered hook message into the next step behind the priority envelope', async () => {
+    const local = createTestAgent(permissionModeServices('yolo'));
+    const release = deferred();
+    try {
+      const started = deferred();
+      const release = deferred();
+      const hangTool: ExecutableTool = {
+        name: 'Hang',
+        description: 'Wait until released.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+        resolveExecution: () => ({
+          approvalRule: 'Hang',
+          execute: async () => {
+            started.resolve();
+            await release.promise;
+            return { output: 'released' };
+          },
+        }),
+      };
+
+      local.get(IAgentProfileService).update({ activeToolNames: ['Hang'] });
+      local.get(IAgentToolRegistryService).register(hangTool);
+      local.mockNextResponse(
+        { type: 'text', text: 'working' },
+        { type: 'function', id: 'call-hang-1', name: 'Hang', arguments: '{}' },
+      );
+      local.mockNextResponse({ type: 'text', text: 'switched' });
+
+      const localLoop = local.get(IAgentLoopService);
+      const { turn } = submitTurn(localLoop, 'start the job');
+      await started.promise;
+      localLoop.injectSteer({
+        role: 'user',
+        content: [{ type: 'text', text: 'use the other branch instead' }],
+        toolCalls: [],
+        origin: { kind: 'hook_result', event: 'PostToolUse' },
+      });
+      release.resolve();
+      await turn.result;
+
+      const steeredText = (local.llmCalls[1]?.history ?? [])
+        .flatMap((message) => message.content)
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .find((text) => text.includes('use the other branch instead'));
+      expect(steeredText).toContain('<system-notice>');
+    } finally {
+      release.resolve();
+      await local.dispose();
+    }
+  });
+
+  it('keeps a steered hook message in the context when no turn is running', async () => {
+    loop.injectSteer({
+      role: 'user',
+      content: [{ type: 'text', text: 'remember this' }],
+      toolCalls: [],
+      origin: { kind: 'hook_result', event: 'PostToolUse' },
+    });
+
+    await vi.waitFor(() => {
+      const stored = ctx.get(IAgentContextMemoryService).get();
+      expect(stored.some((message) => textOf(message).includes('remember this'))).toBe(true);
+    });
+  });
 
   it('preserves tool call extras (Gemini thought_signature) through to context', async () => {
     const sigCall: ToolCall = {
@@ -2275,6 +2342,13 @@ describe('aborted step tool execution', () => {
     }
   });
 });
+
+function textOf(message: { readonly content: readonly { readonly type: string; readonly text?: string }[] }): string {
+  return message.content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text ?? '')
+    .join('');
+}
 
 function submitTurn(loop: IAgentLoopService, text: string): { readonly turn: Turn } {
   return submitPromptTurn(loop, {

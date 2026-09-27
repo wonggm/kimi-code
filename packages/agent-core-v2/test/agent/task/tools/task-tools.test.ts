@@ -1181,7 +1181,14 @@ describe('WaitForTool (harness)', () => {
       ]);
       expect(history.at(-1)).toMatchObject({
         role: 'user',
-        content: [{ type: 'text', text: 'Handle this new request first.' }],
+        content: [
+          {
+            type: 'text',
+            text: expect.stringMatching(
+              /^<system-notice>\n[^]*\n<\/system-notice>\nHandle this new request first\.$/,
+            ),
+          },
+        ],
       });
       expect(ctx.allEvents).not.toContainEqual(expect.objectContaining({
         event: 'tool.result',
@@ -1249,7 +1256,13 @@ describe('WaitForTool (harness)', () => {
       ]);
       expect(ctx.llmCalls[1]?.history.at(-1)).toMatchObject({
         role: 'user',
-        content: [{ text: 'Check this message before waiting again.\n\nKeep the background task running.' }],
+        content: [
+          {
+            text: expect.stringMatching(
+              /^<system-notice>\n[^]*\n<\/system-notice>\nCheck this message before waiting again\.\n\n<system-notice>\n[^]*\n<\/system-notice>\nKeep the background task running\.$/,
+            ),
+          },
+        ],
       });
       expect(tasks.getTask(taskId)?.status).toBe('running');
       slow.resolveWait(0);

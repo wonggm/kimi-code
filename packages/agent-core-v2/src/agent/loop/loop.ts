@@ -208,6 +208,8 @@ export interface IAgentLoopService {
 
   steer(promptIds: readonly string[]): Promise<void>;
 
+  injectSteer(message: ContextMessage): void;
+
   cancel(target?: LoopCancelTarget, reason?: unknown): boolean;
 
   snapshot(): LoopSnapshot;

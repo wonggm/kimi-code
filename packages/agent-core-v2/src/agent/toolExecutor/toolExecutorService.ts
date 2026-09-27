@@ -57,6 +57,19 @@ import { ToolScheduler } from './toolScheduler';
 const ABORT_GRACE_MS = 2_000;
 const TOOL_OUTPUT_EMPTY = 'Tool output is empty.';
 const TOOL_OUTPUT_NON_TEXT = 'Tool returned non-text content.';
+const STEER_SKIP_OUTPUT =
+  'Tool skipped because a message from the user arrived while this tool call was waiting to start.';
+
+function resolveCuttableOnSteer(
+  execution: RunnableToolExecution,
+  args: unknown,
+): boolean {
+  const declared = execution.cuttableOnSteer;
+  if (typeof declared === 'function') {
+    return declared(args as Record<string, unknown>);
+  }
+  return declared === true;
+}
 
 const validators = new WeakMap<
   ExecutableTool,
@@ -65,6 +78,7 @@ const validators = new WeakMap<
 
 export interface ToolExecutionTask {
   readonly accesses: ToolAccesses;
+  readonly cuttableOnSteer: boolean;
   readonly execute: (signal: AbortSignal) => Promise<ToolExecutionRunResult>;
 }
 
@@ -224,7 +238,8 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
 
     const timedResults = this.executeBatch(
       preparedTasks.map(({ task }) => task),
-      options.signal,
+      preparedTasks.map(({ call }) => call),
+      options,
     )[Symbol.asyncIterator]();
     let nextTimed: Promise<IteratorResult<TimedToolResult>> | undefined = timedResults.next();
     const finalizations = new Set<ToolExecutionResultPromise>();
@@ -236,7 +251,7 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
           candidates.push(
             nextTimed.then(
               (result): ToolExecutionStreamEvent => ({ type: 'timed', result }),
-              (reason): ToolExecutionStreamEvent => ({ type: 'timedRejected', reason }),
+              (error): ToolExecutionStreamEvent => ({ type: 'timedRejected', error }),
             ),
           );
         }
@@ -266,7 +281,7 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
             options,
           ).then(
             (value): SettledToolExecutionResult => ({ status: 'fulfilled', value }),
-            (reason): SettledToolExecutionResult => ({ status: 'rejected', reason }),
+            (error): SettledToolExecutionResult => ({ status: 'rejected', error }),
           );
           finalizations.add(finalization);
           nextTimed = timedResults.next();
@@ -436,6 +451,7 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
     return {
       task: {
         accesses: execution.accesses ?? ToolAccesses.all(),
+        cuttableOnSteer: resolveCuttableOnSteer(execution, call.args),
         execute: async (taskSignal) =>
           this.runSingleExecution(call, execution, executionMetadata, options, taskSignal),
       },
@@ -457,20 +473,39 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
 
   private async *executeBatch(
     tasks: ToolExecutionTask[],
-    signal: AbortSignal,
+    calls: readonly PreflightedToolCall[],
+    options: ToolExecutorExecuteOptions,
   ): AsyncIterable<TimedToolResult> {
     const scheduler = new ToolScheduler<TimedToolResult>();
     const allResults: Array<Promise<TimedToolResult>> = [];
     const pendingResults = new Map<number, Promise<SettledTimedToolResult>>();
+    const signal = options.signal;
+    const steerSignal = options.steerSignal;
+    const cuttable = options.steerInterrupt === true && steerSignal !== undefined;
 
     for (let index = 0; index < tasks.length; index += 1) {
       const task = tasks[index]!;
+      const call = calls[index]!;
       const pendingResult = scheduler.add({
         accesses: task.accesses,
         start: async () => {
           const startedAt = Date.now();
+          if (cuttable && task.cuttableOnSteer && steerSignal.aborted) {
+            return {
+              result: Promise.resolve({
+                index,
+                result: makeErrorToolResult(call, call.args, STEER_SKIP_OUTPUT).result,
+                outcome: 'skipped' as const,
+                durationMs: 0,
+              }),
+            };
+          }
+          const taskSignal =
+            cuttable && task.cuttableOnSteer
+              ? AbortSignal.any([signal, steerSignal])
+              : signal;
           return {
-            result: task.execute(signal).then(({ result, outcome }) => ({
+            result: task.execute(taskSignal).then(({ result, outcome }) => ({
               index,
               result,
               outcome,
@@ -484,7 +519,7 @@ export class AgentToolExecutorService implements IAgentToolExecutorService {
         index,
         pendingResult.then(
           (value): SettledTimedToolResult => ({ status: 'fulfilled', value }),
-          (reason): SettledTimedToolResult => ({ status: 'rejected', index, reason }),
+          (error): SettledTimedToolResult => ({ status: 'rejected', index, error }),
         ),
       );
     }
@@ -823,6 +858,7 @@ function makeResolvedTask(
 ): ToolExecutionTask {
   return {
     accesses: ToolAccesses.none(),
+    cuttableOnSteer: false,
     execute: async () => ({ result: result.result, outcome }),
   };
 }

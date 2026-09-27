@@ -35,6 +35,7 @@ export interface CreateMachineToolsOptions {
   readonly toolInfos: () => readonly ToolInfo[];
   readonly turnId: () => number;
   readonly steerSignal?: () => AbortSignal | undefined;
+  readonly steerInterrupt?: () => boolean;
   readonly trace?: () => LLMRequestTrace | undefined;
   readonly onToolCall?: (payload: ToolCallStartedPayload) => void;
   readonly onToolResult?: (toolCallId: string, result: AgentToolResult, durationMs: number) => void;
@@ -124,6 +125,7 @@ export function createMachineTools(options: CreateMachineToolsOptions): MachineT
       const stream = options.toolExecutor.execute(calls, {
         signal,
         steerSignal: options.steerSignal?.(),
+        steerInterrupt: options.steerInterrupt?.() === true,
         turnId: options.turnId(),
         trace: options.trace?.(),
         onToolCall: options.onToolCall,
