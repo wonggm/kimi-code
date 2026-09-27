@@ -104,6 +104,7 @@ import { IHostFileSystem } from '#/os/interface/hostFileSystem';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
 import { ISessionSkillCatalog } from '#/features/skill/session/skillCatalog';
 import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
 import { ISessionToolPolicyGate } from '#/session/sessionToolPolicyGate/sessionToolPolicyGate';
 import { _clearAgentToolContributionsForTests } from '#/agent/toolRegistry/toolContribution';
 import { IAgentToolRegistryService } from '#/agent/toolRegistry/toolRegistry';
@@ -487,6 +488,13 @@ describe('AgentLifecycleService', () => {
       disabledTools: () => [],
       setDisabledTools: () => Promise.resolve(),
     } as unknown as ISessionToolPolicy);
+    ix.stub(ISessionCompactionConfig, {
+      _serviceBrand: undefined,
+      ready: Promise.resolve(),
+      onDidChange: Event.None as Event<void>,
+      triggerRatio: () => undefined,
+      setTriggerRatio: () => Promise.resolve(),
+    } as unknown as ISessionCompactionConfig);
     ix.stub(ISessionToolPolicyGate, {
       _serviceBrand: undefined,
       disabledTools: [],
@@ -1241,6 +1249,7 @@ describe('AgentLifecycleService', () => {
     });
     const svc = ix.get(IAgentLifecycleService);
     const create = svc.create({ agentId: 'main' });
+    await Promise.resolve();
 
     const early = svc.handleOf('main');
     expect(early).toBeDefined();

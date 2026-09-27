@@ -1,8 +1,10 @@
+import { Event } from '#/_base/event';
 import { emptyUsage } from '#human/llm/usage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IAgentLLMRequesterService } from '#/agent/llmRequester/llmRequester';
 import { IAgentProfileService } from '#/agent/profile/profile';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
 import type { ModelRecord } from '#/llm-adapter/model/model';
 import {
@@ -12,6 +14,7 @@ import {
   llmGenerateServices,
   modelProviderOptionServices,
   requesterFromGenerateFn,
+  sessionService,
   telemetryServices,
   wireRecordPersistenceServices,
   type LegacyGenerateFn,
@@ -678,6 +681,7 @@ describe('ConfigState per-profile subagent compaction overrides', () => {
   let ctx: TestAgentContext | undefined;
   let profile: IAgentProfileService;
   let kimiConfig: TestKimiConfig;
+  let sessionTriggerRatio: number | undefined;
 
   beforeEach(() => {
     kimiConfig = {
@@ -708,8 +712,19 @@ describe('ConfigState per-profile subagent compaction overrides', () => {
   });
 
   function createAgent(): void {
+    sessionTriggerRatio = undefined;
+    const sessionCompaction: ISessionCompactionConfig = {
+      _serviceBrand: undefined,
+      ready: Promise.resolve(),
+      onDidChange: Event.None as Event<void>,
+      triggerRatio: () => sessionTriggerRatio,
+      setTriggerRatio: async (value) => {
+        sessionTriggerRatio = value;
+      },
+    };
     ctx = createTestAgent(
       configServices(() => kimiConfig),
+      sessionService(ISessionCompactionConfig, sessionCompaction),
       llmGenerateServices(
         requesterFromGenerateFn(() =>
           Promise.resolve({
@@ -782,5 +797,36 @@ describe('ConfigState per-profile subagent compaction overrides', () => {
       compactionTriggerRatio: 0.55,
       reservedContextSize: undefined,
     });
+  });
+
+  it('prefers the session compaction threshold over profile and global values', () => {
+    createAgent();
+    profile.update({ modelAlias: 'kimi-code', profileName: 'explore' });
+
+    expect(profile.resolveModelContext().compactionTriggerRatio).toBe(0.7);
+
+    sessionTriggerRatio = 0.6;
+    expect(profile.resolveModelContext().compactionTriggerRatio).toBe(0.6);
+
+    sessionTriggerRatio = undefined;
+    expect(profile.resolveModelContext().compactionTriggerRatio).toBe(0.7);
+  });
+
+  it('leaves the threshold undefined when session, profile, and global values are absent', () => {
+    kimiConfig = {
+      providers: { kimi: { type: 'kimi', apiKey: 'test-key', baseUrl: 'https://api.example.test/v1' } },
+      models: {
+        'kimi-code': {
+          provider: 'kimi',
+          model: 'kimi-code',
+          maxContextSize: 128_000,
+          capabilities: ['thinking'],
+        },
+      },
+    };
+    createAgent();
+    profile.update({ modelAlias: 'kimi-code' });
+
+    expect(profile.resolveModelContext().compactionTriggerRatio).toBeUndefined();
   });
 });

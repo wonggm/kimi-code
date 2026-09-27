@@ -74,6 +74,7 @@ import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { ISessionInstructionsProvider } from '#/session/sessionInstructions/instructionsProvider';
 import { ISessionMetadata } from '#/session/sessionMetadata/sessionMetadata';
 import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
 import '#/agent/toolActivation/toolActivationService';
 import { ISessionToolPolicyGate } from '#/session/sessionToolPolicyGate/sessionToolPolicyGate';
 import { ISessionStateService } from '#/session/state/sessionState';
@@ -525,6 +526,13 @@ describe('SessionSubagentScopeCacheService', () => {
       disabledTools: () => [],
       setDisabledTools: () => Promise.resolve(),
     } as unknown as ISessionToolPolicy);
+    ix.stub(ISessionCompactionConfig, {
+      _serviceBrand: undefined,
+      ready: Promise.resolve(),
+      onDidChange: Event.None as Event<void>,
+      triggerRatio: () => undefined,
+      setTriggerRatio: () => Promise.resolve(),
+    } as unknown as ISessionCompactionConfig);
     ix.stub(ISessionToolPolicyGate, {
       _serviceBrand: undefined,
       disabledTools: [],

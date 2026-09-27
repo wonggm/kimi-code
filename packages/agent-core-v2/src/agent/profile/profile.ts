@@ -129,6 +129,7 @@ export interface IAgentProfileService {
   data(): ProfileData;
   getEffectiveThinkingLevel(): ThinkingEffort;
   resolveModelContext(): ProfileModelContext;
+  resolveCompactionTriggerRatio(): number | undefined;
   resolveRequestParams(): ModelRequestParams;
   getModelCapabilities(): ModelCapability;
   getModelProviderType(alias?: string): string | undefined;

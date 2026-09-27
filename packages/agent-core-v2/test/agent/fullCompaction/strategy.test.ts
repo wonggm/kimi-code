@@ -244,6 +244,33 @@ describe('RuntimeCompactionStrategy', () => {
     expect(strategy.shouldBlock(0.6 * maxSize)).toBe(true);
   });
 
+  it('uses a changed trigger ratio without rebuilding the strategy', () => {
+    let compactionTriggerRatio = 0.8;
+    const context = {
+      modelAlias: 'test',
+      modelCapabilities: {
+        image_in: false,
+        video_in: false,
+        audio_in: false,
+        thinking: false,
+        tool_use: false,
+        max_context_tokens: 1000,
+      },
+      maxOutputSize: undefined,
+      alwaysThinking: undefined,
+      thinkingLevel: 'off',
+      reservedContextSize: undefined,
+    } as ProfileModelContext;
+    const strategy = new RuntimeCompactionStrategy(() => ({
+      ...context,
+      compactionTriggerRatio,
+    }));
+
+    expect(strategy.shouldCompact(749)).toBe(false);
+    compactionTriggerRatio = 0.7;
+    expect(strategy.shouldCompact(749)).toBe(true);
+  });
+
   it('does not check after step when trigger and block ratios are equal', () => {
     const strategy = new RuntimeCompactionStrategy(() =>
       ({

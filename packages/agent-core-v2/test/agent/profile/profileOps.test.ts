@@ -31,6 +31,7 @@ import { ISessionContext } from '#/session/sessionContext/sessionContext';
 import { ISessionSkillCatalog } from '#/features/skill/session/skillCatalog';
 import { ISessionInstructionsProvider } from '#/session/sessionInstructions/instructionsProvider';
 import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
 import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceContext';
 import { IEventDispatcher } from '#/state/eventDispatcher';
 import { AGENT_WIRE_RECORD_KEY, type WireRecord } from '#/wire/record';
@@ -238,6 +239,13 @@ function buildHost(key: string): {
     onDidChange: () => ({ dispose: () => {} }),
     disabledTools: () => [],
     setDisabledTools: () => Promise.resolve(),
+  });
+  host.stub(ISessionCompactionConfig, {
+    _serviceBrand: undefined,
+    ready: Promise.resolve(),
+    onDidChange: () => ({ dispose: () => {} }),
+    triggerRatio: () => undefined,
+    setTriggerRatio: () => Promise.resolve(),
   });
   host.set(IAgentStateService, new AgentStateService());
   host.set(IAgentProfileService, new SyncDescriptor(AgentProfileService));

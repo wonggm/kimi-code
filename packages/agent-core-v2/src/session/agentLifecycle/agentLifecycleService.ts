@@ -25,6 +25,7 @@ import { profileKey } from '#/agent/profile/profileOps';
 import { hasPinnedPermissionMode } from '#/features/tower/tower';
 import { IAgentTaskService } from '#/agent/task/task';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
 import { ISessionMetadata } from '#/session/sessionMetadata/sessionMetadata';
 import { withSubagentProfile } from '#/session/agentLifecycle/subagentMetadata';
 import {
@@ -120,6 +121,7 @@ export class AgentLifecycleService extends Disposable implements IAgentLifecycle
   constructor(
     @IInstantiationService private readonly instantiation: IInstantiationService,
     @ISessionContext private readonly ctx: ISessionContext,
+    @ISessionCompactionConfig private readonly sessionCompaction: ISessionCompactionConfig,
     @ISessionMetadata private readonly sessionMetadata: ISessionMetadata,
     @IBootstrapService private readonly bootstrap: IBootstrapService,
     @IConfigService private readonly config: IConfigService,
@@ -159,6 +161,7 @@ export class AgentLifecycleService extends Disposable implements IAgentLifecycle
   }
 
   async create(opts: CreateAgentOptions = {}): Promise<AgentContext> {
+    await this.sessionCompaction.ready;
     if (opts.agentId !== undefined) {
       const inflight = this.creating.get(opts.agentId);
       if (inflight !== undefined) return inflight;

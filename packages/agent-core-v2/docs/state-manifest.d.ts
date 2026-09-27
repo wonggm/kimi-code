@@ -27,7 +27,7 @@
 // references become '(circular)', and class instances collapse to a '(ClassName)'
 // marker — the wire shape of an entry is the JSON projection of the type here.
 //
-// Index (App: 0 keys · Workspace: 6 keys · Session: 9 keys · Agent: 73 keys)
+// Index (App: 0 keys · Workspace: 6 keys · Session: 10 keys · Agent: 73 keys)
 //   App
 //   Workspace
 //     workspaceDirs.ephemeralDirs          src/workspace/workspaceDirs/workspaceDirsService.ts
@@ -39,6 +39,7 @@
 //   Session
 //     sessionActivity.current            src/session/sessionActivity/sessionActivityService.ts
 //     sessionActivity.folds              src/session/sessionActivity/sessionActivityService.ts
+//     sessionCompaction.state            src/session/sessionCompaction/sessionCompactionService.ts
 //     sessionLog.rootLevel               src/session/sessionLog/sessionLogService.ts
 //     sessionMetadata.data               src/session/sessionMetadata/sessionMetadataService.ts
 //     sessionSkillCatalog.contributions  src/features/skill/session/skillCatalogService.ts
@@ -671,6 +672,10 @@ export interface SessionStateSnapshot {
     compacting: boolean;
     lastTurnReason?: 'completed' | 'cancelled' | 'failed';
   }>;
+  // src/session/sessionCompaction/sessionCompactionService.ts
+  'sessionCompaction.state': /* SessionCompactionState — packages/agent-core-v2/src/session/sessionCompaction/sessionCompactionService.ts */ {
+    readonly triggerRatio?: number;
+  };
   // src/session/sessionLog/sessionLogService.ts
   'sessionLog.rootLevel': /* LogLevelState — packages/agent-core-v2/src/_base/log/logService.ts */ {
     level: /* LogLevel — packages/agent-core-v2/src/_base/log/log.ts */ 'info' | 'off' | 'error' | 'warn' | 'debug';

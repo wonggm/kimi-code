@@ -40,6 +40,7 @@ import { ISessionInstructionsProvider } from '#/session/sessionInstructions/inst
 import { ISessionSkillCatalog } from '#/features/skill/session/skillCatalog';
 import { ISessionAgentProfileCatalog } from '#/session/sessionAgentProfileCatalog/sessionAgentProfileCatalog';
 import { ISessionToolPolicy } from '#/session/sessionToolPolicy/sessionToolPolicy';
+import { ISessionCompactionConfig } from '#/session/sessionCompaction/sessionCompaction';
 import { ISessionToolPolicyGate } from '#/session/sessionToolPolicyGate/sessionToolPolicyGate';
 import { IPluginService } from '#/app/plugin/plugin';
 import type { ResolvedAgentProfile, SystemPromptContext } from '#/agent/profile/profile';
@@ -152,6 +153,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     @IProtocolAdapterRegistry private readonly protocolAdapters: IProtocolAdapterRegistry,
     @IAgentRuntimeService private readonly runtime: IAgentRuntimeService,
     @ISessionContext private readonly sessionContext: ISessionContext,
+    @ISessionCompactionConfig private readonly sessionCompaction: ISessionCompactionConfig,
     @IBootstrapService private readonly bootstrap: IBootstrapService,
     @ISessionNotify private readonly notify: ISessionNotify,
     @ISessionWorkspaceContext private readonly workspace: ISessionWorkspaceContext,
@@ -447,6 +449,18 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     return this.resolveThinkingState(this.tryResolveRawModel()).effective;
   }
 
+  resolveCompactionTriggerRatio(): number | undefined {
+    const loopControl = this.config.get<LoopControl>(LOOP_CONTROL_SECTION);
+    const profileName = this.profileName;
+    const profileEntry =
+      profileName === undefined
+        ? undefined
+        : this.config.get<SubagentCompactionConfig | undefined>(SUBAGENT_COMPACTION_SECTION)?.[
+            profileName
+          ];
+    return this.sessionCompaction.triggerRatio() ?? profileEntry?.triggerRatio ?? loopControl?.compactionTriggerRatio;
+  }
+
   resolveModelContext(): ProfileModelContext {
     const modelAlias = this.model;
     const model = this.modelCatalog.get(modelAlias);
@@ -458,6 +472,10 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
         : this.config.get<SubagentCompactionConfig | undefined>(SUBAGENT_COMPACTION_SECTION)?.[
             profileName
           ];
+    const compactionTriggerRatio =
+      this.sessionCompaction.triggerRatio() ??
+      profileEntry?.triggerRatio ??
+      loopControl?.compactionTriggerRatio;
     return {
       modelAlias,
       modelCapabilities: model.capabilities,
@@ -467,7 +485,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
       compactionThinkingLevel: profileEntry?.thinkingEffort,
       compactionMaxOutputSize: profileEntry?.maxOutputSize,
       reservedContextSize: profileEntry?.reservedContextSize ?? loopControl?.reservedContextSize,
-      compactionTriggerRatio: profileEntry?.triggerRatio ?? loopControl?.compactionTriggerRatio,
+      compactionTriggerRatio,
       compactionMaxAttempts: loopControl?.compactionMaxAttempts,
     };
   }
