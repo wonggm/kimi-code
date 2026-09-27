@@ -793,6 +793,22 @@ describe('turn.step.retrying bubble reuse', () => {
     expect(messageIds.size).toBe(1);
   });
 
+  it('reports the next attempt number and clears the retry label once the step restarts', () => {
+    const projector = createAgentProjector();
+    const sid = 's1';
+    projector.project('turn.started', { type: 'turn.started', turnId: 1, origin: { kind: 'user' }, agentId: 'main', sessionId: sid }, sid);
+    projector.project('turn.step.started', { type: 'turn.step.started', turnId: 1, step: 1, agentId: 'main', sessionId: sid }, sid);
+    projector.project('assistant.delta', { type: 'assistant.delta', turnId: 1, delta: 'AB', agentId: 'main', sessionId: sid }, sid, { offset: 0 });
+
+    const retrying = projector.project('turn.step.retrying', { type: 'turn.step.retrying', turnId: 1, step: 1, failedAttempt: 1, nextAttempt: 2, maxAttempts: 10, delayMs: 100, agentId: 'main', sessionId: sid }, sid);
+    expect(retrying).toContainEqual(
+      expect.objectContaining({ type: 'retryProgressUpdated', attempt: 2, maxAttempts: 10 }),
+    );
+
+    const restarted = projector.project('turn.step.started', { type: 'turn.step.started', turnId: 1, step: 1, agentId: 'main', sessionId: sid }, sid);
+    expect(restarted).toContainEqual(expect.objectContaining({ type: 'retryProgressCleared' }));
+  });
+
   it('drops the reuse target when the turn ends before the retried step starts', () => {
     const projector = createAgentProjector();
     const sid = 's1';

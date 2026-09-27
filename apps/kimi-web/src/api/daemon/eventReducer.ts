@@ -415,6 +415,10 @@ export function reduceAppEvent(
     }
     return finalizeState(state, next);
   }
+  if (localEvent.type === 'retryProgressCleared') {
+    delete next.retryBySession[localEvent.sessionId];
+    return finalizeState(state, next);
+  }
   if (localEvent.type === 'conversationFailureUpdated') {
     next.failureBySession[localEvent.sessionId] = {
       message: localEvent.message,
@@ -971,6 +975,7 @@ export function reduceAppEvent(
     // Local streaming events are handled in the early-return path above the
     // switch; listed here only to keep the exhaustiveness guard satisfied.
     case 'retryProgressUpdated':
+    case 'retryProgressCleared':
     case 'conversationFailureUpdated':
       break;
 

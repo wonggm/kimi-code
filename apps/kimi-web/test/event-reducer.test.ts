@@ -909,6 +909,23 @@ describe('reduceAppEvent map reference stability', () => {
     expect(next.lastSeqBySession).not.toBe(state.lastSeqBySession);
   });
 
+  it('stores retry progress and drops it when the retry succeeds', () => {
+    const state = seededState();
+    const retrying = reduceAppEvent(
+      state,
+      { type: 'retryProgressUpdated', sessionId: 's1', attempt: 2, maxAttempts: 10 },
+      { sessionId: 's1', seq: 1 },
+    );
+    expect(retrying.retryBySession['s1']).toEqual({ attempt: 2, maxAttempts: 10 });
+
+    const cleared = reduceAppEvent(
+      retrying,
+      { type: 'retryProgressCleared', sessionId: 's1' },
+      { sessionId: 's1', seq: 2 },
+    );
+    expect(cleared.retryBySession['s1']).toBeUndefined();
+  });
+
   it('replaces only the messages map (and its slice) when a delta streams', () => {
     const state = seededState();
     const next = reduceAppEvent(

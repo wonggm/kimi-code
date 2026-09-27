@@ -885,9 +885,11 @@ export function createAgentProjector(): AgentProjector {
 
         // A retry continuation: refill the bubble turn.step.retrying cleared,
         // instead of creating a second bubble with the same step's content.
+        // The retry got past the model call, so the "Retrying" label is over.
         if (s.retryReuseMsgId !== undefined) {
           const reuseId = s.retryReuseMsgId;
           s.retryReuseMsgId = undefined;
+          out.push({ type: 'retryProgressCleared', sessionId } as AppEvent);
           if (getMsgById(s, reuseId) !== undefined) {
             s.currentAssistantMsgId = reuseId;
             break;
@@ -1239,7 +1241,7 @@ export function createAgentProjector(): AgentProjector {
         out.push({
           type: 'retryProgressUpdated',
           sessionId,
-          attempt: typeof p?.attempt === 'number' ? p.attempt : 0,
+          attempt: typeof p?.nextAttempt === 'number' ? p.nextAttempt : 0,
           maxAttempts: typeof p?.maxAttempts === 'number' ? p.maxAttempts : 0,
         } as AppEvent);
         if (msgId !== undefined) {
