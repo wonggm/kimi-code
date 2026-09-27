@@ -64,6 +64,7 @@ import KimiCircleCheckFilled from '~icons/kimi/circle-check-filled';
 import KimiCircleEmpty from '~icons/kimi/circle-empty';
 import KimiClose from '~icons/kimi/close';
 import KimiSend from '~icons/kimi/send';
+import KimiSideChat from '~icons/kimi/side-chat';
 import KimiPencilFilled from '~icons/kimi/pencil-filled';
 import KimiTerminalFilled from '~icons/kimi/terminal-filled';
 import KimiAgentFilled from '~icons/kimi/agent-filled';
@@ -178,6 +179,7 @@ import RawKimiCircleCheckFilled from '~icons/kimi/circle-check-filled?raw';
 import RawKimiCircleEmpty from '~icons/kimi/circle-empty?raw';
 import RawKimiClose from '~icons/kimi/close?raw';
 import RawKimiSend from '~icons/kimi/send?raw';
+import RawKimiSideChat from '~icons/kimi/side-chat?raw';
 import RawKimiPencilFilled from '~icons/kimi/pencil-filled?raw';
 import RawKimiTerminalFilled from '~icons/kimi/terminal-filled?raw';
 import RawKimiAgentFilled from '~icons/kimi/agent-filled?raw';
@@ -332,6 +334,7 @@ export type IconName =
   | 'git-fork'
   | 'git-pull-request'
   | 'message'
+  | 'side-chat'
   | 'mail'
   | 'user'
   | 'info'
@@ -461,6 +464,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'git-fork': entry(RiGitForkLine, RawGitForkLine),
   'git-pull-request': entry(RiGitPullRequestLine, RawGitPullRequestLine),
   message: entry(RiMessageLine, RawMessageLine),
+  'side-chat': entry(KimiSideChat, RawKimiSideChat),
   mail: entry(RiMailLine, RawMailLine),
   user: entry(RiUserLine, RawUserLine),
   info: entry(RiInformationLine, RawInformationLine),
@@ -607,7 +611,7 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'calendar-close',
     ],
   ],
-  ['Communication', ['message', 'mail', 'user']],
+  ['Communication', ['message', 'side-chat', 'mail', 'user']],
   [
     'Status & media',
     [

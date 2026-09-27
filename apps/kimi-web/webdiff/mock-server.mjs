@@ -1060,6 +1060,16 @@ function createHandler({ root, token, env, fixtures }) {
         }
         return json(res, { items: sessionRows(), has_more: false, next_page_token: null, total: sessions.length });
       }
+      // Side chat (POST /sessions/<id>:btw). The action suffix rides on the id
+      // rather than behind a slash, so it is matched before the per-session
+      // routes below. Serving it is what lets the walk open the panel's
+      // side-chat tab on both apps; without it the launcher reports a failure
+      // and the pane never appears, which reads as a coverage gap rather than
+      // a difference.
+      const btwMatch = /^\/api\/(?:v1|v2)\/sessions\/([^/:]+):btw$/.exec(p);
+      if (btwMatch && req.method === 'POST') {
+        return json(res, { agent_id: 'btw-agent-1' });
+      }
       // Every per-session route, `/api/v{1,2}/sessions/<id>[/<sub>]`: the id picks
       // the variant, so all three sessions answer the same set of surfaces.
       const sessionMatch = /^\/api\/(?:v1|v2)\/sessions\/([^/]+)(?:\/(.*))?$/.exec(p);

@@ -35,9 +35,12 @@ const { t } = useI18n();
 const props = defineProps<{
   turns: ChatTurn[];
   sessionId?: string;
-  sideChatTurns?: ChatTurn[];
   sideChatRunning?: boolean;
   sideChatSending?: boolean;
+  sideChatAgentId?: string;
+  /** Sends into the active session's side chat; resolves false when the
+   *  daemon refused the prompt, which puts the draft back. */
+  sideChatSend?: (text: string, attachments: PromptAttachment[]) => Promise<boolean>;
   approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
   gitInfo?: { branch: string; ahead: number; behind: number } | null;
   tasks: TaskItem[];
@@ -136,7 +139,6 @@ const emit = defineEmits<{
   steer: [payload: { text: string; attachments: PromptAttachment[] }];
   approval: [approvalId: string, response: { decision: 'approved' | 'rejected' | 'cancelled'; scope?: 'session'; feedback?: string }];
   cancelTask: [taskId: string];
-  sideChatSend: [text: string];
   answer: [questionId: string, response: QuestionResponse];
   dismiss: [questionId: string];
   command: [cmd: string, attachments?: PromptAttachment[]];
@@ -360,6 +362,25 @@ const changedFiles = computed<string[]>(() => {
   return [];
 });
 
+// The right panel's two side-chat props are built as computeds, not as inline
+// object literals in the template. A literal is a new object on every parent
+// render, so the panel could never skip an update; these keep the same identity
+// while nothing they carry has changed. The side chat's own turns are not among
+// them: the panel reads those from the client itself, so a streamed token no
+// longer re-renders this pane at all.
+const sideChatProps = computed(() => ({
+  running: props.sideChatRunning ?? false,
+  sending: props.sideChatSending ?? false,
+  agentId: props.sideChatAgentId,
+  onSend: props.sideChatSend,
+}));
+
+const sideChatComposerProps = computed(() => ({
+  status: props.status,
+  searchFiles: props.searchFiles,
+  uploadImage: props.uploadImage,
+}));
+
 const todoDoneCount = computed(() => (props.todos ?? []).filter((td) => td.status === 'done').length);
 const hasDockWork = computed(() =>
   bashTasks.value.length > 0 ||
@@ -442,6 +463,11 @@ const conversationTocItems = computed<ConversationTocItem[]>(() =>
     })),
 );
 
+// The ids the table of contents can highlight, as a set. Built once per list
+// change rather than once per pass: a scroll runs dozens of passes, and each
+// one used to rebuild a set of every entry.
+const tocHighlightableIds = computed(() => new Set(conversationTocItems.value.map((item) => item.id)));
+
 const activeTurnId = ref<string | null>(null);
 
 // TOC active-item tracking: the full pass below forces layout (one
@@ -462,7 +488,7 @@ function updateActiveTocQuery(): void {
   if (anchors.length === 0) return;
   const items = conversationTocItems.value;
   if (items.length === 0) return;
-  const userIds = new Set(items.map((item) => item.id));
+  const userIds = tocHighlightableIds.value;
 
   // When pinned to the bottom (auto-follow / short content), the latest query is
   // the active one even if its message sits below the pane's vertical middle —
@@ -475,14 +501,20 @@ function updateActiveTocQuery(): void {
   const paneRect = pane.getBoundingClientRect();
   const paneMiddle = paneRect.height / 2;
   // Otherwise the active highlight tracks the query that owns the current
-  // viewport: the last user-turn anchor at or above the middle.
+  // viewport: the last user-turn anchor at or above the middle. Walking the
+  // anchors from the end and stopping at the first one found lands on that
+  // same anchor, and reads only the handful of positions near the middle
+  // rather than one per row — each read is a layout measurement, and a
+  // transcript can hold hundreds of rows.
   let bestId: string | null = null;
-  anchors.forEach((el) => {
-    const id = el.dataset.turnId;
-    if (!id || !userIds.has(id)) return;
-    const top = el.getBoundingClientRect().top - paneRect.top;
-    if (top <= paneMiddle) bestId = id;
-  });
+  for (let i = anchors.length - 1; i >= 0; i--) {
+    const id = anchors[i]!.dataset.turnId;
+    if (!id || !userIds.has(id)) continue;
+    if (anchors[i]!.getBoundingClientRect().top - paneRect.top <= paneMiddle) {
+      bestId = id;
+      break;
+    }
+  }
   activeTurnId.value = bestId ?? items[0]!.id;
 }
 
@@ -2133,16 +2165,12 @@ defineExpose({
             :turns="turns"
             :changed-files="changedFiles"
             :app-tasks="appTasks"
-            :side-chat="{
-              turns: props.sideChatTurns ?? [],
-              running: props.sideChatRunning ?? false,
-              sending: props.sideChatSending ?? false,
-            }"
+            :side-chat="sideChatProps"
+            :side-chat-composer="sideChatComposerProps"
             :terminal-available="sessionId !== undefined"
             :session-id="sessionId"
             @open-file="openFileInPanel"
             @open-agent="openAgentTab($event)"
-            @side-chat-send="emit('sideChatSend', $event)"
             @open-media="emit('openMedia', $event)"
           />
         </PanelTabs>

@@ -11,8 +11,9 @@ import { computed, ref } from 'vue';
 import { getKimiWebApi } from '../../api';
 import type { AppMessage, KimiEventConnection, ThinkingLevel } from '../../api/types';
 import { messagesToTurns } from '../messagesToTurns';
+import { reconcileTurns } from '../reconcileTurns';
+import type { ExtendedState, PromptAttachment } from '../useKimiWebClient';
 import type { ChatTurn } from '../../types';
-import type { ExtendedState } from '../useKimiWebClient';
 
 export interface UseSideChatDeps {
   pushOperationFailure: (
@@ -55,6 +56,10 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
   );
   const sideChatVisible = computed<boolean>(() => activeSideChatTarget.value !== null);
 
+  const sideChatAgentId = computed<string | null>(
+    () => activeSideChatTarget.value?.agentId ?? null,
+  );
+
   const sideChatSending = computed<boolean>(() => {
     const target = activeSideChatTarget.value;
     return target ? Boolean(rawState.sideChatSendingByAgent[target.agentId]) : false;
@@ -69,16 +74,29 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
     );
   });
 
+  // The side chat's turn list is rebuilt on every streamed token, so without
+  // reconciliation it hands ChatPane a fresh object for every turn on every
+  // token. Each row's v-memo compares its turn by identity, so every row in the
+  // panel re-renders and re-parses its markdown, and the whole conversation pane
+  // above it re-renders too. The main transcript reconciles for exactly this
+  // reason (see reconcileTurns); do the same here. The previous list is kept per
+  // agent, so switching sessions can never reconcile against another session's
+  // turns, and the entry is dropped with the agent's messages.
+  const sideChatTurnsByAgent = new Map<string, ChatTurn[]>();
+
   const sideChatTurns = computed<ChatTurn[]>(() => {
     const target = activeSideChatTarget.value;
     if (!target) return [];
     const messages = rawState.sideChatMessagesByAgent[target.agentId] ?? [];
-    return messagesToTurns(
+    const built = messagesToTurns(
       messages,
       [],
       (fileId) => getKimiWebApi().getFileUrl(fileId),
       sideChatRunning.value,
     );
+    const reconciled = reconcileTurns(sideChatTurnsByAgent.get(target.agentId) ?? [], built);
+    sideChatTurnsByAgent.set(target.agentId, reconciled);
+    return reconciled;
   });
 
   function updateSideChatMessages(agentId: string, update: (messages: AppMessage[]) => AppMessage[]): void {
@@ -94,7 +112,7 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
 
   function removeLastSideChatUserMessage(agentId: string): void {
     updateSideChatMessages(agentId, (messages) => {
-      const idx = [...messages].reverse().findIndex((message) => message.role === 'user');
+      const idx = [...messages].toReversed().findIndex((message) => message.role === 'user');
       if (idx === -1) return messages;
       const removeIndex = messages.length - 1 - idx;
       return messages.filter((_, index) => index !== removeIndex);
@@ -154,6 +172,29 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
     appendSideChatAssistantText(agentId, sessionId, outputPreview);
   }
 
+  /** The wire content for a side-chat prompt: the text (when there is any)
+   *  followed by the attachments, in the same shapes the main composer sends. */
+  function promptContent(text: string, attachments: PromptAttachment[]): AppMessage['content'] {
+    const content: AppMessage['content'] = [];
+    if (text) content.push({ type: 'text', text });
+    for (const att of attachments) {
+      if (att.kind === 'video') {
+        content.push({ type: 'video', source: { kind: 'file', fileId: att.fileId } });
+      } else if (att.kind === 'file') {
+        content.push({
+          type: 'file',
+          fileId: att.fileId,
+          name: att.name ?? '',
+          mediaType: att.mediaType || 'application/octet-stream',
+          size: att.size ?? 0,
+        });
+      } else {
+        content.push({ type: 'image', source: { kind: 'file', fileId: att.fileId } });
+      }
+    }
+    return content;
+  }
+
   /** Open (creating if needed) the side chat for the active session; optionally send a first prompt. */
   async function openSideChat(initialPrompt?: string): Promise<void> {
     const parent = rawState.activeSessionId;
@@ -170,8 +211,8 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
       let agentId: string;
       try {
         ({ agentId } = await getKimiWebApi().startBtw(parent));
-      } catch (err) {
-        pushOperationFailure('openSideChat', err, { sessionId: parent });
+      } catch (error) {
+        pushOperationFailure('openSideChat', error, { sessionId: parent });
         return;
       }
       rawState.sideChatMessagesByAgent = {
@@ -193,11 +234,17 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
   /** Low-level: send a prompt to the side-chat child of an explicit parent session.
    *  Always uses `parent` as the session id, carrying model / thinking /
    *  permissionMode / plan / swarm so the turn matches the UI regardless of
-   *  parent /profile inheritance or race. */
-  async function sendSideChatPromptOn(parent: string, text: string): Promise<void> {
+   *  parent /profile inheritance or race. Resolves true when the daemon took
+   *  the prompt — the panel restores the composer's draft when it did not. */
+  async function sendSideChatPromptOn(
+    parent: string,
+    text: string,
+    attachments?: PromptAttachment[],
+  ): Promise<boolean> {
     const target = sideChatTargetBySession.value[parent];
     const trimmed = text.trim();
-    if (!target || !trimmed) return;
+    const ready = attachments ?? [];
+    if (!target || (trimmed.length === 0 && ready.length === 0)) return false;
     const sid = parent;
     const agentId = target.agentId;
     rawState.sideChatSendingByAgent = { ...rawState.sideChatSendingByAgent, [agentId]: true };
@@ -205,7 +252,7 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
       id: nextOptimisticMsgId(),
       sessionId: sid,
       role: 'user',
-      content: [{ type: 'text', text: trimmed }],
+      content: promptContent(trimmed, ready),
       createdAt: new Date().toISOString(),
       metadata: { 'kimiWeb.optimisticUserMessage': true },
     };
@@ -226,7 +273,7 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
           ? promptSession.model
           : rawState.defaultModel) ?? undefined;
       const result = await getKimiWebApi().submitPrompt(sid, {
-        content: [{ type: 'text', text: trimmed }],
+        content: promptContent(trimmed, ready),
         agentId,
         model,
         thinking: (await resolveThinkingForPrompt(sid, model)) ?? rawState.thinking,
@@ -239,10 +286,12 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
         ...rawState.sideChatUserMessageIdsBySession,
         [sid]: [...(rawState.sideChatUserMessageIdsBySession[sid] ?? []), result.userMessageId],
       };
-    } catch (err) {
-      pushOperationFailure('sendSideChatPrompt', err, { sessionId: sid });
+      return true;
+    } catch (error) {
+      pushOperationFailure('sendSideChatPrompt', error, { sessionId: sid });
       removeLastSideChatUserMessage(agentId);
       rawState.sideChatSendingByAgent = { ...rawState.sideChatSendingByAgent, [agentId]: false };
+      return false;
     }
   }
 
@@ -254,14 +303,18 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
     sideChatTargetBySession.value = rest;
   }
 
-  /** Send a plain prompt to the active session's side chat, carrying the
+  /** Send a prompt to the active session's side chat, carrying the
    *  controls (model, thinking, permissionMode, plan/swarm) the UI shows so a
-   *  BTW first turn matches them even if the parent's /profile is still in
-   *  flight. */
-  async function sendSideChatPrompt(text: string): Promise<void> {
+   *  BTW turn matches them even if the parent's /profile is still in
+   *  flight. Resolves false when there is no side chat to send to, or when the
+   *  daemon refused the prompt. */
+  async function sendSideChatPrompt(
+    text: string,
+    attachments?: PromptAttachment[],
+  ): Promise<boolean> {
     const target = activeSideChatTarget.value;
-    if (!target) return;
-    await sendSideChatPromptOn(target.parentId, text);
+    if (!target) return false;
+    return sendSideChatPromptOn(target.parentId, text, attachments);
   }
 
   // When a session is deleted, drop its side-chat target so it cannot leak into
@@ -281,12 +334,16 @@ export function useSideChat(rawState: ExtendedState, deps: UseSideChatDeps) {
     const { [target.agentId]: _dropSending, ...restSending } = rawState.sideChatSendingByAgent;
     void _dropSending;
     rawState.sideChatSendingByAgent = restSending;
+    // The reconciled turn list holds every turn object of that agent, so it
+    // goes with the messages rather than outliving them.
+    sideChatTurnsByAgent.delete(target.agentId);
   }
 
   return {
     sideChatTargetBySession,
     sideChatSessionId,
     sideChatVisible,
+    sideChatAgentId,
     sideChatSending,
     sideChatRunning,
     sideChatTurns,

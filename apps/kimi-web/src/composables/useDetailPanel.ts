@@ -189,6 +189,12 @@ export function useDetailPanel({ client }: UseDetailPanelOptions) {
 
   function closeSideChat(): void {
     client.closeSideChat();
+    // The side chat IS its panel tab (upstream binds the tab to the agent), so
+    // closing the chat closes the tab. Dropping the target alone would leave an
+    // empty pane on screen that no longer sends anywhere.
+    for (const tab of panel.tabs.value.filter((t) => t.kind === 'btw')) {
+      panel.closeTab(tab.id);
+    }
   }
 
   // A session switch resets the tab-local drill and the last-known agent row;

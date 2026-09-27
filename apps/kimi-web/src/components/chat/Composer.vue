@@ -3,6 +3,7 @@
 import { measureNaturalWidth, prepareWithSegments } from '@chenglou/pretext';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getKimiWebApi } from '../../api';
 import SlashMenu from './SlashMenu.vue';
 import MentionMenu from './MentionMenu.vue';
 import ComposerAddMenu from './ComposerAddMenu.vue';
@@ -73,6 +74,17 @@ const props = withDefaults(defineProps<{
   skills?: AppSkill[];
   /** Hide the context-usage indicator (used on the empty-session landing page). */
   hideContext?: boolean;
+  /** Upstream's `variant="side-chat"`: the pane composer. Keeps the textarea,
+   *  the files button and the send disc; drops the mode pills and the whole
+   *  right-hand toolbar (context, rate, model, permission, /compact, stop),
+   *  which name controls the side chat has no state for. */
+  sideChat?: boolean;
+  /** Upstream's `submitDisabled`: the side chat greys the send disc out while
+   *  its own agent is running, so a second turn cannot be started from here. */
+  submitDisabled?: boolean;
+  /** Upstream's `onSubmit`: when set, the composer hands the turn to this
+   *  handler instead of emitting, so a refused turn can restore the draft. */
+  submitHandler?: (payload: { text: string; attachments: PromptAttachment[] }) => Promise<boolean>;
 }>(), {
   running: false,
   starting: false,
@@ -82,6 +94,8 @@ const props = withDefaults(defineProps<{
   models: () => [],
   starredIds: () => [],
   skills: () => [],
+  sideChat: false,
+  submitDisabled: false,
 });
 
 // Upstream switches the placeholder with the armed work mode, and gives plan its
@@ -90,15 +104,17 @@ const props = withDefaults(defineProps<{
 // the work-mode pill below (goal over plan); props are read directly so this
 // computed does not depend on declarations further down the file.
 const placeholder = computed(() =>
-  props.starting
-    ? t('composer.starting')
-    : props.running
-      ? t('composer.placeholderRunning')
-      : props.goalMode
-        ? t('status.goalPlaceholder')
-        : props.planMode || props.planArmed
-          ? t('status.planPlaceholder')
-          : t('composer.placeholder'),
+  props.sideChat
+    ? t('sideChat.placeholder')
+    : props.starting
+      ? t('composer.starting')
+      : props.running
+        ? t('composer.placeholderRunning')
+        : props.goalMode
+          ? t('status.goalPlaceholder')
+          : props.planMode || props.planArmed
+            ? t('status.planPlaceholder')
+            : t('composer.placeholder'),
 );
 
 // Hide the overlay placeholder when the textarea has content. Native
@@ -191,7 +207,14 @@ function restingHeightPx(el: HTMLTextAreaElement): number {
 const isGrown = ref(false);
 function recomputeGrown(): void {
   const el = textareaRef.value;
-  isGrown.value = !!el && el.scrollHeight > restingHeightPx(el);
+  if (!el) {
+    isGrown.value = false;
+    return;
+  }
+  // The work-mode pill's block lane is padding above the text, not another line
+  // of it, so it must not read as a grown editor.
+  const blockReserve = Number.parseFloat(getComputedStyle(el).paddingTop) || 0;
+  isGrown.value = el.scrollHeight - blockReserve > restingHeightPx(el);
 }
 watch(text, () => {
   // Registered after useComposerDraft's autosize watcher, so the inline height
@@ -733,7 +756,8 @@ function onMediaReorder(payload: { id: string; toIndex: number }): void {
   reorderMedia(payload.id, payload.toIndex);
 }
 
-function handleSubmit(): void {
+async function handleSubmit(): Promise<void> {
+  if (props.submitDisabled) return;
   const trimmed = text.value.trim();
 
   // An upload is still in flight — submitting now would silently send the
@@ -788,6 +812,28 @@ function handleSubmit(): void {
     text: trimmed,
     attachments: readyAttachments.map((a) => toPromptAttachment(a)),
   };
+
+  // Upstream's side chat hands the composer a submit handler instead of an emit
+  // listener, so a refused turn can put the draft back — text and chips both —
+  // before anything is cleared. Everywhere else the emit below carries the turn.
+  if (props.submitHandler) {
+    const accepted = await props.submitHandler(payload);
+    if (!accepted) {
+      text.value = trimmed;
+      loadAttachments(
+        readyAttachments.map((a) => ({
+          fileId: a.fileId,
+          kind: a.kind,
+          name: a.name,
+          mediaType: a.mediaType,
+          size: a.size,
+          url: a.fileId ? getKimiWebApi().getFileUrl(a.fileId) : '',
+        })),
+      );
+      autosize();
+      return;
+    }
+  }
 
   // Revoke object URLs and drop the submitted attachments.
   previewAttachment.value = null;
@@ -998,9 +1044,11 @@ const hasUpload = computed(() => !!props.uploadImage);
 // Upstream greys the send disc out while there is nothing to submit. This
 // mirrors the handleSubmit guard (text or at least one ready attachment); the
 // guard itself is unchanged, so the button is only painted, never re-wired.
-const canSubmit = computed(() =>
-  text.value.trim().length > 0
-    || attachments.value.some((a) => !a.uploading && !a.error && a.fileId),
+const canSubmit = computed(
+  () =>
+    !props.submitDisabled
+    && (text.value.trim().length > 0
+      || attachments.value.some((a) => !a.uploading && !a.error && a.fileId)),
 );
 
 // The mobile cross-fade keeps both buttons mounted, so the faded-out half has
@@ -1240,19 +1288,52 @@ const wmPillKind = computed<'plan' | 'goal' | null>(() =>
   props.goalMode === true ? 'goal' : planArmedOn.value || planOn.value ? 'plan' : null,
 );
 
-// The pill overlays the textarea start, so the first line is indented by its
-// width while it shows (CSS text-indent only nudges line 1 — mirrors upstream).
+// The pill takes one of upstream's two lanes, and the choice is a media query
+// on the pill itself: the inline lane floats it over the editor's first line
+// and indents that line past it, the block lane (touch) gives the pill its own
+// space and pushes the first line below it. Read the lane back off the
+// computed style and hand the editor the matching reserve; it consumes the two
+// as --wm-pill-inline-reserve / --wm-pill-block-reserve.
 const wmPillRef = ref<HTMLElement | null>(null);
-const wmPillIndent = ref('');
+const wmLaneQuery =
+  typeof window.matchMedia === 'function' ? window.matchMedia('(hover: none)') : null;
 function measureWmPill(): void {
   const el = wmPillRef.value;
-  wmPillIndent.value = el ? `calc(${el.offsetWidth}px + var(--space-2))` : '';
+  const wrap = cinWrapRef.value;
+  if (!el || !wrap) return;
+  const cs = getComputedStyle(el);
+  const px = (value: string): number => Number.parseFloat(value) || 0;
+  const block = cs.getPropertyValue('--wm-pill-lane').trim() === 'block';
+  const inline = block ? 0 : Math.max(0, px(cs.marginLeft) + el.offsetWidth + px(cs.marginRight));
+  const reserve = block ? Math.max(0, px(cs.marginTop) + el.offsetHeight + px(cs.marginBottom)) : 0;
+  wrap.style.setProperty('--wm-pill-inline-reserve', `${inline}px`);
+  wrap.style.setProperty('--wm-pill-block-reserve', `${reserve}px`);
+  // The block reserve is real editor padding, so the box has to re-fit to it.
+  autosize();
+  recomputeGrown();
 }
-watch(wmPillKind, () => {
+function clearWmPillReserve(): void {
+  const wrap = cinWrapRef.value;
+  if (!wrap) return;
+  wrap.style.removeProperty('--wm-pill-inline-reserve');
+  wrap.style.removeProperty('--wm-pill-block-reserve');
+  autosize();
+  recomputeGrown();
+}
+function onWmLaneChange(): void {
   if (wmPillKind.value !== null) void nextTick(() => requestAnimationFrame(measureWmPill));
-  else wmPillIndent.value = '';
+}
+watch(wmPillKind, (kind) => {
+  wmLaneQuery?.removeEventListener('change', onWmLaneChange);
+  if (kind === null) {
+    clearWmPillReserve();
+    return;
+  }
+  // A hybrid device can cross the lane boundary without the pill changing.
+  wmLaneQuery?.addEventListener('change', onWmLaneChange);
+  void nextTick(() => requestAnimationFrame(measureWmPill));
 });
-const wmPillStyle = computed(() => (wmPillIndent.value ? { textIndent: wmPillIndent.value } : undefined));
+onUnmounted(() => wmLaneQuery?.removeEventListener('change', onWmLaneChange));
 
 /** Dismiss the work-mode pill: un-arm a staged plan, turn an active plan off,
  *  or un-arm a staged goal. */
@@ -1592,14 +1673,10 @@ function selectModel(modelId: string): void {
     <!-- Main composer card -->
     <div ref="cardRef" class="composer-card">
       <!-- Input row with popup menus -->
-      <div
-        ref="cinWrapRef"
-        class="cin-wrap"
-        :class="{ 'has-wm-pill': !!wmPillKind }"
-      >
-        <!-- Work-mode pill — armed/active plan or armed goal, floating over the
-             textarea's top-left; × exits (un-arm or turn off). -->
-        <span v-if="wmPillKind" ref="wmPillRef" class="wm-pill" :data-work-mode="wmPillKind">
+      <div ref="cinWrapRef" class="cin-wrap">
+        <!-- Work-mode pill — armed/active plan or armed goal, over the editor's
+             first line; × exits (un-arm or turn off). -->
+        <span v-if="wmPillKind && !sideChat" ref="wmPillRef" class="wm-pill" :data-work-mode="wmPillKind">
           <span class="wm-icon"><Icon :name="wmPillKind === 'goal' ? 'target' : 'file-edit'" size="sm" /></span>
           <span>{{ t(wmPillKind === 'goal' ? 'status.goalLabel' : 'status.planLabel') }}</span>
           <button
@@ -1665,7 +1742,6 @@ function selectModel(modelId: string): void {
             ref="textareaRef"
             v-model="text"
             class="ph"
-            :style="wmPillStyle"
             :placeholder="placeholder"
             :aria-label="t('composer.inputLabel')"
             :disabled="starting"
@@ -1709,9 +1785,23 @@ function selectModel(modelId: string): void {
 
         <!-- Left: add menu + permission -->
         <div class="toolbar-left">
-          <!-- "+" add menu — Files / Goal / Plan / Swarm -->
-          <div v-if="status" ref="addRef" class="add">
-            <Tooltip :text="t('composer.addMenu')">
+          <!-- "+" add menu — Files / Goal / Plan / Swarm. The side chat keeps
+               only the files button, so its wrapper keys on uploads rather
+               than on the session status the menu itself needs. -->
+          <div v-if="sideChat ? hasUpload : status" ref="addRef" class="add">
+            <!-- Side chat: upstream keeps only the files button — no "+" menu,
+                 because Goal / Plan / Swarm are main-conversation modes. -->
+            <Tooltip v-if="sideChat" :text="t('composer.addFilesDesc')">
+              <IconButton
+                class="composer-attach"
+                size="md"
+                :label="t('composer.addFilesDesc')"
+                @click.stop="openFilePicker"
+              >
+                <Icon name="attachment" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip v-else :text="t('composer.addMenu')">
               <IconButton
                 class="composer-attach"
                 size="md"
@@ -1730,7 +1820,7 @@ function selectModel(modelId: string): void {
                  is in the card) the card's own backdrop-filter would make it a
                  filter root, leaving a descendant's filter nothing to read. The
                  two dropdowns below ride the same rule. -->
-            <Teleport to="body">
+            <Teleport v-if="!sideChat" to="body">
               <div
                 v-if="addOpen && !isMobile"
                 ref="addMenuRef"
@@ -1765,7 +1855,7 @@ function selectModel(modelId: string): void {
 
           <!-- Permission pill — click to open dropdown -->
           <span
-            v-if="status"
+            v-if="status && !sideChat"
             class="perm-pill"
             :class="['perm-' + status.permission, { open: permDropdownOpen }]"
             role="button"
@@ -1822,7 +1912,7 @@ function selectModel(modelId: string): void {
         <!-- Right: ctx + model -->
         <div class="toolbar-right">
           <!-- Compact chip when context is high -->
-          <button v-if="showCompact" class="compact-chip" @click.stop="emit('compact')">/compact</button>
+          <button v-if="showCompact && !sideChat" class="compact-chip" @click.stop="emit('compact')">/compact</button>
 
           <!-- Context meter — circular ring only; the full usage (used/max/pct)
                lives in the tooltip. The ring is aria-hidden, so the trigger
@@ -1830,7 +1920,7 @@ function selectModel(modelId: string): void {
                switch-control users reach the same tooltip hover users see. -->
           <Tooltip :text="ctxGroupLabel">
             <span
-              v-if="status && !hideContext"
+              v-if="status && !hideContext && !sideChat"
               class="ctx-group"
               role="img"
               tabindex="0"
@@ -1857,7 +1947,7 @@ function selectModel(modelId: string): void {
                the context group's, because the two figures it can show (the
                live estimate and the last step's exact rate) need saying apart.
                Focusable, like the context group, so keyboard users reach it. -->
-          <template v-if="status?.tps">
+          <template v-if="status?.tps && !sideChat">
             <span class="ctx-sep" aria-hidden="true">|</span>
             <Tooltip :text="tpsTooltip">
               <span
@@ -1878,7 +1968,7 @@ function selectModel(modelId: string): void {
                tooltip still shows model + effort. -->
           <Tooltip :text="modelPillCollapsed ? modelPillLabel : null">
             <button
-              v-if="status"
+              v-if="status && !sideChat"
               type="button"
               class="model-pill"
               :class="{ open: dropdownOpen, 'icon-only': modelPillCollapsed }"
@@ -1900,6 +1990,7 @@ function selectModel(modelId: string): void {
           <div class="send-stop">
             <Tooltip :text="running ? t('composer.interruptTitle') : null">
               <button
+                v-if="!sideChat"
                 class="stop"
                 :class="{ 'is-off': !running }"
                 :aria-label="t('composer.interrupt')"
@@ -2304,17 +2395,6 @@ function selectModel(modelId: string): void {
   color: var(--color-text);
 }
 
-/* Work-mode pill reserve — upstream keeps the pill out of the text by reserving
-   its block space on the editor (`padding-top: var(--wm-pill-block-reserve)`,
-   the pill's own height plus the gap), which is why its placeholder starts below
-   the pill instead of under it. Without the reserve the pill sat on the
-   textarea's first line and covered the placeholder. `.ph` and `.ph-overlay`
-   must keep identical padding (see the .ph-overlay note), so both get it. */
-.cin-wrap.has-wm-pill .ph,
-.cin-wrap.has-wm-pill .ph-overlay {
-  padding-top: calc(var(--ui-font-size) * 1.5 + var(--space-1));
-}
-
 /* Placeholder overlay — sits BEHIND the textarea in the flex row, fully
    pointer-event transparent so clicks fall through to the textarea. The
    overlay is hidden the moment text is typed (showPlaceholderOverlay) so it
@@ -2342,6 +2422,18 @@ function selectModel(modelId: string): void {
   user-select: none;
   overflow: hidden;
   z-index: 0;
+}
+
+/* Work-mode pill reserve. The pill floats over the editor's first line and
+   hands back the space it needs; which kind of space depends on the lane the
+   pill is in (see .wm-pill) — the inline lane indents the first line past the
+   pill, the block lane pushes that line below it. Declared after both box
+   rules because each of them sets padding with a shorthand, which would
+   otherwise clear the block reserve. */
+.ph,
+.ph-overlay {
+  text-indent: var(--wm-pill-inline-reserve, 0px);
+  padding-top: var(--wm-pill-block-reserve, 0px);
 }
 .ph-overlay-primary {
   font-weight: var(--weight-medium);
@@ -2995,18 +3087,30 @@ function selectModel(modelId: string): void {
   gap: 1px;
 }
 
-/* Work-mode pill — armed/active plan or armed goal, floating over the
-   textarea's top-left (`.cin-wrap` provides the positioning context). */
+/* Work-mode pill — armed/active plan or armed goal, over the editor's first
+   line. Two lanes, and the lane is declared here because the editor's reserve
+   is measured back out of it: the inline lane (pointer devices) floats the
+   pill over the line and indents that line past it, the block lane (touch)
+   gives the pill its own space and pushes the line below it. `top`/`left` land
+   the pill on the editor's text origin, and the negative left margin lets it
+   hang a little past the text's own left edge. `.cin-wrap` is the positioning
+   context, and absolute offsets resolve against its padding box, so the two
+   insets are repeated here to land on the editor's text origin. */
 .wm-pill {
+  --wm-pill-lane: inline;
+  --wm-x-size: calc(var(--p-ic-sm) + var(--space-1));
   position: absolute;
-  top: 14px;
+  top: var(--composer-inset-top, 14px);
   left: 16px;
   z-index: var(--z-sticky);
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  vertical-align: top;
   height: calc(var(--ui-font-size) * 1.5);
-  padding: 0 calc((var(--ui-font-size) * 1.5 - 18px) / 2) 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-05));
+  margin-right: var(--space-1-5);
+  padding: 0 calc((var(--ui-font-size) * 1.5 - var(--wm-x-size)) / 2) 0 var(--space-2);
   border: none;
   border-radius: var(--radius-full);
   background: var(--color-surface);
@@ -3020,11 +3124,42 @@ function selectModel(modelId: string): void {
   user-select: none;
 }
 .wm-x {
-  width: 18px;
-  height: 18px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--wm-x-size);
+  height: var(--wm-x-size);
+  padding: 0;
+  /* Without this the browser's default button border draws a 2px outset ring
+     around the ×: on a full-radius box it reads as a circle the × sits inside,
+     and the 4px it eats pushes the icon off the pill's right edge. */
+  border: none;
   border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
 }
 .wm-x :deep(svg) { width: var(--p-ic-sm); height: var(--p-ic-sm); }
+
+@media (hover: none) {
+  .wm-pill {
+    --wm-pill-lane: block;
+    display: flex;
+    width: max-content;
+    margin-right: 0;
+    margin-bottom: var(--space-3);
+    padding-right: calc((var(--touch-target-min) - var(--wm-x-size)) / 2);
+  }
+  /* The pill's own box stays one line tall; only its hit area grows to the
+     minimum touch target. */
+  .wm-x::before {
+    content: '';
+    position: absolute;
+    inset: calc((var(--wm-x-size) - var(--touch-target-min)) / 2);
+  }
+}
 
 /* ---- Narrow composer toolbar ----------------------------------------------
    Below a wide desktop the chat column can be narrower than the full toolbar

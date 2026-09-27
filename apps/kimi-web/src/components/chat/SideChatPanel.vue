@@ -1,74 +1,99 @@
 <!-- apps/kimi-web/src/components/chat/SideChatPanel.vue -->
 <!-- BTW "side chat": a side-channel agent rendered in the right-side panel.
      It keeps the parent's context without creating a sidebar session. Reuses
-     ChatPane for the transcript. Element structure and class vocabulary follow
-     upstream's own SideChatPanel: no pane header (the tab strip titles it), a
-     composer pinned to the pane's bottom edge with the transcript padded clear
-     of it, and a moon + label line while the prompt waits for its first token. -->
+     ChatPane for the transcript and the shared Composer (its side-chat
+     variant) for the input, so the pane's look and its draft handling are the
+     main composer's. Element structure follows upstream's own SideChatPanel:
+     no pane header (the tab strip titles it), a composer pinned to the pane's
+     bottom edge with the transcript's last rows faded out under it, and an
+     EmptyState carrying the side-chat glyph while the chat has no turns. -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ChatPane from './ChatPane.vue';
-import MoonSpinner from '../ui/MoonSpinner.vue';
+import Composer from './Composer.vue';
+import EmptyState from '../ui/EmptyState.vue';
 import Icon from '../ui/Icon.vue';
-import type { ChatTurn, ToolMedia } from '../../types';
-import Tooltip from '../ui/Tooltip.vue';
+import type { PromptAttachment } from '../../composables/useKimiWebClient';
+import type { ChatTurn, ConversationStatus, ToolMedia } from '../../types';
+import type { FileItem } from './MentionMenu.vue';
 
 const props = defineProps<{
   turns: ChatTurn[];
   running: boolean;
   sending: boolean;
+  /** The side-chat agent this pane is bound to. Scopes the composer's draft. */
+  agentId?: string;
+  status?: ConversationStatus;
+  searchFiles?: (q: string) => Promise<FileItem[]>;
+  uploadImage?: (file: Blob, name?: string) => Promise<{ fileId: string; name: string; mediaType: string } | null>;
+  /** Sends the prompt; resolves false when the daemon refused it, which puts
+   *  the draft back in the composer. */
+  onSend?: (text: string, attachments: PromptAttachment[]) => Promise<boolean>;
 }>();
 
 const emit = defineEmits<{
-  send: [text: string];
   openMedia: [media: ToolMedia];
 }>();
 
 const { t } = useI18n();
 
-const draft = ref('');
-const inputRef = ref<HTMLTextAreaElement | null>(null);
 const bodyRef = ref<HTMLDivElement | null>(null);
 const composerEl = ref<HTMLDivElement | null>(null);
+const composerRef = ref<InstanceType<typeof Composer> | null>(null);
 
 // The composer floats over the pane's bottom edge, so the transcript needs the
-// composer's height as bottom padding to keep its last row reachable.
+// composer's height (plus the 48px band the fade covers) as bottom padding to
+// keep its last row reachable. Growing the composer scrolls the body by the
+// same amount, so the rows under it do not shift.
+const GAP = 48;
 const composerHeight = ref(0);
 let composerObserver: ResizeObserver | null = null;
 
 watch(composerEl, (el, previous) => {
   if (previous) composerObserver?.unobserve(previous);
-  if (el !== null && typeof ResizeObserver !== 'undefined') {
-    if (composerObserver === null) {
-      composerObserver = new ResizeObserver(() => {
-        composerHeight.value = composerEl.value?.offsetHeight ?? 0;
-      });
-    }
-    composerObserver.observe(el);
+  if (el === null) return;
+  if (composerObserver === null && typeof ResizeObserver !== 'undefined') {
+    composerObserver = new ResizeObserver(() => {
+      const next = composerEl.value?.offsetHeight ?? 0;
+      const body = bodyRef.value;
+      if (body) body.scrollTop += next - composerHeight.value;
+      composerHeight.value = next;
+    });
   }
-  composerHeight.value = el?.offsetHeight ?? 0;
+  composerObserver?.observe(el);
+  composerHeight.value = el.offsetHeight;
 }, { immediate: true });
 
 onBeforeUnmount(() => composerObserver?.disconnect());
 
-// Panel mounts fresh on every open (v-else-if in the panel body), so land focus
-// in the input immediately — /btw or the shortcut both land the user typing.
+// The panel mounts fresh on every open, so land focus in the input immediately
+// — the panel launcher and /btw both land the user typing.
 onMounted(() => {
   void nextTick(() => {
-    inputRef.value?.focus();
+    composerRef.value?.focus();
   });
 });
 
-function submit(): void {
-  const text = draft.value.trim();
-  if (!text) return;
-  emit('send', text);
-  draft.value = '';
-  void nextTick(() => {
-    if (inputRef.value) inputRef.value.style.height = 'auto';
-    scrollToBottom();
-  });
+const busy = ref(false);
+
+// The composer's own submit handler: it awaits the daemon's answer and keeps
+// the draft (text and chips) when the turn was refused.
+async function send(payload: {
+  text: string;
+  attachments: PromptAttachment[];
+}): Promise<boolean> {
+  if (busy.value || props.running || props.sending) return false;
+  if (!props.onSend) return false;
+  busy.value = true;
+  try {
+    return await props.onSend(payload.text, payload.attachments);
+  } finally {
+    busy.value = false;
+    void nextTick(() => {
+      scrollToBottom();
+    });
+  }
 }
 
 function scrollToBottom(): void {
@@ -82,9 +107,16 @@ const scrollKey = computed(() => {
   if (t.length === 0) return '0';
   const last = t.at(-1)!;
   const thinkingLen = last.thinking?.length ?? 0;
+  // The key only needs to CHANGE when the tail turn grows, so the lengths are
+  // summed, not built: `tool.output.join('')` copied every line of every tool
+  // output into a fresh string on each streamed token, only to measure it.
   const toolsLen =
     last.tools?.reduce(
-      (n, tool) => n + tool.name.length + (tool.arg?.length ?? 0) + (tool.output?.join('').length ?? 0),
+      (n, tool) =>
+        n +
+        tool.name.length +
+        (tool.arg?.length ?? 0) +
+        (tool.output?.reduce((m, line) => m + line.length, 0) ?? 0),
       0,
     ) ?? 0;
   return `${t.length}:${last.text.length}:${thinkingLen}:${toolsLen}`;
@@ -96,26 +128,11 @@ watch(scrollKey, async () => {
   scrollToBottom();
 });
 
-/** Show the "Requesting…" line from the moment the user sends a prompt until
-    the assistant's first message appears — upstream's own condition. */
-const showLoading = computed(() => {
-  if (!props.sending) return false;
-  return props.turns.at(-1)?.role === 'user';
-});
-
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    submit();
-  }
+function focusInput(): void {
+  composerRef.value?.focus();
 }
 
-function autosize(): void {
-  const el = inputRef.value;
-  if (!el) return;
-  el.style.height = 'auto';
-  el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-}
+defineExpose({ focusInput });
 </script>
 
 <template>
@@ -123,9 +140,20 @@ function autosize(): void {
     <div
       ref="bodyRef"
       class="sc-body"
-      :style="composerHeight > 0 ? { paddingBottom: `${composerHeight}px` } : undefined"
+      :style="
+        composerHeight > 0
+          ? { '--sc-composer-h': `${composerHeight}px`, paddingBottom: `${composerHeight + GAP}px` }
+          : undefined
+      "
     >
-      <div v-if="turns.length === 0" class="sc-empty">{{ t('sideChat.empty') }}</div>
+      <EmptyState
+        v-if="turns.length === 0"
+        class="sc-empty"
+        :title="t('sideChat.title')"
+        :hint="t('sideChat.empty')"
+      >
+        <template #icon><Icon name="side-chat" size="lg" /></template>
+      </EmptyState>
       <ChatPane
         v-else
         :turns="turns"
@@ -134,29 +162,19 @@ function autosize(): void {
         :working="sending || running"
         @open-media="emit('openMedia', $event)"
       />
-      <div v-if="showLoading" class="sc-loading">
-        <div class="working-indicator" role="status">
-          <span class="wi-mascot" aria-hidden="true"><MoonSpinner size="lg" /></span>
-          <span class="wi-label">{{ t('conversation.requesting') }}</span>
-        </div>
-      </div>
     </div>
 
     <div ref="composerEl" class="sc-composer">
-      <textarea
-        ref="inputRef"
-        v-model="draft"
-        class="sc-input"
-        rows="1"
-        :placeholder="t('sideChat.placeholder')"
-        @input="autosize"
-        @keydown="onKeydown"
-      ></textarea>
-      <Tooltip :text="t('sideChat.send')">
-        <button type="button" class="sc-send" :disabled="!draft.trim()" @click="submit">
-          <Icon name="arrow-right" size="sm" />
-        </button>
-      </Tooltip>
+      <Composer
+        ref="composerRef"
+        side-chat
+        :session-id="agentId"
+        :status="status"
+        :search-files="searchFiles"
+        :upload-image="uploadImage"
+        :submit-disabled="running || sending || busy"
+        :submit-handler="send"
+      />
     </div>
   </div>
 </template>
@@ -174,12 +192,34 @@ function autosize(): void {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  --sc-composer-h: 0px;
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sc-composer-h) - 48px),
+    transparent calc(100% - var(--sc-composer-h))
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sc-composer-h) - 48px),
+    transparent calc(100% - var(--sc-composer-h))
+  );
 }
 .sc-empty {
-  padding: 24px 16px;
-  text-align: center;
-  color: var(--muted);
-  font-size: var(--ui-font-size);
+  min-height: 100%;
+}
+/* Upstream sizes the side chat's own empty state down from the shared
+   EmptyState defaults and paints its glyph in the accent colour. */
+.sc-empty :deep(.ui-empty__icon) { color: var(--color-accent); }
+.sc-empty :deep(.ui-empty__icon svg) { width: 28px; height: 28px; }
+.sc-empty :deep(.ui-empty__title) {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+.sc-empty :deep(.ui-empty__hint) {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: pre-line;
 }
 
 .sc-composer {
@@ -188,73 +228,5 @@ function autosize(): void {
   right: 0;
   bottom: 0;
   z-index: var(--z-sticky);
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  padding: 8px 10px;
-  border-top: 0.5px solid var(--color-line);
-  background: var(--color-surface-raised);
-}
-.sc-input {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  border: 0.5px solid var(--color-line);
-  border-radius: var(--r-sm, 8px);
-  padding: 7px 9px;
-  background: var(--bg);
-  color: var(--color-text);
-  font: var(--ui-font-size)/1.5 var(--sans);
-  outline: none;
-  max-height: 160px;
-}
-.sc-input:focus { border-color: var(--color-accent-bd); }
-.sc-send {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: var(--r-sm, 8px);
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
-  cursor: pointer;
-}
-.sc-send:disabled { opacity: 0.4; cursor: default; }
-.sc-send:not(:disabled):hover { background: var(--color-accent-hover); }
-
-/* Send → first-token indicator, upstream's WorkingIndicator layout. */
-.sc-loading {
-  flex: none;
-  padding: 8px 12px 12px;
-}
-.working-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  align-self: flex-start;
-  font: var(--text-sm)/var(--leading-normal) var(--font-ui);
-  color: var(--color-text-muted);
-}
-.wi-mascot {
-  flex: none;
-  width: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.wi-label { animation: wi-breathe 1.6s var(--ease-in-out) infinite; }
-
-@keyframes wi-breathe {
-  50% { opacity: 0.55; }
-}
-
-/* The side chat reuses ChatPane, but we don't want its working moon/spinner
-   placeholder here — the line above owns that state (upstream hides it too). */
-.sc-body :deep(.sending-placeholder),
-.sc-body :deep(.sending-line) {
-  display: none;
 }
 </style>

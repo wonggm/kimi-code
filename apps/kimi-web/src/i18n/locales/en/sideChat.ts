@@ -1,7 +1,7 @@
 export default {
-  title: 'Side chat',
-  subtitle: 'forked from this session',
-  empty: 'Ask a quick question on the side — it shares this session’s context.',
-  placeholder: 'Ask the side chat…',
+  title: 'Side Chat',
+  empty: 'Read-only Q&A based on the current session context. The conversation cannot be recovered after closing.',
+  placeholder: 'Ask a question about the current session…',
   send: 'Send',
+  requiresSession: 'Open a session to use side chat',
 } as const;

@@ -9,8 +9,10 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ChatTurn, FilePreviewRequest, ToolMedia } from '../../types';
+import type { ChatTurn, ConversationStatus, FilePreviewRequest, ToolMedia } from '../../types';
 import type { AppTask } from '../../api/types';
+import type { FileItem } from './MentionMenu.vue';
+import type { PromptAttachment } from '../../composables/useKimiWebClient';
 import { useKimiWebClient } from '../../composables/useKimiWebClient';
 import { useDetailPanel } from '../../composables/useDetailPanel';
 import { latestTurnDiffEntries } from '../../lib/rightPanelTabs';
@@ -31,13 +33,25 @@ const props = defineProps<{
   turns: ChatTurn[];
   changedFiles: string[];
   appTasks?: AppTask[];
-  sideChat: { turns: ChatTurn[]; running: boolean; sending: boolean };
+  sideChat: {
+    /** The side chat's turns are read from the client below, not passed in:
+     *  they change on every streamed token, and as a prop they would re-render
+     *  the whole conversation pane on every token to reach this panel. */
+    running: boolean;
+    sending: boolean;
+    agentId?: string;
+    onSend?: (text: string, attachments: PromptAttachment[]) => Promise<boolean>;
+  };
+  sideChatComposer?: {
+    status?: ConversationStatus;
+    searchFiles?: (q: string) => Promise<FileItem[]>;
+    uploadImage?: (file: Blob, name?: string) => Promise<{ fileId: string; name: string; mediaType: string } | null>;
+  };
   sessionId?: string;
   terminalAvailable: boolean;
 }>();
 
 const emit = defineEmits<{
-  'side-chat-send': [text: string];
   'open-media': [media: ToolMedia];
   'cancel-task': [taskId: string];
   'open-file': [target: FilePreviewRequest];
@@ -47,7 +61,10 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 // The pane reads the same singleton client state the rest of the app does: the
-// diff tab's file list, git info and loaded diff, and the session's cwd.
+// diff tab's file list, git info and loaded diff, the session's cwd, and the
+// side chat's own transcript. Taking the side chat from here keeps its per-token
+// updates inside this pane's subtree — the conversation pane that hosts the tab
+// strip is no longer re-rendered for them.
 const client = useKimiWebClient();
 const {
   detailDiffMode,
@@ -170,10 +187,14 @@ const compactionText = computed(() => {
 
   <SideChatPanel
     v-else-if="tab.kind === 'btw'"
-    :turns="sideChat.turns"
+    :turns="client.sideChatTurns.value"
     :running="sideChat.running"
     :sending="sideChat.sending"
-    @send="emit('side-chat-send', $event)"
+    :agent-id="sideChat.agentId ?? tab.agentId"
+    :status="sideChatComposer?.status"
+    :search-files="sideChatComposer?.searchFiles"
+    :upload-image="sideChatComposer?.uploadImage"
+    :on-send="sideChat.onSend"
     @open-media="emit('open-media', $event)"
   />
 
