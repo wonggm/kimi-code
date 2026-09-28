@@ -1,8 +1,9 @@
 <!-- apps/kimi-web/src/components/chat/MentionText.vue -->
 <!-- Renders raw chat text with @-mentioned files / folders / skills as icon
      pills (class `mention-pill`, data-mention-* attributes), plus the media
-     attachments a composer rail mention refers to (kind `attachment` — a pill
-     with no path, never probed or opened). File and skill pills are clickable
+     attachments a composer rail mention refers to, which upstream draws in
+     their own `attachment-pill` family (data-attachment-* attributes) and which
+     are never probed or opened. File and skill pills are clickable
      (open through the app's file flow); hovering a pill shows MentionTip.
      Missing files (probed on hover, result cached) render struck-through with
      class `mention-missing`. -->
@@ -50,6 +51,23 @@ function iconFor(kind: MentionKind): string {
   if (kind === 'attachment') return ICON_ATTACHMENT;
   if (kind === 'browser') return ICON_BROWSER;
   return ICON_FILE;
+}
+
+function isAttachment(seg: MentionSegment): boolean {
+  return seg.kind === 'attachment';
+}
+
+// Each family names its own children, as upstream does.
+function pillIconClass(seg: MentionSegment): string {
+  if (seg.kind === 'browser') return 'quote-pill-icon';
+  if (seg.kind === 'attachment') return 'attachment-pill-icon';
+  return 'mention-pill-icon';
+}
+
+function pillNameClass(seg: MentionSegment): string {
+  if (seg.kind === 'browser') return 'quote-pill-name';
+  if (seg.kind === 'attachment') return 'attachment-pill-name';
+  return 'mention-pill-name';
 }
 
 /** Stable no-op fallback so MentionTip never receives a fresh closure. */
@@ -252,11 +270,16 @@ onUnmounted(() => {
       :class="
         seg.kind === 'browser'
           ? ['quote-pill', 'browser-reference-pill']
-          : ['mention-pill', `mention-${seg.kind}`, { 'mention-missing': isMissing(seg) }]
+          : isAttachment(seg)
+            ? ['attachment-pill', 'attachment-file']
+            : ['mention-pill', `mention-${seg.kind}`, { 'mention-missing': isMissing(seg) }]
       "
-      :data-mention-kind="seg.kind"
-      :data-mention-name="seg.name"
-      :data-mention-path="seg.path || undefined"
+      :data-mention-kind="isAttachment(seg) ? undefined : seg.kind"
+      :data-mention-name="isAttachment(seg) ? undefined : seg.name"
+      :data-mention-path="isAttachment(seg) || !seg.path ? undefined : seg.path"
+      :data-attachment-id="isAttachment(seg) ? seg.path : undefined"
+      :data-attachment-kind="isAttachment(seg) ? 'file' : undefined"
+      :data-attachment-name="isAttachment(seg) ? seg.name : undefined"
       :data-browser-ref-id="seg.kind === 'browser' ? browserRefId(seg) || undefined : undefined"
       :data-browser-ref-label="seg.kind === 'browser' ? seg.name : undefined"
       :role="pillIsButton(seg) ? 'button' : undefined"
@@ -269,12 +292,8 @@ onUnmounted(() => {
       @keydown="onPillKeydown($event, seg)"
     >
       <!-- eslint-disable-next-line vue/no-v-html -->
-      <span
-        :class="seg.kind === 'browser' ? 'quote-pill-icon' : 'mention-pill-icon'"
-        v-html="iconFor(seg.kind)"
-        aria-hidden="true"
-      />
-      <span :class="seg.kind === 'browser' ? 'quote-pill-name' : 'mention-pill-name'">{{ seg.name }}</span>
+      <span :class="pillIconClass(seg)" v-html="iconFor(seg.kind)" aria-hidden="true" />
+      <span :class="pillNameClass(seg)">{{ seg.name }}</span>
     </span>
   </template>
 
@@ -298,6 +317,24 @@ onUnmounted(() => {
 
 <style scoped>
 .mention-pill,
+.attachment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-05);
+  max-width: 100%;
+  padding: 0 var(--space-05);
+  color: color-mix(in srgb, var(--color-text) 76%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-size);
+  font-weight: var(--weight-ui-strong);
+  line-height: var(--leading-normal);
+  vertical-align: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Upstream draws these as bare icon + label: no fill, no border, no radius. */
+
 .quote-pill {
   display: inline-flex;
   align-items: center;
@@ -323,7 +360,9 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .mention-pill[role='button']:hover,
-.mention-pill[role='button']:focus-visible,
+.mention-pill[role='button']:focus-visible {
+  color: var(--color-text);
+}
 .quote-pill[role='button']:hover,
 .quote-pill[role='button']:focus-visible {
   background: var(--color-surface-raised);
@@ -343,6 +382,7 @@ onUnmounted(() => {
 }
 
 .mention-pill-icon,
+.attachment-pill-icon,
 .quote-pill-icon {
   display: inline-flex;
   align-items: center;
@@ -351,6 +391,7 @@ onUnmounted(() => {
   color: var(--color-text-muted);
 }
 .mention-pill-icon :deep(svg),
+.attachment-pill-icon :deep(svg),
 .quote-pill-icon :deep(svg) {
   width: 13px;
   height: 13px;
@@ -358,6 +399,7 @@ onUnmounted(() => {
 }
 
 .mention-pill-name,
+.attachment-pill-name,
 .quote-pill-name {
   overflow: hidden;
   text-overflow: ellipsis;

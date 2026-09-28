@@ -1,7 +1,8 @@
 export default {
   back: '‹ Previous question',
   nextQuestion: 'Next question ›',
-  otherDefault: 'Other…',
+  otherDefault: 'Other',
+  otherPlaceholder: 'Share your thoughts…',
   submit: 'Submit',
   dismiss: 'Dismiss',
   minimize: 'Minimize',

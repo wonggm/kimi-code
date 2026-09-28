@@ -5,9 +5,9 @@
      replaces the body while minimized, an expand control for the scrollable
      kinds (diff / file / plan review) and the minimize control; a body per
      block kind (code well, shell command, chip, todo list, plan with its
-     option rows, plain summary) and a footer whose buttons carry their number
-     key. The fork's own behaviour is kept: inline feedback, the number-key
-     shortcuts, plan options and the minimize state. -->
+     option rows, plain summary) and a footer whose buttons carry their
+     shortcut key. The fork's own behaviour is kept: inline feedback, plan
+     options and the minimize state. -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -240,9 +240,10 @@ function openPlanPath(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Number key shortcuts. Generic cards: 1=approve, 2=session, 3=reject,
-// 4=feedback. Plan review cards: 1/2/3 map to the offered approaches (or
-// approve / revise / reject-and-exit when no approaches are offered).
+// Keyboard shortcuts, matching the caps the buttons carry. Generic cards:
+// Ctrl+Enter = approve for session, Enter = approve, Esc = reject. Plan review
+// cards: 1/2/3 map to the offered approaches (or approve / revise /
+// reject-and-exit when no approaches are offered).
 // Guard: do not fire when a textarea/input is focused
 // ---------------------------------------------------------------------------
 
@@ -267,10 +268,13 @@ function handleKeydown(e: KeyboardEvent): void {
     else if (e.key === '3' && pr.options[2]) { e.preventDefault(); approveOption(pr.options[2].label); }
     return;
   }
-  if (e.key === '1') { e.preventDefault(); approve(); }
-  else if (e.key === '2') { e.preventDefault(); approveSession(); }
-  else if (e.key === '3') { e.preventDefault(); reject(); }
-  else if (e.key === '4') { e.preventDefault(); openFeedback(); }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (e.ctrlKey) approveSession();
+    else approve();
+    return;
+  }
+  if (e.key === 'Escape') { e.preventDefault(); reject(); }
 }
 
 // The shortcut listener lives on the document for as long as the card is
@@ -497,10 +501,10 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
 
             <!-- default actions row -->
             <template v-else>
-              <CardButton class="amain" variant="primary" hint="1" :loading="pendingAction === 'approve'" :disabled="busy" @click="approve">{{ t('approval.approve') }}</CardButton>
-              <CardButton class="asession" hint="2" :loading="pendingAction === 'approveSession'" :disabled="busy" @click="approveSession">{{ t('approval.approveSession') }}</CardButton>
-              <CardButton hint="3" :loading="pendingAction === 'reject'" :disabled="busy" @click="reject">{{ t('approval.reject') }}</CardButton>
-              <CardButton hint="4" :disabled="busy" @click="openFeedback">{{ t('approval.feedback') }}</CardButton>
+              <CardButton class="asession" hint="Ctrl" :hint-icons="['enter']" :loading="pendingAction === 'approveSession'" :disabled="busy" @click="approveSession">{{ t('approval.approveSession') }}</CardButton>
+              <CardButton :disabled="busy" @click="openFeedback">{{ t('approval.feedback') }}</CardButton>
+              <CardButton hint="Esc" :loading="pendingAction === 'reject'" :disabled="busy" @click="reject">{{ t('approval.reject') }}</CardButton>
+              <CardButton class="amain" variant="primary" :hint-icons="['enter']" :loading="pendingAction === 'approve'" :disabled="busy" @click="approve">{{ t('approval.approve') }}</CardButton>
             </template>
           </div>
         </div>

@@ -246,13 +246,22 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Positioning only: the Menu primitive supplies the surface (background,
-   border, radius, shadow, padding). */
-.sqb {
+/* Positioning, plus upstream's own surface on the primitive's box: the
+   translucent menu fill over the menu backdrop blur, its 3.5px pad and its 90%
+   ink, restated here rather than in `Menu.vue`, which every other menu in the
+   app shares — SessionRow's menu does the same. `.sqb.sqb` outranks the
+   primitive's own rule regardless of stylesheet order. Border, radius and
+   shadow still come from the primitive, where they already match. */
+.sqb.sqb {
   position: fixed;
   z-index: var(--z-overlay);
   visibility: hidden;
   max-width: calc(100vw - 2 * var(--space-4));
+  padding: 3.5px;
+  background: var(--color-menu-bg);
+  -webkit-backdrop-filter: var(--p-menu-backdrop);
+  backdrop-filter: var(--p-menu-backdrop);
+  color: color-mix(in srgb, var(--color-text-strong) 90%, transparent);
 }
 .sqb.is-ready {
   visibility: visible;

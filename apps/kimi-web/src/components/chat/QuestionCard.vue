@@ -488,7 +488,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
                 v-model="otherTexts[current.id]"
                 class="other-input"
                 type="text"
-                :placeholder="current.otherLabel ?? t('question.otherDefault')"
+                :placeholder="t('question.otherPlaceholder')"
                 @input="pickOther(current.id)"
                 @focus="pickOther(current.id)"
               />
