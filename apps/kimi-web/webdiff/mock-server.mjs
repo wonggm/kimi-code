@@ -322,6 +322,16 @@ function browserComposerSnapshot(capturedAt) {
 const BROWSER_PROMPT_TEXT = 'Show me a config example.';
 const BROWSER_REFERENCE_LINK = `[${BROWSER_REFERENCE_LABEL}](kimi-code-composer://browser-references/${BROWSER_REFERENCE_ID})`;
 
+/** Mention-shaped prompt text, for the surface the walk cannot reach on its
+ *  own: a skill mention and an attachment mention written the way the composer
+ *  writes them, so both apps' mention pills are poseable side by side. Gate with
+ *  MOCK_MENTIONS=0 to drop it back to the bare prompt. */
+const MENTION_PROMPT_TEXT = 'test [mock-skill](kimi-code://skill/mock-skill) test bla [Image 1](kimi-code-composer://attachments/f_b23083db-4e40-4e91-9375-da9384951cd1)';
+function promptTextFor() {
+  if (process.env.MOCK_MENTIONS === '0') return BROWSER_PROMPT_TEXT;
+  return `${BROWSER_PROMPT_TEXT}\n\n${MENTION_PROMPT_TEXT}`;
+}
+
 const HEARTBEAT_MS = 30000;
 const PING_INTERVAL_MS = 15000;
 
@@ -598,7 +608,7 @@ function buildFixtures(env) {
           // prompt text as the inline link both apps render as a pill, and
           // spelled out in the message's composer snapshot for the app that
           // resolves the pill's capture from there.
-          { type: 'text', text: browserOn ? `${BROWSER_PROMPT_TEXT}\n\n${BROWSER_REFERENCE_LINK}` : BROWSER_PROMPT_TEXT },
+          { type: 'text', text: browserOn ? `${promptTextFor()}\n\n${BROWSER_REFERENCE_LINK}` : promptTextFor() },
           { type: 'image', source: { kind: 'session_media', file_id: 'mock_media_1' } },
         ],
         metadata: browserOn ? { 'kimiWeb.composerSnapshot': JSON.stringify(browserComposerSnapshot(now)) } : undefined,
@@ -1214,7 +1224,7 @@ function createHandler({ root, token, env, fixtures }) {
                 // the turn's origin — the key upstream reads it from. The fork's
                 // pill resolves through the snapshot message's metadata instead.
                 origin: browserOn ? { kind: 'user', clientMetadata: [{ kimi_code_composer: JSON.stringify(browserComposerSnapshot(now)) }] } : { kind: 'user' },
-                prompt: browserOn ? `${BROWSER_PROMPT_TEXT}\n\n${BROWSER_REFERENCE_LINK}` : BROWSER_PROMPT_TEXT,
+                prompt: browserOn ? `${promptTextFor()}\n\n${BROWSER_REFERENCE_LINK}` : promptTextFor(),
                 steps: [], startedAt: now, endedAt: now },
               { kind: 'turn', turnId: 't2', ordinal: 1, state: 'completed', origin: { kind: 'user' },
                 // The prompt that opened this reply: the same id the snapshot
