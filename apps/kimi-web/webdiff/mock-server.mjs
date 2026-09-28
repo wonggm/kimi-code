@@ -151,6 +151,8 @@ const QUESTION_SESSION_ID = 'session_mock_question0000000000';
 const APPROVAL_SESSION_ID = 'session_mock_approval0000000000';
 const QUESTION_SESSION_TITLE = 'Pending question (mock)';
 const APPROVAL_SESSION_TITLE = 'Pending approval (mock)';
+const PLAN_REVIEW_SESSION_ID = 'sess_plan_review';
+const PLAN_REVIEW_SESSION_TITLE = 'Pending plan review (mock)';
 // The browser row (MOCK_BROWSER=0 drops it): its pending approval is an in-app
 // browser action, which is the only browser card either app can be posed with
 // that is not a transcript tool call.
@@ -464,6 +466,31 @@ function approvalMock(sessionId, now) {
   };
 }
 
+/** The plan-review card: an approval whose display is a plan with options, which
+ *  is the shape both apps read as a `plan_review` block (the kind keyed off
+ *  `tool_input_display.kind`). */
+function planReviewApprovalMock(sessionId, now) {
+  return {
+    approval_id: 'appr_mock_plan_1',
+    session_id: sessionId,
+    turn_id: 3,
+    tool_call_id: 'tc_plan_1',
+    tool_name: 'ExitPlanMode',
+    action: 'Ready to build with this plan?',
+    tool_input_display: {
+      kind: 'plan_review',
+      plan: '## Mock plan\n\n1. Read the config.\n2. Change the timeout.\n3. Re-run the check.',
+      path: '/tmp/mock-workspace/.kimi/plans/mock-plan.md',
+      options: [
+        { label: 'Approve', description: 'Carry the plan out as written.' },
+        { label: 'Revise', description: 'Send it back with feedback.' },
+      ],
+    },
+    expires_at: now,
+    created_at: now,
+  };
+}
+
 /** The same question as an upstream transcript interaction: upstream builds its
  *  pending cards from the transcript page's `interactions` (state `pending`),
  *  reading `request.questions`, not from the snapshot. Derived from the card so
@@ -751,6 +778,12 @@ function buildFixtures(env) {
   // fixture the transcript's browser tool calls do.
   const browserCard = browserApprovalMock(BROWSER_SESSION_ID, now);
   const browserVariant = variant(BROWSER_SESSION_ID, BROWSER_SESSION_TITLE, [browserCard], [], [approvalInteraction(browserCard)]);
+  // The plan-review card: the same approval, carrying a plan_review display, so
+  // the options the ExitPlanMode tool offers are poseable the way the two apps
+  // render them side by side. Its own session, like the question and approval
+  // cards, because a session carries at most one pending approval.
+  const planCard = planReviewApprovalMock(PLAN_REVIEW_SESSION_ID, now);
+  const planVariant = variant(PLAN_REVIEW_SESSION_ID, PLAN_REVIEW_SESSION_TITLE, [planCard], [], [approvalInteraction(planCard)]);
 
   const config = {
     providers: { example: { type: '', base_url: 'https://example.com/v1', has_api_key: true } },
@@ -878,11 +911,11 @@ function buildFixtures(env) {
     ? { turnId: LIVE_TURN_ID, durationMs: LIVE_TURN_MS, endAfterMs: 3_600, seq: 4 }
     : null;
 
-  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, browserVariant, browserOn, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt, liveTurn };
+  return { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, browserVariant, planVariant, browserOn, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt, liveTurn };
 }
 
 function createHandler({ root, token, env, fixtures }) {
-  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, browserVariant, browserOn, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt } = fixtures;
+  const { now, session, goal, bashTask, bashTaskExited, subagentTask, subagentRunning, subagentForeground, snapshot, questionVariant, approvalVariant, browserVariant, planVariant, browserOn, config, rich, busyOn, queuedOn, queuedPromptText, queuedPrompt, steeredPrompt } = fixtures;
   // MOCK_RICH=0 turns the extra fixtures off, leaving the fixture body the walk
   // was originally built against; the three session rows are always listed.
   const richOn = env.MOCK_RICH !== '0';
@@ -971,6 +1004,7 @@ function createHandler({ root, token, env, fixtures }) {
       : [
           { id: QUESTION_SESSION_ID, ...questionVariant },
           { id: APPROVAL_SESSION_ID, ...approvalVariant },
+          { id: PLAN_REVIEW_SESSION_ID, ...planVariant },
           ...(browserOn ? [{ id: BROWSER_SESSION_ID, ...browserVariant }] : []),
         ]),
   ];
