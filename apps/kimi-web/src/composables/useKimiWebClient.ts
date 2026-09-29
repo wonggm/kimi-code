@@ -28,6 +28,7 @@ import { collectBrowserReferences, type BrowserReferenceEntry } from '../lib/bro
 import { BROWSER_TOOL_NAME } from '../lib/browserTool';
 import { createCoalescedAsyncRunner } from '../lib/snapshotSync';
 import {
+  calibrateCharsPerToken,
   createLiveTpsWindow,
   resolveTpsDisplay,
   TPS_FINAL_TTL_MS,
@@ -2703,6 +2704,10 @@ const activePullRequest = computed<{ number: number; state: string; url: string 
 /** Live windows, one per session, holding the samples behind each estimate. */
 const liveTpsWindows = new Map<string, LiveTpsWindow>();
 
+/** Characters streamed in the step in flight, per session, for the calibration
+ *  a settled step feeds the token estimate. */
+const tpsStepCharsBySession: Record<string, number> = {};
+
 /** How often the meter's clock advances while it has something to show. */
 const TPS_TICK_MS = 1000;
 /** The meter's own clock. `status.tps` reads it, so the staleness window
@@ -2735,9 +2740,12 @@ function stopTpsTick(): void {
 }
 
 /** Add one streamed text chunk to the session's live window, publishing the
- *  estimate when the window says this chunk is a publish point. */
+ *  estimate when the window says this chunk is a publish point. The characters
+ *  are also counted for the step, so the settled step can calibrate how many
+ *  characters one token takes. */
 function recordLiveTpsDelta(sessionId: string, at: number | undefined, chars: number): void {
   if (chars <= 0) return;
+  tpsStepCharsBySession[sessionId] = (tpsStepCharsBySession[sessionId] ?? 0) + chars;
   let window = liveTpsWindows.get(sessionId);
   if (window === undefined) {
     window = createLiveTpsWindow();
@@ -2753,6 +2761,7 @@ function recordLiveTpsDelta(sessionId: string, at: number | undefined, chars: nu
  *  anything on screen. */
 function clearLiveTps(sessionId: string): void {
   liveTpsWindows.delete(sessionId);
+  delete tpsStepCharsBySession[sessionId];
   if (rawState.tpsLiveBySession[sessionId] === undefined) return;
   const next = { ...rawState.tpsLiveBySession };
   delete next[sessionId];
@@ -2760,14 +2769,18 @@ function clearLiveTps(sessionId: string): void {
 }
 
 /** The step boundary arrived: the live estimate always drops there, matching
- *  the TUI. A measurable step stores its exact rate, which stands in until it
- *  goes stale, and folds into the session average the meter falls back on. */
+ *  the TUI. The step's characters calibrate the token estimate even when the
+ *  step itself is too short to time — those are exactly the steps whose token
+ *  count says how much text really went with it. A measurable step stores its
+ *  exact rate, which stands in until it goes stale, and folds into the session
+ *  average the meter falls back on. */
 function applyStepTps(
   sessionId: string,
   tps: number | null,
   tokens?: number,
   streamMs?: number,
 ): void {
+  calibrateCharsPerToken(tpsStepCharsBySession[sessionId] ?? 0, tokens);
   clearLiveTps(sessionId);
   if (tps === null || tokens === undefined || streamMs === undefined) return;
   rawState.tpsFinalBySession = {

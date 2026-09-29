@@ -70,13 +70,26 @@ describe('formatStepDebugTiming', () => {
     );
   });
 
+  it('omits TPS for a reply that landed in one chunk', () => {
+    // 286 tokens inside 56ms is delivery, not decode, so the line reports the
+    // counts and says why there is no rate.
+    const result = formatStepDebugTiming({
+      llmFirstTokenLatencyMs: 200,
+      llmStreamDurationMs: 56,
+      usage: { output: 286 },
+    });
+    expect(result).toBe(
+      '[Debug] TTFT: 200ms | 286 tokens in 56ms (stream too short for TPS)',
+    );
+  });
+
   it('computes TPS once the streamed window reaches the reliability threshold', () => {
     const result = formatStepDebugTiming({
       llmFirstTokenLatencyMs: 200,
-      llmStreamDurationMs: 50,
+      llmStreamDurationMs: 250,
       usage: { output: 20 },
     });
-    expect(result).toBe('[Debug] TTFT: 200ms | TPS: 400.0 tok/s (20 tokens in 50ms)');
+    expect(result).toBe('[Debug] TTFT: 200ms | TPS: 80.0 tok/s (20 tokens in 250ms)');
   });
 
   it('formats durations under 1s as milliseconds', () => {

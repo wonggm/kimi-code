@@ -1077,14 +1077,15 @@ export function createAgentProjector(): AgentProjector {
         // The step's exact decode rate: output tokens over the streamed window
         // the engine timed. Every completed step reports, measurable or not, so
         // the meter can drop its live estimate at the same boundary the TUI
-        // clears on; only a measurable step replaces the stored figure.
+        // clears on and calibrate its token estimate from the step's text; only
+        // a measurable step carries a rate and replaces the stored figure.
         const streamMs: number | undefined =
           typeof p?.llmStreamDurationMs === 'number' ? p.llmStreamDurationMs : undefined;
         const tps = computeStepTps(u.output, streamMs);
         out.push(
           tps !== null && streamMs !== undefined
             ? { type: 'stepTpsComputed', sessionId, tps, tokens: u.output, streamMs }
-            : { type: 'stepTpsComputed', sessionId, tps: null },
+            : { type: 'stepTpsComputed', sessionId, tps: null, tokens: u.output, streamMs },
         );
 
         if (msgId) {

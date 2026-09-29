@@ -9,14 +9,18 @@ describe('computeStepTps', () => {
     expect(computeStepTps(200, undefined)).toBeNull();
   });
 
-  it('returns null below the reliable stream window', () => {
-    expect(computeStepTps(200, 49)).toBeNull();
-    expect(computeStepTps(200, 50)).not.toBeNull();
+  it('returns null for a step whose whole reply landed in one chunk', () => {
+    // 286 tokens delivered inside 56 ms is a delivery artefact, not a decode
+    // rate: the engine timed from the first chunk to the last, and there was
+    // only one chunk.
+    expect(computeStepTps(286, 56)).toBeNull();
+    expect(computeStepTps(90, 50)).toBeNull();
+    expect(computeStepTps(200, 249)).toBeNull();
   });
 
   it('divides output tokens by the streamed window in seconds', () => {
     expect(computeStepTps(200, 5000)).toBe(40);
-    expect(computeStepTps(100, 50)).toBe(2000);
+    expect(computeStepTps(100, 250)).toBe(400);
   });
 });
 

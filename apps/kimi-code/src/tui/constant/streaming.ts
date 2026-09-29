@@ -35,8 +35,21 @@ export const TPS_BAND_FAST_MIN = 50;
 export const TPS_LIVE_PATCH_INTERVAL_MS = 250;
 
 // Streamed deltas carry no token counts, so the live rate estimates them from
-// the streamed characters.
-export const CHARS_PER_TOKEN_ESTIMATE = 4;
+// the streamed characters. The prior below is only a seed: every settled step
+// reports the engine's own output count, which says how many characters one
+// token really took, and the ratio moves toward it.
+export const CHARS_PER_TOKEN_SEED = 4;
+
+// A settled step may only move the ratio when its own text accounts for most of
+// its tokens. A step whose text never arrived (a redacted or summarized
+// thinking block, a tool-call envelope) has far fewer characters than tokens and
+// would otherwise teach the estimator that one token is a fraction of a
+// character. The band also rejects a step whose text was truncated away.
+export const MIN_CHARS_PER_TOKEN_CALIBRATION = 1;
+export const MAX_CHARS_PER_TOKEN_CALIBRATION = 12;
+
+// How much of the correction a single settled step applies (dsh's ratio EMA).
+export const CHARS_PER_TOKEN_CALIBRATION_WEIGHT = 0.4;
 
 // How long the last step's exact rate stays on screen once streaming stops.
 export const TPS_FINAL_TTL_MS = 30_000;

@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import enStatus from '../src/i18n/locales/en/status';
 import zhStatus from '../src/i18n/locales/zh/status';
 import {
+  calibratedCharsPerToken,
   computeStepTps,
   createLiveTpsWindow,
   formatTps,
   toolCallDeltaChars,
   liveTpsBand,
   resolveTpsDisplay,
+  CHARS_PER_TOKEN_SEED,
 } from '../src/lib/stepTps';
 
 describe('computeStepTps', () => {
@@ -17,14 +19,18 @@ describe('computeStepTps', () => {
     expect(computeStepTps(200, undefined)).toBeNull();
   });
 
-  it('returns null below the reliable stream window', () => {
-    expect(computeStepTps(200, 49)).toBeNull();
-    expect(computeStepTps(200, 50)).not.toBeNull();
+  it('returns null for a step whose whole reply landed in one chunk', () => {
+    // 286 tokens delivered inside 56 ms is a delivery artefact, not a decode
+    // rate: the engine timed from the first chunk to the last, and there was
+    // only one chunk.
+    expect(computeStepTps(286, 56)).toBeNull();
+    expect(computeStepTps(90, 50)).toBeNull();
+    expect(computeStepTps(200, 249)).toBeNull();
   });
 
   it('divides output tokens by the streamed window in seconds', () => {
     expect(computeStepTps(200, 5000)).toBe(40);
-    expect(computeStepTps(100, 50)).toBe(2000);
+    expect(computeStepTps(100, 250)).toBe(400);
   });
 });
 
@@ -105,6 +111,26 @@ describe('createLiveTpsWindow', () => {
     window.reset();
     expect(window.push(60_000, 8)).toBeUndefined();
     expect(window.push(60_050, 8)).toBeUndefined();
+  });
+});
+
+describe('calibratedCharsPerToken', () => {
+  it('moves the estimate part of the way to what the step proved', () => {
+    // 1000 characters for 200 tokens is 5 characters per token; the seed is 4.
+    expect(calibratedCharsPerToken(CHARS_PER_TOKEN_SEED, 1000, 200)).toBeCloseTo(4.4);
+    expect(calibratedCharsPerToken(4.4, 2000, 400)).toBeCloseTo(4.64);
+  });
+
+  it('ignores a step whose text never arrived with its tokens', () => {
+    // 40 characters billed as 900 tokens: a redacted thinking block or a
+    // tool-call envelope, which would teach a fraction of a character per token.
+    expect(calibratedCharsPerToken(4, 40, 900)).toBe(4);
+  });
+
+  it('ignores a step with no output or no text to compare', () => {
+    expect(calibratedCharsPerToken(4, 1000, undefined)).toBe(4);
+    expect(calibratedCharsPerToken(4, 1000, 0)).toBe(4);
+    expect(calibratedCharsPerToken(4, 0, 200)).toBe(4);
   });
 });
 

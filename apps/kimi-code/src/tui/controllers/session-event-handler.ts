@@ -72,7 +72,7 @@ import { openUrl } from '#/utils/open-url';
 import { currentTheme } from '#/tui/theme';
 import type { ColorToken } from '#/tui/theme';
 import { errorReportHintLine } from '../constant/feedback';
-import { createLiveTpsWindow } from '#/tui/utils/live-tps';
+import { calibrateCharsPerToken, createLiveTpsWindow } from '#/tui/utils/live-tps';
 import { formatStepDebugTiming } from '#/utils/usage/debug-timing';
 import { computeStepTps } from '#/utils/usage/step-tps';
 import { nextTranscriptId } from '../utils/transcript-id';
@@ -182,6 +182,9 @@ export class SessionEventHandler {
   // footer reads a kernel-weighted recent rate instead of an average over the
   // whole step.
   private tpsLiveWindow = createLiveTpsWindow();
+  /** Characters streamed in the step in flight, for the token-estimate
+   *  calibration a settled step feeds. */
+  private tpsStepChars = 0;
 
   resetRuntimeState(): void {
     this.backgroundTasks.clear();
@@ -538,8 +541,13 @@ export class SessionEventHandler {
    * decode speed, so the meter keeps the last real reading until it goes stale.
    */
   private applyStepTps(event: TurnStepCompletedEvent): void {
-    this.resetLiveTpsWindow();
     const output = event.usage?.output;
+    // The step's characters calibrate the token estimate even when the step
+    // itself is too short to time — those are exactly the steps whose token
+    // count says how much text really went with it.
+    calibrateCharsPerToken(this.tpsStepChars, output);
+    this.tpsStepChars = 0;
+    this.resetLiveTpsWindow();
     const streamMs = event.llmStreamDurationMs;
     const tps = computeStepTps(output, streamMs);
     const patch: Partial<AppState> = { tpsLive: undefined };
@@ -641,6 +649,7 @@ export class SessionEventHandler {
    */
   private recordTpsSample(chars: number): void {
     if (chars <= 0) return;
+    this.tpsStepChars += chars;
     const rate = this.tpsLiveWindow.push(Date.now(), chars);
     if (rate !== undefined) {
       this.host.setAppState({ tpsLive: rate });

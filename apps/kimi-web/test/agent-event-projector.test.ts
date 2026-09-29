@@ -646,14 +646,16 @@ describe('step decode rate', () => {
     projector.project('turn.started', { turnId: 1 }, 's1');
     projector.project('turn.step.started', { turnId: 1, step: 1 }, 's1');
     // A step that drained in 1ms has no measurable window: the event still
-    // arrives so the meter clears its live estimate, but it carries no rate.
+    // arrives so the meter clears its live estimate, but it carries no rate. It
+    // keeps its token count, which is what calibrates the meter's estimate of
+    // how many characters one token takes.
     const events = projector.project(
       'turn.step.completed',
       { turnId: 1, step: 1, usage: { output: 200 }, llmStreamDurationMs: 1 },
       's1',
     );
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'stepTpsComputed', tps: null }),
+      expect.objectContaining({ type: 'stepTpsComputed', tps: null, tokens: 200, streamMs: 1 }),
     );
     expect(events).not.toContainEqual(
       expect.objectContaining({ type: 'stepTpsComputed', tps: expect.any(Number) }),

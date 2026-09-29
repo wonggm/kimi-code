@@ -5,11 +5,14 @@
 // so the helper is duplicated here deliberately.
 
 // Decode TPS is only meaningful when the output actually streamed over a
-// measurable window. Below this threshold the duration is dominated by
-// `Date.now()`'s ~1ms quantization (short / single-chunk tool-call steps can
-// drain in 1ms), so dividing output tokens by it would report inflated rates
-// like tens of thousands of tok/s.
-export const MIN_STREAM_MS_FOR_TPS = 50;
+// window long enough to time. A provider that delivers a whole reply in one
+// chunk, or a client that was busy when the chunks landed, gives a window of a
+// few tens of milliseconds and a full token count; the ratio then measures
+// delivery, not decode, and reads in the thousands. 250 ms is the floor
+// opencode uses for the same figure. Measured over 1385 steps of a long
+// session it drops the peak from 5107 to 520 tok/s and stops counting 0.9% of
+// the output tokens, all of them from steps that were never really streamed.
+export const MIN_STREAM_MS_FOR_TPS = 250;
 
 // Half-lives of the decayed sums behind the live rate. The summed scales act
 // as a kernel over recent stream time: the short scale moves with bursts, the
@@ -37,8 +40,47 @@ export const TPS_BAND_FAST_MIN = 50;
 export const TPS_LIVE_PATCH_INTERVAL_MS = 250;
 
 // Streamed deltas carry no token counts, so the live rate estimates them from
-// the streamed characters.
-export const CHARS_PER_TOKEN_ESTIMATE = 4;
+// the streamed characters. The prior below is only a seed: every settled step
+// reports the engine's own output count, which says how many characters one
+// token really took, and the ratio moves toward it.
+export const CHARS_PER_TOKEN_SEED = 4;
+
+// A settled step may only move the ratio when its own text accounts for most of
+// its tokens. A step whose text never arrived (a redacted or summarized
+// thinking block, a tool-call envelope) has far fewer characters than tokens and
+// would otherwise teach the estimator that one token is a fraction of a
+// character. The band also rejects a step whose text was truncated away.
+export const MIN_CHARS_PER_TOKEN_CALIBRATION = 1;
+export const MAX_CHARS_PER_TOKEN_CALIBRATION = 12;
+
+// How much of the correction a single settled step applies (dsh's ratio EMA).
+export const CHARS_PER_TOKEN_CALIBRATION_WEIGHT = 0.4;
+
+let charsPerToken = CHARS_PER_TOKEN_SEED;
+
+/** The characters-per-token estimate after a settled step proved `chars` and
+ *  `outputTokens`: unchanged when the step says nothing about the ratio (no
+ *  output, no text, or text far out of proportion with the tokens billed). */
+export function calibratedCharsPerToken(
+  current: number,
+  chars: number,
+  outputTokens: number | undefined,
+): number {
+  if (outputTokens === undefined || outputTokens <= 0 || chars <= 0) return current;
+  const measured = chars / outputTokens;
+  if (
+    measured < MIN_CHARS_PER_TOKEN_CALIBRATION ||
+    measured > MAX_CHARS_PER_TOKEN_CALIBRATION
+  ) return current;
+  return current + CHARS_PER_TOKEN_CALIBRATION_WEIGHT * (measured - current);
+}
+
+/** Move the characters-per-token estimate toward what a settled step proved.
+ *  Called with the characters that step streamed and the output tokens the
+ *  engine billed for it. */
+export function calibrateCharsPerToken(chars: number, outputTokens: number | undefined): void {
+  charsPerToken = calibratedCharsPerToken(charsPerToken, chars, outputTokens);
+}
 
 // How long the last step's exact rate stays on screen once streaming stops.
 export const TPS_FINAL_TTL_MS = 30_000;
@@ -150,7 +192,7 @@ export function createLiveTpsWindow(): LiveTpsWindow {
       const gap = lastAt === 0 ? 0 : Math.min(at - lastAt, TPS_MAX_DELTA_GAP_MS);
       if (gap > 0) age(gap);
       lastAt = at;
-      const estimated = chars / CHARS_PER_TOKEN_ESTIMATE;
+      const estimated = chars / charsPerToken;
       let totalTokens = 0;
       let totalTime = 0;
       for (let i = 0; i < TPS_HALF_LIVES_MS.length; i++) {

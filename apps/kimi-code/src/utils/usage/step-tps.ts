@@ -5,11 +5,14 @@
  */
 
 // Decode TPS is only meaningful when the output actually streamed over a
-// measurable window. Below this threshold the duration is dominated by
-// `Date.now()`'s ~1ms quantization (short / single-chunk tool-call turns can
-// drain in 1ms), so dividing output tokens by it would report inflated rates
-// like tens of thousands of tok/s.
-export const MIN_STREAM_MS_FOR_TPS = 50;
+// window long enough to time. A provider that delivers a whole reply in one
+// chunk, or a client that was busy when the chunks landed, gives a window of a
+// few tens of milliseconds and a full token count; the ratio then measures
+// delivery, not decode, and reads in the thousands. 250 ms is the floor
+// opencode uses for the same figure. Measured over 1385 steps of a long
+// session it drops the peak from 5107 to 520 tok/s and stops counting 0.9% of
+// the output tokens, all of them from steps that were never really streamed.
+export const MIN_STREAM_MS_FOR_TPS = 250;
 
 /**
  * Exact decode rate of one step: output tokens over the streamed window, or

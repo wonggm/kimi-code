@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
-import { createLiveTpsWindow } from '#/tui/utils/live-tps';
+import { calibratedCharsPerToken, createLiveTpsWindow } from '#/tui/utils/live-tps';
+import { CHARS_PER_TOKEN_SEED } from '#/tui/constant/streaming';
+
+describe('calibratedCharsPerToken', () => {
+  it('moves the estimate part of the way to what the step proved', () => {
+    // 1000 characters for 200 tokens is 5 characters per token; the seed is 4.
+    expect(calibratedCharsPerToken(CHARS_PER_TOKEN_SEED, 1000, 200)).toBeCloseTo(4.4);
+    expect(calibratedCharsPerToken(4.4, 2000, 400)).toBeCloseTo(4.64);
+  });
+
+  it('ignores a step whose text never arrived with its tokens', () => {
+    // 40 characters billed as 900 tokens: a redacted thinking block or a
+    // tool-call envelope, which would teach a fraction of a character per token.
+    expect(calibratedCharsPerToken(4, 40, 900)).toBe(4);
+  });
+
+  it('ignores a step with no output or no text to compare', () => {
+    expect(calibratedCharsPerToken(4, 1000, undefined)).toBe(4);
+    expect(calibratedCharsPerToken(4, 1000, 0)).toBe(4);
+    expect(calibratedCharsPerToken(4, 0, 200)).toBe(4);
+  });
+});
 
 describe('createLiveTpsWindow', () => {
   it('publishes nothing until the evidence gates pass', () => {
